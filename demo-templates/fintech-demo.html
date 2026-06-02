@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meridian Capital Group — Lending Operations Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=optional" rel="stylesheet">
+<style>
+/* ============================================================
+   TOKENS — Teal / Emerald (FinTech money-feel palette)
+   ============================================================ */
+:root {
+  --font: 'Poppins', sans-serif;
+  --primary: #0D9488;
+  --primary-light: #2DD4BF;
+  --primary-hover: #0F766E;
+  --primary-deep: #115E59;
+  --primary-soft: #CCFBF1;
+  --primary-bg: #F0FDFA;
+
+  --sidebar-bg: #0f172a;
+  --sidebar-mid: #1e293b;
+  --sidebar-deep: #020617;
+  --sidebar-hover: #1e293b;
+  --sidebar-active: #0D9488;
+
+  --page-bg: #f8fafc;
+  --card-bg: #ffffff;
+  --card-border: #e2e8f0;
+  --card-radius: 20px;
+  --btn-radius: 10px;
+  --input-radius: 10px;
+  --badge-radius: 9999px;
+
+  --text-primary: #0f172a;
+  --text-body: #334155;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+  --border-light: #f1f5f9;
+  --border-mid: #e2e8f0;
+  --inset-bg: #f8fafc;
+
+  --green-bg: #ecfdf5; --green-text: #047857; --green-border: #a7f3d0;
+  --amber-bg: #fffbeb; --amber-text: #b45309; --amber-border: #fde68a;
+  --red-bg: #fef2f2; --red-text: #b91c1c; --red-border: #fecaca;
+  --blue-bg: #F0FDFA; --blue-text: #0F766E; --blue-border: #99F6E4;
+  --purple-bg: #faf5ff; --purple-text: #7c3aed; --purple-border: #e9d5ff;
+  --slate-bg: #f1f5f9; --slate-text: #475569; --slate-border: #e2e8f0;
+
+  --neu-shadow: 4px 4px 12px rgba(15,23,42,0.06), -2px -2px 8px rgba(255,255,255,0.9);
+  --neu-shadow-hover: 6px 6px 16px rgba(15,23,42,0.08), -3px -3px 10px rgba(255,255,255,1);
+  --neu-shadow-heavy: 6px 6px 18px rgba(15,23,42,0.1), -3px -3px 12px rgba(255,255,255,1);
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-md: 0 4px 12px rgba(15,23,42,0.08);
+  --shadow-lg: 0 12px 28px rgba(15,23,42,0.12);
+
+  --btn-primary-grad: linear-gradient(135deg, #2DD4BF 0%, #0F766E 100%);
+  --btn-primary-grad-hover: linear-gradient(135deg, #0D9488 0%, #115E59 100%);
+  --btn-primary-glow: inset 0 1px 0 rgba(255,255,255,0.25), 0 0 22px rgba(13,148,136,0.35), 0 4px 14px rgba(15,118,110,0.28);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: var(--font);
+  background: radial-gradient(ellipse at 15% 10%, rgba(45,212,191,0.05) 0%, transparent 45%), radial-gradient(ellipse at 85% 25%, rgba(13,148,136,0.06) 0%, transparent 50%), radial-gradient(ellipse at 50% 100%, rgba(148,163,184,0.05) 0%, transparent 55%), var(--page-bg);
+  background-attachment: fixed; color: var(--text-body); display: flex; min-height: 100vh; -webkit-font-smoothing: antialiased;
+}
+body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 0; background: radial-gradient(ellipse 60% 40% at 18% 30%, rgba(45,212,191,0.2) 0%, transparent 55%), radial-gradient(ellipse 50% 35% at 78% 22%, rgba(13,148,136,0.15) 0%, transparent 55%), radial-gradient(ellipse 70% 45% at 50% 85%, rgba(45,212,191,0.15) 0%, transparent 55%); }
+::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; } ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+.sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 240px; background: linear-gradient(180deg, #ffffff 0%, var(--primary-soft) 40%, var(--primary-light) 100%); color: var(--text-primary); display: flex; flex-direction: column; z-index: 50; border-right: 1px solid var(--card-border); overflow: visible; }
+.sidebar::after { content: ''; position: absolute; top: 0; right: -56px; bottom: 0; width: 56px; background: linear-gradient(90deg, rgba(15,23,42,0.22) 0%, rgba(15,118,110,0.05) 60%, transparent 100%); pointer-events: none; z-index: 0; }
+.sidebar-nav { flex: 1; overflow-y: auto; overflow-x: visible; padding-bottom: 8px; }
+.sidebar-brand { padding: 24px 20px 20px; border-bottom: 1px solid var(--card-border); display: flex; align-items: center; gap: 12px; position: relative; z-index: 4; background: transparent; }
+.sidebar-logo { width: 40px; height: 40px; background: var(--primary); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; }
+.sidebar-brand-text h1 { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.3; }
+.sidebar-brand-text p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.sidebar-section { padding: 16px 12px 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; display: flex; align-items: center; cursor: pointer; user-select: none; }
+.sidebar-section .chevron { font-size: 10px; transition: transform 0.2s; margin-left: auto; color: #475569; }
+.sidebar-section .tier-badge { margin-left: auto; }
+.sidebar-section .tier-badge ~ .chevron { margin-left: 8px; }
+.sidebar-section.collapsed .chevron { transform: rotate(-90deg); }
+.nav-group { overflow-x: visible; overflow-y: clip; transition: max-height 0.3s ease; }
+.nav-group.collapsed { max-height: 0 !important; }
+.nav-btn { display: flex; align-items: center; gap: 10px; width: calc(100% - 16px); padding: 8px 16px; border: none; background: transparent; color: var(--text-primary); font-family: var(--font); font-size: 13px; font-weight: 500; cursor: pointer; transition: color 0.15s, filter 0.15s; margin: 1px 0 1px 8px; text-align: left; position: relative; z-index: 2; }
+.nav-btn::before { content: ''; position: absolute; top: 0; bottom: 0; left: 0; right: -19px; border-radius: 10px 0 0 10px; z-index: -1; opacity: 0; transition: opacity 0.15s; background: linear-gradient(180deg, rgba(45,212,191,0.18) 0%, rgba(15,118,110,0.2) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.12); -webkit-mask-image: linear-gradient(#000, #000), url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 19 32' preserveAspectRatio='none'><polygon points='0,0 19,16 0,32' fill='black'/></svg>"); -webkit-mask-size: calc(100% - 19px) 100%, 19px 100%; -webkit-mask-position: left center, right center; -webkit-mask-repeat: no-repeat; -webkit-mask-composite: source-over; mask-image: linear-gradient(#000, #000), url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 19 32' preserveAspectRatio='none'><polygon points='0,0 19,16 0,32' fill='black'/></svg>"); mask-size: calc(100% - 19px) 100%, 19px 100%; mask-position: left center, right center; mask-repeat: no-repeat; mask-composite: add; }
+.nav-btn:hover { color: var(--primary-deep); }
+.nav-btn:hover::before { opacity: 1; }
+.nav-btn.active { color: #fff; font-weight: 600; filter: drop-shadow(0 0 10px rgba(45,212,191,0.5)) drop-shadow(0 3px 10px rgba(15,118,110,0.35)); }
+.nav-btn.active::before { opacity: 1; background: linear-gradient(180deg, #2DD4BF 0%, #0F766E 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), inset 1px 0 0 rgba(255,255,255,0.15); }
+.nav-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+.nav-badge { margin-left: auto; font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 9999px; background: var(--text-faint); color: #fff; }
+.sidebar-footer { margin-top: auto; padding: 16px; border-top: 1px solid rgba(255,255,255,0.25); position: relative; z-index: 4; background: transparent; }
+.sidebar-footer-btn { width: 100%; padding: 10px; background: var(--btn-primary-grad); border: none; border-radius: var(--btn-radius); color: #fff; font-family: var(--font); font-size: 12px; font-weight: 600; cursor: pointer; box-shadow: var(--btn-primary-glow); transition: background 0.15s; }
+.sidebar-footer-btn:hover { background: var(--btn-primary-grad-hover); }
+
+.main { margin-left: 240px; flex: 1; padding: 32px 40px 80px; position: relative; z-index: 1; }
+.page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+.page-head h1 { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }
+.tier-badge { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 6px; border: 1px solid; text-transform: uppercase; letter-spacing: 0.04em; }
+.tier-badge.core { background: var(--blue-bg); color: var(--blue-text); border-color: var(--blue-border); }
+.tier-badge.addon { background: var(--slate-bg); color: var(--slate-text); border-color: var(--slate-border); }
+.page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: -16px; margin-bottom: 20px; }
+
+.card { background: linear-gradient(180deg, var(--primary-bg) 0%, #fff 40%) padding-box; border: 1px solid var(--card-border); border-radius: var(--card-radius); padding: 0; margin-bottom: 16px; overflow: hidden; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), inset 0 0 0 1px rgba(13,148,136,0.18), 0 4px 14px rgba(13,148,136,0.12); }
+.card-hover { transition: box-shadow 0.2s, border-color 0.2s, transform 0.2s; cursor: pointer; }
+.card-hover:hover { border-color: rgba(13,148,136,0.35); box-shadow: inset 0 1px 0 rgba(255,255,255,0.95), inset 0 0 0 1px rgba(13,148,136,0.28), 0 8px 22px rgba(13,148,136,0.18); transform: translateY(-1px); }
+.dash-card { padding: 28px 32px 20px; }
+.dash-card-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 16px 0; padding-bottom: 12px; border-bottom: 1px solid var(--border-light); }
+
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { padding: 18px 20px; background: linear-gradient(180deg, var(--primary-soft) 0%, var(--primary-bg) 100%); border: 1px solid rgba(13,148,136,0.25); border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), inset 0 0 0 1px rgba(13,148,136,0.15), 0 4px 12px rgba(13,148,136,0.12); }
+.stat-val { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1.2; letter-spacing: -0.01em; }
+.stat-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.stat-trend { font-size: 11px; font-weight: 600; margin-top: 4px; }
+.stat-trend.up { color: #059669; } .stat-trend.down { color: #dc2626; }
+
+.badge { display: inline-flex; align-items: center; justify-content: center; padding: 3px 12px; border-radius: var(--badge-radius); font-size: 11px; font-weight: 600; border: none; color: #fff; min-width: 88px; }
+.badge.green { background: linear-gradient(135deg, #10B981, #047857); box-shadow: 0 3px 10px rgba(4,120,87,0.35); }
+.badge.amber { background: linear-gradient(135deg, #f59e0b, #b45309); box-shadow: 0 3px 10px rgba(180,83,9,0.35); }
+.badge.red { background: linear-gradient(135deg, #ef4444, #b91c1c); box-shadow: 0 3px 10px rgba(185,28,28,0.35); }
+.badge.blue { background: linear-gradient(135deg, #2DD4BF, #0F766E); box-shadow: 0 3px 10px rgba(13,148,136,0.35); }
+.badge.purple { background: linear-gradient(135deg, #a78bfa, #7c3aed); box-shadow: 0 3px 10px rgba(124,58,237,0.35); }
+.badge.slate { background: linear-gradient(135deg, #64748b, #475569); box-shadow: 0 3px 10px rgba(71,85,105,0.35); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 16px; border-radius: var(--btn-radius); font-family: var(--font); font-size: 13px; font-weight: 600; border: 1px solid transparent; cursor: pointer; transition: all 0.15s; line-height: 1; }
+.btn-primary { background: var(--btn-primary-grad); color: #fff; border: none; box-shadow: var(--btn-primary-glow); position: relative; }
+.btn-primary:hover { background: var(--btn-primary-grad-hover); transform: translateY(-1px); }
+.btn-secondary { background: #fff; border: 1px solid var(--card-border); color: var(--text-body); box-shadow: 2px 2px 6px rgba(15,23,42,0.04), -1px -1px 4px rgba(255,255,255,0.8); }
+.btn-secondary:hover { border-color: #cbd5e1; background: var(--inset-bg); }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+table th { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); padding: 10px 12px; border-bottom: 1px solid rgba(13,148,136,0.25); background: linear-gradient(180deg, var(--primary-soft) 0%, var(--primary-bg) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9); }
+table td { padding: 12px; font-size: 13px; color: var(--text-body); border-bottom: 1px solid var(--border-light); }
+table tr:last-child td { border-bottom: none; }
+table tbody tr:nth-child(odd) { background: var(--primary-bg); }
+table tbody tr:nth-child(even) { background: var(--primary-soft); }
+table .name { font-weight: 600; color: var(--text-primary); }
+table .money { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+table tr:hover { background: rgba(13,148,136,0.12) !important; }
+
+.input, .select, textarea.input { width: 100%; padding: 9px 12px; border: 2px solid transparent; border-radius: 12px; font-family: var(--font); font-size: 13px; color: var(--text-primary); background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--primary-light), var(--primary-soft)) border-box; outline: none; transition: all 0.15s; }
+.input:focus { background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--primary), var(--primary-light)) border-box; box-shadow: 0 0 12px rgba(13,148,136,0.15); }
+.input::placeholder { color: var(--text-faint); }
+.tab-container { display: inline-flex; gap: 2px; background: rgba(13,148,136,0.08); border: 1px solid rgba(13,148,136,0.15); border-radius: 12px; padding: 3px; }
+.tab-btn { padding: 6px 14px; border-radius: 10px; font-family: var(--font); font-size: 12px; font-weight: 500; border: none; cursor: pointer; background: transparent; color: var(--text-muted); transition: all 0.15s; }
+.tab-btn.active { background: var(--btn-primary-grad); color: #fff; font-weight: 600; box-shadow: 0 3px 10px rgba(13,148,136,0.3); }
+.toggle { width: 36px; height: 20px; border-radius: 9999px; padding: 2px; cursor: pointer; display: inline-flex; align-items: center; transition: background 0.15s; }
+.toggle.on { background: var(--primary); } .toggle.off { background: #cbd5e1; }
+.toggle-thumb { width: 16px; height: 16px; border-radius: 9999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.15); transition: margin 0.15s; }
+.toggle.on .toggle-thumb { margin-left: auto; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 9999px; font-weight: 600; color: #fff; background: var(--primary); flex-shrink: 0; }
+.avatar-sm { width: 30px; height: 30px; font-size: 11px; } .avatar-md { width: 40px; height: 40px; font-size: 13px; }
+
+.info-banner { background: var(--primary-bg); border: 1px solid var(--primary-soft); border-radius: var(--card-radius); padding: 12px 16px; display: flex; align-items: flex-start; gap: 10px; margin-bottom: 20px; font-size: 13px; color: var(--primary-hover); }
+.info-banner strong { color: var(--text-primary); }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.flex-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gap-20 { gap: 20px; } .mb-12 { margin-bottom: 12px; } .mb-20 { margin-bottom: 20px; } .mb-24 { margin-bottom: 24px; } .mt-4 { margin-top: 4px; }
+.text-sm { font-size: 13px; } .text-xs { font-size: 11px; } .text-muted { color: var(--text-muted); } .text-primary { color: var(--text-primary); } .font-bold { font-weight: 700; } .font-semi { font-weight: 600; }
+.screen { display: none; } .screen.active { display: block; }
+.section-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
+
+.dash-hero { background: linear-gradient(135deg, var(--primary-bg) 0%, var(--primary-soft) 50%, #fff 100%); border-radius: var(--card-radius); padding: 28px; color: var(--text-primary); margin-bottom: 20px; position: relative; overflow: hidden; border: 1px solid rgba(13,148,136,0.2); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 4px 14px rgba(13,148,136,0.1); }
+.dash-hero::before { content: ''; position: absolute; top: -80px; right: -40px; width: 200px; height: 200px; border-radius: 50%; background: radial-gradient(circle, rgba(45,212,191,0.18) 0%, transparent 70%); pointer-events: none; }
+.dash-hero > * { position: relative; z-index: 1; }
+.dash-hero h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.01em; }
+.dash-hero .sub { font-size: 12px; color: var(--text-muted); }
+.dash-hero-stats { display: flex; gap: 28px; margin-top: 18px; flex-wrap: wrap; }
+.dash-hero-stat .val { font-size: 26px; font-weight: 700; color: var(--primary-deep); }
+.dash-hero-stat .lbl { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.dash-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .dash-cols { grid-template-columns: 1fr; } }
+.dash-switcher { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
+.dash-sw-btn { padding: 6px 14px; border-radius: 9999px; font-family: var(--font); font-size: 11px; font-weight: 600; background: rgba(255,255,255,0.55); border: 1px solid rgba(226,232,240,0.7); color: var(--text-body); cursor: pointer; transition: all 0.2s; box-shadow: 2px 2px 8px rgba(15,23,42,0.04), -1px -1px 4px rgba(255,255,255,0.7); }
+.dash-sw-btn:hover { border-color: rgba(13,148,136,0.3); background: var(--primary-bg); color: var(--primary); transform: translateY(-1px); }
+.dash-sw-btn.active { background: var(--btn-primary-grad); border-color: transparent; color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 0 18px rgba(13,148,136,0.3), 0 3px 10px rgba(15,118,110,0.22); }
+.dash-layout { display: none; } .dash-layout.active { display: block; }
+.rev-chart { display: flex; align-items: flex-end; gap: 8px; height: 100px; padding-top: 12px; }
+.rev-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.rev-bar { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; } .rev-bar-lbl { font-size: 10px; color: var(--text-muted); }
+.quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.qa-btn { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 10px; border-radius: 10px; border: 1px solid var(--card-border); background: #fff; font-family: var(--font); font-size: 12px; font-weight: 500; color: var(--text-body); cursor: pointer; transition: all 0.15s; }
+.qa-btn:hover { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); }
+.qa-icon { font-size: 20px; }
+.sched-block { padding: 10px 14px; border-radius: 8px; margin-bottom: 6px; font-size: 12px; border: 1px solid var(--card-border); border-left: 3px solid var(--primary); background: var(--primary-bg); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 2px 6px rgba(13,148,136,0.06); }
+.sched-block:nth-child(even) { background: var(--primary-soft); border-left-color: #059669; }
+
+.tl-track { position: relative; padding-left: 24px; }
+.tl-line { position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--border-mid); }
+.tl-item { position: relative; padding-bottom: 16px; }
+.tl-dot { position: absolute; left: -20px; top: 4px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--primary); background: #fff; }
+.tl-item.done .tl-dot { background: var(--primary); }
+.tl-item.active .tl-dot { background: var(--primary); box-shadow: 0 0 0 4px rgba(13,148,136,0.15); }
+.tl-time { font-size: 10px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.04em; }
+.tl-card { margin-top: 4px; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(13,148,136,0.25); background: linear-gradient(180deg, var(--primary-soft) 0%, var(--primary-bg) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 4px 12px rgba(13,148,136,0.12); }
+
+.metric-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-radius: var(--card-radius); overflow: hidden; margin-bottom: 20px; border: 1px solid var(--card-border); box-shadow: var(--neu-shadow-heavy); }
+.metric-cell { padding: 22px 24px; background: linear-gradient(160deg, #ffffff 0%, #f1f5f9 100%); border-right: 1px solid var(--card-border); position: relative; }
+.metric-cell:nth-child(1) { background: linear-gradient(160deg, #ffffff 0%, #F0FDFA 100%); }
+.metric-cell:nth-child(2) { background: linear-gradient(160deg, #ffffff 0%, #CCFBF1 100%); }
+.metric-cell:nth-child(3) { background: linear-gradient(160deg, #ffffff 0%, #f1f5f9 100%); }
+.metric-cell::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--btn-primary-grad); opacity: 0.6; }
+.metric-cell:last-child { border-right: none; }
+.metric-cell .val { font-size: 26px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }
+.metric-cell .lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.metric-cell .trend { font-size: 11px; font-weight: 600; margin-top: 4px; }
+
+.drip-flow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+.drip-node { display: flex; align-items: center; gap: 10px; background: linear-gradient(180deg, var(--primary-soft) 0%, var(--primary-bg) 100%); border: 1px solid rgba(13,148,136,0.25); border-radius: 12px; padding: 10px 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 4px 12px rgba(13,148,136,0.12); }
+.drip-icon { width: 36px; height: 36px; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--primary); color: #fff; }
+.drip-connector { width: 32px; height: 1px; background: var(--border-mid); margin: 0 4px; }
+
+.msg-layout { display: grid; grid-template-columns: 280px 1fr; height: 520px; overflow: hidden; }
+.msg-list { border-right: 1px solid var(--card-border); overflow-y: auto; }
+.msg-item { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; border-bottom: 1px solid var(--border-light); transition: background 0.15s; background: var(--primary-bg); }
+.msg-item:nth-child(even) { background: var(--primary-soft); }
+.msg-item:hover { background: rgba(13,148,136,0.12); }
+.msg-item.active { background: var(--primary-soft); border-left: 3px solid var(--primary); }
+.chat-area { display: flex; flex-direction: column; }
+.chat-header { padding: 12px 20px; border-bottom: 1px solid var(--card-border); display: flex; align-items: center; gap: 10px; background: var(--primary-bg); }
+.chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.chat-bubble { max-width: 70%; padding: 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.4; }
+.chat-bubble.incoming { align-self: flex-start; background: var(--inset-bg); border: 1px solid var(--border-light); color: var(--text-body); border-bottom-left-radius: 4px; }
+.chat-bubble.outgoing { align-self: flex-end; background: var(--btn-primary-grad); color: #fff; border-bottom-right-radius: 4px; }
+.chat-bubble .chat-time { font-size: 10px; opacity: 0.7; margin-top: 4px; }
+.chat-compose { padding: 12px 16px; border-top: 1px solid var(--card-border); display: flex; gap: 8px; align-items: center; }
+.chat-input { flex: 1; padding: 9px 14px; border: 2px solid transparent; border-radius: 12px; font-family: var(--font); font-size: 13px; color: var(--text-primary); background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--primary-light), var(--primary-soft)) border-box; outline: none; transition: all 0.15s; }
+.chat-input:focus { background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--primary), var(--primary-light)) border-box; box-shadow: 0 0 12px rgba(13,148,136,0.15); }
+.chart-placeholder { height: 160px; border-radius: 8px; background: var(--inset-bg); border: 1px solid var(--border-light); display: flex; align-items: center; justify-content: center; color: var(--text-faint); font-size: 12px; }
+
+.mobile-header { display: none; position: fixed; top: 0; left: 0; right: 0; height: 56px; z-index: 60; background: var(--sidebar-bg); align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid #1e293b; }
+.hamburger { width: 40px; height: 40px; background: transparent; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+.hamburger span { display: block; width: 20px; height: 2px; background: #cbd5e1; border-radius: 2px; position: relative; transition: all 0.3s; }
+.hamburger span::before, .hamburger span::after { content: ''; position: absolute; left: 0; width: 20px; height: 2px; background: #cbd5e1; border-radius: 2px; transition: all 0.3s; }
+.hamburger span::before { top: -6px; } .hamburger span::after { top: 6px; }
+.hamburger.open span { background: transparent; } .hamburger.open span::before { top: 0; transform: rotate(45deg); } .hamburger.open span::after { top: 0; transform: rotate(-45deg); }
+.mobile-header .mobile-brand { font-size: 14px; font-weight: 600; color: #fff; }
+.mobile-header .mobile-sub { font-size: 10px; color: #94a3b8; }
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 49; }
+.sidebar-overlay.visible { display: block; }
+
+@media (max-width: 900px) { .sidebar { width: 220px; } .main { margin-left: 220px; padding: 24px 20px 60px; } .dash-cols { grid-template-columns: 1fr; } .metric-strip { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .mobile-header { display: flex; } .sidebar { width: 260px; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1); padding-top: 56px; } .sidebar.mobile-open { transform: translateX(0); } .sidebar .sidebar-brand { display: none; } .main { margin-left: 0; padding: 72px 16px 60px; } .grid-2, .grid-3 { grid-template-columns: 1fr; } .stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .page-head h1 { font-size: 18px; } .stat-val { font-size: 22px; } .msg-layout { grid-template-columns: 1fr; height: 100%; } .msg-list { display: none; } }
+body.sb-vertical-grad .sidebar { background: linear-gradient(180deg, #fff 0%, var(--primary-soft) 40%, var(--primary-light) 100%); }
+body.sb-soft-fade .sidebar::after { background: linear-gradient(90deg, rgba(45,212,191,0.15) 0%, rgba(13,148,136,0.04) 60%, transparent 100%); }
+</style>
+</head>
+<body>
+
+<div class="mobile-header">
+  <button class="hamburger" id="hamburger" onclick="toggleMobileNav()"><span></span></button>
+  <div><div class="mobile-brand">Meridian Capital Group</div><div class="mobile-sub">Lending Operations Platform</div></div>
+</div>
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileNav()"></div>
+
+<aside class="sidebar" id="sidebarNav">
+  <div class="sidebar-brand">
+    <div class="sidebar-logo">MC</div>
+    <div class="sidebar-brand-text"><h1>Meridian Capital Group</h1><p>Lending Operations Platform</p></div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="sidebar-section" onclick="toggleGroup(this)">Core Platform <span class="tier-badge core">Core</span> <span class="chevron">&#9662;</span></div>
+    <div class="nav-group" style="max-height:300px;">
+      <button class="nav-btn active" onclick="showScreen('dashboard',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
+      <button class="nav-btn" onclick="showScreen('schedule',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"/></svg>Deal Pipeline</button>
+      <button class="nav-btn" onclick="showScreen('clients',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>Borrowers</button>
+      <button class="nav-btn" onclick="showScreen('invoices',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"/></svg>Transactions</button>
+      <button class="nav-btn" onclick="showScreen('reminders',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>Compliance</button>
+    </div>
+    <div class="sidebar-section" onclick="toggleGroup(this)">Add-Ons <span class="tier-badge addon">Add-on</span> <span class="chevron">&#9662;</span></div>
+    <div class="nav-group" style="max-height:100px;">
+      <button class="nav-btn" onclick="showScreen('messaging',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/></svg>Investor Portal <span class="nav-badge">Add-on</span></button>
+    </div>
+  </nav>
+  <div class="sidebar-footer"><button class="sidebar-footer-btn">+ New Loan Application</button></div>
+</aside>
+
+<div class="main">
+
+<!-- DASHBOARD -->
+<div class="screen active" id="dashboard">
+  <div class="page-head"><h1>Dashboard</h1></div>
+  <div class="dash-switcher">
+    <button class="dash-sw-btn active" onclick="setDashLayout('dash-a',this)">Overview</button>
+    <button class="dash-sw-btn" onclick="setDashLayout('dash-b',this)">Metrics</button>
+  </div>
+  <div class="dash-layout active" id="dash-a">
+    <div class="dash-hero">
+      <h1>Good afternoon, Rachel</h1>
+      <div class="sub">Wednesday, April 16, 2026</div>
+      <div class="dash-hero-stats">
+        <div class="dash-hero-stat"><div class="val">12</div><div class="lbl">Active Deals</div></div>
+        <div class="dash-hero-stat"><div class="val">$4.2M</div><div class="lbl">This Month</div></div>
+        <div class="dash-hero-stat"><div class="val">6.8%</div><div class="lbl">Avg IRR</div></div>
+        <div class="dash-hero-stat"><div class="val">1.2%</div><div class="lbl">Default Rate</div></div>
+      </div>
+    </div>
+    <div class="dash-cols">
+      <div>
+        <div class="card dash-card">
+          <div class="dash-card-title">Active Deal Pipeline</div>
+          <div class="sched-block"><strong>Horizon Medical Group</strong> &mdash; $850K Term Loan <span class="badge blue" style="margin-left:8px;">Underwriting</span></div>
+          <div class="sched-block"><strong>Atlas Real Estate Fund</strong> &mdash; $2.1M Bridge Loan <span class="badge blue" style="margin-left:8px;">Due Diligence</span></div>
+          <div class="sched-block"><strong>Pacific NW Builders</strong> &mdash; $3.5M Construction <span class="badge amber" style="margin-left:8px;">Term Sheet</span></div>
+          <div class="sched-block"><strong>Cascade Dental Group</strong> &mdash; $420K Equipment <span class="badge green" style="margin-left:8px;">Approved</span></div>
+          <div class="sched-block"><strong>Summit Logistics</strong> &mdash; $1.8M Working Capital <span class="badge amber" style="margin-left:8px;">Credit Review</span></div>
+          <div class="sched-block"><strong>Emerald City Ventures</strong> &mdash; $5.2M Acquisition <span class="badge purple" style="margin-left:8px;">LOI Signed</span></div>
+        </div>
+        <div class="card dash-card">
+          <div class="dash-card-title">Quick Actions</div>
+          <div class="quick-actions">
+            <button class="qa-btn"><span class="qa-icon">+</span>New Deal</button>
+            <button class="qa-btn"><span class="qa-icon">$</span>Disbursement</button>
+            <button class="qa-btn"><span class="qa-icon">&#128100;</span>Add Borrower</button>
+            <button class="qa-btn"><span class="qa-icon">&#128202;</span>Reports</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card dash-card">
+          <div class="dash-card-title">Monthly Originations</div>
+          <div class="rev-chart">
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:55%;background:var(--primary-soft);"></div><div class="rev-bar-lbl">Jan</div></div>
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:70%;background:var(--primary-soft);"></div><div class="rev-bar-lbl">Feb</div></div>
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:85%;background:var(--primary);"></div><div class="rev-bar-lbl">Mar</div></div>
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:95%;background:var(--primary);"></div><div class="rev-bar-lbl">Apr</div></div>
+          </div>
+        </div>
+        <div class="card dash-card">
+          <div class="dash-card-title">Team</div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            <div style="text-align:center;"><div class="avatar avatar-md">RM</div><div class="text-xs mt-4">Rachel M.</div><div class="text-xs text-muted">Managing</div></div>
+            <div style="text-align:center;"><div class="avatar avatar-md" style="background:#059669;">DP</div><div class="text-xs mt-4">Dev P.</div><div class="text-xs text-muted">Underwriting</div></div>
+            <div style="text-align:center;"><div class="avatar avatar-md" style="background:#8b5cf6;">SK</div><div class="text-xs mt-4">Sarah K.</div><div class="text-xs text-muted">Closing</div></div>
+            <div style="text-align:center;"><div class="avatar avatar-md" style="background:#C2410C;">JW</div><div class="text-xs mt-4">James W.</div><div class="text-xs text-muted">Portfolio</div></div>
+            <div style="text-align:center;"><div class="avatar avatar-md" style="background:#0d9488;">NC</div><div class="text-xs mt-4">Nina C.</div><div class="text-xs text-muted">Compliance</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="dash-layout" id="dash-b">
+    <div class="metric-strip">
+      <div class="metric-cell"><div class="val">$4.2M</div><div class="lbl">Monthly Originations</div><div class="trend" style="color:#059669;">+28.4% vs last month</div></div>
+      <div class="metric-cell"><div class="val">47</div><div class="lbl">Active Loans</div><div class="trend" style="color:#059669;">+6 this month</div></div>
+      <div class="metric-cell"><div class="val">8.2%</div><div class="lbl">Portfolio Yield</div><div class="trend" style="color:#059669;">+0.4%</div></div>
+    </div>
+    <div class="dash-cols">
+      <div>
+        <div class="card dash-card"><div class="dash-card-title">Origination Trend</div><div class="chart-placeholder">Origination volume chart area</div></div>
+        <div class="card dash-card"><div class="dash-card-title">Top Borrowers by Outstanding</div>
+          <table><thead><tr><th>Borrower</th><th>Outstanding</th><th>Payments</th><th>LTV</th></tr></thead>
+          <tbody>
+            <tr><td class="name">Atlas Real Estate Fund</td><td class="money">$2,100,000</td><td class="money">$18,400</td><td>68%</td></tr>
+            <tr><td class="name">Pacific NW Builders</td><td class="money">$3,500,000</td><td class="money">$42,200</td><td>72%</td></tr>
+            <tr><td class="name">Summit Logistics</td><td class="money">$1,800,000</td><td class="money">$22,500</td><td>55%</td></tr>
+            <tr><td class="name">Cascade Dental Group</td><td class="money">$420,000</td><td class="money">$8,400</td><td>45%</td></tr>
+          </tbody></table>
+        </div>
+      </div>
+      <div>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="stat-val">$12.8M</div><div class="stat-label">Total AUM</div><div class="stat-trend up">+18.2%</div></div>
+          <div class="stat-card"><div class="stat-val">12</div><div class="stat-label">Deals in Pipeline</div><div class="stat-trend up">+3</div></div>
+          <div class="stat-card"><div class="stat-val">$45K</div><div class="stat-label">Past Due</div><div class="stat-trend down">2 loans</div></div>
+          <div class="stat-card"><div class="stat-val">6.8%</div><div class="stat-label">Avg IRR</div><div class="stat-trend up">+0.3%</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DEAL PIPELINE -->
+<div class="screen" id="schedule">
+  <div class="page-head"><h1>Deal Pipeline</h1><button class="btn btn-primary" style="margin-left:auto;">+ New Deal</button></div>
+  <div class="tab-container mb-20"><button class="tab-btn active">Active</button><button class="tab-btn">Closed</button><button class="tab-btn">Declined</button></div>
+  <div class="card dash-card">
+    <div class="tl-track"><div class="tl-line"></div>
+      <div class="tl-item done"><div class="tl-dot"></div><div class="tl-time">Stage 1 &mdash; Application Received</div><div class="tl-card"><strong>Horizon Medical Group</strong> &mdash; $850K Term Loan &mdash; 36-month term<br><span class="text-xs text-muted">Dev P. &bull; Underwriting review in progress &bull; LTV 62%</span></div></div>
+      <div class="tl-item done"><div class="tl-dot"></div><div class="tl-time">Stage 2 &mdash; Due Diligence</div><div class="tl-card"><strong>Atlas Real Estate Fund</strong> &mdash; $2.1M Bridge Loan &mdash; 18-month term<br><span class="text-xs text-muted">Sarah K. &bull; Appraisal pending &bull; LTV 68%</span></div></div>
+      <div class="tl-item active"><div class="tl-dot"></div><div class="tl-time">Stage 3 &mdash; Term Sheet</div><div class="tl-card"><strong>Pacific Northwest Builders</strong> &mdash; $3.5M Construction Loan &mdash; 24-month draw<br><span class="text-xs text-muted">Rachel M. &bull; Term sheet countersigned &bull; LTV 72%</span></div></div>
+      <div class="tl-item"><div class="tl-dot"></div><div class="tl-time">Stage 4 &mdash; Credit Committee</div><div class="tl-card"><strong>Summit Logistics</strong> &mdash; $1.8M Working Capital Line<br><span class="text-xs text-muted">James W. &bull; Scheduled for committee Apr 22 &bull; DSCR 1.4x</span></div></div>
+      <div class="tl-item"><div class="tl-dot"></div><div class="tl-time">Stage 5 &mdash; Closing</div><div class="tl-card"><strong>Cascade Dental Group</strong> &mdash; $420K Equipment Finance<br><span class="text-xs text-muted">Sarah K. &bull; Docs out for signature &bull; Closing Apr 18</span></div></div>
+      <div class="tl-item"><div class="tl-dot"></div><div class="tl-time">Stage 6 &mdash; LOI / Pre-Qualification</div><div class="tl-card"><strong>Emerald City Ventures</strong> &mdash; $5.2M Acquisition Finance<br><span class="text-xs text-muted">Rachel M. &bull; LOI signed, financials under review</span></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- BORROWERS -->
+<div class="screen" id="clients">
+  <div class="page-head"><h1>Borrowers</h1><button class="btn btn-primary" style="margin-left:auto;">+ Add Borrower</button></div>
+  <input class="input mb-20" placeholder="Search borrowers..." style="max-width:360px;" />
+  <div class="card"><div class="table-wrap"><table><thead><tr><th>Borrower</th><th>Loan Type</th><th>Outstanding</th><th>Maturity</th><th>LTV</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td class="name">Atlas Real Estate Fund</td><td>Bridge Loan</td><td class="money">$2,100,000</td><td>Oct 2027</td><td>68%</td><td><span class="badge green">Current</span></td></tr>
+    <tr><td class="name">Pacific NW Builders</td><td>Construction</td><td class="money">$3,500,000</td><td>Apr 2028</td><td>72%</td><td><span class="badge blue">In Funding</span></td></tr>
+    <tr><td class="name">Summit Logistics</td><td>Working Capital</td><td class="money">$1,800,000</td><td>Apr 2027</td><td>55%</td><td><span class="badge green">Current</span></td></tr>
+    <tr><td class="name">Cascade Dental Group</td><td>Equipment</td><td class="money">$420,000</td><td>Apr 2029</td><td>45%</td><td><span class="badge green">Current</span></td></tr>
+    <tr><td class="name">Horizon Medical Group</td><td>Term Loan</td><td class="money">$850,000</td><td>Apr 2029</td><td>62%</td><td><span class="badge amber">Underwriting</span></td></tr>
+    <tr><td class="name">Emerald City Ventures</td><td>Acquisition</td><td class="money">$5,200,000</td><td>TBD</td><td>70%</td><td><span class="badge purple">LOI Stage</span></td></tr>
+    <tr><td class="name">Redmond Tech Campus LLC</td><td>Term Loan</td><td class="money">$1,200,000</td><td>Jun 2027</td><td>58%</td><td><span class="badge green">Current</span></td></tr>
+    <tr><td class="name">Northshore Properties</td><td>Bridge Loan</td><td class="money">$680,000</td><td>Dec 2026</td><td>75%</td><td><span class="badge red">30+ Days</span></td></tr>
+  </tbody></table></div></div>
+</div>
+
+<!-- TRANSACTIONS -->
+<div class="screen" id="invoices">
+  <div class="page-head"><h1>Transactions</h1><button class="btn btn-primary" style="margin-left:auto;">+ Record Transaction</button></div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-val">$12.8M</div><div class="stat-label">Disbursed (MTD)</div><div class="stat-trend up">+28.4%</div></div>
+    <div class="stat-card"><div class="stat-val">$890K</div><div class="stat-label">Payments Received</div><div class="stat-trend up">On schedule</div></div>
+    <div class="stat-card"><div class="stat-val">$45K</div><div class="stat-label">Past Due</div><div class="stat-trend down">2 loans</div></div>
+  </div>
+  <div class="card"><div class="table-wrap"><table><thead><tr><th>ID</th><th>Borrower</th><th>Amount</th><th>Date</th><th>Type</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td class="name">MC-4421</td><td>Pacific NW Builders</td><td class="money">$875,000</td><td>Apr 16</td><td><span class="badge blue">Disbursement</span></td><td><span class="badge green">Processed</span></td></tr>
+    <tr><td class="name">MC-4420</td><td>Summit Logistics</td><td class="money">$22,500</td><td>Apr 15</td><td><span class="badge green">Payment</span></td><td><span class="badge green">Received</span></td></tr>
+    <tr><td class="name">MC-4419</td><td>Atlas Real Estate Fund</td><td class="money">$18,400</td><td>Apr 14</td><td><span class="badge green">Payment</span></td><td><span class="badge green">Received</span></td></tr>
+    <tr><td class="name">MC-4418</td><td>Cascade Dental Group</td><td class="money">$4,200</td><td>Apr 12</td><td><span class="badge amber">Origination Fee</span></td><td><span class="badge green">Collected</span></td></tr>
+    <tr><td class="name">MC-4417</td><td>Redmond Tech Campus</td><td class="money">$15,000</td><td>Apr 10</td><td><span class="badge green">Payment</span></td><td><span class="badge green">Received</span></td></tr>
+    <tr><td class="name">MC-4416</td><td>Northshore Properties</td><td class="money">$8,500</td><td>Mar 28</td><td><span class="badge green">Payment</span></td><td><span class="badge red">Past Due</span></td></tr>
+    <tr><td class="name">MC-4415</td><td>Horizon Medical Group</td><td class="money">$850,000</td><td>Mar 20</td><td><span class="badge blue">Disbursement</span></td><td><span class="badge amber">Pending</span></td></tr>
+  </tbody></table></div></div>
+</div>
+
+<!-- COMPLIANCE -->
+<div class="screen" id="reminders">
+  <div class="page-head"><h1>Compliance</h1></div>
+  <div class="info-banner">&#128737; <div><strong>KYC/AML Monitoring Active</strong><br>Automated identity verification, sanctions screening, and beneficial ownership checks running on all borrowers. SAR filing alerts enabled. Next audit: May 1, 2026.</div></div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-val">23</div><div class="stat-label">Reviews Completed</div></div>
+    <div class="stat-card"><div class="stat-val">100%</div><div class="stat-label">Filing Rate</div></div>
+    <div class="stat-card"><div class="stat-val">2</div><div class="stat-label">Pending Reviews</div></div>
+  </div>
+  <div class="card dash-card">
+    <div class="dash-card-title">Loan Lifecycle Compliance Flow</div>
+    <div class="drip-flow">
+      <div class="drip-node"><div class="drip-icon">&#128221;</div><div><div class="text-xs font-semi text-muted">Step 1</div><div class="text-sm font-semi text-primary">Application</div></div></div>
+      <div class="drip-connector"></div>
+      <div class="drip-node"><div class="drip-icon">&#128737;</div><div><div class="text-xs font-semi text-muted">Step 2</div><div class="text-sm font-semi text-primary">KYC / AML</div></div></div>
+      <div class="drip-connector"></div>
+      <div class="drip-node"><div class="drip-icon">&#128200;</div><div><div class="text-xs font-semi text-muted">Step 3</div><div class="text-sm font-semi text-primary">Credit Analysis</div></div></div>
+      <div class="drip-connector"></div>
+      <div class="drip-node"><div class="drip-icon">&#9989;</div><div><div class="text-xs font-semi text-muted">Step 4</div><div class="text-sm font-semi text-primary">Approval</div></div></div>
+      <div class="drip-connector"></div>
+      <div class="drip-node"><div class="drip-icon">&#128176;</div><div><div class="text-xs font-semi text-muted">Step 5</div><div class="text-sm font-semi text-primary">Funding</div></div></div>
+    </div>
+  </div>
+  <div class="card dash-card">
+    <div class="dash-card-title">Compliance Settings</div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;"><div><div class="text-sm font-semi">KYC Auto-Check</div><div class="text-xs text-muted">Run identity verification on new borrower applications</div></div><div class="toggle on"><div class="toggle-thumb"></div></div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;"><div><div class="text-sm font-semi">AML / OFAC Screening</div><div class="text-xs text-muted">Screen against sanctions and PEP lists at onboarding</div></div><div class="toggle on"><div class="toggle-thumb"></div></div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;"><div><div class="text-sm font-semi">Covenant Monitoring</div><div class="text-xs text-muted">Flag loans approaching financial covenant thresholds</div></div><div class="toggle on"><div class="toggle-thumb"></div></div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;"><div><div class="text-sm font-semi">Maturity Alerts</div><div class="text-xs text-muted">Notify 90, 60, and 30 days before loan maturity</div></div><div class="toggle on"><div class="toggle-thumb"></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- INVESTOR PORTAL -->
+<div class="screen" id="messaging">
+  <div class="page-head"><h1>Investor Portal</h1><span class="tier-badge addon">Add-on</span></div>
+  <div class="tab-container mb-20"><button class="tab-btn active">All</button><button class="tab-btn">Updates</button><button class="tab-btn">Distributions</button></div>
+  <div class="card">
+    <div class="msg-layout">
+      <div class="msg-list">
+        <div class="msg-item active"><div class="avatar avatar-sm">WC</div><div style="flex:1;min-width:0;"><div class="text-sm font-semi">Westridge Capital</div><div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Q1 distribution wire confirmed</div></div><div class="text-xs text-muted">2h</div></div>
+        <div class="msg-item"><div class="avatar avatar-sm" style="background:#059669;">BV</div><div style="flex:1;min-width:0;"><div class="text-sm font-semi">Blackstone Ventures</div><div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Requesting updated portfolio summary</div></div><div class="text-xs text-muted">5h</div></div>
+        <div class="msg-item"><div class="avatar avatar-sm" style="background:#8b5cf6;">PF</div><div style="flex:1;min-width:0;"><div class="text-sm font-semi">Pacific Family Office</div><div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Interested in co-investing on the next deal</div></div><div class="text-xs text-muted">1d</div></div>
+        <div class="msg-item"><div class="avatar avatar-sm" style="background:#C2410C;">ER</div><div style="flex:1;min-width:0;"><div class="text-sm font-semi">Eagle Rock Partners</div><div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">K-1 documents received, thank you</div></div><div class="text-xs text-muted">3d</div></div>
+      </div>
+      <div class="chat-area">
+        <div class="chat-header"><div class="flex-row"><div class="avatar avatar-sm">WC</div><strong class="text-sm">Westridge Capital</strong><span class="text-xs text-muted" style="margin-left:auto;">Secure Portal</span></div></div>
+        <div class="chat-messages">
+          <div class="chat-bubble incoming">Hi Rachel, just checking in on the Q1 distributions. When should we expect the wire?<div class="chat-time">10:15 AM</div></div>
+          <div class="chat-bubble outgoing">Hi David! Q1 distributions were processed this morning. Wire should hit your account by end of day. Net return for the quarter was 2.1% — detailed report attached to the portal.<div class="chat-time">10:22 AM</div></div>
+          <div class="chat-bubble incoming">Excellent. Portfolio performance has been strong. We'd like to increase our commitment by $500K for the next fund cycle. Can we set up a call?<div class="chat-time">10:30 AM</div></div>
+          <div class="chat-bubble outgoing">Absolutely! I'll send a calendar invite for Friday. Q1 distribution wire confirmed — you should see it within the hour. Looking forward to discussing the increased commitment.<div class="chat-time">10:35 AM</div></div>
+        </div>
+        <div class="chat-compose"><input class="chat-input" placeholder="Type a message..." /><button class="btn btn-primary btn-sm">Send</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function showScreen(id, btn) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active')); if (btn) btn.classList.add('active'); if (window.innerWidth <= 640) closeMobileNav(); }
+function toggleGroup(header) { header.classList.toggle('collapsed'); const group = header.nextElementSibling; if (group) group.classList.toggle('collapsed'); }
+function setDashLayout(id, btn) { document.querySelectorAll('.dash-layout').forEach(d => d.classList.remove('active')); document.getElementById(id).classList.add('active'); document.querySelectorAll('.dash-sw-btn').forEach(b => b.classList.remove('active')); if (btn) btn.classList.add('active'); }
+function toggleMobileNav() { document.getElementById('sidebarNav').classList.toggle('mobile-open'); document.getElementById('sidebarOverlay').classList.toggle('visible'); document.getElementById('hamburger').classList.toggle('open'); }
+function closeMobileNav() { document.getElementById('sidebarNav').classList.remove('mobile-open'); document.getElementById('sidebarOverlay').classList.remove('visible'); document.getElementById('hamburger').classList.remove('open'); }
+document.querySelectorAll('.toggle').forEach(t => { t.addEventListener('click', () => { t.classList.toggle('on'); t.classList.toggle('off'); }); });
+document.addEventListener('DOMContentLoaded', () => { document.body.classList.add('sb-vertical-grad'); document.body.classList.add('sb-soft-fade'); });
+</script>
+</body>
+</html>

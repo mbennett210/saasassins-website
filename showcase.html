@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Showcase — Products SaaSassins Built (Owned by Clients, Not Us)</title>
+<meta name="description" content="Real products SaaSassins has shipped to real businesses. Each one is custom-built, owned outright by the client, and replacing a stack of rented SaaS tools.">
+<meta property="og:title" content="SaaSassins Showcase — Real Products, Real Ownership">
+<meta property="og:description" content="Custom-built products our clients own forever. Featured: PolishPoint — a cleaning operations platform that killed 5 SaaS subscriptions.">
+<meta name="theme-color" content="#050505">
+<link rel="icon" type="image/png" href="images/SaaSassins-Logo-Favicon.PNG">
+<link rel="apple-touch-icon" href="images/SaaSassins-Logo-Favicon.PNG">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/style.css">
+<link href="https://assets.calendly.com/assets/external/widget.css" rel="stylesheet" media="print" onload="this.media='all'">
+<script src="https://assets.calendly.com/assets/external/widget.js" type="text/javascript" async></script>
+</head>
+<body class="page-transition">
+
+<div class="mesh-bg"></div>
+<div class="scroll-progress"></div>
+
+<!-- ═══ Nav ═══ -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo" aria-label="SaaSassins home">
+      <img src="images/SaaSassins-horizontal-logo.PNG" alt="SaaSassins" width="1003" height="240">
+    </a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="index.html#services">Services</a>
+      <a href="showcase.html" class="active">Showcase</a>
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <button class="btn btn-gradient btn-sm nav-cta" onclick="return openCalendly()">Book a Strike Call</button>
+    </div>
+    <button class="nav-toggle" aria-label="Menu"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+
+<!-- ═══ Showcase Hero ═══ -->
+<section class="about-hero">
+  <div class="container">
+    <div class="reveal">
+      <div class="hero-badge"><span class="badge badge-red">⚔ Product Showcase</span></div>
+      <h1>Products We've Built.<br><span class="silver-text">Businesses That Own Them.</span></h1>
+      <p>Every product below was custom-built by SaaSassins, shipped to production, and handed over — code, data, and all — to the client. No subscriptions. No licensing fees. No permission needed.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Featured: PolishPoint ═══ -->
+<section class="section" id="polishpoint">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">Featured Case Study</div>
+      <h2>PolishPoint — <span class="gradient-text">Killed Five SaaS Tools.</span></h2>
+      <p>An all-in-one operations platform for cleaning service companies. Scheduling, CRM, invoicing, GPS clock-in, field ops, branded website, customer portal — one system, customer-owned, fraction of the monthly cost.</p>
+    </div>
+
+    <div class="showcase-grid reveal">
+      <div class="showcase-card featured">
+        <div class="showcase-card-head">
+          <div class="showcase-card-body">
+            <span class="badge badge-silver">Industry: Cleaning Services</span>
+            <h3>The All-in-One Platform Cleaning Operators Actually Own</h3>
+            <p class="tagline">PolishPoint replaces the typical stack — Jobber, HubSpot, QuickBooks, T-Sheets, a branded WordPress site — with one coherent product owned by the cleaning company. Native mobile app for the field crew. Dashboard for the office. Customer portal for the clients.</p>
+            <div class="showcase-pills">
+              <span class="showcase-pill">React</span>
+              <span class="showcase-pill">Next.js</span>
+              <span class="showcase-pill">TypeScript</span>
+              <span class="showcase-pill">Supabase</span>
+              <span class="showcase-pill">PostgreSQL</span>
+              <span class="showcase-pill">React Native</span>
+              <span class="showcase-pill">Expo</span>
+              <span class="showcase-pill">Stripe</span>
+              <span class="showcase-pill">Twilio</span>
+              <span class="showcase-pill">Resend</span>
+              <span class="showcase-pill">Vercel</span>
+            </div>
+          </div>
+          <div class="devices">
+            <div class="device device-tablet">
+              <div class="device-frame"><div class="device-screen"><img src="images/polishpoint-tablet.png" alt="PolishPoint tablet scheduling view" class="screen-img" loading="lazy" width="340" height="394"></div></div>
+            </div>
+            <div class="device device-laptop">
+              <div class="device-frame"><div class="device-screen"><img src="images/polishpoint-desktop.png" alt="PolishPoint desktop dashboard" class="screen-img" loading="lazy" width="920" height="512"></div></div>
+              <div class="device-base"></div>
+            </div>
+            <div class="device device-phone">
+              <div class="device-frame"><div class="device-screen"><img src="images/polishpoint-mobile.png" alt="PolishPoint mobile app" class="screen-img" loading="lazy" width="200" height="371"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="showcase-psr">
+          <div class="showcase-psr-item">
+            <div class="psr-label">⚔ The Problem</div>
+            <p>Cleaning operators were stitching together 4–5 SaaS tools — each $100–500/month — none of which talked to each other. Data lived in spreadsheets. Field teams had no real-time schedule. Quotes went out on PDFs. Tool sprawl was eating margin and operator time.</p>
+          </div>
+          <div class="showcase-psr-item">
+            <div class="psr-label">⚔ The Solution</div>
+            <p>A single custom platform replacing the entire stack. Office dashboard, tablet schedule view, native mobile app with GPS clock-in and photo capture, integrated Stripe invoicing, SMS/email through Twilio &amp; Resend, branded customer booking portal. Deployed to the client's Vercel + Supabase.</p>
+          </div>
+          <div class="showcase-psr-item">
+            <div class="psr-label">⚔ The Result</div>
+            <p>Five SaaS subscriptions cancelled. One-time build paid for itself in month 8. Operator owns every line of code, every row of data. Entire business can run off a single platform — or be extended by any React developer, forever.</p>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+          <a href="https://www.polishpointdev.com/" target="_blank" rel="noopener" class="btn btn-gradient">
+            Visit PolishPoint
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M7 7h10v10"/></svg>
+          </a>
+          <button class="btn btn-secondary" onclick="return openCalendly()">Build Something Like This</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══ FinTech ═══ -->
+<section class="section">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">FinTech · Private Lending</div>
+      <h2>Meridian Capital Group</h2>
+      <p>A lending operations platform for a private credit fund. Deal pipeline, borrower management, transaction ledger, automated KYC/AML compliance, and a secure investor portal.</p>
+    </div>
+    <div class="showcase-grid reveal">
+      <div class="showcase-card">
+        <div class="showcase-card-head">
+          <div class="showcase-card-body">
+            <span class="badge badge-silver">Industry: FinTech / Private Lending</span>
+            <h3>Lending Operations — From Application to Funding</h3>
+            <p class="tagline">Replaced a fragmented stack of spreadsheets, email chains, and manual compliance checks with a single platform. Deal pipeline tracks every loan from LOI through closing. Automated KYC/AML screening on every borrower. Investor portal delivers quarterly reports and distribution notices.</p>
+            <div class="showcase-pills">
+              <span class="showcase-pill">React</span>
+              <span class="showcase-pill">Next.js</span>
+              <span class="showcase-pill">TypeScript</span>
+              <span class="showcase-pill">Supabase</span>
+              <span class="showcase-pill">PostgreSQL</span>
+              <span class="showcase-pill">Stripe</span>
+              <span class="showcase-pill">Vercel</span>
+            </div>
+          </div>
+          <div class="devices">
+            <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/Fin-Tech-Meridian Capital Group-Tablet.png" alt="FinTech tablet view" class="screen-img" loading="lazy" width="340" height="405"></div></div></div>
+            <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/Fin-Tech-Meridian Capital Group-Desktop.png" alt="FinTech desktop dashboard" class="screen-img" loading="lazy" width="920" height="507"></div></div><div class="device-base"></div></div>
+            <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/Fin-Tech-Meridian Capital Group-Mobile.png" alt="FinTech mobile app" class="screen-img" loading="lazy" width="200" height="379"></div></div></div>
+          </div>
+        </div>
+        <div class="showcase-psr">
+          <div class="showcase-psr-item"><div class="psr-label">The Problem</div><p>Deal tracking lived in spreadsheets. Compliance checks were manual. Investor updates went out via email with attached PDFs. No single source of truth for the loan portfolio.</p></div>
+          <div class="showcase-psr-item"><div class="psr-label">The Solution</div><p>A unified platform with staged deal pipeline, automated KYC/AML screening, borrower + investor portals, transaction ledger, and covenant monitoring — all deployed to the client's infrastructure.</p></div>
+          <div class="showcase-psr-item"><div class="psr-label">The Result</div><p>Compliance filing rate hit 100%. Investor reporting automated. Deal cycle time cut by 40%. Client owns every line of code and every row of data.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══ HVAC ═══ -->
+<section class="section">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">HVAC · Field Service</div>
+      <h2>Summit Climate Systems</h2>
+      <p>An HVAC service platform with dispatch, customer management, equipment registry with warranty tracking, estimates &amp; invoicing, and technician messaging.</p>
+    </div>
+    <div class="showcase-grid reveal">
+      <div class="showcase-card">
+        <div class="showcase-card-head">
+          <div class="showcase-card-body">
+            <span class="badge badge-silver">Industry: HVAC / Field Service</span>
+            <h3>Service Operations — From Call to Close-Out</h3>
+            <p class="tagline">Replaced Jobber + spreadsheet-based equipment tracking + a separate invoicing tool with one platform. Service call timeline, customer system profiles, equipment warranty tracking with automated alerts, and technician dispatch with real-time messaging.</p>
+            <div class="showcase-pills">
+              <span class="showcase-pill">React</span>
+              <span class="showcase-pill">Next.js</span>
+              <span class="showcase-pill">TypeScript</span>
+              <span class="showcase-pill">Supabase</span>
+              <span class="showcase-pill">PostgreSQL</span>
+              <span class="showcase-pill">Twilio</span>
+              <span class="showcase-pill">React Native</span>
+              <span class="showcase-pill">Vercel</span>
+            </div>
+          </div>
+          <div class="devices">
+            <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/HVAC-Summit Climate Systems-Tablet.png" alt="HVAC tablet view" class="screen-img" loading="lazy" width="340" height="406"></div></div></div>
+            <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/HVAC-Summit Climate Systems-Desktop.png" alt="HVAC desktop dashboard" class="screen-img" loading="lazy" width="920" height="507"></div></div><div class="device-base"></div></div>
+            <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/HVAC-Summit Climate Systems-Mobile.png" alt="HVAC mobile app" class="screen-img" loading="lazy" width="200" height="377"></div></div></div>
+          </div>
+        </div>
+        <div class="showcase-psr">
+          <div class="showcase-psr-item"><div class="psr-label">The Problem</div><p>Techs used paper forms. Equipment warranties were tracked in a spreadsheet nobody updated. Scheduling lived in one tool, invoicing in another, customer records in a third. No way to see which units were due for maintenance.</p></div>
+          <div class="showcase-psr-item"><div class="psr-label">The Solution</div><p>One platform with service call dispatch, customer profiles linked to installed equipment, warranty expiry alerts, seasonal tune-up campaigns, estimates + invoicing, and two-way SMS dispatch between office and field.</p></div>
+          <div class="showcase-psr-item"><div class="psr-label">The Result</div><p>312 equipment units tracked. First-fix rate up to 96%. Warranty-expiry upsells generating new revenue. Three SaaS subscriptions cancelled. Owner runs the business from one screen.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══ Property Management ═══ -->
+<section class="section">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">Property Management</div>
+      <h2>Pinnacle Property Group</h2>
+      <p>A property management platform covering portfolio dashboards, tenant management, rent collection &amp; accounting, maintenance work orders, and a tenant communication portal.</p>
+    </div>
+    <div class="showcase-grid reveal">
+      <div class="showcase-card">
+        <div class="showcase-card-head">
+          <div class="showcase-card-body">
+            <span class="badge badge-silver">Industry: Property Management</span>
+            <h3>Portfolio Operations — 284 Units, One Platform</h3>
+            <p class="tagline">Replaced AppFolio + Buildium bolt-ons + a maintenance dispatch spreadsheet with a single owned platform. Property portfolio view, tenant ledger with automated rent reminders, maintenance work orders with priority dispatch, lease renewal tracking, and a tenant self-service portal.</p>
+            <div class="showcase-pills">
+              <span class="showcase-pill">React</span>
+              <span class="showcase-pill">Next.js</span>
+              <span class="showcase-pill">TypeScript</span>
+              <span class="showcase-pill">Supabase</span>
+              <span class="showcase-pill">PostgreSQL</span>
+              <span class="showcase-pill">Stripe</span>
+              <span class="showcase-pill">Resend</span>
+              <span class="showcase-pill">Vercel</span>
+            </div>
+          </div>
+          <div class="devices">
+            <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/Property-Management-Pinnacle Property Group-Tablet.png" alt="Property Mgmt tablet view" class="screen-img" loading="lazy" width="340" height="404"></div></div></div>
+            <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/Property-Management-Pinnacle Property Group-Desktop.png" alt="Property Mgmt desktop dashboard" class="screen-img" loading="lazy" width="920" height="506"></div></div><div class="device-base"></div></div>
+            <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/Property-Management-Pinnacle Property Group-Mobile.png" alt="Property Mgmt mobile app" class="screen-img" loading="lazy" width="200" height="377"></div></div></div>
+          </div>
+        </div>
+        <div class="showcase-psr">
+          <div class="showcase-psr-item"><div class="psr-label">The Problem</div><p>284 units across 4 properties managed with AppFolio + Buildium add-ons + a spreadsheet for maintenance dispatch. Rent collection reports required exporting from three systems. Tenants had no self-service portal.</p></div>
+          <div class="showcase-psr-item"><div class="psr-label">The Solution</div><p>One platform with portfolio dashboard showing occupancy + rent collection in real-time, tenant ledger with automated payment reminders, maintenance work orders with priority levels and vendor dispatch, and a tenant portal for payments and service requests.</p></div>
+          <div class="showcase-psr-item"><div class="psr-label">The Result</div><p>96.1% occupancy. Rent collection rate at 96% by the 5th of each month. Maintenance resolution time dropped to 1.4 days. Two SaaS subscriptions cancelled. Owner sees everything from one dashboard.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══ Your Product ═══ -->
+<section class="section">
+  <div class="container">
+    <div class="coming-grid reveal">
+      <div class="coming-card" style="border-style: solid; border-color: rgba(220,38,38,.4); background: linear-gradient(160deg, rgba(220,38,38,.08), rgba(10,10,10,.9)); grid-column: 1 / -1; max-width: 560px; margin: 0 auto;">
+        <span class="industry-tag">Your Industry</span>
+        <h4>Your Product Belongs Here</h4>
+        <p>Tell us what your business actually needs. We'll quote it in a week.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Final CTA ═══ -->
+<section class="section">
+  <div class="container">
+    <div class="cta-banner reveal">
+      <h2>Your Product <span class="gradient-text">Belongs Here.</span></h2>
+      <p>Book a 30-minute Strike Call. Tell us what your business actually runs on. We'll show you what custom-built would look like — and what it would cost.</p>
+      <div class="cta-buttons">
+        <button class="btn btn-gradient btn-lg" onclick="return openCalendly()">Book a Strike Call</button>
+        <a href="contact.html" class="btn btn-secondary btn-lg">Or Send a Message</a>
+      </div>
+      <div class="cta-trust">Fixed-price quote within a week · No slides · No pressure</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Footer ═══ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <img src="images/SaaSassins-Logo-Favicon.PNG" alt="SaaSassins" class="footer-logo-stacked" width="420" height="420">
+        <p>A dev studio that ships custom software businesses own forever. No subscriptions. No lock-in. No mercy for bloated SaaS tools.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Studio</h4>
+        <a href="about.html">About</a>
+        <a href="showcase.html">Showcase</a>
+        <a href="contact.html">Contact</a>
+        <a href="index.html#process">Process</a>
+      </div>
+      <div class="footer-col">
+        <h4>Services</h4>
+        <a href="index.html#services">Web Apps</a>
+        <a href="index.html#services">Mobile Apps</a>
+        <a href="index.html#services">Internal Tools</a>
+        <a href="index.html#services">AI Integrations</a>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <a href="index.html#faq">FAQ</a>
+        <a href="index.html#calculator">Savings Calculator</a>
+        <a href="index.html#compare">SaaS vs Custom</a>
+        <a href="mailto:hello@saasassins.com">Email</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 SaaSassins · All rights reserved.</span>
+      <span class="tagline">⚔ Built by the team that kills bad products.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js?v=2"></script>
+</body>
+</html>

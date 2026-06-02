@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SaaSassins — Custom Software Your Business Owns Forever</title>
+<meta name="description" content="SaaSassins is a dev studio that builds custom software businesses own outright. No subscriptions, no lock-in, no price hikes. Pay once. Own the code. Own the data. Forever.">
+<meta name="keywords" content="custom software development, dev studio, own your software, SaaS alternative, custom web apps, custom mobile apps, internal tools, software ownership, no-code alternative">
+<meta property="og:title" content="SaaSassins — Custom Software Your Business Owns Forever">
+<meta property="og:description" content="Stop renting your business tools. We build custom software you actually own — code, data, and all. One-time price.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#050505">
+<link rel="icon" type="image/png" href="images/SaaSassins-Logo-Favicon.PNG">
+<link rel="apple-touch-icon" href="images/SaaSassins-Logo-Favicon.PNG">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/style.css">
+<!-- Calendly widget -->
+<link href="https://assets.calendly.com/assets/external/widget.css" rel="stylesheet" media="print" onload="this.media='all'">
+<script src="https://assets.calendly.com/assets/external/widget.js" type="text/javascript" async></script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "SaaSassins",
+  "url": "https://saasassins.com",
+  "logo": "https://saasassinsdev.com/images/SaaSassins-Logo-Favicon.PNG",
+  "description": "Dev studio building custom software businesses own forever. No subscriptions, no lock-in.",
+  "sameAs": []
+}
+</script>
+</head>
+<body class="page-transition">
+
+<div class="mesh-bg"></div>
+<div class="scroll-progress"></div>
+
+<!-- ═══ Navigation ═══ -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo" aria-label="SaaSassins home">
+      <img src="images/SaaSassins-horizontal-logo.PNG" alt="SaaSassins" width="1003" height="240">
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="active">Home</a>
+      <a href="#services">Services</a>
+      <a href="showcase.html">Showcase</a>
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <button class="btn btn-gradient btn-sm nav-cta" onclick="return openCalendly()">Book a Strike Call</button>
+    </div>
+    <button class="nav-toggle" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</nav>
+
+<!-- ═══ Hero ═══ -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-glow"></div>
+  <div class="container hero-content">
+    <div class="hero-badge">
+      <span class="badge badge-red">⚔ Dev Studio · Est. 2026</span>
+    </div>
+    <h1>
+      <span class="silver-text">Own</span> Your Software.
+      <br><span class="silver-text">Forever.</span>
+    </h1>
+    <p class="hero-sub">We build custom software for businesses tired of renting their tools. Pay once. Own the code. Own the data. Never pay another 20% price hike — ever.</p>
+    <div class="hero-buttons">
+      <button class="btn btn-gradient btn-lg" onclick="return openCalendly()">Book a Strike Call</button>
+      <a href="showcase.html" class="btn btn-secondary btn-lg">See Our Work</a>
+    </div>
+
+    <div class="hero-stats reveal">
+      <div class="hero-stat">
+        <div class="hero-stat-num" data-count="40" data-suffix="+">0</div>
+        <div class="hero-stat-label">Feature Modules</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num" data-count="0" data-prefix="$" data-suffix="K">$0</div>
+        <div class="hero-stat-label">Monthly SaaS Fees</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-num" data-count="100" data-suffix="%">0%</div>
+        <div class="hero-stat-label">Code You Own</div>
+      </div>
+    </div>
+
+    <!-- Industry Demo Carousel -->
+    <div class="demo-carousel reveal" id="demoCarousel">
+      <div class="carousel-tabs">
+        <button class="carousel-tab active" data-slide="0">Cleaning</button>
+        <button class="carousel-tab" data-slide="1">FinTech</button>
+        <button class="carousel-tab" data-slide="2">HVAC</button>
+        <button class="carousel-tab" data-slide="3">Property Mgmt</button>
+      </div>
+
+      <div class="carousel-viewport">
+        <div class="carousel-track" id="carouselTrack">
+          <!-- Slide 1: PolishPoint (Cleaning) -->
+          <div class="carousel-slide">
+            <div class="devices">
+              <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/polishpoint-tablet.png" alt="PolishPoint tablet" class="screen-img" width="340" height="394" loading="lazy"></div></div></div>
+              <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/polishpoint-desktop.png" alt="PolishPoint desktop" class="screen-img" width="920" height="512" loading="lazy"></div></div><div class="device-base"></div></div>
+              <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/polishpoint-mobile.png" alt="PolishPoint mobile" class="screen-img" width="200" height="371" loading="lazy"></div></div></div>
+            </div>
+            <div class="carousel-label">PolishPoint &mdash; Cleaning Operations</div>
+          </div>
+          <!-- Slide 2: FinTech -->
+          <div class="carousel-slide">
+            <div class="devices">
+              <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/Fin-Tech-Meridian Capital Group-Tablet.png" alt="FinTech tablet" class="screen-img" width="340" height="405" loading="lazy"></div></div></div>
+              <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/Fin-Tech-Meridian Capital Group-Desktop.png" alt="FinTech desktop" class="screen-img" width="920" height="507" loading="lazy"></div></div><div class="device-base"></div></div>
+              <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/Fin-Tech-Meridian Capital Group-Mobile.png" alt="FinTech mobile" class="screen-img" width="200" height="379" loading="lazy"></div></div></div>
+            </div>
+            <div class="carousel-label">Meridian Capital &mdash; Lending Operations</div>
+          </div>
+          <!-- Slide 3: HVAC -->
+          <div class="carousel-slide">
+            <div class="devices">
+              <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/HVAC-Summit Climate Systems-Tablet.png" alt="HVAC tablet" class="screen-img" width="340" height="406" loading="lazy"></div></div></div>
+              <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/HVAC-Summit Climate Systems-Desktop.png" alt="HVAC desktop" class="screen-img" width="920" height="507" loading="lazy"></div></div><div class="device-base"></div></div>
+              <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/HVAC-Summit Climate Systems-Mobile.png" alt="HVAC mobile" class="screen-img" width="200" height="377" loading="lazy"></div></div></div>
+            </div>
+            <div class="carousel-label">Summit Climate &mdash; HVAC Service</div>
+          </div>
+          <!-- Slide 4: Property Management -->
+          <div class="carousel-slide">
+            <div class="devices">
+              <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/Property-Management-Pinnacle Property Group-Tablet.png" alt="Property Mgmt tablet" class="screen-img" width="340" height="404" loading="lazy"></div></div></div>
+              <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/Property-Management-Pinnacle Property Group-Desktop.png" alt="Property Mgmt desktop" class="screen-img" width="920" height="506" loading="lazy"></div></div><div class="device-base"></div></div>
+              <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/Property-Management-Pinnacle Property Group-Mobile.png" alt="Property Mgmt mobile" class="screen-img" width="200" height="377" loading="lazy"></div></div></div>
+            </div>
+            <div class="carousel-label">Pinnacle Property &mdash; Property Management</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="carousel-dots">
+        <button class="carousel-dot active" data-slide="0"></button>
+        <button class="carousel-dot" data-slide="1"></button>
+        <button class="carousel-dot" data-slide="2"></button>
+        <button class="carousel-dot" data-slide="3"></button>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ═══ Marquee ═══ -->
+<div class="marquee-wrap" aria-hidden="true">
+  <div class="marquee-track">
+    <span class="marquee-item">Custom Web Apps</span>
+    <span class="marquee-item">Native Mobile</span>
+    <span class="marquee-item">Internal Tools</span>
+    <span class="marquee-item">SaaS Replacements</span>
+    <span class="marquee-item">AI Integrations</span>
+    <span class="marquee-item">Automation</span>
+    <span class="marquee-item">Admin Dashboards</span>
+    <span class="marquee-item">Customer Portals</span>
+    <span class="marquee-item">API Platforms</span>
+    <span class="marquee-item">Payment Systems</span>
+    <span class="marquee-item">Booking Engines</span>
+    <span class="marquee-item">Custom CRMs</span>
+    <!-- Duplicate for seamless loop -->
+    <span class="marquee-item">Custom Web Apps</span>
+    <span class="marquee-item">Native Mobile</span>
+    <span class="marquee-item">Internal Tools</span>
+    <span class="marquee-item">SaaS Replacements</span>
+    <span class="marquee-item">AI Integrations</span>
+    <span class="marquee-item">Automation</span>
+    <span class="marquee-item">Admin Dashboards</span>
+    <span class="marquee-item">Customer Portals</span>
+    <span class="marquee-item">API Platforms</span>
+    <span class="marquee-item">Payment Systems</span>
+    <span class="marquee-item">Booking Engines</span>
+    <span class="marquee-item">Custom CRMs</span>
+  </div>
+</div>
+
+<!-- ═══ The SaaS Trap ═══ -->
+<section class="section" id="problem">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">The Problem</div>
+      <h2>Your SaaS Stack Is <span class="gradient-text">Bleeding You Dry</span></h2>
+      <p>You don't own a single line of the software running your business. One price hike, one shutdown, one pricing-tier reshuffle — and you're stuck rebuilding on someone else's schedule.</p>
+    </div>
+    <div class="problem-grid">
+      <div class="problem-card pain reveal">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+          </svg>
+        </div>
+        <h4>You're Renting, Not Owning</h4>
+        <p>$200, $500, $2,000 per month — forever. Stop paying, lose everything. Ten years in, you've paid for the software six times over and still own nothing.</p>
+      </div>
+      <div class="problem-card pain reveal reveal-delay-1">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0110 0v4"/>
+          </svg>
+        </div>
+        <h4>Your Data Is Hostage</h4>
+        <p>Cancel your subscription? The CSV export is locked behind the top tier. Migrate to a competitor? Hope you like 40 hours of manual re-entry. Your data isn't really yours.</p>
+      </div>
+      <div class="problem-card pain reveal reveal-delay-2">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <h4>One Bankruptcy From Starting Over</h4>
+        <p>Your vendor pivots, gets acquired, or just quietly dies. Your workflow vanishes overnight. Every feature you trained your team on is now a 404 page.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══ How We're Different ═══ -->
+<section class="section" id="solution">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">The Difference</div>
+      <h2>Software Built for Your Business. <span class="silver-text">Owned By Your Business.</span></h2>
+      <p>We write the code. You keep it. We deploy to your infrastructure. You hold the keys. No escrow. No licensing games.</p>
+    </div>
+    <div class="problem-grid">
+      <div class="problem-card solution reveal">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"/>
+            <polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </div>
+        <h4>You Own the Code</h4>
+        <p>Every line in your private GitHub org. MIT-licensed to your company. Hire another dev, fork it, extend it — we don't care. It's yours, permanently.</p>
+      </div>
+      <div class="problem-card solution reveal reveal-delay-1">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+          </svg>
+        </div>
+        <h4>You Own the Data</h4>
+        <p>Deployed to your Supabase, your AWS, your Vercel. Raw SQL access. No black-box exports. If we vanish tomorrow, your business runs fine on Monday.</p>
+      </div>
+      <div class="problem-card solution reveal reveal-delay-2">
+        <div class="icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+        </div>
+        <h4>Pay Once, Not Forever</h4>
+        <p>One-time build cost. Hosting &amp; infra runs at actual cost (~$60/mo for most apps). The ROI breaks even around month 8 — then it's pure savings, forever.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ What We Build ═══ -->
+<section class="section" id="services">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">What We Build</div>
+      <h2>Six Weapons in Our <span class="gradient-text">Arsenal</span></h2>
+      <p>Every build is custom-fitted to your business. But they usually fall into one of these.</p>
+    </div>
+
+    <div class="feature-grid-sym">
+      <div class="feature-card-sym reveal">
+        <div class="feature-card-icon red">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+            <line x1="8" y1="21" x2="16" y2="21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+        </div>
+        <h3>Custom Web Apps</h3>
+        <p>Dashboards, portals, marketplaces, SaaS platforms — built on React / Next.js with Supabase or Postgres. Production-grade, not no-code jank.</p>
+      </div>
+
+      <div class="feature-card-sym reveal reveal-delay-1">
+        <div class="feature-card-icon silver">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+            <line x1="12" y1="18" x2="12.01" y2="18"/>
+          </svg>
+        </div>
+        <h3>Native Mobile Apps</h3>
+        <p>Real iOS and Android apps with React Native &amp; Expo. Published to your App Store account. One codebase, two stores, zero ongoing license fees.</p>
+      </div>
+
+      <div class="feature-card-sym reveal reveal-delay-2">
+        <div class="feature-card-icon char">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3h18v18H3z"/>
+            <path d="M9 9h6v6H9z"/>
+          </svg>
+        </div>
+        <h3>Internal Tools</h3>
+        <p>Ops dashboards, admin panels, data pipelines, import wizards. Replace the 14-tab spreadsheet your team has been suffering with since 2019.</p>
+      </div>
+
+      <div class="feature-card-sym reveal">
+        <div class="feature-card-icon red">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 8v4l3 2"/>
+          </svg>
+        </div>
+        <h3>SaaS Replacements</h3>
+        <p>That $800/mo tool you hate? We clone the 20% of features you actually use, skip the bloat, and deliver it in 1-4 weeks. You'll cancel the sub by Friday.</p>
+      </div>
+
+      <div class="feature-card-sym reveal reveal-delay-1">
+        <div class="feature-card-icon silver">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <h3>AI Integrations</h3>
+        <p>OpenAI, Anthropic, custom models — wired into your existing workflows, not a separate chatbot nobody uses. RAG, agents, automation, voice.</p>
+      </div>
+
+      <div class="feature-card-sym reveal reveal-delay-2">
+        <div class="feature-card-icon char">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+        </div>
+        <h3>Automation &amp; Workflows</h3>
+        <p>Zapier-killer scripts that don't nickel-and-dime you per task. Event-driven, self-hosted, and they don't break when a random third-party updates their API.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══ How We Work ═══ -->
+<section class="section" id="process">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">Our Process</div>
+      <h2>Five Steps. <span class="gradient-text">One Owner at the End.</span></h2>
+      <p>No mystery. No status meetings about status meetings. Here's exactly how you go from "rented SaaS" to "owned software."</p>
+    </div>
+
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-num">01</div>
+        <h3>Strike Call</h3>
+        <p>30 min. What you use now, what's broken, what you actually need. No slide deck.</p>
+      </div>
+      <div class="step reveal reveal-delay-1">
+        <div class="step-num">02</div>
+        <h3>Blueprint</h3>
+        <p>Within a week: fixed scope, fixed price, architecture diagram, delivery date.</p>
+      </div>
+      <div class="step reveal reveal-delay-2">
+        <div class="step-num">03</div>
+        <h3>Build</h3>
+        <p>Weekly demos. Live staging URL from day one. You watch it get built.</p>
+      </div>
+      <div class="step reveal reveal-delay-3">
+        <div class="step-num">04</div>
+        <h3>Launch</h3>
+        <p>Deploy to your domain, your infrastructure. Data migrated. Team trained. Go live.</p>
+      </div>
+      <div class="step reveal reveal-delay-4">
+        <div class="step-num">05</div>
+        <h3>Handoff</h3>
+        <p>GitHub repo transferred. Infra access handed over. You own everything. We're on call if you want.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Product Showcase Preview ═══ -->
+<section class="section" id="showcase">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">Product Showcase</div>
+      <h2>Real Products. <span class="gradient-text">Real Businesses That Own Them.</span></h2>
+      <p>We don't do portfolio screenshots. We ship products that run entire companies.</p>
+    </div>
+
+    <div class="showcase-grid reveal">
+      <div class="showcase-card featured">
+        <div class="showcase-card-head">
+          <div class="showcase-card-body">
+            <span class="badge badge-red">⚔ Featured · Cleaning Services</span>
+            <h3>PolishPoint</h3>
+            <p class="tagline">An all-in-one operations platform for cleaning companies — scheduling, CRM, invoicing, GPS clock-in, field ops, payroll. Replaced five separate SaaS subscriptions for the launch client.</p>
+            <div class="showcase-pills">
+              <span class="showcase-pill">React</span>
+              <span class="showcase-pill">Next.js</span>
+              <span class="showcase-pill">Supabase</span>
+              <span class="showcase-pill">Stripe</span>
+              <span class="showcase-pill">Twilio</span>
+              <span class="showcase-pill">React Native</span>
+            </div>
+            <a href="showcase.html" class="btn btn-ghost">See full case study
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+          </div>
+          <div class="devices">
+            <div class="device device-tablet">
+              <div class="device-frame"><div class="device-screen"><img src="images/polishpoint-tablet.png" alt="" class="screen-img" loading="lazy" width="340" height="394"></div></div>
+            </div>
+            <div class="device device-laptop">
+              <div class="device-frame"><div class="device-screen"><img src="images/polishpoint-desktop.png" alt="" class="screen-img" loading="lazy" width="920" height="512"></div></div>
+              <div class="device-base"></div>
+            </div>
+            <div class="device device-phone">
+              <div class="device-frame"><div class="device-screen"><img src="images/polishpoint-mobile.png" alt="" class="screen-img" loading="lazy" width="200" height="371"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FinTech -->
+    <div class="showcase-grid reveal" style="margin-top:24px;">
+      <div class="showcase-card">
+        <div class="showcase-card-head">
+          <div class="showcase-card-body">
+            <span class="badge badge-red">FinTech · Private Lending</span>
+            <h3>Meridian Capital Group</h3>
+            <p class="tagline">A lending operations platform — deal pipeline, borrower management, transaction ledger, KYC/AML compliance, and investor portal. Built for a private credit fund replacing a fragmented spreadsheet + email workflow.</p>
+            <div class="showcase-pills">
+              <span class="showcase-pill">React</span>
+              <span class="showcase-pill">Next.js</span>
+              <span class="showcase-pill">Supabase</span>
+              <span class="showcase-pill">Stripe</span>
+            </div>
+          </div>
+          <div class="devices">
+            <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/Fin-Tech-Meridian Capital Group-Tablet.png" alt="FinTech tablet" class="screen-img" loading="lazy" width="340" height="405"></div></div></div>
+            <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/Fin-Tech-Meridian Capital Group-Desktop.png" alt="FinTech desktop" class="screen-img" loading="lazy" width="920" height="507"></div></div><div class="device-base"></div></div>
+            <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/Fin-Tech-Meridian Capital Group-Mobile.png" alt="FinTech mobile" class="screen-img" loading="lazy" width="200" height="379"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HVAC -->
+    <div class="showcase-grid reveal" style="margin-top:24px;">
+      <div class="showcase-card">
+        <div class="showcase-card-head">
+          <div class="showcase-card-body">
+            <span class="badge badge-red">HVAC · Field Service</span>
+            <h3>Summit Climate Systems</h3>
+            <p class="tagline">An HVAC service platform — service call dispatch, customer management, equipment registry with warranty tracking, estimates &amp; invoicing, and technician messaging. Replaced Jobber + spreadsheet-based equipment tracking.</p>
+            <div class="showcase-pills">
+              <span class="showcase-pill">React</span>
+              <span class="showcase-pill">Next.js</span>
+              <span class="showcase-pill">Supabase</span>
+              <span class="showcase-pill">Twilio</span>
+            </div>
+          </div>
+          <div class="devices">
+            <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/HVAC-Summit Climate Systems-Tablet.png" alt="HVAC tablet" class="screen-img" loading="lazy" width="340" height="406"></div></div></div>
+            <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/HVAC-Summit Climate Systems-Desktop.png" alt="HVAC desktop" class="screen-img" loading="lazy" width="920" height="507"></div></div><div class="device-base"></div></div>
+            <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/HVAC-Summit Climate Systems-Mobile.png" alt="HVAC mobile" class="screen-img" loading="lazy" width="200" height="377"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Property Management -->
+    <div class="showcase-grid reveal" style="margin-top:24px;">
+      <div class="showcase-card">
+        <div class="showcase-card-head">
+          <div class="showcase-card-body">
+            <span class="badge badge-red">Property Management</span>
+            <h3>Pinnacle Property Group</h3>
+            <p class="tagline">A property management platform — portfolio dashboard, tenant ledger, rent collection &amp; accounting, maintenance work orders with priority dispatch, and a tenant communication portal. Replaced AppFolio + 3 bolt-on tools.</p>
+            <div class="showcase-pills">
+              <span class="showcase-pill">React</span>
+              <span class="showcase-pill">Next.js</span>
+              <span class="showcase-pill">Supabase</span>
+              <span class="showcase-pill">Stripe</span>
+            </div>
+          </div>
+          <div class="devices">
+            <div class="device device-tablet"><div class="device-frame"><div class="device-screen"><img src="images/Property-Management-Pinnacle Property Group-Tablet.png" alt="Property Mgmt tablet" class="screen-img" loading="lazy" width="340" height="404"></div></div></div>
+            <div class="device device-laptop"><div class="device-frame"><div class="device-screen"><img src="images/Property-Management-Pinnacle Property Group-Desktop.png" alt="Property Mgmt desktop" class="screen-img" loading="lazy" width="920" height="506"></div></div><div class="device-base"></div></div>
+            <div class="device device-phone"><div class="device-frame"><div class="device-screen"><img src="images/Property-Management-Pinnacle Property Group-Mobile.png" alt="Property Mgmt mobile" class="screen-img" loading="lazy" width="200" height="377"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Your Product CTA -->
+    <div class="coming-grid reveal" style="margin-top:24px;">
+      <div class="coming-card" style="border-style: solid; border-color: rgba(220,38,38,.35); grid-column: 1 / -1; max-width: 480px; margin: 0 auto;">
+        <span class="industry-tag">Your Industry</span>
+        <h4>Your Product Belongs Here</h4>
+        <p>Tell us what your business actually needs. We'll build it and you'll own it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Tech Stack ═══ -->
+<section class="section">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">Our Stack</div>
+      <h2>Boring Tech. <span class="silver-text">Ruthless Execution.</span></h2>
+      <p>We use stable, battle-tested tooling — because your business can't afford to be the proving ground for someone's hobby framework.</p>
+    </div>
+    <div class="tech-stack-row reveal">
+      <span class="tech-pill"><span class="dot"></span>React / Next.js</span>
+      <span class="tech-pill"><span class="dot"></span>React Native</span>
+      <span class="tech-pill"><span class="dot"></span>TypeScript</span>
+      <span class="tech-pill"><span class="dot"></span>Supabase</span>
+      <span class="tech-pill"><span class="dot"></span>PostgreSQL</span>
+      <span class="tech-pill"><span class="dot"></span>Vercel</span>
+      <span class="tech-pill"><span class="dot"></span>Stripe</span>
+      <span class="tech-pill"><span class="dot"></span>Twilio</span>
+      <span class="tech-pill"><span class="dot"></span>Resend</span>
+      <span class="tech-pill"><span class="dot"></span>OpenAI / Anthropic</span>
+      <span class="tech-pill"><span class="dot"></span>Tailwind</span>
+      <span class="tech-pill"><span class="dot"></span>GitHub Actions</span>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══ Comparison ═══ -->
+<section class="section" id="compare">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">The Math</div>
+      <h2>SaaS vs. Low-Code vs. <span class="gradient-text">Custom-Built</span></h2>
+      <p>Every path has tradeoffs. Here's what you actually get with each.</p>
+    </div>
+
+    <div class="compare-stack reveal">
+      <div class="compare-header-row">
+        <span>What You Get</span>
+        <span>Typical SaaS</span>
+        <span>Low-Code Platform</span>
+        <span>SaaSassins</span>
+      </div>
+      <div class="compare-row">
+        <span class="feature-name">You own the source code</span>
+        <span class="compare-val no">—</span>
+        <span class="compare-val no">—</span>
+        <span class="compare-val yes">✓ Yours</span>
+      </div>
+      <div class="compare-row">
+        <span class="feature-name">You own the data &amp; database</span>
+        <span class="compare-val no">Limited exports</span>
+        <span class="compare-val no">Vendor-locked</span>
+        <span class="compare-val yes">✓ Direct access</span>
+      </div>
+      <div class="compare-row">
+        <span class="feature-name">One-time cost, not recurring</span>
+        <span class="compare-val no">Forever</span>
+        <span class="compare-val no">Forever</span>
+        <span class="compare-val yes">✓ Once</span>
+      </div>
+      <div class="compare-row">
+        <span class="feature-name">Immune to vendor price hikes</span>
+        <span class="compare-val no">—</span>
+        <span class="compare-val no">—</span>
+        <span class="compare-val yes">✓ Yes</span>
+      </div>
+      <div class="compare-row">
+        <span class="feature-name">Custom-built for your workflow</span>
+        <span class="compare-val no">Generic</span>
+        <span class="compare-val no">Template-based</span>
+        <span class="compare-val yes">✓ Bespoke</span>
+      </div>
+      <div class="compare-row">
+        <span class="feature-name">Survives the vendor dying</span>
+        <span class="compare-val no">You die too</span>
+        <span class="compare-val no">Stack is stuck</span>
+        <span class="compare-val yes">✓ Runs forever</span>
+      </div>
+      <div class="compare-row">
+        <span class="feature-name">Can be modified by any dev</span>
+        <span class="compare-val no">Never</span>
+        <span class="compare-val no">Only certified devs</span>
+        <span class="compare-val yes">✓ Any dev</span>
+      </div>
+      <div class="compare-row">
+        <span class="feature-name">Scales without per-seat pricing</span>
+        <span class="compare-val no">Per user $$</span>
+        <span class="compare-val no">Per record $$</span>
+        <span class="compare-val yes">✓ Flat</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Calculator ═══ -->
+<section class="section" id="calculator">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">Run the Numbers</div>
+      <h2>What Are You <span class="gradient-text">Really Paying?</span></h2>
+      <p>Add up what you spend on SaaS subscriptions across your whole stack. Here's the lifetime damage — and what custom-built would cost instead.</p>
+    </div>
+
+    <div class="calc-card reveal">
+      <div class="calc-inputs">
+        <div class="calc-input-group">
+          <label for="calc-monthly">Monthly SaaS spend (total across all tools)</label>
+          <input type="range" id="calc-monthly" class="calc-slider" min="100" max="5000" step="50" value="800">
+          <div class="slider-display">
+            <span class="slider-min">$100</span>
+            <span class="slider-value" id="calc-monthly-val">$800/mo</span>
+            <span class="slider-max">$5,000</span>
+          </div>
+        </div>
+        <div class="calc-input-group">
+          <label for="calc-years">Years you'll keep running your business</label>
+          <input type="range" id="calc-years" class="calc-slider" min="1" max="15" step="1" value="7">
+          <div class="slider-display">
+            <span class="slider-min">1 yr</span>
+            <span class="slider-value" id="calc-years-val">7 years</span>
+            <span class="slider-max">15 yrs</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="calc-outputs-row">
+        <div class="calc-output theirs-output">
+          <div class="calc-output-label">Staying on SaaS</div>
+          <div class="calc-output-amount" id="calc-theirs">$67,200</div>
+        </div>
+        <div class="calc-output ours-output">
+          <div class="calc-output-label">Custom build + infra</div>
+          <div class="calc-output-amount" id="calc-ours">$20,040</div>
+        </div>
+      </div>
+      <div class="calc-savings-bar">
+        <div class="savings-label">Lifetime Savings</div>
+        <div class="savings-amount" id="calc-savings">$47,160</div>
+      </div>
+      <p style="text-align:center; font-size:.82rem; color:var(--text-muted); margin-top:18px;">
+        Estimates. Typical custom build ~$5K one-time + ~$60/mo infra. Your build may be lower or higher — we'll quote it in the Strike Call.
+      </p>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══ FAQ ═══ -->
+<section class="section" id="faq">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">Questions, Answered</div>
+      <h2>Before You Ask.</h2>
+      <p>The questions every serious prospect has. Straight answers, no sales fluff.</p>
+    </div>
+
+    <div class="faq-list reveal">
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>How much does a custom build actually cost?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          Most projects land between $3K and $15K one-time, depending on scope. A simple internal tool? $2–5K. A full platform replacing 4–5 SaaS tools? $8–15K. You get a fixed quote in writing after the Strike Call — no hourly billing, no surprise invoices.
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>How long from Strike Call to launch?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          4–12 weeks for most projects. Internal tools: 3–5 weeks. Full operational platforms with mobile: 8–12 weeks. You see a working staging URL within the first week and weekly demos after that — no "trust us, it's going great" black box.
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>Do I <em>really</em> own the code? Like, legally?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          Yes. Full IP assignment in the contract. Code lives in <em>your</em> GitHub org from day one. Database is deployed to <em>your</em> Supabase/AWS account. If we got hit by a bus tomorrow, your business runs fine the next morning.
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>What happens when I need changes later?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          Three options. One: we do it on a retainer or hourly. Two: you hire any developer who knows React and TypeScript — the code is clean, documented, and not a proprietary framework. Three: your own engineering team takes over. All equally valid. We're not trying to trap you.
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>Can you replace my current SaaS tool?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          Usually yes. Nine times out of ten, your team only uses 20–30% of the features. We build that 20%, skip the bloat, plug it into your existing data, and you cancel the subscription. We've replaced HubSpot-lite, Jobber, Airtable setups, and homegrown Zapier nightmares.
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>What stack do you use and why?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          Next.js + TypeScript + Supabase (Postgres) + Vercel for web. React Native + Expo for mobile. Stripe for payments. Boring, mature, widely-hireable. If we used some obscure framework, you'd be stuck with us — that defeats the whole point.
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>What if SaaSassins disappears?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          Your business keeps running. That's the whole design. Code is in your repo. Data is in your database. Hosting is on your Vercel/Supabase account. You could lose our phone number forever and your operations would be completely unaffected. That's ownership.
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ CTA ═══ -->
+<section class="section">
+  <div class="container">
+    <div class="cta-banner reveal">
+      <h2>Ready to Stop <span class="gradient-text">Renting Your Business?</span></h2>
+      <p>Book a 30-minute Strike Call. We'll audit your current SaaS stack, identify what's replaceable, and hand you a fixed-price quote within a week. No commitment.</p>
+      <div class="cta-buttons">
+        <button class="btn btn-gradient btn-lg" onclick="return openCalendly()">Book a Strike Call</button>
+        <a href="mailto:hello@saasassins.com" class="btn btn-secondary btn-lg">Email Us Instead</a>
+      </div>
+      <div class="cta-trust">No sales deck · No pressure · We hang up if it's not a fit</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Footer ═══ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <img src="images/SaaSassins-Logo-Favicon.PNG" alt="SaaSassins" class="footer-logo-stacked" width="420" height="420">
+        <p>A dev studio that ships custom software businesses own forever. No subscriptions. No lock-in. No mercy for bloated SaaS tools.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Studio</h4>
+        <a href="about.html">About</a>
+        <a href="showcase.html">Showcase</a>
+        <a href="contact.html">Contact</a>
+        <a href="#process">Process</a>
+      </div>
+      <div class="footer-col">
+        <h4>Services</h4>
+        <a href="#services">Web Apps</a>
+        <a href="#services">Mobile Apps</a>
+        <a href="#services">Internal Tools</a>
+        <a href="#services">AI Integrations</a>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <a href="#faq">FAQ</a>
+        <a href="#calculator">Savings Calculator</a>
+        <a href="#compare">SaaS vs Custom</a>
+        <a href="mailto:hello@saasassins.com">Email</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 SaaSassins · All rights reserved.</span>
+      <span class="tagline">⚔ Built by the team that kills bad products.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js?v=2"></script>
+</body>
+</html>

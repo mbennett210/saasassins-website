@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact SaaSassins — Book a Strike Call</title>
+<meta name="description" content="Book a 30-minute Strike Call with SaaSassins. We'll audit your SaaS stack, identify what's replaceable, and quote a custom build in a week.">
+<meta property="og:title" content="Contact SaaSassins — Book a Strike Call">
+<meta property="og:description" content="30-minute call to audit your SaaS stack and quote a custom build you'd own forever.">
+<meta name="theme-color" content="#050505">
+<link rel="icon" type="image/png" href="images/SaaSassins-Logo-Favicon.PNG">
+<link rel="apple-touch-icon" href="images/SaaSassins-Logo-Favicon.PNG">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/style.css">
+<link href="https://assets.calendly.com/assets/external/widget.css" rel="stylesheet" media="print" onload="this.media='all'">
+<script src="https://assets.calendly.com/assets/external/widget.js" type="text/javascript" async></script>
+</head>
+<body class="page-transition">
+
+<div class="mesh-bg"></div>
+<div class="scroll-progress"></div>
+
+<!-- ═══ Nav ═══ -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo" aria-label="SaaSassins home">
+      <img src="images/SaaSassins-horizontal-logo.PNG" alt="SaaSassins" width="1003" height="240">
+    </a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="index.html#services">Services</a>
+      <a href="showcase.html">Showcase</a>
+      <a href="about.html">About</a>
+      <a href="contact.html" class="active">Contact</a>
+      <button class="btn btn-gradient btn-sm nav-cta" onclick="return openCalendly()">Book a Strike Call</button>
+    </div>
+    <button class="nav-toggle" aria-label="Menu"><span></span><span></span><span></span></button>
+  </div>
+</nav>
+
+<!-- ═══ Contact Hero ═══ -->
+<section class="about-hero">
+  <div class="container">
+    <div class="reveal">
+      <div class="hero-badge"><span class="badge badge-red">⚔ Book a Strike Call</span></div>
+      <h1>Let's Talk About <br><span class="silver-text">Killing Your SaaS Stack.</span></h1>
+      <p>30 minutes. No slides. We audit what you're currently paying, identify what's replaceable, and if it's a fit — you get a fixed-price quote within a week.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Contact Grid ═══ -->
+<section class="section" style="padding-top: 0;">
+  <div class="container">
+    <div class="contact-grid">
+      <!-- Left: Calendly + Direct Info -->
+      <div class="contact-card reveal">
+        <span class="badge badge-red">⚔ Fastest Path</span>
+        <h3 style="margin-top: 14px;">Book Directly</h3>
+        <p>Grab a 30-minute slot on the calendar. We'll hop on Zoom, audit your stack, and you'll walk away knowing whether custom-built makes sense for you.</p>
+
+        <button class="btn btn-gradient btn-lg btn-full" onclick="return openCalendly()" style="margin-bottom: 32px;">
+          Open Calendar
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+
+        <div class="contact-info-item">
+          <div class="icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
+            </svg>
+          </div>
+          <div>
+            <div class="label">Email</div>
+            <a href="mailto:hello@saasassins.com">hello@saasassins.com</a>
+          </div>
+        </div>
+
+        <div class="contact-info-item">
+          <div class="icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div>
+            <div class="label">Response Time</div>
+            <span>Under 24 hours. Usually faster.</span>
+          </div>
+        </div>
+
+        <div class="contact-info-item">
+          <div class="icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+          </div>
+          <div>
+            <div class="label">Based</div>
+            <span>Remote-first. Clients worldwide.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Message form -->
+      <div class="contact-card reveal reveal-delay-1">
+        <span class="badge badge-silver">Or send a message</span>
+        <h3 style="margin-top: 14px;">Tell Us About Your Stack</h3>
+        <p>Rather type than talk? Fill this out and we'll follow up within a day with either a Strike Call invite or a quick written take on whether we're a fit.</p>
+
+        <form class="contact-form">
+          <div class="form-field">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" required autocomplete="name" placeholder="Your name">
+          </div>
+          <div class="form-field">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@company.com">
+          </div>
+          <div class="form-field">
+            <label for="company">Company</label>
+            <input type="text" id="company" name="company" autocomplete="organization" placeholder="Company or industry">
+          </div>
+          <div class="form-field">
+            <label for="message">What are you paying for in SaaS that you shouldn't be?</label>
+            <textarea id="message" name="message" required placeholder="Describe your current stack, the tools you hate, and what you'd build instead if money and time weren't the issue."></textarea>
+          </div>
+          <button type="submit" class="btn btn-gradient btn-lg btn-full">
+            Send Message
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+          <p style="font-size:.78rem; color:var(--text-muted); text-align:center; margin-top:6px;">
+            Opens your email client with a pre-filled draft. One-click send.
+          </p>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══ Mini FAQ ═══ -->
+<section class="section">
+  <div class="container">
+    <div class="section-header reveal">
+      <div class="section-label">Before You Book</div>
+      <h2>Common Questions.</h2>
+    </div>
+
+    <div class="faq-list reveal">
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>What should I have ready for the Strike Call?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          Ideally: a list of the SaaS tools you're currently paying for, a rough monthly total, and a sentence or two about what's frustrating. That's it. No requirements doc needed. We'll ask the right questions on the call.
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>How soon could you start on a build?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          Usually 2–4 weeks out from quote acceptance, depending on current pipeline. For urgent / critical builds we'll flex. The Strike Call isn't commitment — we'll tell you the realistic start date on the call.
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>What if we just want to talk through the idea first?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          That's literally what the Strike Call is. If we don't think custom-built is the right answer for you, we'll say so on the call and suggest alternatives. We'd rather not quote a project than quote one that's wrong.
+        </div></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">
+          <span>Do you sign NDAs before the call?</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">
+          Yes, happy to. Send one over with your meeting booking or just email it to <a href="mailto:hello@saasassins.com" style="color:var(--red-400);">hello@saasassins.com</a> — mutual NDA works fine, we'll countersign within a day.
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ Footer ═══ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <img src="images/SaaSassins-Logo-Favicon.PNG" alt="SaaSassins" class="footer-logo-stacked" width="420" height="420">
+        <p>A dev studio that ships custom software businesses own forever. No subscriptions. No lock-in. No mercy for bloated SaaS tools.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Studio</h4>
+        <a href="about.html">About</a>
+        <a href="showcase.html">Showcase</a>
+        <a href="contact.html">Contact</a>
+        <a href="index.html#process">Process</a>
+      </div>
+      <div class="footer-col">
+        <h4>Services</h4>
+        <a href="index.html#services">Web Apps</a>
+        <a href="index.html#services">Mobile Apps</a>
+        <a href="index.html#services">Internal Tools</a>
+        <a href="index.html#services">AI Integrations</a>
+      </div>
+      <div class="footer-col">
+        <h4>Resources</h4>
+        <a href="index.html#faq">FAQ</a>
+        <a href="index.html#calculator">Savings Calculator</a>
+        <a href="index.html#compare">SaaS vs Custom</a>
+        <a href="mailto:hello@saasassins.com">Email</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 SaaSassins · All rights reserved.</span>
+      <span class="tagline">⚔ Built by the team that kills bad products.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js?v=2"></script>
+</body>
+</html>

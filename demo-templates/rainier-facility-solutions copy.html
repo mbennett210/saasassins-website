@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rainier Facility Solutions — PolishPoint Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   TOKENS — PolishPoint Blue (slate neutrals + blue primary)
+   ============================================================ */
+:root {
+  --font: 'Poppins', sans-serif;
+  --primary: #1E8FE8;
+  --primary-light: #47A5ED;
+  --primary-hover: #1878C8;
+  --primary-deep: #125FA0;
+  --primary-soft: #D6ECFB;
+  --primary-bg: #EBF5FE;
+
+  --sidebar-bg: #0f172a;
+  --sidebar-mid: #1e293b;
+  --sidebar-deep: #020617;
+  --sidebar-hover: #1e293b;
+  --sidebar-active: #1E8FE8;
+
+  --page-bg: #f8fafc;
+  --card-bg: #ffffff;
+  --card-border: #e2e8f0;
+  --card-radius: 20px;
+  --btn-radius: 10px;
+  --input-radius: 10px;
+  --badge-radius: 9999px;
+
+  --text-primary: #0f172a;
+  --text-body: #334155;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+  --border-light: #f1f5f9;
+  --border-mid: #e2e8f0;
+  --inset-bg: #f8fafc;
+
+  --green-bg: #ecfdf5; --green-text: #047857; --green-border: #a7f3d0;
+  --amber-bg: #fffbeb; --amber-text: #b45309; --amber-border: #fde68a;
+  --red-bg: #fef2f2; --red-text: #b91c1c; --red-border: #fecaca;
+  --blue-bg: #EBF5FE; --blue-text: #1878C8; --blue-border: #A8D4F5;
+  --purple-bg: #faf5ff; --purple-text: #7c3aed; --purple-border: #e9d5ff;
+  --slate-bg: #f1f5f9; --slate-text: #475569; --slate-border: #e2e8f0;
+
+  --neu-shadow: 4px 4px 12px rgba(15,23,42,0.06), -2px -2px 8px rgba(255,255,255,0.9);
+  --neu-shadow-hover: 6px 6px 16px rgba(15,23,42,0.08), -3px -3px 10px rgba(255,255,255,1);
+  --neu-shadow-heavy: 6px 6px 18px rgba(15,23,42,0.1), -3px -3px 12px rgba(255,255,255,1);
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-md: 0 4px 12px rgba(15,23,42,0.08);
+  --shadow-lg: 0 12px 28px rgba(15,23,42,0.12);
+
+  --btn-primary-grad: linear-gradient(135deg, #47A5ED 0%, #1878C8 100%);
+  --btn-primary-grad-hover: linear-gradient(135deg, #1E8FE8 0%, #125FA0 100%);
+  --btn-primary-glow: inset 0 1px 0 rgba(255,255,255,0.25), 0 0 22px rgba(30,143,232,0.35), 0 4px 14px rgba(24,120,200,0.28);
+}
+
+/* ============================================================
+   RESET
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: var(--font);
+  background:
+    radial-gradient(ellipse at 15% 10%, rgba(71,165,237,0.05) 0%, transparent 45%),
+    radial-gradient(ellipse at 85% 25%, rgba(135,195,245,0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(148,163,184,0.05) 0%, transparent 55%),
+    var(--page-bg);
+  background-attachment: fixed;
+  color: var(--text-body);
+  display: flex;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 18% 30%, rgba(71,165,237,0.25) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 35% at 78% 22%, rgba(71,165,237,0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at 50% 85%, rgba(71,165,237,0.2) 0%, transparent 55%);
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+.sidebar {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: 240px;
+  background: linear-gradient(180deg, #ffffff 0%, var(--primary-soft) 40%, var(--primary-light) 100%);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  border-right: 1px solid var(--card-border);
+  overflow: visible;
+}
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0; right: -56px; bottom: 0;
+  width: 56px;
+  background: linear-gradient(90deg, rgba(15,23,42,0.22) 0%, rgba(24,120,200,0.05) 60%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+.sidebar-nav { flex: 1; overflow-y: auto; overflow-x: visible; padding-bottom: 8px; }
+.sidebar-brand {
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid var(--card-border);
+  display: flex; align-items: center; gap: 12px;
+  position: relative; z-index: 4;
+  background: transparent;
+}
+.sidebar-logo {
+  width: 40px; height: 40px;
+  background: var(--primary);
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px; color: #fff;
+  flex-shrink: 0;
+}
+.sidebar-brand-text h1 { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.3; }
+.sidebar-brand-text p { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.sidebar-section {
+  padding: 16px 12px 4px;
+  font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: #64748b;
+  display: flex; align-items: center;
+  cursor: pointer; user-select: none;
+}
+.sidebar-section .chevron { font-size: 10px; transition: transform 0.2s; margin-left: auto; color: #475569; }
+.sidebar-section .tier-badge { margin-left: auto; }
+.sidebar-section .tier-badge ~ .chevron { margin-left: 8px; }
+.sidebar-section.collapsed .chevron { transform: rotate(-90deg); }
+.nav-group { overflow-x: visible; overflow-y: clip; transition: max-height 0.3s ease; }
+.nav-group.collapsed { max-height: 0 !important; }
+.nav-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: calc(100% - 16px); padding: 8px 16px;
+  border: none; background: transparent;
+  color: var(--text-primary); font-family: var(--font);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: color 0.15s, filter 0.15s;
+  margin: 1px 0 1px 8px;
+  text-align: left;
+  position: relative;
+  z-index: 2;
+}
+.nav-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 0; right: -19px;
+  border-radius: 10px 0 0 10px;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.15s;
+  background: linear-gradient(180deg, rgba(71,165,237,0.18) 0%, rgba(24,120,200,0.2) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+  -webkit-mask-image:
+    linear-gradient(#000, #000),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 19 32' preserveAspectRatio='none'><polygon points='0,0 19,16 0,32' fill='black'/></svg>");
+  -webkit-mask-size: calc(100% - 19px) 100%, 19px 100%;
+  -webkit-mask-position: left center, right center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-composite: source-over;
+  mask-image:
+    linear-gradient(#000, #000),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 19 32' preserveAspectRatio='none'><polygon points='0,0 19,16 0,32' fill='black'/></svg>");
+  mask-size: calc(100% - 19px) 100%, 19px 100%;
+  mask-position: left center, right center;
+  mask-repeat: no-repeat;
+  mask-composite: add;
+}
+.nav-btn:hover { color: var(--primary-deep); }
+.nav-btn:hover::before { opacity: 1; }
+.nav-btn.active { color: #fff; font-weight: 600; filter: drop-shadow(0 0 10px rgba(71,165,237,0.5)) drop-shadow(0 3px 10px rgba(24,120,200,0.35)); }
+.nav-btn.active::before {
+  opacity: 1;
+  background: linear-gradient(180deg, #47A5ED 0%, #1878C8 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.35),
+    inset 1px 0 0 rgba(255,255,255,0.15);
+}
+.nav-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto;
+  font-size: 9px; font-weight: 600;
+  padding: 1px 6px; border-radius: 9999px;
+  background: var(--text-faint); color: #fff;
+}
+.sidebar-footer {
+  margin-top: auto;
+  padding: 16px;
+  border-top: 1px solid rgba(255,255,255,0.25);
+  position: relative; z-index: 4;
+  background: transparent;
+}
+.sidebar-footer-btn {
+  width: 100%; padding: 10px;
+  background: var(--btn-primary-grad); border: none;
+  border-radius: var(--btn-radius);
+  color: #fff; font-family: var(--font);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  box-shadow: var(--btn-primary-glow);
+  transition: background 0.15s;
+}
+.sidebar-footer-btn:hover { background: var(--btn-primary-grad-hover); }
+
+/* ============================================================
+   MAIN CONTENT
+   ============================================================ */
+.main {
+  margin-left: 240px;
+  flex: 1;
+  padding: 32px 40px 80px;
+  position: relative; z-index: 1;
+}
+
+.page-head {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 24px; flex-wrap: wrap;
+}
+.page-head h1 {
+  font-size: 22px; font-weight: 700; color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.tier-badge {
+  font-size: 10px; font-weight: 600;
+  padding: 3px 8px; border-radius: 6px; border: 1px solid;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.tier-badge.core { background: var(--blue-bg); color: var(--blue-text); border-color: var(--blue-border); }
+.tier-badge.addon { background: var(--slate-bg); color: var(--slate-text); border-color: var(--slate-border); }
+.page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: -16px; margin-bottom: 20px; }
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+.card {
+  background: linear-gradient(180deg, var(--primary-bg) 0%, #fff 40%) padding-box;
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  padding: 0;
+  margin-bottom: 16px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.9),
+    inset 0 0 0 1px rgba(30,143,232,0.18),
+    0 4px 14px rgba(30,143,232,0.12);
+}
+.card-hover { transition: box-shadow 0.2s, border-color 0.2s, transform 0.2s; cursor: pointer; }
+.card-hover:hover {
+  border-color: rgba(30,143,232,0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.95),
+    inset 0 0 0 1px rgba(30,143,232,0.28),
+    0 8px 22px rgba(30,143,232,0.18);
+  transform: translateY(-1px);
+}
+
+.dash-card { padding: 28px 32px 20px; }
+.dash-card-title {
+  font-size: 11px; font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  margin: 0 0 16px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* ============================================================
+   STAT CARDS
+   ============================================================ */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card {
+  padding: 18px 20px;
+  background: linear-gradient(180deg, var(--primary-soft) 0%, var(--primary-bg) 100%);
+  border: 1px solid rgba(30,143,232,0.25);
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.9),
+    inset 0 0 0 1px rgba(30,143,232,0.15),
+    0 4px 12px rgba(30,143,232,0.12);
+}
+.stat-val { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1.2; letter-spacing: -0.01em; }
+.stat-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.stat-trend { font-size: 11px; font-weight: 600; margin-top: 4px; }
+.stat-trend.up { color: #059669; }
+.stat-trend.down { color: #dc2626; }
+
+/* ============================================================
+   BADGES
+   ============================================================ */
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 3px 12px; border-radius: var(--badge-radius);
+  font-size: 11px; font-weight: 600; border: none; color: #fff;
+  min-width: 88px;
+}
+.badge.green { background: linear-gradient(135deg, #10B981, #047857); box-shadow: 0 3px 10px rgba(4,120,87,0.35); }
+.badge.amber { background: linear-gradient(135deg, #f59e0b, #b45309); box-shadow: 0 3px 10px rgba(180,83,9,0.35); }
+.badge.red { background: linear-gradient(135deg, #ef4444, #b91c1c); box-shadow: 0 3px 10px rgba(185,28,28,0.35); }
+.badge.blue { background: linear-gradient(135deg, #47A5ED, #1878C8); box-shadow: 0 3px 10px rgba(30,143,232,0.35); }
+.badge.purple { background: linear-gradient(135deg, #a78bfa, #7c3aed); box-shadow: 0 3px 10px rgba(124,58,237,0.35); }
+.badge.slate { background: linear-gradient(135deg, #64748b, #475569); box-shadow: 0 3px 10px rgba(71,85,105,0.35); }
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 16px; border-radius: var(--btn-radius);
+  font-family: var(--font); font-size: 13px; font-weight: 600;
+  border: 1px solid transparent; cursor: pointer; transition: all 0.15s;
+  line-height: 1;
+}
+.btn-primary {
+  background: var(--btn-primary-grad);
+  color: #fff;
+  border: none;
+  box-shadow: var(--btn-primary-glow);
+  position: relative;
+}
+.btn-primary:hover { background: var(--btn-primary-grad-hover); transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 0 28px rgba(30,143,232,0.45), 0 6px 18px rgba(24,120,200,0.35); }
+.btn-primary:active { transform: translateY(0); }
+.btn-secondary {
+  background: #fff;
+  border: 1px solid var(--card-border);
+  color: var(--text-body);
+  box-shadow: 2px 2px 6px rgba(15,23,42,0.04), -1px -1px 4px rgba(255,255,255,0.8);
+}
+.btn-secondary:hover { border-color: #cbd5e1; background: var(--inset-bg); }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+table th {
+  text-align: left; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); padding: 10px 12px;
+  border-bottom: 1px solid rgba(30,143,232,0.25);
+  background: linear-gradient(180deg, var(--primary-soft) 0%, var(--primary-bg) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+}
+table td {
+  padding: 12px; font-size: 13px;
+  color: var(--text-body); border-bottom: 1px solid var(--border-light);
+}
+table tr:last-child td { border-bottom: none; }
+table tbody tr:nth-child(odd) { background: var(--primary-bg); }
+table tbody tr:nth-child(even) { background: var(--primary-soft); }
+table .name { font-weight: 600; color: var(--text-primary); }
+table .money { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+table tr:hover { background: rgba(30,143,232,0.12) !important; }
+
+/* ============================================================
+   FORMS
+   ============================================================ */
+.input, .select, textarea.input {
+  width: 100%; padding: 9px 12px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  font-family: var(--font); font-size: 13px;
+  color: var(--text-primary);
+  background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--primary-light), var(--primary-soft)) border-box;
+  outline: none; transition: all 0.15s;
+}
+.input:focus, .select:focus, textarea.input:focus {
+  background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--primary), var(--primary-light)) border-box;
+  box-shadow: 0 0 12px rgba(30,143,232,0.15);
+}
+.input::placeholder { color: var(--text-faint); }
+
+/* ============================================================
+   TABS
+   ============================================================ */
+.tab-container {
+  display: inline-flex; gap: 2px;
+  background: rgba(30,143,232,0.08);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(30,143,232,0.15);
+  border-radius: 12px; padding: 3px;
+}
+.tab-btn {
+  padding: 6px 14px; border-radius: 10px;
+  font-family: var(--font); font-size: 12px; font-weight: 500;
+  border: none; cursor: pointer; background: transparent;
+  color: var(--text-muted); transition: all 0.15s;
+}
+.tab-btn.active {
+  background: var(--btn-primary-grad); color: #fff; font-weight: 600;
+  box-shadow: 0 3px 10px rgba(30,143,232,0.3);
+}
+
+/* ============================================================
+   TOGGLES
+   ============================================================ */
+.toggle { width: 36px; height: 20px; border-radius: 9999px; padding: 2px; cursor: pointer; display: inline-flex; align-items: center; transition: background 0.15s; }
+.toggle.on { background: var(--primary); }
+.toggle.off { background: #cbd5e1; }
+.toggle-thumb { width: 16px; height: 16px; border-radius: 9999px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.15); transition: margin 0.15s; }
+.toggle.on .toggle-thumb { margin-left: auto; }
+
+/* ============================================================
+   AVATARS
+   ============================================================ */
+.avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 9999px; font-weight: 600; color: #fff;
+  background: var(--primary); flex-shrink: 0;
+}
+.avatar-sm { width: 30px; height: 30px; font-size: 11px; }
+.avatar-md { width: 40px; height: 40px; font-size: 13px; }
+
+/* ============================================================
+   INFO BANNER
+   ============================================================ */
+.info-banner {
+  background: var(--primary-bg);
+  border: 1px solid var(--primary-soft);
+  border-radius: var(--card-radius);
+  padding: 12px 16px;
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-bottom: 20px;
+  font-size: 13px; color: var(--primary-hover);
+}
+.info-banner strong { color: var(--text-primary); }
+
+/* ============================================================
+   GRID HELPERS
+   ============================================================ */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.flex-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gap-20 { gap: 20px; }
+.mb-12 { margin-bottom: 12px; }
+.mb-20 { margin-bottom: 20px; }
+.mb-24 { margin-bottom: 24px; }
+.mt-4 { margin-top: 4px; }
+.text-sm { font-size: 13px; }
+.text-xs { font-size: 11px; }
+.text-muted { color: var(--text-muted); }
+.text-primary { color: var(--text-primary); }
+.font-bold { font-weight: 700; }
+.font-semi { font-weight: 600; }
+
+/* ============================================================
+   SCREENS
+   ============================================================ */
+.screen { display: none; }
+.screen.active { display: block; }
+
+.section-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
+.section-subtitle { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+
+/* ============================================================
+   DASHBOARD HERO
+   ============================================================ */
+.dash-hero {
+  background: linear-gradient(135deg, var(--primary-bg) 0%, var(--primary-soft) 50%, #fff 100%);
+  border-radius: var(--card-radius);
+  padding: 28px;
+  color: var(--text-primary); margin-bottom: 20px;
+  position: relative; overflow: hidden;
+  border: 1px solid rgba(30,143,232,0.2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 4px 14px rgba(30,143,232,0.1);
+}
+.dash-hero::before {
+  content: '';
+  position: absolute;
+  top: -80px; right: -40px;
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(71,165,237,0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+.dash-hero::after {
+  content: '';
+  position: absolute;
+  bottom: -60px; right: 80px;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.04);
+  pointer-events: none;
+}
+.dash-hero > * { position: relative; z-index: 1; }
+.dash-hero h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.01em; }
+.dash-hero .sub { font-size: 12px; color: var(--text-muted); }
+.dash-hero-stats { display: flex; gap: 28px; margin-top: 18px; flex-wrap: wrap; }
+.dash-hero-stat .val { font-size: 26px; font-weight: 700; color: var(--primary-deep); }
+.dash-hero-stat .lbl { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.dash-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .dash-cols { grid-template-columns: 1fr; } }
+
+/* Dashboard switcher */
+.dash-switcher { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
+.dash-sw-btn {
+  padding: 6px 14px; border-radius: 9999px;
+  font-family: var(--font); font-size: 11px; font-weight: 600;
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(226,232,240,0.7);
+  color: var(--text-body); cursor: pointer; transition: all 0.2s;
+  box-shadow: 2px 2px 8px rgba(15,23,42,0.04), -1px -1px 4px rgba(255,255,255,0.7);
+}
+.dash-sw-btn:hover { border-color: rgba(30,143,232,0.3); background: var(--primary-bg); color: var(--primary); transform: translateY(-1px); }
+.dash-sw-btn.active {
+  background: var(--btn-primary-grad);
+  border-color: transparent; color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 0 18px rgba(30,143,232,0.3), 0 3px 10px rgba(24,120,200,0.22);
+}
+.dash-layout { display: none; }
+.dash-layout.active { display: block; }
+
+/* Revenue bar chart */
+.rev-chart { display: flex; align-items: flex-end; gap: 8px; height: 100px; padding-top: 12px; }
+.rev-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.rev-bar { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; }
+.rev-bar-lbl { font-size: 10px; color: var(--text-muted); }
+
+/* Quick actions */
+.quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.qa-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 16px 10px; border-radius: 10px;
+  border: 1px solid var(--card-border); background: #fff;
+  font-family: var(--font); font-size: 12px; font-weight: 500;
+  color: var(--text-body); cursor: pointer;
+  transition: all 0.15s;
+}
+.qa-btn:hover { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); }
+.qa-icon { font-size: 20px; }
+
+/* Schedule block */
+.sched-block {
+  padding: 10px 14px; border-radius: 8px;
+  margin-bottom: 6px; font-size: 12px;
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--primary);
+  background: var(--primary-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.9),
+    0 2px 6px rgba(30,143,232,0.06);
+}
+.sched-block:nth-child(even) {
+  background: var(--primary-soft);
+  border-left-color: #059669;
+}
+
+/* ============================================================
+   TIMELINE
+   ============================================================ */
+.tl-track { position: relative; padding-left: 24px; }
+.tl-line { position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--border-mid); }
+.tl-item { position: relative; padding-bottom: 16px; }
+.tl-dot { position: absolute; left: -20px; top: 4px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--primary); background: #fff; }
+.tl-item.done .tl-dot { background: var(--primary); }
+.tl-item.active .tl-dot { background: var(--primary); box-shadow: 0 0 0 4px rgba(30,143,232,0.15); }
+.tl-time { font-size: 10px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.04em; }
+.tl-card { margin-top: 4px; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(30,143,232,0.25); background: linear-gradient(180deg, var(--primary-soft) 0%, var(--primary-bg) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), inset 0 0 0 1px rgba(30,143,232,0.15), 0 4px 12px rgba(30,143,232,0.12); }
+
+/* ============================================================
+   METRIC STRIP
+   ============================================================ */
+.metric-strip {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
+  border-radius: var(--card-radius); overflow: hidden; margin-bottom: 20px;
+  border: 1px solid var(--card-border);
+  box-shadow: var(--neu-shadow-heavy);
+}
+.metric-cell {
+  padding: 22px 24px;
+  background: linear-gradient(160deg, #ffffff 0%, #f1f5f9 100%);
+  border-right: 1px solid var(--card-border);
+  position: relative;
+}
+.metric-cell:nth-child(1) { background: linear-gradient(160deg, #ffffff 0%, #EBF5FE 100%); }
+.metric-cell:nth-child(2) { background: linear-gradient(160deg, #ffffff 0%, #f5f3ff 100%); }
+.metric-cell:nth-child(3) { background: linear-gradient(160deg, #ffffff 0%, #f1f5f9 100%); }
+.metric-cell::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--btn-primary-grad);
+  opacity: 0.6;
+}
+.metric-cell:last-child { border-right: none; }
+.metric-cell .val { font-size: 26px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }
+.metric-cell .lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.metric-cell .trend { font-size: 11px; font-weight: 600; margin-top: 4px; }
+
+/* ============================================================
+   DRIP FLOW
+   ============================================================ */
+.drip-flow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+.drip-node {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(180deg, var(--primary-soft) 0%, var(--primary-bg) 100%);
+  border: 1px solid rgba(30,143,232,0.25);
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.9),
+    inset 0 0 0 1px rgba(30,143,232,0.15),
+    0 4px 12px rgba(30,143,232,0.12);
+}
+.drip-icon { width: 36px; height: 36px; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--primary); color: #fff; }
+.drip-connector { width: 32px; height: 1px; background: var(--border-mid); margin: 0 4px; }
+
+/* ============================================================
+   MESSAGING
+   ============================================================ */
+.msg-layout { display: grid; grid-template-columns: 280px 1fr; height: 520px; overflow: hidden; }
+.msg-list { border-right: 1px solid var(--card-border); overflow-y: auto; }
+.msg-item { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; border-bottom: 1px solid var(--border-light); transition: background 0.15s; background: var(--primary-bg); }
+.msg-item:nth-child(even) { background: var(--primary-soft); }
+.msg-item:hover { background: rgba(30,143,232,0.12); }
+.msg-item.active { background: var(--primary-soft); border-left: 3px solid var(--primary); }
+.chat-area { display: flex; flex-direction: column; }
+.chat-header {
+  padding: 12px 20px; border-bottom: 1px solid var(--card-border);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--primary-bg);
+}
+.chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.chat-bubble { max-width: 70%; padding: 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.4; }
+.chat-bubble.incoming { align-self: flex-start; background: var(--inset-bg); border: 1px solid var(--border-light); color: var(--text-body); border-bottom-left-radius: 4px; }
+.chat-bubble.outgoing { align-self: flex-end; background: var(--btn-primary-grad); color: #fff; border-bottom-right-radius: 4px; }
+.chat-bubble .chat-time { font-size: 10px; opacity: 0.7; margin-top: 4px; }
+.chat-compose { padding: 12px 16px; border-top: 1px solid var(--card-border); display: flex; gap: 8px; align-items: center; }
+.chat-input {
+  flex: 1; padding: 9px 14px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  font-family: var(--font); font-size: 13px;
+  color: var(--text-primary);
+  background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--primary-light), var(--primary-soft)) border-box;
+  outline: none; transition: all 0.15s;
+}
+.chat-input:focus {
+  background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, var(--primary), var(--primary-light)) border-box;
+  box-shadow: 0 0 12px rgba(30,143,232,0.15);
+}
+
+/* ============================================================
+   CHART PLACEHOLDER
+   ============================================================ */
+.chart-placeholder {
+  height: 160px; border-radius: 8px;
+  background: var(--inset-bg);
+  border: 1px solid var(--border-light);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-faint); font-size: 12px;
+}
+
+/* ============================================================
+   MOBILE HEADER
+   ============================================================ */
+.mobile-header {
+  display: none;
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 56px; z-index: 60;
+  background: var(--sidebar-bg);
+  align-items: center; gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid #1e293b;
+}
+.hamburger { width: 40px; height: 40px; background: transparent; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+.hamburger span { display: block; width: 20px; height: 2px; background: #cbd5e1; border-radius: 2px; position: relative; transition: all 0.3s; }
+.hamburger span::before, .hamburger span::after { content: ''; position: absolute; left: 0; width: 20px; height: 2px; background: #cbd5e1; border-radius: 2px; transition: all 0.3s; }
+.hamburger span::before { top: -6px; }
+.hamburger span::after { top: 6px; }
+.hamburger.open span { background: transparent; }
+.hamburger.open span::before { top: 0; transform: rotate(45deg); }
+.hamburger.open span::after { top: 0; transform: rotate(-45deg); }
+.mobile-header .mobile-brand { font-size: 14px; font-weight: 600; color: #fff; }
+.mobile-header .mobile-sub { font-size: 10px; color: #94a3b8; }
+
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.5); z-index: 49; }
+.sidebar-overlay.visible { display: block; }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 900px) {
+  .sidebar { width: 220px; }
+  .main { margin-left: 220px; padding: 24px 20px 60px; }
+  .dash-cols { grid-template-columns: 1fr; }
+  .metric-strip { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .mobile-header { display: flex; }
+  .sidebar { width: 260px; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1); padding-top: 56px; }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .sidebar-overlay.visible { display: block; }
+  .sidebar .sidebar-brand { display: none; }
+  .main { margin-left: 0; padding: 72px 16px 60px; }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .page-head h1 { font-size: 18px; }
+  .stat-val { font-size: 22px; }
+  .msg-layout { grid-template-columns: 1fr; height: 100%; }
+  .msg-list { display: none; }
+}
+
+/* Sidebar blend */
+body.sb-vertical-grad .sidebar { background: linear-gradient(180deg, #fff 0%, var(--primary-soft) 40%, var(--primary-light) 100%); }
+body.sb-soft-fade .sidebar::after { background: linear-gradient(90deg, rgba(71,165,237,0.15) 0%, rgba(30,143,232,0.04) 60%, transparent 100%); }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     MOBILE HEADER
+     ============================================================ -->
+<div class="mobile-header">
+  <button class="hamburger" id="hamburger" onclick="toggleMobileNav()"><span></span></button>
+  <div>
+    <div class="mobile-brand">Rainier Facility Solutions</div>
+    <div class="mobile-sub">Facility Management Platform</div>
+  </div>
+</div>
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileNav()"></div>
+
+<!-- ============================================================
+     SIDEBAR
+     ============================================================ -->
+<aside class="sidebar" id="sidebarNav">
+  <div class="sidebar-brand">
+    <div class="sidebar-logo">RF</div>
+    <div class="sidebar-brand-text">
+      <h1>Rainier Facility Solutions</h1>
+      <p>Facility Management Platform</p>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <!-- Core Platform -->
+    <div class="sidebar-section" onclick="toggleGroup(this)">Core Platform <span class="tier-badge core">Core</span> <span class="chevron">&#9662;</span></div>
+    <div class="nav-group" style="max-height:300px;">
+      <button class="nav-btn active" onclick="showScreen('dashboard',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
+      <button class="nav-btn" onclick="showScreen('schedule',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>Schedule</button>
+      <button class="nav-btn" onclick="showScreen('clients',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>Clients</button>
+      <button class="nav-btn" onclick="showScreen('invoices',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>Invoices</button>
+      <button class="nav-btn" onclick="showScreen('reminders',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/></svg>Reminders</button>
+    </div>
+
+    <!-- Add-Ons -->
+    <div class="sidebar-section" onclick="toggleGroup(this)">Add-Ons <span class="tier-badge addon">Add-on</span> <span class="chevron">&#9662;</span></div>
+    <div class="nav-group" style="max-height:100px;">
+      <button class="nav-btn" onclick="showScreen('messaging',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"/></svg>Messaging <span class="nav-badge">Add-on</span></button>
+    </div>
+  </nav>
+
+  <div class="sidebar-footer">
+    <button class="sidebar-footer-btn">+ New Service Job</button>
+  </div>
+</aside>
+
+<!-- ============================================================
+     MAIN CONTENT AREA
+     ============================================================ -->
+<div class="main">
+
+<!-- ── 1. DASHBOARD ── -->
+<div class="screen active" id="dashboard">
+  <div class="page-head"><h1>Dashboard</h1></div>
+  <div class="dash-switcher">
+    <button class="dash-sw-btn active" onclick="setDashLayout('dash-a',this)">Overview</button>
+    <button class="dash-sw-btn" onclick="setDashLayout('dash-b',this)">Metrics</button>
+  </div>
+
+  <!-- Overview Layout -->
+  <div class="dash-layout active" id="dash-a">
+    <div class="dash-hero">
+      <h1>Good afternoon, Kyle</h1>
+      <div class="sub">Tuesday, April 15, 2026</div>
+      <div class="dash-hero-stats">
+        <div class="dash-hero-stat"><div class="val">7</div><div class="lbl">Jobs Today</div></div>
+        <div class="dash-hero-stat"><div class="val">$8,240</div><div class="lbl">This Week</div></div>
+        <div class="dash-hero-stat"><div class="val">97%</div><div class="lbl">On-Time</div></div>
+        <div class="dash-hero-stat"><div class="val">4.8</div><div class="lbl">Avg Rating</div></div>
+      </div>
+    </div>
+    <div class="dash-cols">
+      <div>
+        <div class="card dash-card">
+          <div class="dash-card-title">Today's Schedule</div>
+          <div class="sched-block"><strong>6:00 AM</strong> &mdash; Puget Sound Medical Center <span class="badge green" style="margin-left:8px;">Complete</span></div>
+          <div class="sched-block"><strong>8:00 AM</strong> &mdash; Cascade Office Park (Bldg A) <span class="badge green" style="margin-left:8px;">Complete</span></div>
+          <div class="sched-block"><strong>10:30 AM</strong> &mdash; Summit Warehouse Group <span class="badge blue" style="margin-left:8px;">In Progress</span></div>
+          <div class="sched-block"><strong>1:00 PM</strong> &mdash; Emerald Heights HOA <span class="badge amber" style="margin-left:8px;">Pending</span></div>
+          <div class="sched-block"><strong>3:00 PM</strong> &mdash; Pacific Ridge Corporate <span class="badge amber" style="margin-left:8px;">Pending</span></div>
+          <div class="sched-block"><strong>5:00 PM</strong> &mdash; Mount Baker Industrial <span class="badge amber" style="margin-left:8px;">Pending</span></div>
+          <div class="sched-block"><strong>7:00 PM</strong> &mdash; Redmond Tech Campus <span class="badge amber" style="margin-left:8px;">Pending</span></div>
+        </div>
+        <div class="card dash-card">
+          <div class="dash-card-title">Quick Actions</div>
+          <div class="quick-actions">
+            <button class="qa-btn"><span class="qa-icon">+</span>New Job</button>
+            <button class="qa-btn"><span class="qa-icon">$</span>Invoice</button>
+            <button class="qa-btn"><span class="qa-icon">&#128100;</span>Add Client</button>
+            <button class="qa-btn"><span class="qa-icon">&#128202;</span>Reports</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="card dash-card">
+          <div class="dash-card-title">Weekly Revenue</div>
+          <div class="rev-chart">
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:65%;background:var(--primary-soft);"></div><div class="rev-bar-lbl">Mon</div></div>
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:80%;background:var(--primary-soft);"></div><div class="rev-bar-lbl">Tue</div></div>
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:90%;background:var(--primary);"></div><div class="rev-bar-lbl">Wed</div></div>
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:70%;background:var(--primary-soft);"></div><div class="rev-bar-lbl">Thu</div></div>
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:95%;background:var(--primary);"></div><div class="rev-bar-lbl">Fri</div></div>
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:45%;background:var(--primary-soft);"></div><div class="rev-bar-lbl">Sat</div></div>
+            <div class="rev-bar-wrap"><div class="rev-bar" style="height:10%;background:var(--border-mid);"></div><div class="rev-bar-lbl">Sun</div></div>
+          </div>
+        </div>
+        <div class="card dash-card">
+          <div class="dash-card-title">Team Status</div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            <div style="text-align:center;"><div class="avatar avatar-md">KB</div><div class="text-xs mt-4">Kyle B.</div><div class="text-xs text-muted">Office</div></div>
+            <div style="text-align:center;"><div class="avatar avatar-md" style="background:#059669;">MT</div><div class="text-xs mt-4">Marcus T.</div><div class="text-xs text-muted">On Job</div></div>
+            <div style="text-align:center;"><div class="avatar avatar-md" style="background:#8b5cf6;">JL</div><div class="text-xs mt-4">Jenny L.</div><div class="text-xs text-muted">On Job</div></div>
+            <div style="text-align:center;"><div class="avatar avatar-md" style="background:#C2410C;">DR</div><div class="text-xs mt-4">David R.</div><div class="text-xs text-muted">En Route</div></div>
+            <div style="text-align:center;"><div class="avatar avatar-md" style="background:#0d9488;">AS</div><div class="text-xs mt-4">Ana S.</div><div class="text-xs text-muted">Available</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metrics Layout -->
+  <div class="dash-layout" id="dash-b">
+    <div class="metric-strip">
+      <div class="metric-cell"><div class="val">$22,680</div><div class="lbl">Monthly Revenue</div><div class="trend" style="color:#059669;">+14.7% vs last month</div></div>
+      <div class="metric-cell"><div class="val">34</div><div class="lbl">Active Clients</div><div class="trend" style="color:#059669;">+5 this month</div></div>
+      <div class="metric-cell"><div class="val">96.8%</div><div class="lbl">Client Retention</div><div class="trend" style="color:#059669;">+1.2%</div></div>
+    </div>
+    <div class="dash-cols">
+      <div>
+        <div class="card dash-card"><div class="dash-card-title">Revenue Trend</div><div class="chart-placeholder">Revenue trend chart area</div></div>
+        <div class="card dash-card"><div class="dash-card-title">Top Clients by Revenue</div>
+          <table><thead><tr><th>Client</th><th>Revenue</th><th>Jobs</th></tr></thead>
+          <tbody>
+            <tr><td class="name">Puget Sound Medical Center</td><td class="money">$4,800</td><td>16</td></tr>
+            <tr><td class="name">Pacific Ridge Corporate</td><td class="money">$3,600</td><td>12</td></tr>
+            <tr><td class="name">Cascade Office Park</td><td class="money">$2,400</td><td>8</td></tr>
+            <tr><td class="name">Emerald Heights HOA</td><td class="money">$1,950</td><td>8</td></tr>
+          </tbody></table>
+        </div>
+      </div>
+      <div>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="stat-val">$8,240</div><div class="stat-label">This Week</div><div class="stat-trend up">+9.3%</div></div>
+          <div class="stat-card"><div class="stat-val">31</div><div class="stat-label">Jobs This Week</div><div class="stat-trend up">+4</div></div>
+          <div class="stat-card"><div class="stat-val">$2,150</div><div class="stat-label">Outstanding</div><div class="stat-trend down">6 invoices</div></div>
+          <div class="stat-card"><div class="stat-val">4.8</div><div class="stat-label">Avg Rating</div><div class="stat-trend up">+0.2</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 2. SCHEDULE ── -->
+<div class="screen" id="schedule">
+  <div class="page-head"><h1>Schedule</h1><button class="btn btn-primary" style="margin-left:auto;">+ New Job</button></div>
+  <div class="tab-container mb-20"><button class="tab-btn active">Day</button><button class="tab-btn">Week</button><button class="tab-btn">Month</button></div>
+  <div class="card dash-card">
+    <div class="tl-track">
+      <div class="tl-line"></div>
+      <div class="tl-item done"><div class="tl-dot"></div><div class="tl-time">6:00 AM &ndash; 7:30 AM</div><div class="tl-card"><strong>Puget Sound Medical Center</strong> &mdash; Janitorial &amp; Restroom Sanitation<br><span class="text-xs text-muted">Marcus T. &bull; 1959 NE Pacific St, Seattle</span></div></div>
+      <div class="tl-item done"><div class="tl-dot"></div><div class="tl-time">8:00 AM &ndash; 10:00 AM</div><div class="tl-card"><strong>Cascade Office Park (Bldg A)</strong> &mdash; Floor Care &amp; Common Area Maintenance<br><span class="text-xs text-muted">Jenny L. &bull; 4200 Factoria Blvd SE, Bellevue</span></div></div>
+      <div class="tl-item active"><div class="tl-dot"></div><div class="tl-time">10:30 AM &ndash; 12:30 PM</div><div class="tl-card"><strong>Summit Warehouse Group</strong> &mdash; Post-Construction Cleanup<br><span class="text-xs text-muted">David R. &bull; 8800 Dallas Ave S, Tukwila</span></div></div>
+      <div class="tl-item"><div class="tl-dot"></div><div class="tl-time">1:00 PM &ndash; 3:00 PM</div><div class="tl-card"><strong>Emerald Heights HOA</strong> &mdash; Common Area Janitorial<br><span class="text-xs text-muted">Ana S. &bull; 10901 176th Cir NE, Redmond</span></div></div>
+      <div class="tl-item"><div class="tl-dot"></div><div class="tl-time">3:00 PM &ndash; 5:00 PM</div><div class="tl-card"><strong>Pacific Ridge Corporate</strong> &mdash; Window Cleaning &amp; Pressure Washing<br><span class="text-xs text-muted">Marcus T. + David R. &bull; 520 Pike St, Seattle</span></div></div>
+      <div class="tl-item"><div class="tl-dot"></div><div class="tl-time">5:00 PM &ndash; 7:00 PM</div><div class="tl-card"><strong>Mount Baker Industrial</strong> &mdash; Floor Care &amp; Restroom Sanitation<br><span class="text-xs text-muted">Jenny L. &bull; 3200 Rainier Ave S, Seattle</span></div></div>
+      <div class="tl-item"><div class="tl-dot"></div><div class="tl-time">7:00 PM &ndash; 9:00 PM</div><div class="tl-card"><strong>Redmond Tech Campus</strong> &mdash; Nightly Janitorial Service<br><span class="text-xs text-muted">Ana S. + Marcus T. &bull; 15255 NE 40th St, Redmond</span></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 3. CLIENTS ── -->
+<div class="screen" id="clients">
+  <div class="page-head"><h1>Clients</h1><button class="btn btn-primary" style="margin-left:auto;">+ Add Client</button></div>
+  <input class="input mb-20" placeholder="Search clients..." style="max-width:360px;" />
+  <div class="card">
+    <div class="table-wrap"><table><thead><tr><th>Client</th><th>Service</th><th>Frequency</th><th>Last Service</th><th>Revenue</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td class="name">Puget Sound Medical Center</td><td>Janitorial + Restroom</td><td>Daily</td><td>Apr 15</td><td class="money">$4,800</td><td><span class="badge green">Active</span></td></tr>
+      <tr><td class="name">Cascade Office Park</td><td>Floor Care + Common Area</td><td>3x Week</td><td>Apr 14</td><td class="money">$2,400</td><td><span class="badge green">Active</span></td></tr>
+      <tr><td class="name">Summit Warehouse Group</td><td>Post-Construction</td><td>As-Needed</td><td>Apr 15</td><td class="money">$3,200</td><td><span class="badge blue">In Progress</span></td></tr>
+      <tr><td class="name">Emerald Heights HOA</td><td>Common Area Janitorial</td><td>Bi-weekly</td><td>Apr 12</td><td class="money">$1,950</td><td><span class="badge green">Active</span></td></tr>
+      <tr><td class="name">Pacific Ridge Corporate</td><td>Window + Pressure Wash</td><td>Weekly</td><td>Apr 14</td><td class="money">$3,600</td><td><span class="badge green">Active</span></td></tr>
+      <tr><td class="name">Mount Baker Industrial</td><td>Floor Care + Restroom</td><td>Daily</td><td>Apr 15</td><td class="money">$2,800</td><td><span class="badge green">Active</span></td></tr>
+      <tr><td class="name">Redmond Tech Campus</td><td>Nightly Janitorial</td><td>5x Week</td><td>Apr 14</td><td class="money">$5,100</td><td><span class="badge green">Active</span></td></tr>
+      <tr><td class="name">Lakeview Senior Living</td><td>Janitorial + Floor Care</td><td>Daily</td><td>Mar 28</td><td class="money">$1,200</td><td><span class="badge slate">Inactive</span></td></tr>
+    </tbody></table></div>
+  </div>
+</div>
+
+<!-- ── 4. INVOICES ── -->
+<div class="screen" id="invoices">
+  <div class="page-head"><h1>Invoices</h1><button class="btn btn-primary" style="margin-left:auto;">+ Create Invoice</button></div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-val">$18,530</div><div class="stat-label">Collected (MTD)</div><div class="stat-trend up">+22.1%</div></div>
+    <div class="stat-card"><div class="stat-val">$2,150</div><div class="stat-label">Outstanding</div><div class="stat-trend down">6 invoices</div></div>
+    <div class="stat-card"><div class="stat-val">$780</div><div class="stat-label">Overdue</div><div class="stat-trend down">2 invoices</div></div>
+  </div>
+  <div class="card"><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Client</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td class="name">RFS-0087</td><td>Pacific Ridge Corporate</td><td class="money">$1,800</td><td>Apr 14</td><td><span class="badge green">Paid</span></td></tr>
+    <tr><td class="name">RFS-0086</td><td>Puget Sound Medical Center</td><td class="money">$2,400</td><td>Apr 12</td><td><span class="badge green">Paid</span></td></tr>
+    <tr><td class="name">RFS-0085</td><td>Redmond Tech Campus</td><td class="money">$2,550</td><td>Apr 10</td><td><span class="badge green">Paid</span></td></tr>
+    <tr><td class="name">RFS-0084</td><td>Cascade Office Park</td><td class="money">$1,200</td><td>Apr 8</td><td><span class="badge amber">Pending</span></td></tr>
+    <tr><td class="name">RFS-0083</td><td>Summit Warehouse Group</td><td class="money">$3,200</td><td>Apr 7</td><td><span class="badge amber">Pending</span></td></tr>
+    <tr><td class="name">RFS-0082</td><td>Mount Baker Industrial</td><td class="money">$1,400</td><td>Apr 1</td><td><span class="badge amber">Pending</span></td></tr>
+    <tr><td class="name">RFS-0081</td><td>Emerald Heights HOA</td><td class="money">$975</td><td>Mar 28</td><td><span class="badge red">Overdue</span></td></tr>
+    <tr><td class="name">RFS-0080</td><td>Lakeview Senior Living</td><td class="money">$600</td><td>Mar 15</td><td><span class="badge red">Overdue</span></td></tr>
+  </tbody></table></div></div>
+</div>
+
+<!-- ── 5. REMINDERS ── -->
+<div class="screen" id="reminders">
+  <div class="page-head"><h1>Automated Reminders</h1></div>
+  <div class="info-banner">&#128276; <div><strong>Smart Reminders Active</strong><br>Automated booking confirmations, 24-hour reminders, and day-of arrival notices are running for all scheduled jobs. Upgrade to branded SMS + email for $300.</div></div>
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-val">218</div><div class="stat-label">Sent This Month</div></div>
+    <div class="stat-card"><div class="stat-val">99.1%</div><div class="stat-label">Delivery Rate</div></div>
+    <div class="stat-card"><div class="stat-val">4</div><div class="stat-label">No-Shows Prevented</div></div>
+  </div>
+  <div class="card dash-card">
+    <div class="dash-card-title">Reminder Sequence</div>
+    <div class="drip-flow">
+      <div class="drip-node"><div class="drip-icon">&#128197;</div><div><div class="text-xs font-semi text-muted">Job Booked</div><div class="text-sm font-semi text-primary">Confirmation Email</div></div></div>
+      <div class="drip-connector"></div>
+      <div class="drip-node"><div class="drip-icon">&#9200;</div><div><div class="text-xs font-semi text-muted">24 Hours Before</div><div class="text-sm font-semi text-primary">Reminder SMS + Email</div></div></div>
+      <div class="drip-connector"></div>
+      <div class="drip-node"><div class="drip-icon">&#128666;</div><div><div class="text-xs font-semi text-muted">Day-Of</div><div class="text-sm font-semi text-primary">ETA &amp; Crew Arrival Notice</div></div></div>
+    </div>
+  </div>
+  <div class="card dash-card">
+    <div class="dash-card-title">Reminder Settings</div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div><div class="text-sm font-semi">Booking Confirmation</div><div class="text-xs text-muted">Send immediately after job is scheduled</div></div>
+        <div class="toggle on"><div class="toggle-thumb"></div></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div><div class="text-sm font-semi">24-Hour Reminder</div><div class="text-xs text-muted">Email + SMS one day before service</div></div>
+        <div class="toggle on"><div class="toggle-thumb"></div></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div><div class="text-sm font-semi">Day-Of ETA Notice</div><div class="text-xs text-muted">Send crew arrival time on service day</div></div>
+        <div class="toggle on"><div class="toggle-thumb"></div></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div><div class="text-sm font-semi">Post-Service Follow-Up</div><div class="text-xs text-muted">Quality check email after job completion</div></div>
+        <div class="toggle off"><div class="toggle-thumb"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── 6. MESSAGING (Add-on) ── -->
+<div class="screen" id="messaging">
+  <div class="page-head"><h1>Messaging</h1><span class="tier-badge addon">Add-on</span></div>
+  <div class="tab-container mb-20"><button class="tab-btn active">All</button><button class="tab-btn">SMS</button><button class="tab-btn">Email</button></div>
+  <div class="card">
+    <div class="msg-layout">
+      <div class="msg-list">
+        <div class="msg-item active"><div class="avatar avatar-sm">PR</div><div style="flex:1;min-width:0;"><div class="text-sm font-semi">Pacific Ridge Corporate</div><div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Crew is finishing up on floor 12 now</div></div><div class="text-xs text-muted">5m</div></div>
+        <div class="msg-item"><div class="avatar avatar-sm" style="background:#059669;">PS</div><div style="flex:1;min-width:0;"><div class="text-sm font-semi">Puget Sound Medical</div><div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Can we add the ER wing to Thursday's scope?</div></div><div class="text-xs text-muted">1h</div></div>
+        <div class="msg-item"><div class="avatar avatar-sm" style="background:#8b5cf6;">EH</div><div style="flex:1;min-width:0;"><div class="text-sm font-semi">Emerald Heights HOA</div><div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Invoice received, payment processing</div></div><div class="text-xs text-muted">3h</div></div>
+        <div class="msg-item"><div class="avatar avatar-sm" style="background:#C2410C;">SW</div><div style="flex:1;min-width:0;"><div class="text-sm font-semi">Summit Warehouse Group</div><div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Construction debris cleared from Bay 4</div></div><div class="text-xs text-muted">5h</div></div>
+        <div class="msg-item"><div class="avatar avatar-sm" style="background:#0d9488;">RT</div><div style="flex:1;min-width:0;"><div class="text-sm font-semi">Redmond Tech Campus</div><div class="text-xs text-muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Looks great, same schedule next week please</div></div><div class="text-xs text-muted">1d</div></div>
+      </div>
+      <div class="chat-area">
+        <div class="chat-header"><div class="flex-row"><div class="avatar avatar-sm">PR</div><strong class="text-sm">Pacific Ridge Corporate</strong><span class="text-xs text-muted" style="margin-left:auto;">SMS</span></div></div>
+        <div class="chat-messages">
+          <div class="chat-bubble incoming">Hi Kyle, just wanted to check if the crew is on-site for the 3pm window cleaning today?<div class="chat-time">2:42 PM</div></div>
+          <div class="chat-bubble outgoing">Hi! Yes, Marcus and David are on their way now. They'll start on the east-facing windows on floor 12 and work down. ETA is 2:55 PM.<div class="chat-time">2:44 PM</div></div>
+          <div class="chat-bubble incoming">Perfect, I'll let the floor managers know. Can they avoid the conference room on 10 until after 4pm?<div class="chat-time">2:45 PM</div></div>
+          <div class="chat-bubble outgoing">Absolutely, I'll radio the crew. They'll skip floor 10 conference room and circle back after 4. Crew is finishing up on floor 12 now.<div class="chat-time">2:48 PM</div></div>
+        </div>
+        <div class="chat-compose"><input class="chat-input" placeholder="Type a message..." /><button class="btn btn-primary btn-sm">Send</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end .main -->
+
+<!-- ============================================================
+     JAVASCRIPT
+     ============================================================ -->
+<script>
+/* Screen switching */
+function showScreen(id, btn) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (window.innerWidth <= 640) closeMobileNav();
+}
+
+/* Collapsible nav groups */
+function toggleGroup(header) {
+  header.classList.toggle('collapsed');
+  const group = header.nextElementSibling;
+  if (group) group.classList.toggle('collapsed');
+}
+
+/* Dashboard layout switcher */
+function setDashLayout(id, btn) {
+  document.querySelectorAll('.dash-layout').forEach(d => d.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.dash-sw-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+/* Mobile nav */
+function toggleMobileNav() {
+  document.getElementById('sidebarNav').classList.toggle('mobile-open');
+  document.getElementById('sidebarOverlay').classList.toggle('visible');
+  document.getElementById('hamburger').classList.toggle('open');
+}
+function closeMobileNav() {
+  document.getElementById('sidebarNav').classList.remove('mobile-open');
+  document.getElementById('sidebarOverlay').classList.remove('visible');
+  document.getElementById('hamburger').classList.remove('open');
+}
+
+/* Toggles */
+document.querySelectorAll('.toggle').forEach(t => {
+  t.addEventListener('click', () => {
+    t.classList.toggle('on');
+    t.classList.toggle('off');
+  });
+});
+
+/* Init sidebar blend */
+document.addEventListener('DOMContentLoaded', () => {
+  document.body.classList.add('sb-vertical-grad');
+  document.body.classList.add('sb-soft-fade');
+});
+</script>
+</body>
+</html>
