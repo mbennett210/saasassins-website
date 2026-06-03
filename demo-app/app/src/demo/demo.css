@@ -226,7 +226,10 @@
 .pp-cart-clear:hover { color: var(--danger); }
 
 /* ── Demo landing + checkout shared page shell ── */
-.pp-demo-page { min-height: 100dvh; background: var(--page-bg); color: var(--text-body); font-family: var(--font); }
+/* width: 100% so the page fills #root (which is display:flex in index.css).
+   Without it the page is a flex item that shrink-wraps to its content and sits
+   left-aligned, leaving the right half of wide screens blank. */
+.pp-demo-page { min-height: 100dvh; width: 100%; background: var(--page-bg); color: var(--text-body); font-family: var(--font); }
 .pp-demo-topbar {
   position: sticky; top: 0; z-index: var(--z-sticky);
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
@@ -283,8 +286,10 @@
 .pp-demo-controls-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 
 /* ── Checkout brand-style toggle + persistent dashboard preview ── */
+/* The brand-style step is the LAST thing in the checkout's left column (after
+   Core + add-ons), so it leads with top spacing rather than a trailing margin. */
 .pp-deploy-theme {
-  margin-bottom: var(--space-6); padding: var(--space-5) var(--space-6);
+  margin: var(--space-10) 0 0; padding: var(--space-5) var(--space-6);
   border: 1px solid var(--card-border); border-radius: var(--card-radius);
   background: var(--card-bg); box-shadow: var(--shadow-sm);
   display: grid; gap: var(--space-4);
@@ -407,6 +412,13 @@
 .pp-tour-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); }
 .pp-tour-nav { display: inline-flex; gap: var(--space-2); }
 
+/* ── Tablet: collapse the checkout to a single column before the 340px summary
+   rail squeezes the content column too narrow (cramped rows, clipped prices). ── */
+@media (max-width: 900px) {
+  .pp-checkout-grid { grid-template-columns: 1fr; }
+  .pp-checkout-summary { position: static; }
+}
+
 /* ── Mobile ── */
 @media (max-width: 640px) {
   /* Topbar: let the actions drop to their own full-width row so buttons never clip. */
@@ -415,8 +427,9 @@
   .pp-module-cta { flex-wrap: wrap; }
   .pp-module-cta-aside { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
   .pp-module-grid { grid-template-columns: 1fr; }
-  .pp-checkout-grid { grid-template-columns: 1fr; }
-  .pp-checkout-summary { position: static; }
+  /* Order rows: let the price + badge wrap below the name instead of clipping
+     off the right edge on very narrow screens. */
+  .pp-checkout-row { flex-wrap: wrap; }
   .pp-demo-hero h1 { font-size: var(--font-size-3xl); }
   .pp-cart-fab-label { display: none; }
   .pp-cart-fab { padding: 0 var(--space-4); }

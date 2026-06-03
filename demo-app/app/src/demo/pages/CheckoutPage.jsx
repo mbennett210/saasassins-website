@@ -15,6 +15,10 @@ import '../demo.css';
 // is shown via faithful swatchboard example images (CheckoutThemeSelect) and
 // recorded as a deployment preference — it does not reskin anything.
 //
+// Flow (top → bottom in the left column, with the order summary sticky on the
+// right): 1) review the Core base + any added modules, 2) add more modules,
+// 3) pick the brand style — the last step before paying.
+//
 // Payment: if a Stripe key is wired (api/checkout returns a hosted-checkout URL)
 // we redirect to it; otherwise we simulate a completed order and route to the
 // success page so the flow is fully clickable without a card.
@@ -99,11 +103,9 @@ export default function CheckoutPage() {
         <div className="pp-section-head">
           <div className="pp-section-head-text">
             <h2>Confirm your order</h2>
-            <p>Every order includes the {formatPrice(CORE.price)} Core platform. Add or remove modules below before you pay.</p>
+            <p>Every order includes the {formatPrice(CORE.price)} Core platform. Add or remove modules below, then pick your brand style before you pay.</p>
           </div>
         </div>
-
-        <CheckoutThemeSelect value={deployTheme} onChange={chooseTheme} />
 
         <div className="pp-checkout-grid">
           <div>
@@ -153,6 +155,11 @@ export default function CheckoutPage() {
                 </div>
               </section>
             )}
+
+            {/* Final step: pick the brand style. Persistent themed dashboard
+                preview re-themes live on toggle; the checkout itself stays
+                clean PolishPoint. */}
+            <CheckoutThemeSelect value={deployTheme} onChange={chooseTheme} />
           </div>
 
           <aside className="pp-checkout-summary">
