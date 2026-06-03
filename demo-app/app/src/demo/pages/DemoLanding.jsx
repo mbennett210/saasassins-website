@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { featuredModules } from '../modules.catalog';
+import { CORE, featuredModules, formatPrice } from '../modules.catalog';
 import { useCart } from '../cart/CartContext';
 import ModuleCTA from '../components/ModuleCTA';
 import InfoButton from '../components/InfoButton';
@@ -13,19 +13,6 @@ import '../demo.css';
 // from the SaaSassins site. Pitches the product, lets them jump into the live CRM
 // ("Enter live demo" → /), and showcases the sellable add-on modules with
 // add-to-cart + glowing info buttons. Standalone (no app sidebar).
-
-const CORE_FEATURES = [
-  'Operations Dashboard',
-  'Scheduling & Calendar',
-  'Client Database (Contacts + Accounts)',
-  'Sales Pipeline',
-  'Messaging Suite',
-  'Marketing (cold-email sequences)',
-  'SMS via Twilio + A2P',
-  'Invoice & Payment logging',
-  'Automated Reminders',
-  'Team, Roles & Permissions',
-];
 
 export default function DemoLanding() {
   const navigate = useNavigate();
@@ -55,7 +42,8 @@ export default function DemoLanding() {
           <h1>Run your entire service business on {BRAND.name}</h1>
           <p className="pp-demo-hero-sub">
             Click through the real product with live sample data — scheduling, CRM, messaging,
-            marketing, and invoicing. Then bolt on the modules you need and check out when you’re ready.
+            and invoicing. Every plan starts with the {formatPrice(CORE.price)} Core platform; bolt on
+            the modules you need and check out when you’re ready.
           </p>
           <div className="pp-demo-hero-actions">
             <button className="btn btn-primary btn-lg" onClick={() => navigate('/')}>Explore the live demo</button>
@@ -67,13 +55,14 @@ export default function DemoLanding() {
           <div className="pp-section-head">
             <div className="pp-section-head-text">
               <h2>Featured add-on modules</h2>
-              <p>Core is included free. These power-ups extend it — add any to your cart here or from inside the app.</p>
+              <p>The {formatPrice(CORE.price)} Core platform covers everything below. These power-ups extend it — add any to your cart here or from inside the app.</p>
             </div>
             <InfoButton title="How modules work" glowKey="section:modules" label="How modules work">
               <p className="pp-info-lead">
-                Your {BRAND.name} platform ships with every core feature included. Add-on modules are
-                one-time purchases that unlock extra capability, tailored and integrated for your business.
-                Add them here or from the relevant area inside the app, then confirm everything at checkout.
+                Every {BRAND.name} plan starts with the Core platform ({formatPrice(CORE.price)}, one-time) and
+                includes all of its features. Add-on modules are one-time purchases that unlock extra
+                capability, tailored and integrated for your business. Add them here or from the relevant
+                area inside the app, then confirm everything at checkout.
               </p>
             </InfoButton>
           </div>
@@ -87,13 +76,13 @@ export default function DemoLanding() {
         <section className="pp-demo-section">
           <div className="pp-section-head">
             <div className="pp-section-head-text">
-              <h2>Included in every plan</h2>
+              <h2>Included in the {formatPrice(CORE.price)} Core platform</h2>
               <p>The full operations suite — no add-ons required.</p>
             </div>
           </div>
           <div className="pp-core-band">
             <ul className="pp-core-list">
-              {CORE_FEATURES.map((f) => (
+              {CORE.features.map((f) => (
                 <li key={f}>{f}</li>
               ))}
             </ul>

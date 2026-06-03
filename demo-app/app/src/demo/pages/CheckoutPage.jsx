@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useCart } from '../cart/CartContext';
-import { formatPrice, featuredModules } from '../modules.catalog';
+import { CORE, formatPrice, featuredModules } from '../modules.catalog';
 import ModuleCTA from '../components/ModuleCTA';
 import { BRAND } from '../../brand.config';
 import '../demo.css';
 
-// /polishpoint/checkout — the final catch-all. Confirms the prospect's selected
-// modules (editable here), offers any they haven't added, and starts a real
-// one-time Stripe Checkout via the /api/checkout serverless function, which maps
-// ids → server-side Stripe prices and returns a hosted-Checkout URL to redirect to.
+// /polishpoint/checkout — the final catch-all. Confirms the prospect's order (the
+// Core platform base + any selected add-ons, editable here), offers any modules
+// they haven't added, and starts a real one-time Stripe Checkout via the
+// /api/checkout serverless function, which maps ids → server-side Stripe prices
+// (always including Core) and returns a hosted-Checkout URL to redirect to.
 
 export default function CheckoutPage() {
   const cart = useCart();
@@ -18,12 +19,13 @@ export default function CheckoutPage() {
   const [error, setError] = useState('');
 
   const notInCart = featuredModules().filter((m) => !cart.has(m.id));
+  const total = CORE.price + cart.subtotal;
 
   const pay = async () => {
-    if (cart.count === 0) return;
     setSubmitting(true);
     setError('');
     try {
+      // Only add-on ids go up; the server always adds the Core base line item.
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,38 +59,43 @@ export default function CheckoutPage() {
       <div className="pp-demo-wrap">
         <div className="pp-section-head">
           <div className="pp-section-head-text">
-            <h2>Confirm your modules</h2>
-            <p>Your final list — add or remove anything before you pay. The core platform is always included free.</p>
+            <h2>Confirm your order</h2>
+            <p>Every order includes the {formatPrice(CORE.price)} Core platform. Add or remove modules below before you pay.</p>
           </div>
         </div>
 
         <div className="pp-checkout-grid">
           <div>
-            {cart.count === 0 ? (
-              <div className="pp-checkout-empty">
-                Your cart is empty. <Link to="/demo">Browse add-on modules →</Link>
+            <div className="pp-checkout-main">
+              {/* Core platform — the mandatory base line item, not removable. */}
+              <div className="pp-checkout-row pp-checkout-row-core">
+                <span className="pp-checkout-row-icon" aria-hidden="true">🚀</span>
+                <div className="pp-checkout-row-body">
+                  <div className="pp-checkout-row-name">{CORE.name}</div>
+                  <div className="pp-checkout-row-desc">The full operations suite — included in every plan.</div>
+                </div>
+                <span className="pp-checkout-row-price">{formatPrice(CORE.price)}</span>
+                <span className="pp-addon-badge">Included</span>
               </div>
-            ) : (
-              <div className="pp-checkout-main">
-                {cart.items.map((m) => (
-                  <div key={m.id} className="pp-checkout-row">
-                    <span className="pp-checkout-row-icon" aria-hidden="true">{m.icon}</span>
-                    <div className="pp-checkout-row-body">
-                      <div className="pp-checkout-row-name">{m.name}</div>
-                      <div className="pp-checkout-row-desc">{m.blurb}</div>
-                    </div>
-                    <span className="pp-checkout-row-price">{formatPrice(m.price)}</span>
-                    <button
-                      className="pp-cart-row-remove"
-                      onClick={() => cart.remove(m.id)}
-                      aria-label={`Remove ${m.name}`}
-                    >
-                      ×
-                    </button>
+
+              {cart.items.map((m) => (
+                <div key={m.id} className="pp-checkout-row">
+                  <span className="pp-checkout-row-icon" aria-hidden="true">{m.icon}</span>
+                  <div className="pp-checkout-row-body">
+                    <div className="pp-checkout-row-name">{m.name}</div>
+                    <div className="pp-checkout-row-desc">{m.blurb}</div>
                   </div>
-                ))}
-              </div>
-            )}
+                  <span className="pp-checkout-row-price">{formatPrice(m.price)}</span>
+                  <button
+                    className="pp-cart-row-remove"
+                    onClick={() => cart.remove(m.id)}
+                    aria-label={`Remove ${m.name}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
 
             {notInCart.length > 0 && (
               <section className="pp-demo-section">
@@ -109,29 +116,27 @@ export default function CheckoutPage() {
 
           <aside className="pp-checkout-summary">
             <h3>Order summary</h3>
+            <div className="pp-summary-line">
+              <span>{CORE.name}</span>
+              <span>{formatPrice(CORE.price)}</span>
+            </div>
             {cart.items.map((m) => (
               <div key={m.id} className="pp-summary-line">
                 <span>{m.name}</span>
                 <span>{formatPrice(m.price)}</span>
               </div>
             ))}
-            {cart.count === 0 && (
-              <div className="pp-summary-line">
-                <span>No modules selected</span>
-                <span>—</span>
-              </div>
-            )}
             <div className="pp-summary-total">
               <span>Total (one-time)</span>
-              <strong>{formatPrice(cart.subtotal)}</strong>
+              <strong>{formatPrice(total)}</strong>
             </div>
             {error && <div className="pp-checkout-error">{error}</div>}
             <button
               className="btn btn-primary btn-lg pp-pay-btn"
-              disabled={cart.count === 0 || submitting}
+              disabled={submitting}
               onClick={pay}
             >
-              {submitting ? 'Starting checkout…' : `Pay ${formatPrice(cart.subtotal)}`}
+              {submitting ? 'Starting checkout…' : `Pay ${formatPrice(total)}`}
             </button>
             <p className="pp-checkout-note">
               Secure one-time payment via Stripe. You’ll be redirected to complete your purchase.

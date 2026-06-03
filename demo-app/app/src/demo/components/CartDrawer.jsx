@@ -1,13 +1,13 @@
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../cart/CartContext';
-import { formatPrice } from '../modules.catalog';
+import { CORE, formatPrice } from '../modules.catalog';
 import '../demo.css';
 
-// Slide-in panel listing the modules a prospect has added. Reachable from the
-// app-wide cart FAB (DemoChrome). "Review & checkout" routes to the catch-all
-// /checkout confirmation page. Portaled to <body> so the fixed overlay escapes
-// the app's stacking contexts (same approach as the shared Modal).
+// Slide-in panel listing the add-on modules a prospect has added. Reachable from
+// the app-wide cart FAB (DemoChrome). "Review & checkout" routes to the catch-all
+// /checkout confirmation page (the Core base + add-ons). Portaled to <body> so the
+// fixed overlay escapes the app's stacking contexts (same approach as Modal).
 
 export default function CartDrawer({ open, onClose }) {
   const cart = useCart();
@@ -30,9 +30,10 @@ export default function CartDrawer({ open, onClose }) {
         {cart.count === 0 ? (
           <div className="pp-cart-empty">
             <span className="pp-cart-empty-icon" aria-hidden="true">🛒</span>
-            <p>No modules yet</p>
+            <p>No add-ons yet</p>
             <p className="pp-cart-empty-sub">
-              Add featured modules as you explore the demo — they collect here, ready for checkout.
+              Your order already includes the {formatPrice(CORE.price)} Core platform. Add modules as you
+              explore the demo — they collect here, ready for checkout.
             </p>
           </div>
         ) : (
@@ -58,11 +59,21 @@ export default function CartDrawer({ open, onClose }) {
         )}
 
         <footer className="pp-cart-foot">
-          <div className="pp-cart-subtotal">
-            <span>Subtotal</span>
-            <strong>{formatPrice(cart.subtotal)}</strong>
+          <div className="pp-summary-line">
+            <span>Core platform</span>
+            <span>{formatPrice(CORE.price)}</span>
           </div>
-          <button className="btn btn-primary pp-cart-checkout" disabled={cart.count === 0} onClick={goCheckout}>
+          {cart.count > 0 && (
+            <div className="pp-summary-line">
+              <span>Add-ons ({cart.count})</span>
+              <span>{formatPrice(cart.subtotal)}</span>
+            </div>
+          )}
+          <div className="pp-summary-total">
+            <span>Total</span>
+            <strong>{formatPrice(CORE.price + cart.subtotal)}</strong>
+          </div>
+          <button className="btn btn-primary pp-cart-checkout" onClick={goCheckout}>
             Review &amp; checkout
           </button>
           {cart.count > 0 && (
