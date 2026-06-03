@@ -1,18 +1,22 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useStore } from '../../store';
+import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { CORE, formatPrice, featuredModules } from '../modules.catalog';
 import ModuleCTA from '../components/ModuleCTA';
-import { BRAND } from '../../brand.config';
 import '../demo.css';
 
-// /polishpoint/checkout — the final catch-all. Confirms the prospect's order (the
-// Core platform base + any selected add-ons, editable here), offers any modules
-// they haven't added, and starts a real one-time Stripe Checkout via the
-// /api/checkout serverless function, which maps ids → server-side Stripe prices
-// (always including Core) and returns a hosted-Checkout URL to redirect to.
+// /polishpoint/checkout — confirms the order (Core base + selected add-ons),
+// offers any modules not yet added, and completes the purchase.
+//
+// Payment: if a Stripe key is wired (api/checkout returns a hosted-checkout URL)
+// we redirect to it. Otherwise — the usual demo case, with no backend — we
+// simulate a completed order and route to the success page, so the flow is fully
+// clickable end to end without a card. A genuine Stripe failure still surfaces.
 
 export default function CheckoutPage() {
+  const company = selectCompany(useStore());
   const cart = useCart();
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
@@ -24,31 +28,55 @@ export default function CheckoutPage() {
   const pay = async () => {
     setSubmitting(true);
     setError('');
+    const order = {
+      items: [
+        { name: CORE.name, price: CORE.price },
+        ...cart.items.map((m) => ({ name: m.name, price: m.price })),
+      ],
+      total,
+    };
+    const goSuccess = () => navigate('/checkout/success', { state: { demo: true, order } });
+
+    let res;
     try {
       // Only add-on ids go up; the server always adds the Core base line item.
-      const res = await fetch('/api/checkout', {
+      res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ moduleIds: cart.ids }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Checkout failed (${res.status})`);
-      }
-      const { url } = await res.json();
-      if (!url) throw new Error('No checkout URL returned.');
-      window.location.href = url; // → Stripe-hosted Checkout
-    } catch (e) {
-      setError(e.message || 'Something went wrong starting checkout.');
-      setSubmitting(false);
+    } catch {
+      goSuccess(); // no backend reachable (local demo) → simulate a completed order
+      return;
     }
+
+    if (res.ok) {
+      const { url } = await res.json().catch(() => ({}));
+      if (url) {
+        window.location.href = url; // real Stripe Checkout
+        return;
+      }
+      goSuccess();
+      return;
+    }
+
+    // 404 (no endpoint) / 503 (no Stripe key) → payments aren't wired; simulate.
+    if (res.status === 404 || res.status === 503) {
+      goSuccess();
+      return;
+    }
+
+    // Stripe is configured but the call genuinely failed — surface it.
+    const body = await res.json().catch(() => ({}));
+    setError(body.error || `Checkout failed (${res.status})`);
+    setSubmitting(false);
   };
 
   return (
     <div className="pp-demo-page">
       <header className="pp-demo-topbar">
         <span className="pp-demo-topbar-brand">
-          {BRAND.name}
+          {company.name}
           <span className="pp-addon-badge">Checkout</span>
         </span>
         <div className="pp-demo-topbar-actions">
