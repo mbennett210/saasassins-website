@@ -3,7 +3,8 @@
    ------------------------------------------------------------
    Self-contained styles for the demo/commerce surfaces: glowing
    info buttons, module add-to-cart CTAs, the cart drawer/FAB,
-   the /polishpoint/demo landing, and /polishpoint/checkout.
+   the sidebar Core/Add-on grouping, the /polishpoint/demo
+   landing, and /polishpoint/checkout.
 
    Loaded only when the demo components render (which are gated on
    IS_DEMO), so none of this ships in a per-client product build.
@@ -88,6 +89,22 @@
   text-transform: uppercase; letter-spacing: var(--letter-spacing-wide);
   white-space: nowrap; flex-shrink: 0;
 }
+
+/* ── Sidebar Core / Add-on grouping (demo only) ── */
+.nav-group-label {
+  margin: 0; padding: var(--space-4) var(--space-3) var(--space-1);
+  font-size: var(--font-size-2xs); font-weight: var(--font-weight-bold);
+  text-transform: uppercase; letter-spacing: var(--letter-spacing-wide);
+  color: var(--text-faint);
+}
+/* Emoji stand-in where add-on rows would use a line Icon. 18px matches the
+   `.nav-btn svg` sizing in index.css so labels line up across both groups. */
+.nav-emoji {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; font-size: var(--font-size-md); line-height: 1; flex-shrink: 0;
+}
+/* Push the Add-on pill to the trailing edge of a nav row. */
+.nav-btn .pp-addon-badge { margin-left: auto; }
 
 /* ── In-context module CTA (inline variant) ── */
 .pp-module-cta {
@@ -255,6 +272,8 @@
 .pp-checkout-row-desc { font-size: var(--font-size-sm); color: var(--text-muted); margin-top: var(--space-1); }
 .pp-checkout-row-price { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); color: var(--text-primary); }
 .pp-checkout-empty { padding: var(--space-10); text-align: center; border: 1px dashed var(--card-border); border-radius: var(--card-radius); color: var(--text-muted); }
+/* The Core platform row — the mandatory base line item. */
+.pp-checkout-row-core { border-left: 3px solid var(--primary); }
 
 .pp-checkout-summary {
   position: sticky; top: var(--space-8);

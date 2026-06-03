@@ -4,12 +4,18 @@ import { selectCompany } from '../store/selectors';
 import { usePermissionChecker } from '../hooks/usePermission';
 import Icon from './Icon';
 import UserSwitcher from './UserSwitcher';
+import { IS_DEMO } from '../demo/isDemo';
+import { featuredModules } from '../demo/modules.catalog';
+import NavAddonItem from '../demo/components/NavAddonItem';
 
 const NAV = [
   { to: '/',          label: 'Dashboard',  icon: 'dashboard', perm: 'dashboard.view', end: true },
   { to: '/schedule',  label: 'Schedule',   icon: 'schedule',  perm: 'schedule.view'  },
   { to: '/messaging', label: 'Messaging',  icon: 'messaging', perm: 'messaging.use'  },
-  { to: '/marketing', label: 'Marketing',  icon: 'mail',      perm: 'marketing.view' },
+  // Marketing is a real Core feature in per-client product builds, but the
+  // marketing DEMO sells it as a paid add-on — so in demo mode it moves out of
+  // the Core group and into the Add-on group below (linking to its live page).
+  { to: '/marketing', label: 'Marketing',  icon: 'mail',      perm: 'marketing.view', demoAddon: true },
   { to: '/contacts',  label: 'Contacts',   icon: 'clients',   perm: 'contacts.view'  },
   { to: '/clients',   label: 'Clients',    icon: 'clients',   perm: 'clients.view', hideWhen: 'contacts.view' },
   { to: '/pipeline',  label: 'Pipeline',   icon: 'chart',     perm: 'pipeline.view'  },
@@ -20,7 +26,24 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
   const company = selectCompany(useStore());
   const check = usePermissionChecker();
 
-  const allowed = NAV.filter((n) => check(n.perm) && (!n.hideWhen || !check(n.hideWhen)));
+  const visible = NAV.filter((n) => check(n.perm) && (!n.hideWhen || !check(n.hideWhen)));
+  // In the demo, Marketing is repackaged as an add-on, so it drops out of Core.
+  const coreItems = visible.filter((n) => !(IS_DEMO && n.demoAddon));
+  // Add-on modules surfaced in the nav (demo only); the catalog drives the list.
+  const addonModules = IS_DEMO ? featuredModules() : [];
+
+  const renderLink = (item) => (
+    <NavLink
+      key={item.to}
+      to={item.to}
+      end={item.end}
+      className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}
+      onClick={onCloseMobile}
+    >
+      <Icon name={item.icon} />
+      <span className="nav-btn-label">{item.label}</span>
+    </NavLink>
+  );
 
   return (
     <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
@@ -40,19 +63,31 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
 
       <nav className="sidebar-nav">
         <div className="nav-group">
-          {allowed.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}
-              onClick={onCloseMobile}
-            >
-              <Icon name={item.icon} />
-              <span className="nav-btn-label">{item.label}</span>
-            </NavLink>
-          ))}
+          {IS_DEMO && <p className="nav-group-label">Core platform</p>}
+          {coreItems.map(renderLink)}
         </div>
+
+        {IS_DEMO && addonModules.length > 0 && (
+          <div className="nav-group">
+            <p className="nav-group-label">Add-on modules</p>
+            {addonModules.map((m) =>
+              m.route ? (
+                <NavLink
+                  key={m.id}
+                  to={m.route}
+                  className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}
+                  onClick={onCloseMobile}
+                >
+                  <span className="nav-emoji" aria-hidden="true">{m.icon}</span>
+                  <span className="nav-btn-label">{m.navLabel || m.name}</span>
+                  <span className="pp-addon-badge">Add-on</span>
+                </NavLink>
+              ) : (
+                <NavAddonItem key={m.id} moduleId={m.id} />
+              ),
+            )}
+          </div>
+        )}
 
         {check('settings.account') && (
           <div className="nav-group">
