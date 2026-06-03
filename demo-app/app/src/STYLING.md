@@ -373,17 +373,16 @@ The shell is engineered for **one-line theme swaps**. Every visual surface reads
 
 ### Theme library (pre-built variants)
 
-Four canonical themes ship in `app/src/`:
+The active baseline + its generated equivalent ship in `app/src/`:
 
 | File | Mode | Anchor | Style family |
 |---|---|---|---|
 | `theme-polishpoint.css` | light | `#1E8FE8` | Original hand-tuned (currently active baseline) |
 | `theme-polishpoint-blue.css` | light | `#1E8FE8` | Generated equivalent of the above |
-| `theme-polishpoint-forge.css` | dark | `#F97316` | Dark + saturated orange |
-| `theme-polishpoint-midnight.css` | dark | `#C9A84C` | Dark + luxe gold |
-| `theme-polishpoint-pink.css` | light | `#EC4899` | Light + playful pink |
 
-Only ONE is loaded at any time (the one `index.css` imports). The rest are dormant on disk. Clients pick the style family that matches their brand voice; a per-client converter run then overrides the primary scale + logo + brand config to their actual brand.
+Only ONE is loaded at any time (the one `index.css` imports). Per-client themes are generated on demand: pick the closest swatchboard style family (Blue / Forge / Midnight / Pink — the swatchboard HTML sources are checked in under `swatchboard/unzipped/`), run the converter, and it overrides the primary scale + logo + brand config to the client's actual brand.
+
+> **Note (`polishpoint-demo` branch):** the pre-built standalone `theme-polishpoint-{forge,midnight,pink}.css` files were removed here. The sales demo themes its checkout *preview* (via the MiniApp swatchboards) rather than live-reskinning the app, so dormant theme CSS was dead weight on this branch. Regenerate any of them from its swatchboard via the converter if a live dark/pink theme is ever needed.
 
 ### Where the live preview shows what
 

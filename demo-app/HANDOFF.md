@@ -45,6 +45,8 @@ Landed in 6 commits (a0a902c → 546f46f):
 - `app/src/theme-polishpoint-midnight.css` — dark, `#C9A84C` (gold) anchor; picks dark text on primary because white-on-gold fails WCAG.
 - `app/src/theme-polishpoint-pink.css` — light, `#EC4899` anchor.
 
+> **Update (2026-06-03, `polishpoint-demo` branch):** the standalone `theme-polishpoint-{forge,midnight,pink}.css` files listed above were removed. The sales demo themes its checkout *preview* (the MiniApp swatchboards) instead of live-reskinning the app, so those dormant theme files were dead weight on this branch. `theme-polishpoint.css` (active) + `theme-polishpoint-blue.css` remain; the swatchboard HTML sources (below) are kept, so any variant can be regenerated via the converter.
+
 ### Docs
 - `app/src/STYLING.md` — added "Re-skinning the shell — SOP" section with theme library table, converter usage, Scenario A (client has swatchboard) + Scenario B (client has only a hex) workflows, deploy model, and expected lift (~10 min per re-skin once Scenario B's `--primary-hex` flag exists).
 
@@ -53,7 +55,7 @@ Landed in 6 commits (a0a902c → 546f46f):
 
 ## Open / suggested next pickup
 
-1. **Eyeball Forge or Midnight on the live preview.** The `recipes-dark.css` template is the only piece that's net-new design work (white insets → near-zero, drop shadows deepened). It compiled and the tokens resolve, but no human has visually validated dark surfaces in the live app yet. To check: swap `index.css` line 3 to `@import './theme-polishpoint-forge.css';`, eyeball the dashboard at mobile + desktop, then swap back. Risk: a recipe value looks off and needs a tweak — fix is in the template, not the converter.
+1. **Eyeball Forge / Midnight — done (2026-06-03, `polishpoint-demo` branch).** The dark themes (Forge, Midnight) were visually validated via the checkout MiniApp previews and render faithfully at desktop + mobile. The standalone `theme-polishpoint-{forge,midnight,pink}.css` files were then removed (the demo themes its checkout preview, not the live app). If a future client needs a dark *live* theme, regenerate it from the swatchboard via the converter and eyeball the `recipes-dark.css` surfaces (white insets → near-zero, deepened drop shadows) at that point.
 
 2. **Build the `--primary-hex` converter flag** (~30 min). Makes Scenario B (client gives only a hex color) a one-command operation:
    ```bash
