@@ -6,6 +6,7 @@ import { useStore } from '../store';
 import { selectCompany } from '../store/selectors';
 import { IS_DEMO } from '../demo/isDemo';
 import PlacementCTAs from '../demo/components/PlacementCTAs';
+import DemoControls from '../demo/components/DemoControls';
 
 export default function AppLayout() {
   const company = selectCompany(useStore());
@@ -40,6 +41,8 @@ export default function AppLayout() {
         {/* Demo-only: route-aware in-context module upsell (null outside demo / unmapped routes). */}
         {IS_DEMO && <PlacementCTAs />}
       </main>
+      {/* Demo-only: floating brand-theme / tour / reset control. */}
+      {IS_DEMO && <DemoControls />}
     </>
   );
 }

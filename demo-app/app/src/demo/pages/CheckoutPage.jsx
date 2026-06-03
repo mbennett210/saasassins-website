@@ -1,20 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { CORE, formatPrice, featuredModules } from '../modules.catalog';
+import { themeLabel, clearPaletteOverride, applyPalette, loadBrand, saveBrand } from '../brandTheme';
+import CheckoutThemeSelect from '../components/CheckoutThemeSelect';
 import ModuleCTA from '../components/ModuleCTA';
-import ThemePicker from '../components/ThemePicker';
 import '../demo.css';
 
-// /polishpoint/checkout — confirms the order (Core base + selected add-ons),
-// offers any modules not yet added, and completes the purchase.
+// /polishpoint/checkout — confirms the order (Core base + selected add-ons + the
+// chosen brand style), offers any modules not yet added, and completes the
+// purchase.
+//
+// The checkout itself always renders in the clean PolishPoint look — any live
+// brand theme the prospect previewed while exploring is removed on mount and
+// restored on leave. The brand-style choice here is a recorded deployment
+// preference shown via example tiles, not a live reskin.
 //
 // Payment: if a Stripe key is wired (api/checkout returns a hosted-checkout URL)
-// we redirect to it. Otherwise — the usual demo case, with no backend — we
-// simulate a completed order and route to the success page, so the flow is fully
-// clickable end to end without a card. A genuine Stripe failure still surfaces.
+// we redirect to it; otherwise we simulate a completed order and route to the
+// success page so the flow is fully clickable without a card.
 
 export default function CheckoutPage() {
   const company = selectCompany(useStore());
@@ -22,6 +28,18 @@ export default function CheckoutPage() {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [deployTheme, setDeployTheme] = useState(loadBrand().deployTheme || 'blue');
+
+  // Keep checkout in the clean PolishPoint baseline; restore the explored theme on leave.
+  useEffect(() => {
+    clearPaletteOverride();
+    return () => { applyPalette(loadBrand().palette); };
+  }, []);
+
+  const chooseTheme = (key) => {
+    setDeployTheme(key);
+    saveBrand({ deployTheme: key });
+  };
 
   const notInCart = featuredModules().filter((m) => !cart.has(m.id));
   const total = CORE.price + cart.subtotal;
@@ -35,6 +53,7 @@ export default function CheckoutPage() {
         ...cart.items.map((m) => ({ name: m.name, price: m.price })),
       ],
       total,
+      brandTheme: themeLabel(deployTheme),
     };
     const goSuccess = () => navigate('/checkout/success', { state: { demo: true, order } });
 
@@ -93,7 +112,7 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        <ThemePicker />
+        <CheckoutThemeSelect value={deployTheme} onChange={chooseTheme} />
 
         <div className="pp-checkout-grid">
           <div>
@@ -160,6 +179,10 @@ export default function CheckoutPage() {
             <div className="pp-summary-total">
               <span>Total (one-time)</span>
               <strong>{formatPrice(total)}</strong>
+            </div>
+            <div className="pp-summary-line pp-summary-meta">
+              <span>Brand theme</span>
+              <span>{themeLabel(deployTheme)}</span>
             </div>
             {error && <div className="pp-checkout-error">{error}</div>}
             <button

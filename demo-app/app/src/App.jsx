@@ -44,6 +44,8 @@ import DemoChrome from './demo/components/DemoChrome';
 import DemoLanding from './demo/pages/DemoLanding';
 import CheckoutPage from './demo/pages/CheckoutPage';
 import CheckoutSuccess from './demo/pages/CheckoutSuccess';
+import { TourProvider } from './demo/tour/TourProvider';
+import TourOverlay from './demo/tour/TourOverlay';
 
 // Router mount point follows the Vite base: '' (root) for per-client product
 // builds, '/polishpoint' for the marketing demo. BASE_URL is '/' or
@@ -57,8 +59,8 @@ function HomeRoute() {
 }
 
 function AppRoutes() {
-  return (
-    <BrowserRouter basename={BASENAME}>
+  const body = (
+    <>
       <Routes>
         {/* Standalone demo/commerce surfaces (no app sidebar), demo build only. */}
         {IS_DEMO && <Route path="demo" element={<DemoLanding />} />}
@@ -110,6 +112,14 @@ function AppRoutes() {
 
       {/* App-wide floating cart + drawer (demo build only). */}
       {IS_DEMO && <DemoChrome />}
+      {/* Guided tour spotlight overlay (demo build only). */}
+      {IS_DEMO && <TourOverlay />}
+    </>
+  );
+
+  return (
+    <BrowserRouter basename={BASENAME}>
+      {IS_DEMO ? <TourProvider>{body}</TourProvider> : body}
     </BrowserRouter>
   );
 }
@@ -119,6 +129,9 @@ export default function App() {
   // so the theme files never ship in a per-client product build).
   useEffect(() => {
     if (!IS_DEMO) return undefined;
+    // Checkout stays in the clean PolishPoint baseline — don't apply a saved
+    // theme when the demo is opened directly on a /checkout route.
+    if (window.location.pathname.includes('/checkout')) return undefined;
     let active = true;
     import('./demo/brandTheme').then(({ applyPalette, loadBrand }) => {
       if (active) applyPalette(loadBrand().palette);

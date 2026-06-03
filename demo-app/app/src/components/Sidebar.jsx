@@ -62,13 +62,13 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
       </div>
 
       <nav className="sidebar-nav">
-        <div className="nav-group">
+        <div className="nav-group" data-tour="core">
           {IS_DEMO && <p className="nav-group-label">Core platform</p>}
           {coreItems.map(renderLink)}
         </div>
 
         {IS_DEMO && addonModules.length > 0 && (
-          <div className="nav-group">
+          <div className="nav-group" data-tour="addons">
             <p className="nav-group-label">Add-on modules</p>
             {addonModules.map((m) =>
               m.route ? (

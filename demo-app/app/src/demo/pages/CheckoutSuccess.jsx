@@ -4,12 +4,13 @@ import { useStore } from '../../store';
 import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { formatPrice } from '../modules.catalog';
+import { clearPaletteOverride, applyPalette, loadBrand } from '../brandTheme';
 import '../demo.css';
 
 // /polishpoint/checkout/success — landing after checkout completes. Clears the
-// cart once (the order is placed). For the self-contained demo path it also shows
-// an order recap passed via router state and flags that no real payment was taken;
-// a real Stripe return (fresh load, no state) shows the plain confirmation.
+// cart once (order placed). For the self-contained demo path it shows an order
+// recap (passed via router state) including the chosen brand theme and flags that
+// no real payment was taken. Stays in the clean PolishPoint look, like checkout.
 
 export default function CheckoutSuccess() {
   const company = selectCompany(useStore());
@@ -20,6 +21,8 @@ export default function CheckoutSuccess() {
 
   useEffect(() => {
     cart.clear();
+    clearPaletteOverride();
+    return () => { applyPalette(loadBrand().palette); };
     // Run once on mount — the order is complete, so empty the cart.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -46,6 +49,12 @@ export default function CheckoutSuccess() {
               <span>Total (one-time)</span>
               <strong>{formatPrice(order.total)}</strong>
             </div>
+            {order.brandTheme && (
+              <div className="pp-summary-line pp-summary-meta">
+                <span>Brand theme</span>
+                <span>{order.brandTheme}</span>
+              </div>
+            )}
             <p className="pp-success-demo-note">This is an interactive demo — no payment was processed.</p>
           </div>
         )}

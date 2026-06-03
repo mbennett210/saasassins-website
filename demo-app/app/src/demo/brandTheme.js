@@ -1,26 +1,42 @@
-// Demo-only brand theme picker. Lets a prospect preview the product in one of the
-// brand palettes SaaSassins ships — the exact swatchboard-derived themes a real
-// per-client deployment picks from. The choice is persisted (survives reloads and
-// carries across the demo + live CRM); resetDemo() clears it.
+// Demo-only brand theming. Two consumers:
+//   • DemoControls (in the live CRM) — a live switcher that injects a palette
+//     globally so the prospect can preview the product in different brand colors.
+//   • CheckoutThemeSelect — a non-applying picker that shows small example tiles
+//     so the client confirms which brand style their deployment ships in.
 //
 // Palettes inject one of the shell's prebuilt theme files at runtime as a <style>
-// override, so there's no rebuild or color math. "Blue" is the baseline already
-// imported in index.css (the PolishPoint default), so selecting it removes the
-// override. The theme CSS is generated from the swatchboards in
-// Client-theme-picker/shared/swatchboards via scripts/swatchboard-to-theme.mjs.
+// override (no rebuild / color math). "Blue" is the baseline already imported in
+// index.css (the PolishPoint default), so selecting it removes the override. The
+// theme CSS is generated from Client-theme-picker/shared/swatchboards via
+// scripts/swatchboard-to-theme.mjs. `preview` colors drive the checkout tiles.
 
 import forgeCss from '../theme-polishpoint-forge.css?inline';
 import midnightCss from '../theme-polishpoint-midnight.css?inline';
 import pinkCss from '../theme-polishpoint-pink.css?inline';
 
 export const PALETTES = {
-  blue:     { label: 'Blue',     swatch: '#1E8FE8', css: null }, // PolishPoint default (index.css baseline)
-  forge:    { label: 'Forge',    swatch: '#F97316', css: forgeCss },
-  midnight: { label: 'Midnight', swatch: '#C9A84C', css: midnightCss },
-  pink:     { label: 'Pink',     swatch: '#EC4899', css: pinkCss },
+  blue: {
+    label: 'Blue', swatch: '#1E8FE8', css: null, // PolishPoint default (index.css baseline)
+    preview: { bg: '#F1F5F9', surface: '#FFFFFF', primary: '#1E8FE8', text: '#0F172A' },
+  },
+  forge: {
+    label: 'Forge', swatch: '#F97316', css: forgeCss,
+    preview: { bg: '#0A0C10', surface: '#161B22', primary: '#F97316', text: '#F5F5F3' },
+  },
+  midnight: {
+    label: 'Midnight', swatch: '#C9A84C', css: midnightCss,
+    preview: { bg: '#0B0E14', surface: '#161B22', primary: '#C9A84C', text: '#F5F5F3' },
+  },
+  pink: {
+    label: 'Pink', swatch: '#EC4899', css: pinkCss,
+    preview: { bg: '#FDF2F8', surface: '#FFFFFF', primary: '#EC4899', text: '#1F2937' },
+  },
 };
 
 export const PALETTE_KEYS = ['blue', 'forge', 'midnight', 'pink'];
+
+// Display label for a palette (Blue surfaces as the PolishPoint default).
+export const themeLabel = (key) => (key === 'blue' ? 'PolishPoint (Blue)' : (PALETTES[key] || PALETTES.blue).label);
 
 const STYLE_ID = 'pp-demo-theme';
 const KEY = 'pp.demo.brand.v1';
@@ -39,6 +55,12 @@ export function applyPalette(key) {
   el.id = STYLE_ID;
   el.textContent = p.css;
   if (!existing) document.head.appendChild(el);
+}
+
+// Remove the live override (used to force the checkout into the clean baseline).
+export function clearPaletteOverride() {
+  if (typeof document === 'undefined') return;
+  document.getElementById(STYLE_ID)?.remove();
 }
 
 export function loadBrand() {
