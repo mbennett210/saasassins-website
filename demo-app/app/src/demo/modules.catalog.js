@@ -1,22 +1,72 @@
-// Demo module catalog — the sellable add-ons showcased in the marketing demo.
+// Demo catalog — the single source of truth for the demo's commercial packaging:
+// the Core platform plus every sellable add-on shown in the demo.
 //
-// This file holds DISPLAY data only (name, copy, the price shown to the user).
-// The Stripe price mapping that actually charges the card lives SERVER-SIDE in
-// api/checkout.js, so a tampered client can never set its own price. Prices here
-// are one-time setup fees (USD), matching the "Future add-on modules" section of
-// SHELL_ROADMAP.md.
+// DISPLAY data only (name, copy, the price shown to the user). The Stripe price
+// mapping that actually charges the card lives SERVER-SIDE in api/_modules.js, so
+// a tampered client can never set its own price — keep the two in sync.
 //
-// `placements` controls where a module's in-context "Add to cart" CTA appears
-// inside the live app (consumed by components/ModuleCTA on the feature pages).
-// Extend this array — and the catalog itself — as new add-ons ship; everything
-// downstream (landing, cart, checkout) is driven off this list.
+//   tier        'core' (the always-included base) vs 'addon' (à la carte).
+//   route       set when the module has a live page in the app (Marketing); the
+//               nav links straight to it. Page-less add-ons open an info dialog.
+//   navLabel    short label for the sidebar (the full `name` is too long there).
+//   placements  where a module's in-context "Add to cart" CTA appears inside the
+//               live app (consumed by components/ModuleCTA on the feature pages).
+//
+// Extend this list as new add-ons ship; everything downstream (sidebar, landing,
+// cart, checkout) is driven off it.
+
+// The Core platform — included in every plan and charged as the base line item at
+// checkout (see api/_modules.js, which always adds it to the Stripe session).
+export const CORE = {
+  id: 'core',
+  name: 'Core Platform',
+  tier: 'core',
+  price: 1500,
+  blurb: 'The full operations suite every plan starts with.',
+  features: [
+    'Operations Dashboard',
+    'Scheduling & Calendar',
+    'Client Database (Contacts + Accounts)',
+    'Sales Pipeline',
+    'Messaging Suite',
+    'SMS via Twilio + A2P',
+    'Invoice & Payment logging',
+    'Automated Reminders',
+    'Team, Roles & Permissions',
+  ],
+};
 
 export const MODULE_CATALOG = [
   {
+    id: 'marketing',
+    name: 'Marketing — Cold Email',
+    navLabel: 'Marketing',
+    icon: '📣',
+    category: 'Growth',
+    tier: 'addon',
+    price: 600,
+    route: '/marketing', // has a live page in the app — nav links straight to it
+    blurb: 'Multi-step cold-email sequences with shared rotation inboxes and AI-routed replies.',
+    longDescription:
+      'Turn outbound into a system. Build multi-step email drip sequences that send from company-shared rotation inboxes, auto-route inbound replies to the right pipeline stage, and track every contact’s enrollment — all inside PolishPoint.',
+    features: [
+      'Multi-step drip sequences',
+      'Company-shared rotation inboxes',
+      'AI-routed inbound replies',
+      'Per-contact enrollments',
+      'Send-window + daily-cap controls',
+      'Reply-to-pipeline routing',
+    ],
+    placements: [],
+    featured: true,
+  },
+  {
     id: 'ipr',
     name: 'Invoice & Payment Routing',
+    navLabel: 'Invoice Routing',
     icon: '💳',
     category: 'Billing & Payments',
+    tier: 'addon',
     price: 400,
     blurb: 'Customizable invoice templates, automated reminders, and online card payments.',
     longDescription:
@@ -35,8 +85,10 @@ export const MODULE_CATALOG = [
   {
     id: 'quickbooks',
     name: 'QuickBooks Integration',
+    navLabel: 'QuickBooks',
     icon: '🔄',
     category: 'Billing & Payments',
+    tier: 'addon',
     price: 300,
     blurb: 'Two-way sync with QuickBooks Online — customers, invoices, and payments.',
     longDescription:
@@ -53,8 +105,10 @@ export const MODULE_CATALOG = [
   {
     id: 'inventory',
     name: 'Inventory Management',
+    navLabel: 'Inventory',
     icon: '📦',
     category: 'Operations',
+    tier: 'addon',
     price: 400,
     blurb: 'Track physical keys and general inventory with low-stock alerts.',
     longDescription:
@@ -71,8 +125,10 @@ export const MODULE_CATALOG = [
   {
     id: 'ems',
     name: 'Employee Management System',
+    navLabel: 'Employee Mgmt',
     icon: '👥',
     category: 'Workforce',
+    tier: 'addon',
     price: 800,
     blurb: 'Document storage, certifications, GPS clock-in/out, onboarding, and HR workflows.',
     longDescription:
@@ -93,8 +149,10 @@ export const MODULE_CATALOG = [
   {
     id: 'fieldops',
     name: 'Field Ops',
+    navLabel: 'Field Ops',
     icon: '📋',
     category: 'Operations',
+    tier: 'addon',
     price: 600,
     blurb: 'Digital checklists, before/after photos, and GPS job-completion verification.',
     longDescription:
