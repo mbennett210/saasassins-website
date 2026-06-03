@@ -311,8 +311,11 @@
 /* Scale-to-fit wrapper: renders the MiniApp at native size, scaled into the screen. */
 .pp-scaled { position: relative; width: 100%; height: 100%; overflow: hidden; }
 .pp-scaled-inner { position: absolute; top: 0; left: 0; transform-origin: top left; }
-/* Desktop monitor */
-.pp-device-desktop { flex: 1 1 440px; max-width: 600px; min-width: 280px; }
+/* Desktop monitor. min-width: 0 (no hard floor) so the frame shrinks with the
+   stage instead of forcing it wider than the card; once there's no room for a
+   comfortable side-by-side, flex-wrap drops the phone onto its own line below.
+   max-width keeps it from dominating on very wide panes. */
+.pp-device-desktop { flex: 1 1 440px; max-width: 600px; min-width: 0; }
 .pp-device-desktop .pp-device-screen {
   width: 100%; aspect-ratio: 1280 / 820; overflow: hidden;
   background: var(--card-bg);
@@ -320,15 +323,17 @@
   border-radius: 16px; box-shadow: var(--shadow-lg);
 }
 .pp-device-stand { width: 28%; height: 14px; background: var(--color-neutral-800, #1f2937); border-radius: 0 0 8px 8px; }
-/* Phone */
+/* Phone. max-width: 100% so it can never out-size a very narrow stage. */
 .pp-device-phone { flex: 0 0 auto; }
-.pp-device-phone-body { position: relative; width: 188px; padding: 10px; background: var(--color-neutral-800, #1f2937); border-radius: 30px; box-shadow: var(--shadow-lg); }
+.pp-device-phone-body { position: relative; width: 188px; max-width: 100%; padding: 10px; background: var(--color-neutral-800, #1f2937); border-radius: 30px; box-shadow: var(--shadow-lg); }
 .pp-device-notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 52px; height: 8px; background: rgba(255,255,255,0.18); border-radius: 0 0 8px 8px; z-index: 1; }
 .pp-device-phone .pp-device-screen { width: 100%; aspect-ratio: 390 / 820; overflow: hidden; border-radius: 22px; background: var(--card-bg); }
 
 /* ── Checkout ── */
 .pp-checkout-grid { display: grid; grid-template-columns: 1fr 340px; gap: var(--space-6); align-items: start; }
-.pp-checkout-main { display: grid; gap: var(--space-3); }
+/* min-width: 0 lets the 1fr column shrink below its content's intrinsic width
+   instead of blowing the grid (and the page) wider than the pane. */
+.pp-checkout-main { display: grid; gap: var(--space-3); min-width: 0; }
 .pp-checkout-row {
   display: flex; align-items: center; gap: var(--space-4);
   padding: var(--space-4); border: 1px solid var(--card-border); border-radius: var(--card-radius); background: var(--card-bg);
@@ -417,6 +422,7 @@
   .pp-cart-fab { padding: 0 var(--space-4); }
   /* Floating demo control: tuck into the corner. */
   .pp-demo-controls { left: var(--space-3); bottom: var(--space-3); }
-  /* Preview frames stack when there isn't room for side-by-side. */
+  /* Tighten the gap on small screens; the phone-under-desktop stacking itself is
+     handled by flex-wrap on the stage (the desktop shrinks, the phone wraps below). */
   .pp-preview-stage { gap: var(--space-4); }
 }
