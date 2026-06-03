@@ -3,10 +3,10 @@
    ------------------------------------------------------------
    Self-contained styles for the demo/commerce surfaces: glowing
    info buttons, module add-to-cart CTAs, the cart drawer/FAB,
-   the sidebar Core/Add-on grouping, the floating demo control
-   (tour / reset), the checkout brand-style toggle + persistent
-   dashboard preview (desktop + phone device frames), the guided-
-   tour overlay, the /polishpoint/demo landing, and /polishpoint/checkout.
+   the sidebar Core/Add-on grouping, the checkout brand-style
+   toggle + persistent dashboard preview (desktop + phone device
+   frames), the in-content info pins, the /polishpoint/demo landing,
+   and /polishpoint/checkout.
 
    Loaded only when the demo components render (which are gated on
    IS_DEMO), so none of this ships in a per-client product build.
@@ -263,28 +263,6 @@
 
 .pp-demo-footer { text-align: center; padding: var(--space-8) var(--space-4); color: var(--text-faint); font-size: var(--font-size-sm); border-top: 1px solid var(--border-light); margin-top: var(--space-10); }
 
-/* ── Floating demo control (live CRM only): tour / reset ── */
-.pp-demo-controls {
-  position: fixed; left: var(--space-5); bottom: var(--space-5); z-index: var(--z-sticky);
-  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2);
-}
-.pp-demo-controls-toggle {
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  height: var(--space-10); padding: 0 var(--space-4);
-  border: 1px solid var(--card-border); border-radius: var(--radius-full);
-  background: var(--color-surface-raised); color: var(--text-primary);
-  font-family: var(--font); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);
-  box-shadow: var(--shadow-md); cursor: pointer;
-  transition: border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
-}
-.pp-demo-controls-toggle:hover { border-color: var(--primary); color: var(--primary); }
-.pp-demo-controls-panel {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--card-border); border-radius: var(--card-radius);
-  background: var(--color-surface-raised); box-shadow: var(--shadow-lg);
-}
-.pp-demo-controls-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
-
 /* ── Checkout brand-style toggle + persistent dashboard preview ── */
 /* The brand-style step is the LAST thing in the checkout's left column (after
    Core + add-ons), so it leads with top spacing rather than a trailing margin. */
@@ -404,28 +382,56 @@
   text-transform: uppercase; letter-spacing: var(--letter-spacing-wide);
 }
 
-/* ── Guided tour overlay ── */
-.pp-tour { position: fixed; inset: 0; z-index: var(--z-modal); }
-.pp-tour-capture { position: absolute; inset: 0; }
-.pp-tour-dim { position: absolute; inset: 0; background: rgba(var(--color-black-rgb), 0.6); }
-.pp-tour-spotlight {
-  position: fixed; border-radius: var(--card-radius);
-  box-shadow: 0 0 0 9999px rgba(var(--color-black-rgb), 0.6);
-  pointer-events: none;
+/* ── In-content info pins (gentle pinging "i" affordances + bubble) ── */
+/* Replaces the old spotlight tour. The "ping": a quick radiate in the first
+   ~third of each ~4s cycle, idle the rest — so it reads as "ping every ~4s," not
+   a constant glow. The JS caps it to a few cycles (animation-iteration-count),
+   then the pin sits static but still clickable. */
+@keyframes pp-pin-ping {
+  0%        { box-shadow: 0 0 0 0 rgba(var(--color-brand-primary-rgb), 0.55); }
+  18%       { box-shadow: 0 0 0 9px rgba(var(--color-brand-primary-rgb), 0); }
+  30%, 100% { box-shadow: 0 0 0 0 rgba(var(--color-brand-primary-rgb), 0); }
 }
-.pp-tour-card {
-  position: fixed; z-index: 1;
+.pp-pin-layer { position: fixed; inset: 0; z-index: var(--z-sticky); pointer-events: none; }
+.pp-pin {
+  position: fixed; pointer-events: auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--space-6); height: var(--space-6); padding: 0; /* 24px */
+  border-radius: var(--radius-full);
+  border: 1px solid var(--primary);
+  background: var(--primary-bg); color: var(--primary);
+  font-family: var(--font); font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold); font-style: italic; line-height: 1;
+  box-shadow: var(--shadow-sm); cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+.pp-pin:hover { background: var(--primary); color: var(--color-text-on-primary); transform: scale(1.12); }
+.pp-pin:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.pp-pin.is-pinging { animation: pp-pin-ping 4s var(--ease-out) 5; }
+
+.pp-pin-bubble {
+  position: fixed; pointer-events: auto; z-index: calc(var(--z-modal) - 1);
   display: grid; gap: var(--space-2);
-  max-width: 340px;
-  padding: var(--space-5);
+  padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4);
   border: 1px solid var(--card-border); border-radius: var(--card-radius);
   background: var(--color-surface-raised); box-shadow: var(--shadow-lg);
 }
-.pp-tour-progress { font-size: var(--font-size-2xs); font-weight: var(--font-weight-bold); text-transform: uppercase; letter-spacing: var(--letter-spacing-wide); color: var(--primary); }
-.pp-tour-card h3 { margin: 0; font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-.pp-tour-card p { margin: 0; font-size: var(--font-size-sm); color: var(--text-body); line-height: var(--line-height-relaxed); }
-.pp-tour-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-top: var(--space-2); }
-.pp-tour-nav { display: inline-flex; gap: var(--space-2); }
+.pp-pin-bubble-title { margin: 0; font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+.pp-pin-bubble-body { margin: 0; font-size: var(--font-size-sm); color: var(--text-body); line-height: var(--line-height-relaxed); }
+.pp-pin-bubble-close {
+  position: absolute; top: var(--space-1); right: var(--space-1);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--space-6); height: var(--space-6); padding: 0;
+  border: none; background: transparent; color: var(--text-faint);
+  font-size: var(--font-size-lg); line-height: 1; cursor: pointer; border-radius: var(--radius-md);
+}
+.pp-pin-bubble-close:hover { background: var(--inset-bg); color: var(--text-primary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-pin.is-pinging { animation: none; box-shadow: 0 0 0 3px rgba(var(--color-brand-primary-rgb), 0.28); }
+}
 
 /* ── Tablet: collapse the checkout to a single column before the 340px summary
    rail squeezes the content column too narrow (cramped rows, clipped prices). ── */
@@ -449,8 +455,6 @@
   .pp-demo-hero h1 { font-size: var(--font-size-3xl); }
   .pp-cart-fab-label { display: none; }
   .pp-cart-fab { padding: 0 var(--space-4); }
-  /* Floating demo control: tuck into the corner. */
-  .pp-demo-controls { left: var(--space-3); bottom: var(--space-3); }
   /* Tighten the gap on small screens; the phone-under-desktop stacking itself is
      handled by flex-wrap on the stage (the desktop shrinks, the phone wraps below). */
   .pp-preview-stage { gap: var(--space-4); }

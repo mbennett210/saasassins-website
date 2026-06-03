@@ -7,7 +7,6 @@ import { useCart } from '../cart/CartContext';
 import ModuleCTA from '../components/ModuleCTA';
 import InfoButton from '../components/InfoButton';
 import CartDrawer from '../components/CartDrawer';
-import { resetDemo } from '../resetDemo';
 import '../demo.css';
 
 // Demo entry at /polishpoint/demo — the marketing landing a prospect arrives on
@@ -30,7 +29,6 @@ export default function DemoLanding() {
           <span className="pp-addon-badge">Demo</span>
         </span>
         <div className="pp-demo-topbar-actions">
-          <button className="pp-link-muted" onClick={resetDemo}>Reset demo</button>
           <button className="btn btn-outline pp-demo-cartbtn" onClick={() => setCartOpen(true)}>
             🛒 Cart
             {cart.count > 0 && <span className="pp-cart-fab-count">{cart.count}</span>}

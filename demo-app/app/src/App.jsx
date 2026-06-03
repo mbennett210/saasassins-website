@@ -43,8 +43,6 @@ import DemoChrome from './demo/components/DemoChrome';
 import DemoLanding from './demo/pages/DemoLanding';
 import CheckoutPage from './demo/pages/CheckoutPage';
 import CheckoutSuccess from './demo/pages/CheckoutSuccess';
-import { TourProvider } from './demo/tour/TourProvider';
-import TourOverlay from './demo/tour/TourOverlay';
 
 // Router mount point follows the Vite base: '' (root) for per-client product
 // builds, '/polishpoint' for the marketing demo. BASE_URL is '/' or
@@ -58,8 +56,8 @@ function HomeRoute() {
 }
 
 function AppRoutes() {
-  const body = (
-    <>
+  return (
+    <BrowserRouter basename={BASENAME}>
       <Routes>
         {/* Standalone demo/commerce surfaces (no app sidebar), demo build only. */}
         {IS_DEMO && <Route path="demo" element={<DemoLanding />} />}
@@ -111,14 +109,6 @@ function AppRoutes() {
 
       {/* App-wide floating cart + drawer (demo build only). */}
       {IS_DEMO && <DemoChrome />}
-      {/* Guided tour spotlight overlay (demo build only). */}
-      {IS_DEMO && <TourOverlay />}
-    </>
-  );
-
-  return (
-    <BrowserRouter basename={BASENAME}>
-      {IS_DEMO ? <TourProvider>{body}</TourProvider> : body}
     </BrowserRouter>
   );
 }

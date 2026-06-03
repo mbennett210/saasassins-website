@@ -6,7 +6,7 @@ import { useStore } from '../store';
 import { selectCompany } from '../store/selectors';
 import { IS_DEMO } from '../demo/isDemo';
 import PlacementCTAs from '../demo/components/PlacementCTAs';
-import DemoControls from '../demo/components/DemoControls';
+import InfoPinLayer from '../demo/tour/InfoPinLayer';
 
 export default function AppLayout() {
   const company = selectCompany(useStore());
@@ -38,11 +38,11 @@ export default function AppLayout() {
           <NotificationsBell />
         </div>
         <Outlet />
+        {/* Demo-only: in-content "i" info pins — gentle pings beside each section's header. */}
+        {IS_DEMO && <InfoPinLayer />}
         {/* Demo-only: route-aware in-context module upsell (null outside demo / unmapped routes). */}
         {IS_DEMO && <PlacementCTAs />}
       </main>
-      {/* Demo-only: floating brand-theme / tour / reset control. */}
-      {IS_DEMO && <DemoControls />}
     </>
   );
 }

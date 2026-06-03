@@ -4,7 +4,7 @@
 // device frames) so the client sees what their platform looks like in each brand,
 // powered by the ported ThemeEngine + MiniApp (see ./preview/). This file just
 // holds the toggle metadata (label + swatch gradient) and persists the choice as
-// `deployTheme`; resetDemo clears it. The demo itself stays clean PolishPoint.
+// `deployTheme`. The demo itself stays clean PolishPoint.
 //
 // NOTE: the PALETTES keys (blue/forge/midnight/pink) are STABLE internal ids —
 // they back the saved `deployTheme`, the MiniApp scope classes (.ppd-<key> /
