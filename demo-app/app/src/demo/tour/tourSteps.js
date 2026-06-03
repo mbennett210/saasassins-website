@@ -4,7 +4,8 @@
 //
 // `selector` targets an on-screen element (null/`placement:'center'` = no
 // spotlight, centered intro card). All targets live in the CRM shell so the tour
-// never has to navigate between routes.
+// never has to navigate between routes. (Brand styling is chosen at checkout from
+// swatchboard examples, so it's covered in the final step rather than in the CRM.)
 
 export const TOUR_STEPS = [
   {
@@ -32,15 +33,9 @@ export const TOUR_STEPS = [
     body: 'Bolt on modules like Field Ops, Inventory, or QuickBooks as one-time add-ons — set up for your business, so you never pay for what you don’t use.',
   },
   {
-    selector: '[data-tour="theme"]',
-    placement: 'right',
-    title: 'Make it your brand',
-    body: 'Preview the whole platform in different brand colors. Your live deployment is set up in your company’s palette — this is your software, not a generic tool.',
-  },
-  {
     selector: '.pp-cart-fab',
     placement: 'left',
-    title: 'Simple, transparent pricing',
-    body: 'Core plus any add-ons you choose — one clear checkout, and you confirm your brand style there too. Ready whenever you are.',
+    title: 'Simple pricing — and your brand',
+    body: 'Core plus any add-ons you choose — one clear checkout, where you also pick the brand style your platform ships in (set up in your company’s colors). Ready whenever you are.',
   },
 ];

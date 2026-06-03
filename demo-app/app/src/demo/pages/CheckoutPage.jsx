@@ -1,22 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { CORE, formatPrice, featuredModules } from '../modules.catalog';
-import { themeLabel, clearPaletteOverride, applyPalette, loadBrand, saveBrand } from '../brandTheme';
+import { themeLabel, loadBrand, saveBrand } from '../brandTheme';
 import CheckoutThemeSelect from '../components/CheckoutThemeSelect';
 import ModuleCTA from '../components/ModuleCTA';
 import '../demo.css';
 
 // /polishpoint/checkout — confirms the order (Core base + selected add-ons + the
 // chosen brand style), offers any modules not yet added, and completes the
-// purchase.
-//
-// The checkout itself always renders in the clean PolishPoint look — any live
-// brand theme the prospect previewed while exploring is removed on mount and
-// restored on leave. The brand-style choice here is a recorded deployment
-// preference shown via example tiles, not a live reskin.
+// purchase. Always renders in the clean PolishPoint look; the brand-style choice
+// is shown via faithful swatchboard example images (CheckoutThemeSelect) and
+// recorded as a deployment preference — it does not reskin anything.
 //
 // Payment: if a Stripe key is wired (api/checkout returns a hosted-checkout URL)
 // we redirect to it; otherwise we simulate a completed order and route to the
@@ -29,12 +26,6 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [deployTheme, setDeployTheme] = useState(loadBrand().deployTheme || 'blue');
-
-  // Keep checkout in the clean PolishPoint baseline; restore the explored theme on leave.
-  useEffect(() => {
-    clearPaletteOverride();
-    return () => { applyPalette(loadBrand().palette); };
-  }, []);
 
   const chooseTheme = (key) => {
     setDeployTheme(key);

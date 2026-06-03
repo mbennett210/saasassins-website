@@ -4,13 +4,12 @@ import { useStore } from '../../store';
 import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { formatPrice } from '../modules.catalog';
-import { clearPaletteOverride, applyPalette, loadBrand } from '../brandTheme';
 import '../demo.css';
 
 // /polishpoint/checkout/success — landing after checkout completes. Clears the
 // cart once (order placed). For the self-contained demo path it shows an order
 // recap (passed via router state) including the chosen brand theme and flags that
-// no real payment was taken. Stays in the clean PolishPoint look, like checkout.
+// no real payment was taken.
 
 export default function CheckoutSuccess() {
   const company = selectCompany(useStore());
@@ -21,8 +20,6 @@ export default function CheckoutSuccess() {
 
   useEffect(() => {
     cart.clear();
-    clearPaletteOverride();
-    return () => { applyPalette(loadBrand().palette); };
     // Run once on mount — the order is complete, so empty the cart.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

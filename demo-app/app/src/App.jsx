@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './layouts/AppLayout';
 import { StoreProvider } from './store';
@@ -125,20 +124,6 @@ function AppRoutes() {
 }
 
 export default function App() {
-  // Demo only: re-apply the prospect's chosen brand palette on load (code-split
-  // so the theme files never ship in a per-client product build).
-  useEffect(() => {
-    if (!IS_DEMO) return undefined;
-    // Checkout stays in the clean PolishPoint baseline — don't apply a saved
-    // theme when the demo is opened directly on a /checkout route.
-    if (window.location.pathname.includes('/checkout')) return undefined;
-    let active = true;
-    import('./demo/brandTheme').then(({ applyPalette, loadBrand }) => {
-      if (active) applyPalette(loadBrand().palette);
-    });
-    return () => { active = false; };
-  }, []);
-
   const tree = (
     <ToastProvider>
       <TwilioInboundListener />
