@@ -1,9 +1,10 @@
 import { useLocation } from 'react-router-dom';
 import { IS_DEMO } from '../isDemo';
 import { modulesForPlacement } from '../modules.catalog';
+import { useStore } from '../../store';
+import { selectCompany } from '../../store/selectors';
 import ModuleCTA from './ModuleCTA';
 import InfoButton from './InfoButton';
-import { BRAND } from '../../brand.config';
 import '../placement.css';
 
 // Route-aware in-context upsell. Mounted once at the bottom of <main> (AppLayout)
@@ -23,6 +24,7 @@ const ROUTE_PLACEMENT = [
 
 export default function PlacementCTAs() {
   const { pathname } = useLocation();
+  const company = selectCompany(useStore());
   if (!IS_DEMO) return null;
 
   const hit = ROUTE_PLACEMENT.find((r) => r.match(pathname));
@@ -36,7 +38,7 @@ export default function PlacementCTAs() {
         <h3>Recommended add-on{mods.length > 1 ? 's' : ''} for this area</h3>
         <InfoButton title="About add-on modules" glowKey="placement:about" label="About add-on modules">
           <p className="pp-info-lead">
-            Your {BRAND.name} platform includes every core feature shown here. Add-on modules are
+            Your {company.name} platform includes every core feature shown here. Add-on modules are
             optional one-time purchases that extend it — tailored and integrated for your business.
             Add any to your cart, keep exploring, and confirm everything at checkout.
           </p>

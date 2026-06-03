@@ -1,21 +1,25 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useStore } from '../../store';
+import { selectCompany } from '../../store/selectors';
 import { CORE, featuredModules, formatPrice } from '../modules.catalog';
 import { useCart } from '../cart/CartContext';
 import ModuleCTA from '../components/ModuleCTA';
 import InfoButton from '../components/InfoButton';
 import CartDrawer from '../components/CartDrawer';
+import BrandizeControl from '../components/BrandizeControl';
 import { resetDemo } from '../resetDemo';
-import { BRAND } from '../../brand.config';
 import '../demo.css';
 
 // Demo entry at /polishpoint/demo — the marketing landing a prospect arrives on
-// from the SaaSassins site. Pitches the product, lets them jump into the live CRM
-// ("Enter live demo" → /), and showcases the sellable add-on modules with
-// add-to-cart + glowing info buttons. Standalone (no app sidebar).
+// from the SaaSassins site. Pitches the product, lets them reskin it with their
+// own brand, jump into the live CRM ("Enter live demo" → /), and browse the
+// sellable add-on modules. Standalone (no app sidebar). Brand name is read from
+// the store company so it reflects the prospect's "try it with your brand" choice.
 
 export default function DemoLanding() {
   const navigate = useNavigate();
+  const company = selectCompany(useStore());
   const cart = useCart();
   const [cartOpen, setCartOpen] = useState(false);
   const modules = featuredModules();
@@ -24,7 +28,7 @@ export default function DemoLanding() {
     <div className="pp-demo-page">
       <header className="pp-demo-topbar">
         <span className="pp-demo-topbar-brand">
-          {BRAND.name}
+          {company.name}
           <span className="pp-addon-badge">Demo</span>
         </span>
         <div className="pp-demo-topbar-actions">
@@ -39,7 +43,7 @@ export default function DemoLanding() {
 
       <div className="pp-demo-wrap">
         <section className="pp-demo-hero">
-          <h1>Run your entire service business on {BRAND.name}</h1>
+          <h1>Run your entire service business on {company.name}</h1>
           <p className="pp-demo-hero-sub">
             Click through the real product with live sample data — scheduling, CRM, messaging,
             and invoicing. Every plan starts with the {formatPrice(CORE.price)} Core platform; bolt on
@@ -51,6 +55,8 @@ export default function DemoLanding() {
           </div>
         </section>
 
+        <BrandizeControl />
+
         <section className="pp-demo-section" id="modules">
           <div className="pp-section-head">
             <div className="pp-section-head-text">
@@ -59,7 +65,7 @@ export default function DemoLanding() {
             </div>
             <InfoButton title="How modules work" glowKey="section:modules" label="How modules work">
               <p className="pp-info-lead">
-                Every {BRAND.name} plan starts with the Core platform ({formatPrice(CORE.price)}, one-time) and
+                Every {company.name} plan starts with the Core platform ({formatPrice(CORE.price)}, one-time) and
                 includes all of its features. Add-on modules are one-time purchases that unlock extra
                 capability, tailored and integrated for your business. Add them here or from the relevant
                 area inside the app, then confirm everything at checkout.
@@ -91,7 +97,7 @@ export default function DemoLanding() {
       </div>
 
       <footer className="pp-demo-footer">
-        Interactive demo with sample data · {BRAND.name} by SaaSassins
+        Interactive demo with sample data · {company.name} by SaaSassins
       </footer>
 
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
