@@ -1,0 +1,202 @@
+/* mini_app.css — styles for window.MiniApp.
+   Scoped to .mini-app; all colors/fonts pulled from CSS vars written
+   by ThemeEngine.toCss into parent scope (e.g. .mini-blue .mini-app).
+
+   Sized at REAL app proportions (~1400×875 natural). Use transform: scale()
+   on a wrapper only if you need to fit smaller spaces.
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+.mini-app, .mini-app * { box-sizing: border-box; }
+.mini-app {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: var(--page-aurora), var(--page-bg);
+  font-family: var(--font);
+  color: var(--text-body);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ── Sidebar ── */
+.mini-app .ma-sidebar {
+  width: 240px; flex-shrink: 0;
+  background: var(--sidebar-grad);
+  padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 16px;
+  border-right: 1px solid var(--card-border);
+}
+.mini-app .ma-brand { display:flex; align-items:center; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--card-border); }
+.mini-app .ma-brand-logo {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--btn-primary-grad); color: #fff;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:700; font-size:14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 2px 6px rgba(0,0,0,.15);
+}
+.mini-app .ma-brand-nm { font-size: 13px; font-weight:700; color: var(--sidebar-text); line-height:1.2; }
+.mini-app .ma-brand-kicker { font-size: 9px; font-weight: 600; color: var(--sidebar-text); opacity:.65; letter-spacing:.1em; margin-top:3px; }
+
+.mini-app .ma-nav { display:flex; flex-direction:column; gap: 3px; flex:1; }
+.mini-app .ma-nav-btn {
+  display:flex; align-items:center; gap: 11px;
+  padding: 9px 12px; border-radius: 9px;
+  font-size: 13px; font-weight: 500;
+  color: var(--sidebar-text);
+}
+.mini-app .ma-nav-btn.active { background: var(--nav-active-bg); color: var(--sidebar-text-active); box-shadow: inset 0 1px 0 rgba(255,255,255,0.25); }
+.mini-app .ma-nav-btn svg { width: 17px; height: 17px; flex-shrink:0; }
+
+.mini-app .ma-sidebar-foot { padding-top: 12px; border-top: 1px solid var(--card-border); }
+.mini-app .ma-user { display:flex; gap: 10px; align-items:center; padding: 8px; border-radius: 9px; background: rgba(255,255,255,.25); }
+[data-minitheme-kind="dark"] .ma-user, .mini-forge .ma-user, .mini-midnight .ma-user { background: rgba(255,255,255,0.04); }
+.mini-app .ma-user-av { width:28px; height:28px; border-radius:9999px; background: var(--btn-primary-grad); color:#fff; font-size:10px; font-weight:600; display:flex; align-items:center; justify-content:center; }
+.mini-app .ma-user-nm { font-size: 12px; font-weight: 600; color: var(--sidebar-text); line-height: 1.2; }
+.mini-app .ma-user-rl { font-size: 10px; color: var(--sidebar-text); opacity: .65; margin-top:2px; }
+
+/* ── Main ── */
+.mini-app .ma-main { flex: 1; padding: 24px 28px; overflow: auto; position: relative; }
+.mini-app .ma-page-head { display:flex; align-items:center; gap: 12px; margin-bottom: 18px; }
+.mini-app .ma-page-head h1 { font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 0; letter-spacing: -0.02em; }
+
+/* ── Hero ── */
+.mini-app .ma-hero {
+  padding: 22px 26px;
+  background: var(--hero-bg);
+  border: 1px solid var(--hero-border);
+  border-radius: var(--card-radius);
+  margin-bottom: 16px;
+  position: relative; overflow: hidden;
+}
+.mini-app .ma-hero::before {
+  content:""; position:absolute; top:-60px; right:-60px; width:220px; height:220px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--primary) 22%, transparent) 0%, transparent 70%);
+}
+.mini-app .ma-hero h2 { font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 0; letter-spacing: -0.02em; }
+.mini-app .ma-hero-sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.mini-app .ma-hero-stats { display:flex; gap: 32px; margin-top: 20px; position:relative; }
+.mini-app .ma-stat-val { font-size: 26px; font-weight: 700; color: var(--hero-accent); font-variant-numeric: tabular-nums; line-height: 1.1; letter-spacing: -0.02em; }
+.mini-app .ma-stat-lbl { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; margin-top: 4px; }
+
+/* ── Switcher pill ── */
+.mini-app .ma-switcher {
+  display:flex; gap: 4px; padding: 4px;
+  background: color-mix(in srgb, var(--card-bg) 65%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--card-border);
+  border-radius: 9999px;
+  margin-left: auto;
+}
+.mini-app .ma-sw-btn { padding: 6px 14px; border-radius: 9999px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.mini-app .ma-sw-btn.active { background: var(--btn-primary-grad); color:#fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); }
+
+/* ── Cards ── */
+.mini-app .ma-card {
+  background: var(--card-bg);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  padding: 18px 22px;
+  margin-bottom: 14px;
+}
+.mini-app .ma-card-flat {
+  background: var(--card-bg);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+.mini-app .ma-card-title { font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing: .1em; text-transform: uppercase; padding-bottom: 12px; margin-bottom: 14px; border-bottom: 1px solid var(--card-border); }
+
+.mini-app .ma-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; }
+
+/* ── Sched blocks ── */
+.mini-app .ma-sched { padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--card-border); border-left: 3px solid var(--primary); background: var(--card-bg); font-size: 13px; }
+.mini-app .ma-sched:last-child { margin-bottom: 0; }
+.mini-app .ma-sched-line { color: var(--text-body); display:flex; flex-wrap:wrap; gap: 6px; align-items:center; }
+.mini-app .ma-sched strong { color: var(--text-primary); font-weight: 600; }
+.mini-app .ma-sched-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+/* ── Revenue bars ── */
+.mini-app .ma-chart { display:flex; align-items: flex-end; gap: 10px; height: 120px; padding-top: 6px; }
+.mini-app .ma-bar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; gap: 6px; height:100%; justify-content: flex-end; }
+.mini-app .ma-bar { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; background: var(--btn-primary-grad); }
+.mini-app .ma-bar-lbl { font-size: 10px; color: var(--text-muted); font-weight: 600; }
+
+/* ── Badges ── */
+.mini-app .ma-badge { display:inline-flex; align-items:center; justify-content:center; padding: 3px 10px; border-radius: 9999px; font-size: 10px; font-weight: 600; color:#fff; min-width: 72px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.18); }
+.mini-app .ma-badge.green { background: var(--badge-green); }
+.mini-app .ma-badge.amber { background: var(--badge-amber); }
+.mini-app .ma-badge.red   { background: var(--badge-red); }
+.mini-app .ma-badge.blue  { background: var(--badge-blue); }
+.mini-app .ma-badge.slate { background: var(--badge-slate); }
+
+/* ── Avatars ── */
+.mini-app .ma-av { display:inline-flex; align-items:center; justify-content:center; color:#fff; font-weight:600; border-radius:9999px; width: 26px; height: 26px; font-size: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); flex-shrink: 0; }
+.mini-app .av-1 { background: linear-gradient(135deg,#47A5ED,#1878C8); }
+.mini-app .av-2 { background: linear-gradient(135deg,#10B981,#047857); }
+.mini-app .av-3 { background: linear-gradient(135deg,#a78bfa,#7c3aed); }
+.mini-app .av-4 { background: linear-gradient(135deg,#fb923c,#C2410C); }
+.mini-app .av-5 { background: linear-gradient(135deg,#2dd4bf,#0d9488); }
+
+/* ── Button (static display) ── */
+.mini-app .ma-btn { display:inline-flex; align-items:center; gap:6px; padding: 8px 16px; border-radius: var(--btn-radius); font-size: 12px; font-weight: 600; }
+.mini-app .ma-btn.primary { background: var(--btn-primary-grad); color:#fff; box-shadow: var(--btn-primary-glow); }
+
+/* ── Table ── */
+.mini-app .ma-table { width:100%; border-collapse: collapse; }
+.mini-app .ma-table th { text-align:left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); padding: 12px 16px; background: var(--table-head-bg); border-bottom: 1px solid var(--table-head-border); }
+.mini-app .ma-table td { padding: 12px 16px; font-size: 13px; color: var(--text-body); border-bottom: 1px solid var(--card-border); }
+.mini-app .ma-table tr:nth-child(odd) td { background: var(--table-stripe); }
+.mini-app .ma-table tr:last-child td { border-bottom: none; }
+.mini-app .ma-table td.ma-name { font-weight: 600; color: var(--text-primary); display:flex; align-items:center; gap: 10px; }
+.mini-app .ma-table .r { text-align:right; }
+.mini-app .ma-table td.money { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+/* ── Messaging ── */
+.mini-app .ma-msg { display:grid; grid-template-columns: 260px 1fr; gap: 14px; height: calc(100vh - 160px); max-height: 600px; }
+.mini-app .ma-msg-list { background: var(--card-bg); border-radius: var(--card-radius); box-shadow: var(--card-shadow); overflow:hidden; display:flex; flex-direction:column; }
+.mini-app .ma-msg-head { padding: 14px 16px; border-bottom: 1px solid var(--card-border); font-size: 10px; font-weight: 700; color: var(--text-muted); letter-spacing:.1em; }
+.mini-app .ma-msg-item { padding: 12px 16px; display:flex; gap: 10px; align-items:center; border-bottom: 1px solid var(--card-border); }
+.mini-app .ma-msg-item.active { background: var(--table-hover); border-left: 3px solid var(--primary); padding-left: 13px; }
+.mini-app .ma-msg-nm { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.mini-app .ma-msg-pv { font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.3; }
+.mini-app .ma-msg-thread { background: var(--card-bg); border-radius: var(--card-radius); box-shadow: var(--card-shadow); display:flex; flex-direction:column; }
+.mini-app .ma-msg-thead { padding: 14px 18px; border-bottom: 1px solid var(--card-border); display:flex; align-items:center; gap: 10px; }
+.mini-app .ma-msg-body { flex:1; padding: 18px; display:flex; flex-direction:column; gap: 10px; overflow:auto; }
+.mini-app .ma-bubble { max-width: 72%; padding: 9px 14px; border-radius: 14px; font-size: 13px; line-height: 1.45; }
+.mini-app .ma-bubble.them { align-self:flex-start; background: var(--bubble-them-bg); color: var(--bubble-them-color); border-bottom-left-radius: 4px; }
+.mini-app .ma-bubble.me { align-self:flex-end; background: var(--bubble-me-grad); color:#fff; border-bottom-right-radius: 4px; }
+.mini-app .ma-msg-composer { padding: 12px 14px; border-top: 1px solid var(--card-border); display:flex; gap: 8px; }
+.mini-app .ma-input { flex:1; padding: 9px 14px; border: 1px solid var(--card-border); border-radius: var(--input-radius); font-size: 12px; color: var(--text-faint); background: var(--card-bg); }
+
+/* ── Kanban / CRM ── */
+.mini-app .ma-kanban { display:grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.mini-app .ma-col { background: var(--inset-bg, rgba(0,0,0,0.03)); border-radius: var(--card-radius); padding: 12px; border: 1px solid var(--card-border); min-height: 300px; }
+.mini-app .ma-col-head { display:flex; align-items:center; justify-content:space-between; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted); padding: 4px 6px 12px; }
+.mini-app .ma-col-count { background: var(--primary); color:#fff; border-radius: 9999px; padding: 2px 9px; font-size: 10px; }
+.mini-app .ma-deal { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: calc(var(--card-radius) - 2px); padding: 11px 13px; margin-bottom: 9px; box-shadow: var(--card-shadow); border-left: 3px solid var(--primary); }
+.mini-app .ma-deal-name { font-size: 13px; font-weight: 600; color: var(--text-primary); line-height: 1.25; margin-bottom: 8px; }
+.mini-app .ma-deal-meta { font-size: 11px; color: var(--text-muted); display:flex; align-items:center; gap: 7px; margin-bottom: 8px; }
+.mini-app .ma-deal-meta .ma-av { width: 20px; height: 20px; font-size: 8px; }
+.mini-app .ma-deal-val { font-size: 14px; font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; }
+
+/* ── Mobile device layout (added for the checkout dashboard preview) ── */
+.mini-app.ma-mobile { flex-direction: column; }
+.mini-app.ma-mobile .ma-topbar { display:flex; align-items:center; gap:12px; padding:16px 18px; background: var(--card-bg); border-bottom:1px solid var(--card-border); flex-shrink:0; }
+.mini-app.ma-mobile .ma-mob-burger { display:flex; flex-direction:column; gap:3px; }
+.mini-app.ma-mobile .ma-mob-burger i { width:18px; height:2px; background: var(--text-muted); border-radius:2px; }
+.mini-app.ma-mobile .ma-mob-title { flex:1; font-size:16px; font-weight:700; color: var(--text-primary); letter-spacing:-0.01em; }
+.mini-app.ma-mobile .ma-mob-av { width:32px; height:32px; border-radius:9999px; background: var(--btn-primary-grad); color:#fff; font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); flex-shrink:0; }
+.mini-app.ma-mobile .ma-main { padding: 16px; overflow: hidden; }
+.mini-app.ma-mobile .ma-page-head { display: none; }
+.mini-app.ma-mobile .ma-cols { grid-template-columns: 1fr; }
+.mini-app.ma-mobile .ma-hero { padding: 18px 20px; }
+.mini-app.ma-mobile .ma-hero h2 { font-size: 20px; }
+.mini-app.ma-mobile .ma-hero-stats { gap: 16px 26px; flex-wrap: wrap; margin-top: 16px; }
+.mini-app.ma-mobile .ma-hero-stats > div { flex: 0 0 calc(50% - 13px); }
+.mini-app.ma-mobile .ma-tabbar { display:flex; justify-content:space-around; padding:12px 10px 16px; background: var(--card-bg); border-top:1px solid var(--card-border); flex-shrink:0; }
+.mini-app.ma-mobile .ma-tabbar > div { display:flex; flex-direction:column; align-items:center; gap:4px; color: var(--text-muted); font-size:9px; font-weight:600; }
+.mini-app.ma-mobile .ma-tabbar svg { width:20px; height:20px; }
+.mini-app.ma-mobile .ma-tabbar .active { color: var(--primary); }

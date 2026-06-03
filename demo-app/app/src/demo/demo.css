@@ -4,21 +4,18 @@
    Self-contained styles for the demo/commerce surfaces: glowing
    info buttons, module add-to-cart CTAs, the cart drawer/FAB,
    the sidebar Core/Add-on grouping, the floating demo control
-   (brand colors / tour / reset), the checkout brand-style tiles,
-   the guided-tour overlay, the /polishpoint/demo landing, and
-   /polishpoint/checkout.
+   (tour / reset), the checkout brand-style toggle + persistent
+   dashboard preview (desktop + phone device frames), the guided-
+   tour overlay, the /polishpoint/demo landing, and /polishpoint/checkout.
 
    Loaded only when the demo components render (which are gated on
    IS_DEMO), so none of this ships in a per-client product build.
 
    Token discipline: every color/size/shadow/motion value resolves
-   to a var(--token) from theme.css — see src/STYLING.md. Colored
-   alpha uses the sanctioned rgba(var(--*-rgb), a) composition.
-   Per-tile preview colors are data (passed inline as --tile-*).
+   to a var(--token) from theme.css — see src/STYLING.md. (The themed
+   dashboard preview is a separate, self-contained surface — see
+   preview/miniApp.css — and intentionally uses its own scoped vars.)
    ============================================================ */
-
-/* Mock-dashboard fonts (used only inside the checkout preview device frames). */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 /* ── Glow / radiate keyframes (info-button attention pulse) ── */
 @keyframes pp-glow-pulse {
@@ -285,7 +282,7 @@
 }
 .pp-demo-controls-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 
-/* ── Checkout brand-style tiles (example previews, no live reskin) ── */
+/* ── Checkout brand-style toggle + persistent dashboard preview ── */
 .pp-deploy-theme {
   margin-bottom: var(--space-6); padding: var(--space-5) var(--space-6);
   border: 1px solid var(--card-border); border-radius: var(--card-radius);
@@ -306,101 +303,28 @@
 .pp-deploy-tile.is-selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .pp-deploy-tile-swatch { width: var(--space-7); height: var(--space-7); border-radius: var(--radius-md); flex-shrink: 0; }
 .pp-deploy-tile-label { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-body); }
-.pp-deploy-preview-btn { justify-self: start; margin-top: var(--space-1); }
 
-/* ── Abbreviated dashboard mock (themed via --m-* vars; checkout preview only) ── */
-.pp-mock { width: 100%; height: 100%; overflow: hidden; background: var(--m-page); color: var(--m-body); font-family: var(--m-font); }
-.pp-mock-desktop { display: flex; }
-.pp-mock-side { width: 116px; flex-shrink: 0; background: var(--m-side); padding: 12px 10px; display: flex; flex-direction: column; gap: 14px; }
-.pp-mock-brand { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: #fff; }
-.pp-mock-logo { width: 16px; height: 16px; border-radius: 5px; background: var(--m-grad); flex-shrink: 0; }
-.pp-mock-nav { display: flex; flex-direction: column; gap: 3px; }
-.pp-mock-navitem { display: flex; align-items: center; gap: 7px; font-size: 10.5px; color: rgba(255,255,255,0.6); padding: 5px 7px; border-radius: 7px; }
-.pp-mock-navitem i { width: 6px; height: 6px; border-radius: 2px; background: rgba(255,255,255,0.4); flex-shrink: 0; }
-.pp-mock-navitem.is-active { background: rgba(255,255,255,0.10); color: #fff; }
-.pp-mock-navitem.is-active i { background: var(--m-primary); }
-.pp-mock-main { flex: 1; min-width: 0; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.pp-mock-top { display: flex; align-items: center; justify-content: space-between; }
-.pp-mock-title { font-size: 14px; font-weight: 700; color: var(--m-text); }
-.pp-mock-btn { border: none; color: #fff; background: var(--m-grad); font-family: var(--m-font); font-size: 10.5px; font-weight: 600; padding: 6px 11px; border-radius: 8px; cursor: default; }
-.pp-mock-btn-block { width: 100%; padding: 9px; font-size: 12px; }
-.pp-mock-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.pp-mock-mobile .pp-mock-stats { grid-template-columns: repeat(2, 1fr); }
-.pp-mock-stat { background: var(--m-card); border: 1px solid var(--m-border); border-radius: 12px; padding: 9px; box-shadow: var(--m-shadow); display: flex; flex-direction: column; gap: 2px; }
-.pp-mock-stat-label { font-size: 9px; color: var(--m-muted); }
-.pp-mock-stat-num { font-size: 16px; font-weight: 700; color: var(--m-text); }
-.pp-mock-stat-delta { font-size: 9px; font-weight: 600; color: var(--m-green); }
-.pp-mock-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; min-height: 0; }
-.pp-mock-card { background: var(--m-card); border: 1px solid var(--m-border); border-radius: 12px; padding: 10px; box-shadow: var(--m-shadow); display: flex; flex-direction: column; gap: 8px; }
-.pp-mock-card-h { font-size: 10px; font-weight: 600; color: var(--m-muted); }
-.pp-mock-bars { display: flex; align-items: flex-end; gap: 5px; height: 64px; }
-.pp-mock-bars i { flex: 1; background: var(--m-grad); border-radius: 3px 3px 0 0; min-height: 4px; }
-.pp-mock-list { display: flex; flex-direction: column; gap: 8px; }
-.pp-mock-li { display: flex; align-items: center; gap: 7px; }
-.pp-mock-av { width: 18px; height: 18px; border-radius: 50%; background: var(--m-primary); flex-shrink: 0; }
-.pp-mock-li-text { flex: 1; min-width: 0; font-size: 10px; color: var(--m-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pp-mock-li-text b { color: var(--m-text); }
-.pp-mock-badge { font-size: 8.5px; font-weight: 600; color: var(--m-primary); border: 1px solid var(--m-primary); padding: 1px 6px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
-.pp-mock-mobile { display: flex; flex-direction: column; }
-.pp-mock-topbar { display: flex; align-items: center; gap: 10px; padding: 11px 12px; background: var(--m-card); border-bottom: 1px solid var(--m-bl); }
-.pp-mock-burger { display: flex; flex-direction: column; gap: 2.5px; }
-.pp-mock-burger i { width: 14px; height: 2px; background: var(--m-muted); border-radius: 2px; }
-.pp-mock-mobile .pp-mock-title { flex: 1; font-size: 13px; }
-.pp-mock-avatar { width: 22px; height: 22px; border-radius: 50%; background: var(--m-grad); flex-shrink: 0; }
-.pp-mock-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-
-/* ── Device frames (checkout preview modal) ── */
-.pp-preview-stage { display: flex; align-items: flex-end; justify-content: center; gap: var(--space-4); flex-wrap: wrap; padding: var(--space-5); }
+/* ── Dashboard preview: device frames + scaled MiniApp (persistent at checkout) ── */
+.pp-preview-stage { display: flex; align-items: flex-end; justify-content: center; gap: var(--space-5); flex-wrap: wrap; padding-top: var(--space-2); }
 .pp-device { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); }
 .pp-device-cap { font-size: var(--font-size-2xs); font-weight: var(--font-weight-semibold); text-transform: uppercase; letter-spacing: var(--letter-spacing-wide); color: var(--text-faint); }
+/* Scale-to-fit wrapper: renders the MiniApp at native size, scaled into the screen. */
+.pp-scaled { position: relative; width: 100%; height: 100%; overflow: hidden; }
+.pp-scaled-inner { position: absolute; top: 0; left: 0; transform-origin: top left; }
 /* Desktop monitor */
-.pp-device-desktop { flex: 1 1 360px; max-width: 560px; min-width: 240px; }
+.pp-device-desktop { flex: 1 1 440px; max-width: 600px; min-width: 280px; }
 .pp-device-desktop .pp-device-screen {
-  width: 100%; aspect-ratio: 16 / 10; overflow: hidden;
+  width: 100%; aspect-ratio: 1280 / 820; overflow: hidden;
   background: var(--card-bg);
-  border: 9px solid var(--color-neutral-800, #1f2937);
-  border-radius: 14px; box-shadow: var(--shadow-lg);
+  border: 10px solid var(--color-neutral-800, #1f2937);
+  border-radius: 16px; box-shadow: var(--shadow-lg);
 }
-.pp-device-stand { width: 26%; height: 13px; background: var(--color-neutral-800, #1f2937); border-radius: 0 0 7px 7px; }
+.pp-device-stand { width: 28%; height: 14px; background: var(--color-neutral-800, #1f2937); border-radius: 0 0 8px 8px; }
 /* Phone */
 .pp-device-phone { flex: 0 0 auto; }
-.pp-device-phone-body { position: relative; width: 170px; padding: 9px; background: var(--color-neutral-800, #1f2937); border-radius: 26px; box-shadow: var(--shadow-lg); }
-.pp-device-notch { position: absolute; top: 9px; left: 50%; transform: translateX(-50%); width: 46px; height: 7px; background: rgba(255,255,255,0.18); border-radius: 0 0 7px 7px; z-index: 1; }
-.pp-device-phone .pp-device-screen { width: 100%; aspect-ratio: 9 / 19; overflow: hidden; border-radius: 18px; background: var(--card-bg); }
-
-/* ── Preview modal ── */
-.pp-preview-overlay {
-  position: fixed; inset: 0; z-index: var(--z-modal);
-  background: rgba(var(--color-black-rgb), 0.55);
-  display: flex; align-items: center; justify-content: center; padding: var(--space-5);
-}
-.pp-preview-modal {
-  width: min(900px, 100%); max-height: 92vh; overflow: auto;
-  display: flex; flex-direction: column;
-  background: var(--page-bg); border: 1px solid var(--card-border);
-  border-radius: var(--card-radius); box-shadow: var(--shadow-lg);
-}
-.pp-preview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); padding: var(--space-5) var(--space-5) var(--space-3); }
-.pp-preview-head-text h3 { margin: 0; font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-.pp-preview-head-text p { margin: var(--space-1) 0 0; font-size: var(--font-size-sm); color: var(--text-muted); }
-.pp-preview-close {
-  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-  width: var(--space-7); height: var(--space-7); padding: 0;
-  border: none; background: transparent; color: var(--text-faint);
-  font-size: var(--font-size-xl); line-height: 1; cursor: pointer; border-radius: var(--radius-md);
-}
-.pp-preview-close:hover { background: var(--inset-bg); color: var(--text-primary); }
-.pp-preview-swatches { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-5); }
-.pp-preview-swatch {
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--card-border); border-radius: var(--radius-full);
-  background: var(--card-bg); font-family: var(--font); font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium); color: var(--text-body); cursor: pointer;
-}
-.pp-preview-swatch.is-active { border-color: var(--primary); color: var(--primary-deep); background: var(--primary-soft); }
-.pp-preview-swatch-dot { width: var(--space-3); height: var(--space-3); border-radius: var(--radius-full); flex-shrink: 0; }
-.pp-preview-foot { display: flex; justify-content: flex-end; gap: var(--space-3); padding: var(--space-3) var(--space-5) var(--space-5); }
+.pp-device-phone-body { position: relative; width: 188px; padding: 10px; background: var(--color-neutral-800, #1f2937); border-radius: 30px; box-shadow: var(--shadow-lg); }
+.pp-device-notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 52px; height: 8px; background: rgba(255,255,255,0.18); border-radius: 0 0 8px 8px; z-index: 1; }
+.pp-device-phone .pp-device-screen { width: 100%; aspect-ratio: 390 / 820; overflow: hidden; border-radius: 22px; background: var(--card-bg); }
 
 /* ── Checkout ── */
 .pp-checkout-grid { display: grid; grid-template-columns: 1fr 340px; gap: var(--space-6); align-items: start; }
@@ -493,4 +417,6 @@
   .pp-cart-fab { padding: 0 var(--space-4); }
   /* Floating demo control: tuck into the corner. */
   .pp-demo-controls { left: var(--space-3); bottom: var(--space-3); }
+  /* Preview frames stack when there isn't room for side-by-side. */
+  .pp-preview-stage { gap: var(--space-4); }
 }
