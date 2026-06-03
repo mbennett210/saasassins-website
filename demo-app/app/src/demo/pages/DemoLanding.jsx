@@ -7,15 +7,13 @@ import { useCart } from '../cart/CartContext';
 import ModuleCTA from '../components/ModuleCTA';
 import InfoButton from '../components/InfoButton';
 import CartDrawer from '../components/CartDrawer';
-import BrandizeControl from '../components/BrandizeControl';
 import { resetDemo } from '../resetDemo';
 import '../demo.css';
 
 // Demo entry at /polishpoint/demo — the marketing landing a prospect arrives on
-// from the SaaSassins site. Pitches the product, lets them reskin it with their
-// own brand, jump into the live CRM ("Enter live demo" → /), and browse the
-// sellable add-on modules. Standalone (no app sidebar). Brand name is read from
-// the store company so it reflects the prospect's "try it with your brand" choice.
+// from the SaaSassins site. Pitches the product, lets them jump into the live CRM
+// ("Enter live demo" → /), and browse the sellable add-on modules. Standalone (no
+// app sidebar). Brand name is read from the store company (PolishPoint by default).
 
 export default function DemoLanding() {
   const navigate = useNavigate();
@@ -54,8 +52,6 @@ export default function DemoLanding() {
             <a className="btn btn-outline btn-lg" href="#modules">See add-on modules</a>
           </div>
         </section>
-
-        <BrandizeControl />
 
         <section className="pp-demo-section" id="modules">
           <div className="pp-section-head">

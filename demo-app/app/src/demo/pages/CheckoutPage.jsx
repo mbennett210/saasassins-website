@@ -5,6 +5,7 @@ import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { CORE, formatPrice, featuredModules } from '../modules.catalog';
 import ModuleCTA from '../components/ModuleCTA';
+import ThemePicker from '../components/ThemePicker';
 import '../demo.css';
 
 // /polishpoint/checkout — confirms the order (Core base + selected add-ons),
@@ -91,6 +92,8 @@ export default function CheckoutPage() {
             <p>Every order includes the {formatPrice(CORE.price)} Core platform. Add or remove modules below before you pay.</p>
           </div>
         </div>
+
+        <ThemePicker />
 
         <div className="pp-checkout-grid">
           <div>

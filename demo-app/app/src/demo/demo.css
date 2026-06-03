@@ -3,8 +3,8 @@
    ------------------------------------------------------------
    Self-contained styles for the demo/commerce surfaces: glowing
    info buttons, module add-to-cart CTAs, the cart drawer/FAB,
-   the sidebar Core/Add-on grouping, the brand personalization
-   control, the /polishpoint/demo landing, and /polishpoint/checkout.
+   the sidebar Core/Add-on grouping, the checkout brand-theme
+   picker, the /polishpoint/demo landing, and /polishpoint/checkout.
 
    Loaded only when the demo components render (which are gated on
    IS_DEMO), so none of this ships in a per-client product build.
@@ -246,34 +246,6 @@
 .pp-demo-hero-actions { margin-top: var(--space-6); display: flex; align-items: center; justify-content: center; gap: var(--space-3); flex-wrap: wrap; }
 .btn-lg { height: var(--space-12); padding: 0 var(--space-6); font-size: var(--font-size-md); }
 
-/* ── "Try it with your brand" control (demo landing) ── */
-.pp-brandize {
-  margin-top: var(--space-8);
-  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4);
-  padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--card-border); border-radius: var(--card-radius);
-  background: var(--card-bg); box-shadow: var(--shadow-sm);
-}
-.pp-brandize-text h2 { margin: 0; font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-.pp-brandize-text p { margin: var(--space-1) 0 0; font-size: var(--font-size-sm); color: var(--text-muted); }
-.pp-brandize-form { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.pp-brandize-input {
-  height: var(--space-10); padding: 0 var(--space-4); min-width: 200px;
-  border: 1px solid var(--card-border); border-radius: var(--radius-md);
-  background: var(--page-bg); color: var(--text-primary);
-  font-family: var(--font); font-size: var(--font-size-sm);
-}
-.pp-brandize-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.pp-brandize-swatches { display: inline-flex; align-items: center; gap: var(--space-2); }
-.pp-swatch {
-  width: var(--space-7); height: var(--space-7); padding: 0; cursor: pointer;
-  border-radius: var(--radius-full); border: 2px solid var(--card-border);
-  background: var(--swatch);
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-.pp-swatch:hover { transform: scale(1.1); }
-.pp-swatch.is-active { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--page-bg), 0 0 0 4px var(--swatch); }
-
 .pp-demo-section { margin-top: var(--space-10); }
 .pp-section-head { display: flex; align-items: flex-start; gap: var(--space-2); margin-bottom: var(--space-5); }
 .pp-section-head h2 { margin: 0; font-size: var(--font-size-2xl); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
@@ -286,6 +258,33 @@
 .pp-core-list li::before { content: '✓'; position: absolute; left: 0; color: var(--success); font-weight: var(--font-weight-bold); }
 
 .pp-demo-footer { text-align: center; padding: var(--space-8) var(--space-4); color: var(--text-faint); font-size: var(--font-size-sm); border-top: 1px solid var(--border-light); margin-top: var(--space-10); }
+
+/* ── Brand theme picker (checkout) ── */
+.pp-theme-picker {
+  margin-top: var(--space-6); margin-bottom: var(--space-6);
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--card-border); border-radius: var(--card-radius);
+  background: var(--card-bg); box-shadow: var(--shadow-sm);
+}
+.pp-theme-picker-text h3 { margin: 0; font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+.pp-theme-picker-text p { margin: var(--space-1) 0 0; font-size: var(--font-size-sm); color: var(--text-muted); }
+.pp-theme-picker-swatches { display: inline-flex; align-items: flex-start; gap: var(--space-4); flex-wrap: wrap; }
+.pp-theme-opt {
+  display: inline-flex; flex-direction: column; align-items: center; gap: var(--space-2);
+  padding: 0; border: none; background: none; cursor: pointer;
+  font-family: var(--font); color: var(--text-muted);
+}
+.pp-theme-opt-label { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); }
+.pp-theme-opt.is-active { color: var(--text-primary); }
+.pp-swatch {
+  width: var(--space-8); height: var(--space-8);
+  border-radius: var(--radius-full); border: 2px solid var(--card-border);
+  background: var(--swatch);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.pp-theme-opt:hover .pp-swatch { transform: scale(1.1); }
+.pp-theme-opt.is-active .pp-swatch { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--page-bg), 0 0 0 4px var(--swatch); }
 
 /* ── Checkout ── */
 .pp-checkout-grid { display: grid; grid-template-columns: 1fr 340px; gap: var(--space-6); align-items: start; }
@@ -350,8 +349,6 @@
   .pp-demo-hero h1 { font-size: var(--font-size-3xl); }
   .pp-cart-fab-label { display: none; }
   .pp-cart-fab { padding: 0 var(--space-4); }
-  /* Brand control: stack text over a full-width form. */
-  .pp-brandize { flex-direction: column; align-items: stretch; }
-  .pp-brandize-form { justify-content: space-between; }
-  .pp-brandize-input { flex: 1 1 auto; min-width: 0; }
+  /* Theme picker: stack the label over the swatches. */
+  .pp-theme-picker { flex-direction: column; align-items: stretch; }
 }

@@ -1,22 +1,23 @@
-// Demo-only brand personalization ("Try it with your brand"). Lets a prospect
-// see the demo in their own company name + a brand palette. The palette choice is
-// persisted (survives reloads and carries into the live CRM); the company name is
-// persisted via the store. resetDemo() clears both.
+// Demo-only brand theme picker. Lets a prospect preview the product in one of the
+// brand palettes SaaSassins ships — the exact swatchboard-derived themes a real
+// per-client deployment picks from. The choice is persisted (survives reloads and
+// carries across the demo + live CRM); resetDemo() clears it.
 //
-// Palettes reuse the shell's pre-generated theme files — the exact ones a real
-// per-client deployment picks from — injected at runtime as a <style> override,
-// so there's no rebuild or color math. Blue is the baseline already imported in
-// index.css, so selecting it simply removes the override.
+// Palettes inject one of the shell's prebuilt theme files at runtime as a <style>
+// override, so there's no rebuild or color math. "Blue" is the baseline already
+// imported in index.css (the PolishPoint default), so selecting it removes the
+// override. The theme CSS is generated from the swatchboards in
+// Client-theme-picker/shared/swatchboards via scripts/swatchboard-to-theme.mjs.
 
 import forgeCss from '../theme-polishpoint-forge.css?inline';
 import midnightCss from '../theme-polishpoint-midnight.css?inline';
 import pinkCss from '../theme-polishpoint-pink.css?inline';
 
 export const PALETTES = {
-  blue:     { label: 'Ocean',    swatch: '#1E8FE8', css: null }, // baseline (index.css) — no override
+  blue:     { label: 'Blue',     swatch: '#1E8FE8', css: null }, // PolishPoint default (index.css baseline)
   forge:    { label: 'Forge',    swatch: '#F97316', css: forgeCss },
   midnight: { label: 'Midnight', swatch: '#C9A84C', css: midnightCss },
-  pink:     { label: 'Rose',     swatch: '#EC4899', css: pinkCss },
+  pink:     { label: 'Pink',     swatch: '#EC4899', css: pinkCss },
 };
 
 export const PALETTE_KEYS = ['blue', 'forge', 'midnight', 'pink'];
@@ -56,13 +57,4 @@ export function saveBrand(patch) {
   } catch {
     return loadBrand();
   }
-}
-
-export const BRAND_STORAGE_KEY = KEY;
-
-// First letters of the first two words → initials for the sidebar logo badge.
-export function initialsFrom(name) {
-  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return 'CO';
-  return parts.slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 }
