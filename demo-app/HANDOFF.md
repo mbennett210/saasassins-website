@@ -1,23 +1,23 @@
 # Shell Build — Handoff
 
-**Last session end (2026-06-02):** **Marketing module backported from Rainier** — cold-email drip sequences with company-shared rotation inboxes, AI-routed replies, per-contact enrollments. Runs fully in stub mode on the shell (no backend). Storage v37 → v38. Also landed a small residual UI-primitive backport (Modal portal, eslint api/ block) earlier in the session. Details below.
+**Last session end (2026-06-02):** **Marketing module backported from an earlier proving build** — cold-email drip sequences with company-shared rotation inboxes, AI-routed replies, per-contact enrollments. Runs fully in stub mode on the shell (no backend). Storage v37 → v38. Also landed a small residual UI-primitive backport (Modal portal, eslint api/ block) earlier in the session. Details below.
 
 ## What just shipped (2026-06-02) — Marketing module
 
-Backported the full Marketing module from `RainierFacilitySolutions/rainier-app` (the `rainier` remote is configured locally). Audit confirmed it runs **with no backend**: sends route through `lib/connectedInboxes.sendViaInbox()` which simulates locally when `VITE_EMAIL_BACKEND_URL` is unset; the inbound listener no-ops offline; replies are exercised via a "Simulate a reply" button.
+Backported the full Marketing module from an earlier proving build (a private upstream remote). Audit confirmed it runs **with no backend**: sends route through `lib/connectedInboxes.sendViaInbox()` which simulates locally when `VITE_EMAIL_BACKEND_URL` is unset; the inbound listener no-ops offline; replies are exercised via a "Simulate a reply" button.
 
 Landed in 6 commits (a0a902c → 546f46f):
-1. **Libs** — `lib/marketingScheduler.js` (new, pure-compute), `lib/connectedInboxes.js` (superset: +fromName/+attachments/+pollInbound), `lib/attachments.js` (marketing IndexedDB helpers). Correlation headers de-Rainier-ified `X-Rainier-Marketing-*` → `X-PP-Marketing-*`.
+1. **Libs** — `lib/marketingScheduler.js` (new, pure-compute), `lib/connectedInboxes.js` (superset: +fromName/+attachments/+pollInbound), `lib/attachments.js` (marketing IndexedDB helpers). Correlation headers renamed to the PolishPoint namespace `X-PP-Marketing-*`.
 2. **Store** — 21 reducer actions + cases, 18 selectors, 5 seed entities + marketingSettings, persist `migrateV37toV38` (additive, idempotent), STORAGE_KEY → `pp.store.v38`.
 3. **Permissions** — `marketing.view` / `marketing.manage` / `marketing.connectInbox` (owner+admin) + a Marketing group in the Roles editor.
-4+5. **UI + wiring** — `pages/Marketing.jsx` + `pages/marketing/*` (8 tabs/modals) + `ConnectMarketingInboxModal` + `GmailConnectInstructions` (scrubbed of all Rainier copy), two root listeners mounted in `App.jsx`, `/marketing` route, Sidebar nav entry, `selectNonMasterPipelines` shim selector.
+4+5. **UI + wiring** — `pages/Marketing.jsx` + `pages/marketing/*` (8 tabs/modals) + `ConnectMarketingInboxModal` + `GmailConnectInstructions` (scrubbed of all prior-build copy), two root listeners mounted in `App.jsx`, `/marketing` route, Sidebar nav entry, `selectNonMasterPipelines` shim selector.
 6. **CSS** — `.marketing-*` / `.enroll-*` block appended to index.css (no `.inbox-*` collisions).
 
 **Verified:** v38 migration boots clean; /marketing renders all 4 tabs; Settings reply-routing pipeline picker works; created a sequence end-to-end through the modal (persists to store with a steps array); mobile pass clean at 320/375/641 (zero horizontal scroll).
 
 **Deferred (backend workstream — NOT done):** real Gmail OAuth + sending via `api/inbox/*`, inbound webhook delivery, Supabase migrations. A future backend's inbound webhook must echo the `X-PP-Marketing-*` headers. This is the same deferred backend track noted for auth/forms/quotes.
 
-**Earlier in the session:** residual Rainier UI-primitive backport — `Modal.jsx` createPortal-to-body + `eslint.config.js` api/ block (commit ed3677c). The rest of that backport wave (themed Select, FormField, roles fallback, UI_RULES) was already on origin from the other-session rebrand work.
+**Earlier in the session:** residual UI-primitive backport — `Modal.jsx` createPortal-to-body + `eslint.config.js` api/ block (commit ed3677c). The rest of that backport wave (themed Select, FormField, roles fallback, UI_RULES) was already on origin from the other-session rebrand work.
 
 ---
 
@@ -91,4 +91,4 @@ node app/scripts/swatchboard-to-theme.mjs <swatchboard.html> --slug <client> --n
 
 ## Historical context (preserved)
 
-- `app/src/store/persist.js` migration functions still reference `@rainierfs.com` and `@rainierfacilitysolutions.com` — only operate on Rainier-era localStorage, never triggered in fresh shell-build clones (start at v37). Past migration code stays verbatim per project conventions.
+- `app/src/store/persist.js` legacy migration functions have been genericized (no external brand or email-domain references); the pre-v37 hops are now inert version bumps that never run in fresh clones (which start at v38) or in the demo (which ignores localStorage).

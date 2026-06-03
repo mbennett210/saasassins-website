@@ -1,24 +1,17 @@
 // v37: Shell baseline rebrand to PolishPoint. Company entity + team-user
-// roster genericized (Kyle/Steve/Heather/Lauren/Marcus/Riley/Jamie/Casey →
-// Alex/Jordan/Sam/Taylor/Devon/Charlie/Avery/Rowan), brand strings swapped,
+// roster genericized to placeholder identities, brand strings swapped,
 // theme switched to PolishPoint Blue. No state-shape change — the storage-key
 // bump (pp.store.v36 → pp.store.v37) is intentional and orphans any pre-rebrand
 // localStorage so the next load reseeds cleanly from INITIAL_STATE. No
 // migration function needed; the key bump IS the migration.
 //
-// v36: Brand domain consolidation + id-based Heather rename. Two coordinated
-// changes:
-//   1. Every team-user email on @rainierfs.com is rewritten to
-//      @rainierfacilitysolutions.com (full brand domain). Same for
-//      company.email. The short alias was a placeholder.
-//   2. Heather's user record (by stable seed id, not by name match) is
-//      force-corrected to "Heather Warren" / "HW" — catches any stale name
-//      on existing localStorage that the v35 string-match missed (e.g.
-//      "Heather Whitfield" or other prior placeholders).
+// v36: Legacy brand-domain consolidation + a per-user record correction for a
+// pre-rebrand deployment. Only ever affected pre-v37 localStorage; it is now an
+// inert version bump (the demo and all fresh clones start at v38, so it never
+// runs against real data).
 //
-// v35: Heather's real last name. Seed previously used "Heather Cole" as a
-// placeholder; corrected to "Heather Warren" (real team member). Migration
-// updates the user's name + initials on existing stored state.
+// v35: Legacy per-user name correction for a pre-rebrand deployment. Only ever
+// affected pre-v37 localStorage; it is now an inert version bump.
 //
 // v34: Nomenclature consolidation — "Customer" lifecycle stage renamed to
 // "Client" (matching the company entity already named Client in the data
@@ -499,40 +492,19 @@ function migrateV33toV34(state) {
   return { ...state, version: 34, contacts, users, permissions };
 }
 
-// v35: Heather Cole → Heather Warren rename on the seeded user. Real team
-// member last name correction. Idempotent: only patches the matching record.
+// v35: Legacy per-user name correction for a pre-rebrand deployment. The
+// records it targeted only existed in pre-v37 localStorage, which no longer
+// occurs (demo + fresh clones start at v38), so this is now an inert bump.
 function migrateV34toV35(state) {
-  const users = (state.users || []).map((u) => {
-    if (u.email === 'heather@rainierfs.com' || u.name === 'Heather Cole') {
-      return { ...u, name: 'Heather Warren', initials: 'HW' };
-    }
-    return u;
-  });
-  return { ...state, version: 35, users };
+  return { ...state, version: 35 };
 }
 
-// v36: Brand domain rewrite + id-based Heather correction. Rewrites every
-// @rainierfs.com email on user records and company.email to the full
-// @rainierfacilitysolutions.com domain. Heather's record (matched by stable
-// seed id 'u_seed_heather') is force-corrected to "Heather Warren" / "HW"
-// regardless of any stale name that survived the v35 string match.
+// v36: Legacy brand-domain consolidation + a per-user record correction for a
+// pre-rebrand deployment. The emails/records it rewrote only existed in pre-v37
+// localStorage, which no longer occurs (demo + fresh clones start at v38), so
+// this is now an inert version bump.
 function migrateV35toV36(state) {
-  const rewriteDomain = (email) =>
-    typeof email === 'string'
-      ? email.replace(/@rainierfs\.com$/i, '@rainierfacilitysolutions.com')
-      : email;
-  const users = (state.users || []).map((u) => {
-    const next = { ...u, email: rewriteDomain(u.email) };
-    if (u.id === 'u_seed_heather') {
-      next.name = 'Heather Warren';
-      next.initials = 'HW';
-    }
-    return next;
-  });
-  const company = state.company
-    ? { ...state.company, email: rewriteDomain(state.company.email) }
-    : state.company;
-  return { ...state, version: 36, users, company };
+  return { ...state, version: 36 };
 }
 
 // v38: Marketing module (cold-email sequences). Additive — five new top-level

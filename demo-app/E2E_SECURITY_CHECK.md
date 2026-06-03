@@ -97,9 +97,9 @@ Switch users via the UserSwitcher chip (sidebar footer). Verify the no-access sc
 
 | Role | Should see | Should be blocked from |
 |---|---|---|
-| **Owner** (Kyle, Steve) | Everything | Nothing |
-| **Admin** (Heather, Lauren) | Schedule, Contacts, Pipeline, Messaging | Invoices, Reminders, `/settings/roles`, `/settings/integrations` |
-| **Crew** (Marcus, Riley, Jamie, Casey) | Schedule, Contacts, Messaging | Pipeline, Invoices, Reminders, all sensitive `/settings/*` |
+| **Owner** | Everything | Nothing |
+| **Admin** | Schedule, Contacts, Pipeline, Messaging | Invoices, Reminders, `/settings/roles`, `/settings/integrations` |
+| **Crew** | Schedule, Contacts, Messaging | Pipeline, Invoices, Reminders, all sensitive `/settings/*` |
 
 Detection in console: blocked page renders `<div class="no-access">…</div>`.
 

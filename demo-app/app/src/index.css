@@ -830,7 +830,7 @@ select.input {
 .sidebar-brand-image {
   /* Tight top/bottom buffer — the PNG itself is now trimmed to tight bounds,
      so this padding is the *only* margin between logo edge and the brand-area
-     border. Match the visual breathing room of the reference (Rainier) build. */
+     border. Match the visual breathing room of the reference build. */
   padding: 14px 16px;
   justify-content: center;
 }

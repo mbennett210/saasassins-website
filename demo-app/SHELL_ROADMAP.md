@@ -125,7 +125,7 @@ Built. Audit:
 
 ## `[x]` Marketing (cold-email sequences) `[Core]`
 
-Backported from the Rainier proving build (2026-06). Multi-step email drip
+Backported from an earlier proving build (2026-06). Multi-step email drip
 sequences with company-shared rotation inboxes, AI-routed inbound replies, and
 per-contact enrollments. Distinct from Messaging (which is per-user, 1:1). Runs
 **fully in stub mode on the shell** — no backend required; the `api/inbox/*`
@@ -144,11 +144,11 @@ path in the demo.
 - `[x]` Inboxes tab — connected rotation mailboxes + per-inbox sender name / signature
 - `[x]` Replies tab — inbound reply inbox + inline composer + simulate-reply
 - `[x]` Settings tab — reply-routing target (pipeline stage) + send window + plain-text default
-- `[x]` Gmail connect flow (`ConnectMarketingInboxModal` + de-Rainier-ified `GmailConnectInstructions`)
+- `[x]` Gmail connect flow (`ConnectMarketingInboxModal` + genericized `GmailConnectInstructions`)
 - `[x]` Permissions: `marketing.view` / `marketing.manage` / `marketing.connectInbox` (owner+admin)
 - `[x]` State: marketingInboxes / marketingSequences / marketingEnrollments / marketingSends / marketingReplies / marketingSettings. Storage v37 → v38.
 
-**Deferred (backend workstream):** real Gmail OAuth + send via `api/inbox/*`, inbound webhook delivery, multi-tenant inbox auth. The correlation headers are emitted as `X-PP-Marketing-*` (renamed from Rainier's `X-Rainier-*`); a future backend's inbound webhook must echo these.
+**Deferred (backend workstream):** real Gmail OAuth + send via `api/inbox/*`, inbound webhook delivery, multi-tenant inbox auth. The correlation headers are emitted as `X-PP-Marketing-*` (renamed to the PolishPoint namespace from the prior build's headers); a future backend's inbound webhook must echo these.
 
 ## `[x]` SMS via Twilio + A2P setup `[Core]`
 
