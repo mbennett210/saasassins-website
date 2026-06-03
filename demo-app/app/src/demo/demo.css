@@ -352,6 +352,21 @@
 /* The Core platform row — the mandatory base line item. */
 .pp-checkout-row-core { border-left: 3px solid var(--primary); }
 
+/* Compact add-on checklist — the checkout "Add more" list (replaces the big card
+   grid). Rows are grouped in one card with hairline dividers so a long list reads
+   tidy rather than as a wall of cards. */
+.pp-addon-list {
+  border: 1px solid var(--card-border); border-radius: var(--card-radius);
+  background: var(--card-bg); box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.pp-addon-row { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-4); }
+.pp-addon-row + .pp-addon-row { border-top: 1px solid var(--border-light); }
+.pp-addon-row-icon { font-size: var(--font-size-2xl); line-height: 1; flex-shrink: 0; }
+.pp-addon-row-body { flex: 1 1 auto; min-width: 0; }
+.pp-addon-row-name { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+.pp-addon-row-cat { font-size: var(--font-size-2xs); font-weight: var(--font-weight-semibold); text-transform: uppercase; letter-spacing: var(--letter-spacing-wide); color: var(--text-faint); }
+.pp-addon-row-price { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); color: var(--text-primary); white-space: nowrap; flex-shrink: 0; }
+
 .pp-checkout-summary {
   position: sticky; top: var(--space-8);
   border: 1px solid var(--card-border); border-radius: var(--card-radius);
@@ -427,9 +442,10 @@
   .pp-module-cta { flex-wrap: wrap; }
   .pp-module-cta-aside { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
   .pp-module-grid { grid-template-columns: 1fr; }
-  /* Order rows: let the price + badge wrap below the name instead of clipping
-     off the right edge on very narrow screens. */
+  /* Order rows + add-on rows: let the price/action wrap below the name instead of
+     clipping off the right edge on very narrow screens. */
   .pp-checkout-row { flex-wrap: wrap; }
+  .pp-addon-row { flex-wrap: wrap; }
   .pp-demo-hero h1 { font-size: var(--font-size-3xl); }
   .pp-cart-fab-label { display: none; }
   .pp-cart-fab { padding: 0 var(--space-4); }

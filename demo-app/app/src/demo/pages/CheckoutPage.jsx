@@ -16,8 +16,8 @@ import '../demo.css';
 // recorded as a deployment preference — it does not reskin anything.
 //
 // Flow (top → bottom in the left column, with the order summary sticky on the
-// right): 1) review the Core base + any added modules, 2) add more modules,
-// 3) pick the brand style — the last step before paying.
+// right): 1) review the Core base + any added modules, 2) add more modules from a
+// compact checklist, 3) pick the brand style — the last step before paying.
 //
 // Payment: if a Stripe key is wired (api/checkout returns a hosted-checkout URL)
 // we redirect to it; otherwise we simulate a completed order and route to the
@@ -148,9 +148,11 @@ export default function CheckoutPage() {
                     <p>Round out your setup with another module.</p>
                   </div>
                 </div>
-                <div className="pp-module-grid">
+                {/* Compact checklist (not the big card grid) so the add-on list
+                    stays tidy. Each row reuses ModuleCTA's real add-to-cart logic. */}
+                <div className="pp-addon-list">
                   {notInCart.map((m) => (
-                    <ModuleCTA key={m.id} moduleId={m.id} variant="card" />
+                    <ModuleCTA key={m.id} moduleId={m.id} variant="row" />
                   ))}
                 </div>
               </section>

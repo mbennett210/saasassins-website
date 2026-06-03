@@ -10,6 +10,8 @@ import '../demo.css';
 //
 //   variant="inline" (default) — compact left-border row inside a feature page
 //   variant="card"             — taller card for the featured-modules grid
+//   variant="row"              — tight checklist row for the checkout "Add more"
+//                                list (no blurb/features — name + price + Add)
 //
 // The glowing InfoButton beside each CTA opens the module's deep-dive copy.
 
@@ -48,6 +50,24 @@ export default function ModuleCTA({ moduleId, variant = 'inline' }) {
       </div>
     </InfoButton>
   );
+
+  // Tight checklist row — the checkout "Add more" list. Name + category + price +
+  // Add, kept deliberately compact so a long add-on list reads cleanly.
+  if (variant === 'row') {
+    return (
+      <div className="pp-addon-row">
+        <span className="pp-addon-row-icon" aria-hidden="true">{mod.icon}</span>
+        <div className="pp-addon-row-body">
+          <div className="pp-addon-row-name">{mod.name}</div>
+          <div className="pp-addon-row-cat">{mod.category}</div>
+        </div>
+        <span className="pp-addon-row-price">{formatPrice(mod.price)}</span>
+        <button type="button" className={`btn btn-sm ${inCart ? 'btn-success' : 'btn-primary'}`} onClick={onToggle}>
+          {inCart ? 'In cart ✓' : 'Add'}
+        </button>
+      </div>
+    );
+  }
 
   if (variant === 'card') {
     return (
