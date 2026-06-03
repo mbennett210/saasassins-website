@@ -1,0 +1,362 @@
+/* ============================================================
+   THEME: PolishPoint Blue
+   ------------------------------------------------------------
+   Slate neutrals + blue primary (#1E8FE8 anchor), neumorphic
+   depth, gradient primaries, glass switchers, ambient radial
+   background. Brand secondary aliases to teal so the wider token
+   contract (referenced by index.css) resolves cleanly.
+
+   Overrides canonical tokens from app/src/theme.css, then adds
+   a RECIPES section for theme-specific compositions. To apply,
+   import this file AFTER theme.css:
+
+     @import './theme.css';
+     @import './theme-polishpoint.css';
+
+   See app/src/STYLING.md for vocabulary rules.
+   ============================================================ */
+
+:root {
+  /* ==========================================================
+     TOKEN OVERRIDES — same names as theme.css, different values
+     ========================================================== */
+
+  /* ── Color — neutral (slate scale for cool cast against blue) ── */
+  --color-neutral-50:     #f8fafc;
+  --color-neutral-100:    #f1f5f9;
+  --color-neutral-200:    #e2e8f0;
+  --color-neutral-300:    #cbd5e1;
+  --color-neutral-400:    #94a3b8;
+  --color-neutral-500:    #64748b;
+  --color-neutral-600:    #475569;
+  --color-neutral-700:    #334155;
+  --color-neutral-800:    #1e293b;
+  --color-neutral-900:    #0f172a;
+  --color-neutral-rgb:    15, 23, 42;
+
+  /* ── Color — brand primary (PolishPoint blue, anchored on #1E8FE8) ── */
+  --color-brand-primary-50:      #EBF5FE;
+  --color-brand-primary-100:     #D6ECFB;
+  --color-brand-primary-400:     #47A5ED;
+  --color-brand-primary-500:     #1E8FE8;
+  --color-brand-primary-600:     #1878C8;
+  --color-brand-primary-700:     #125FA0;
+  --color-brand-primary-rgb:     30, 143, 232;
+  --color-brand-primary-400-rgb: 71, 165, 237;
+  --color-brand-primary-600-rgb: 24, 120, 200;
+
+  /* ── Color — brand secondary (stubbed to accent-teal scale) ── */
+  /* PolishPoint Blue intentionally doesn't ship a second brand color.
+     Index.css references --color-brand-secondary-600 without a fallback,
+     so we alias the slot to teal — visually complementary to blue and
+     already present in the accent palette. Per-client themes can override. */
+  --color-brand-secondary-50:    var(--color-accent-teal-50);
+  --color-brand-secondary-100:   var(--color-accent-teal-200);
+  --color-brand-secondary-400:   var(--color-accent-teal-400);
+  --color-brand-secondary-500:   var(--color-accent-teal-500);
+  --color-brand-secondary-600:   var(--color-accent-teal-600);
+  --color-brand-secondary-700:   var(--color-accent-teal-600);
+  --color-brand-secondary-rgb:   20, 184, 166;            /* teal-500 rgb */
+
+  /* ── Color — surface ── */
+  --color-surface-base:      #f8fafc;
+  --color-surface-raised:    #ffffff;
+  --color-surface-sunken:    #f8fafc;
+  --color-surface-overlay:   #ffffff;
+
+  /* ── Color — text (aliases inherit from --color-neutral-* above) ── */
+  /* No override needed — text aliases in theme.css point at neutral scale,
+     which is now slate. */
+
+  /* ── Color — semantic: success ── */
+  --color-semantic-success-50:    #ecfdf5;
+  --color-semantic-success-200:   #a7f3d0;
+  --color-semantic-success-400:   #10B981;
+  --color-semantic-success-500:   #059669;
+  --color-semantic-success-600:   #047857;
+  --color-semantic-success-700:   #047857;
+  --color-semantic-success-rgb:   5, 150, 105;
+
+  /* ── Color — semantic: warning ── */
+  --color-semantic-warning-50:    #fffbeb;
+  --color-semantic-warning-200:   #fde68a;
+  --color-semantic-warning-400:   #f59e0b;
+  --color-semantic-warning-500:   #b45309;
+  --color-semantic-warning-600:   #b45309;
+  --color-semantic-warning-700:   #92400e;
+  --color-semantic-warning-rgb:   180, 83, 9;
+
+  /* ── Color — semantic: error ── */
+  --color-semantic-error-50:      #fef2f2;
+  --color-semantic-error-200:     #fecaca;
+  --color-semantic-error-400:     #ef4444;
+  --color-semantic-error-500:     #b91c1c;
+  --color-semantic-error-600:     #b91c1c;
+  --color-semantic-error-700:     #991b1b;
+  --color-semantic-error-rgb:     185, 28, 28;
+
+  /* ── Color — accent ── */
+  --color-accent-purple-50:       #faf5ff;
+  --color-accent-purple-200:      #e9d5ff;
+  --color-accent-purple-400:      #a78bfa;
+  --color-accent-purple-500:      #7c3aed;
+  --color-accent-purple-600:      #6d28d9;
+  --color-accent-purple-rgb:      124, 58, 237;
+  --color-accent-orange-50:       #ffedd5;
+  --color-accent-orange-200:      #fed7aa;
+  --color-accent-orange-400:      #fb923c;
+  --color-accent-orange-500:      #C2410C;
+  --color-accent-orange-600:      #9a3412;
+  --color-accent-teal-50:         #ccfbf1;
+  --color-accent-teal-200:        #99f6e4;
+  --color-accent-teal-400:        #2dd4bf;
+  --color-accent-teal-500:        #14b8a6;
+  --color-accent-teal-600:        #0d9488;
+
+  /* ── Radius (blue theme uses softer, rounder corners) ── */
+  --radius-md:       10px;     /* buttons, inputs */
+  --radius-lg:       20px;     /* cards */
+
+  /* ── Alias overrides — avatar accents for blue theme ── */
+  --color-avatar-1:  var(--color-brand-primary-500);
+  --color-avatar-2:  var(--color-semantic-success-500);
+  --color-avatar-3:  var(--color-accent-purple-400);
+  --color-avatar-4:  var(--color-accent-orange-500);
+  --color-avatar-5:  var(--color-accent-teal-600);
+  --avatar-1:        var(--color-avatar-1);
+  --avatar-2:        var(--color-avatar-2);
+  --avatar-3:        var(--color-avatar-3);
+  --avatar-4:        var(--color-avatar-4);
+  --avatar-5:        var(--color-avatar-5);
+
+  /* ==========================================================
+     RECIPES
+     Theme-specific compositions. Every input is a var(--token)
+     reference or an allowed literal (transparent, rgba(0,0,0,X)
+     for pure-black tint). These will migrate to
+     element_variants.recipe in Swatchboard Phase 2.
+     ========================================================== */
+
+  /* ── Sidebar ── */
+  --sidebar-grad:
+    linear-gradient(
+      180deg,
+      var(--color-surface-raised) 0%,
+      var(--color-brand-primary-100) 40%,
+      var(--color-brand-primary-400) 100%
+    );
+  --sidebar-edge:
+    linear-gradient(
+      90deg,
+      rgba(var(--color-neutral-rgb), 0.22) 0%,
+      rgba(var(--color-brand-primary-600-rgb), 0.05) 60%,
+      transparent 100%
+    );
+  --sidebar-blend:
+    linear-gradient(
+      90deg,
+      rgba(var(--color-brand-primary-400-rgb), 0.15) 0%,
+      rgba(var(--color-brand-primary-rgb), 0.04) 60%,
+      transparent 100%
+    );
+  --sidebar-mid:     var(--color-neutral-800);
+  --sidebar-deep:    #020617;  /* near-black; tracked as extension-pending */
+
+  /* ── Neumorphic shadow stacks (generic surfaces) ── */
+  --neu-shadow:
+    4px 4px 12px rgba(var(--color-neutral-rgb), 0.06),
+    -2px -2px 8px rgba(var(--color-white-rgb), 0.9);
+  --neu-shadow-hover:
+    6px 6px 16px rgba(var(--color-neutral-rgb), 0.08),
+    -3px -3px 10px rgba(var(--color-white-rgb), 1);
+  --neu-shadow-heavy:
+    6px 6px 18px rgba(var(--color-neutral-rgb), 0.1),
+    -3px -3px 12px rgba(var(--color-white-rgb), 1);
+
+  /* ── Card shadows (colored inset + outer glow) ── */
+  --card-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.9),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.18),
+    0 4px 14px rgba(var(--color-brand-primary-rgb), 0.12);
+  --card-shadow-hover:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.95),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.28),
+    0 8px 22px rgba(var(--color-brand-primary-rgb), 0.18);
+  --stat-card-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.9),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.15),
+    0 4px 12px rgba(var(--color-brand-primary-rgb), 0.12);
+
+  /* ── Button ── */
+  --btn-primary-grad:
+    linear-gradient(135deg, var(--color-brand-primary-400) 0%, var(--color-brand-primary-600) 100%);
+  --btn-primary-grad-hover:
+    linear-gradient(135deg, var(--color-brand-primary-500) 0%, var(--color-brand-primary-700) 100%);
+  --btn-primary-glow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.25),
+    0 0 22px rgba(var(--color-brand-primary-rgb), 0.35),
+    0 4px 14px rgba(var(--color-brand-primary-600-rgb), 0.28);
+  --btn-primary-glow-hover:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.3),
+    0 0 28px rgba(var(--color-brand-primary-rgb), 0.45),
+    0 6px 18px rgba(var(--color-brand-primary-600-rgb), 0.35);
+  --btn-secondary-shadow:
+    2px 2px 6px rgba(var(--color-neutral-rgb), 0.04),
+    -1px -1px 4px rgba(var(--color-white-rgb), 0.8);
+
+  /* ── Nav (active state) ── */
+  --nav-hover-bg:
+    linear-gradient(
+      180deg,
+      rgba(var(--color-brand-primary-400-rgb), 0.18) 0%,
+      rgba(var(--color-brand-primary-600-rgb), 0.2) 100%
+    );
+  --nav-active-bg:
+    linear-gradient(180deg, var(--color-brand-primary-400) 0%, var(--color-brand-primary-600) 100%);
+  --nav-active-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.35),
+    inset 1px 0 0 rgba(var(--color-white-rgb), 0.15);
+  --nav-active-filter:
+    drop-shadow(0 0 10px rgba(var(--color-brand-primary-400-rgb), 0.5))
+    drop-shadow(0 3px 10px rgba(var(--color-brand-primary-600-rgb), 0.35));
+
+  /* ── Page aurora background ── */
+  --page-bg-layers:
+    radial-gradient(ellipse at 15% 10%, rgba(var(--color-brand-primary-400-rgb), 0.05) 0%, transparent 45%),
+    radial-gradient(ellipse at 85% 25%, rgba(var(--color-brand-primary-400-rgb), 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(var(--color-neutral-rgb), 0.05) 0%, transparent 55%),
+    var(--color-surface-base);
+  --page-aurora:
+    radial-gradient(ellipse 60% 40% at 18% 30%, rgba(var(--color-brand-primary-400-rgb), 0.25) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 35% at 78% 22%, rgba(var(--color-brand-primary-400-rgb), 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at 50% 85%, rgba(var(--color-brand-primary-400-rgb), 0.2) 0%, transparent 55%);
+
+  /* ── Dashboard hero ── */
+  --dash-hero-bg:
+    linear-gradient(135deg, var(--color-brand-primary-50) 0%, var(--color-brand-primary-100) 50%, var(--color-surface-raised) 100%);
+  --dash-hero-border:
+    rgba(var(--color-brand-primary-rgb), 0.2);
+  --dash-hero-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.9),
+    0 4px 14px rgba(var(--color-brand-primary-rgb), 0.1);
+  --dash-hero-orb:
+    radial-gradient(circle, rgba(var(--color-brand-primary-400-rgb), 0.18) 0%, transparent 70%);
+
+  /* ── Dashboard switcher (glass pill) ── */
+  --dash-sw-bg:      rgba(var(--color-white-rgb), 0.55);
+  --dash-sw-border:  rgba(var(--color-brand-primary-rgb), 0.15);
+  --dash-sw-shadow:
+    2px 2px 8px rgba(var(--color-neutral-rgb), 0.04),
+    -1px -1px 4px rgba(var(--color-white-rgb), 0.7);
+  --dash-sw-active-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.25),
+    0 0 18px rgba(var(--color-brand-primary-rgb), 0.3),
+    0 3px 10px rgba(var(--color-brand-primary-600-rgb), 0.22);
+
+  /* ── Input ── */
+  --input-border-grad:
+    linear-gradient(135deg, var(--color-brand-primary-400), var(--color-brand-primary-100));
+  --input-border-grad-focus:
+    linear-gradient(135deg, var(--color-brand-primary-500), var(--color-brand-primary-400));
+  --input-focus-shadow:
+    0 0 12px rgba(var(--color-brand-primary-rgb), 0.15);
+
+  /* ── Table ── */
+  --table-header-bg:
+    linear-gradient(180deg, var(--color-brand-primary-100) 0%, var(--color-brand-primary-50) 100%);
+  --table-header-border:
+    rgba(var(--color-brand-primary-rgb), 0.25);
+  --table-row-odd:   var(--color-brand-primary-50);
+  --table-row-even:  var(--color-brand-primary-100);
+  --table-row-hover: rgba(var(--color-brand-primary-rgb), 0.12);
+
+  /* ── Tabs ── */
+  --tab-bg:              rgba(var(--color-brand-primary-rgb), 0.08);
+  --tab-border:          rgba(var(--color-brand-primary-rgb), 0.15);
+  --tab-active-shadow:   0 3px 10px rgba(var(--color-brand-primary-rgb), 0.3);
+
+  /* ── Timeline card ── */
+  --tl-card-bg:
+    linear-gradient(180deg, var(--color-brand-primary-100) 0%, var(--color-brand-primary-50) 100%);
+  --tl-card-border:      rgba(var(--color-brand-primary-rgb), 0.25);
+  --tl-card-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.9),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.15),
+    0 4px 12px rgba(var(--color-brand-primary-rgb), 0.12);
+  --tl-active-glow:      0 0 0 4px rgba(var(--color-brand-primary-rgb), 0.15);
+
+  /* ── Drip flow node ── */
+  --drip-node-bg:
+    linear-gradient(180deg, var(--color-brand-primary-100) 0%, var(--color-brand-primary-50) 100%);
+  --drip-node-border:    rgba(var(--color-brand-primary-rgb), 0.25);
+  --drip-node-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.9),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.15),
+    0 4px 12px rgba(var(--color-brand-primary-rgb), 0.12);
+
+  /* ── Schedule block ── */
+  --sched-block-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.9),
+    0 2px 6px rgba(var(--color-brand-primary-rgb), 0.06);
+
+  /* ── Messaging ── */
+  --msg-item-hover:      rgba(var(--color-brand-primary-rgb), 0.12);
+  --msg-active-border:   var(--color-brand-primary-500);
+
+  /* ── Metric strip (three colored cells) ── */
+  --metric-cell-1-bg:
+    linear-gradient(160deg, var(--color-surface-raised) 0%, var(--color-brand-primary-50) 100%);
+  --metric-cell-2-bg:
+    linear-gradient(160deg, var(--color-surface-raised) 0%, var(--color-accent-purple-50) 100%);
+  --metric-cell-3-bg:
+    linear-gradient(160deg, var(--color-surface-raised) 0%, var(--color-neutral-100) 100%);
+  --metric-top-bar:
+    linear-gradient(90deg, var(--color-brand-primary-400), var(--color-brand-primary-500));
+
+  /* ── Tier badges ── */
+  --tier-core-bg:        var(--color-brand-primary-50);
+  --tier-core-color:     var(--color-brand-primary-600);
+  --tier-core-border:    rgba(var(--color-brand-primary-400-rgb), 0.4);
+  --tier-addon-bg:       var(--color-neutral-100);
+  --tier-addon-color:    var(--color-neutral-600);
+  --tier-addon-border:   var(--color-neutral-200);
+
+  /* ── Badge gradients + colored shadows ── */
+  --badge-green-grad:
+    linear-gradient(135deg, var(--color-semantic-success-400), var(--color-semantic-success-600));
+  --badge-green-shadow:
+    0 3px 10px rgba(var(--color-semantic-success-rgb), 0.35);
+  --badge-amber-grad:
+    linear-gradient(135deg, var(--color-semantic-warning-400), var(--color-semantic-warning-500));
+  --badge-amber-shadow:
+    0 3px 10px rgba(var(--color-semantic-warning-rgb), 0.35);
+  --badge-red-grad:
+    linear-gradient(135deg, var(--color-semantic-error-400), var(--color-semantic-error-500));
+  --badge-red-shadow:
+    0 3px 10px rgba(var(--color-semantic-error-rgb), 0.35);
+  --badge-blue-grad:
+    linear-gradient(135deg, var(--color-brand-primary-400), var(--color-brand-primary-600));
+  --badge-blue-shadow:
+    0 3px 10px rgba(var(--color-brand-primary-rgb), 0.35);
+  --badge-purple-grad:
+    linear-gradient(135deg, var(--color-accent-purple-400), var(--color-accent-purple-500));
+  --badge-purple-shadow:
+    0 3px 10px rgba(var(--color-accent-purple-rgb), 0.35);
+  --badge-slate-grad:
+    linear-gradient(135deg, var(--color-neutral-500), var(--color-neutral-600));
+  --badge-slate-shadow:
+    0 3px 10px rgba(var(--color-neutral-rgb), 0.35);
+
+  /* ── Scrollbar ── */
+  --scrollbar-thumb:         var(--color-neutral-300);
+  --scrollbar-thumb-hover:   var(--color-neutral-400);
+
+  /* ── Mobile header ── */
+  /* PolishPoint blue bar — primary-500 anchor, primary-600 edge below for definition.
+     Hamburger + sub-text resolve to on-primary white surfaces. */
+  --mobile-header-bg:        var(--color-brand-primary-500);
+  --mobile-header-border:    var(--color-brand-primary-600);
+  --mobile-sub-color:        rgba(var(--color-white-rgb), 0.75);
+  --hamburger-color:         var(--color-text-on-primary);
+  --overlay-bg:              rgba(var(--color-neutral-rgb), 0.5);
+}

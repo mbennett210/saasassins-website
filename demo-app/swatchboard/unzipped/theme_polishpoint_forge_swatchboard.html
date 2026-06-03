@@ -1,0 +1,2648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PolishPoint — Forge Swatch Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   APP CSS — copied verbatim from theme_polishpoint_forge.html
+   DO NOT MODIFY directly. Sync from the main theme file if it changes.
+   Last synced: 2026-04-15
+   ============================================================ */
+/* ============================================================
+   TOKENS — Forge (gunmetal neutrals + orange primary)
+   Treatment vocabulary ported from Soft Bloom: neumorphic depth,
+   gradient primaries, glass switchers, ambient radial bg.
+   ============================================================ */
+:root {
+  --font: 'Inter', sans-serif;
+  --primary: #F97316;
+  --primary-light: #FB923C;
+  --primary-hover: #EA580C;
+  --primary-deep: #7C2D12;
+  --primary-soft: rgba(249,115,22,0.18);
+  --primary-bg: rgba(249,115,22,0.08);
+
+  --sidebar-bg: #1C1F26;
+  --sidebar-mid: #2A2E37;
+  --sidebar-deep: #0D0F13;
+  --sidebar-hover: #2A2E37;
+  --sidebar-active: #F97316;
+
+  --page-bg: #0A0C10;
+  --card-bg: #1C1F26;
+  --card-border: #343843;
+  --card-radius: 20px;
+  --btn-radius: 8px;
+  --input-radius: 8px;
+  --badge-radius: 9999px;
+
+  --text-primary: #F5F5F3;
+  --text-body: #CDD0D8;
+  --text-muted: #8A8F9D;
+  --text-faint: #5A5F6C;
+  --border-light: #262A33;
+  --border-mid: #3C4049;
+  --inset-bg: #262A33;
+
+  --green-bg: rgba(16,185,129,0.14); --green-text: #34D399; --green-border: rgba(16,185,129,0.32);
+  --amber-bg: rgba(245,158,11,0.14); --amber-text: #FBBF24; --amber-border: rgba(245,158,11,0.32);
+  --red-bg: rgba(239,68,68,0.14); --red-text: #F87171; --red-border: rgba(239,68,68,0.32);
+  --blue-bg: rgba(249,115,22,0.14); --blue-text: #FB923C; --blue-border: rgba(249,115,22,0.32);
+  --purple-bg: rgba(168,85,247,0.14); --purple-text: #C4B5FD; --purple-border: rgba(168,85,247,0.32);
+  --slate-bg: rgba(255,255,255,0.05); --slate-text: #8A8F9D; --slate-border: rgba(255,255,255,0.10);
+
+  /* Neumorphic shadow pair — dark-tuned (deep depth + near-zero white rim) */
+  --neu-shadow: 6px 6px 20px rgba(0,0,0,0.55), -1px -1px 2px rgba(255,255,255,0.03);
+  --neu-shadow-hover: 8px 8px 24px rgba(0,0,0,0.65), -2px -2px 3px rgba(255,255,255,0.05);
+  --neu-shadow-heavy: 10px 10px 28px rgba(0,0,0,0.75), -2px -2px 4px rgba(255,255,255,0.05);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-lg: 0 12px 28px rgba(0,0,0,0.55);
+
+  /* Primary button — gradient + glow ring */
+  --btn-primary-grad: linear-gradient(135deg, #FB923C 0%, #EA580C 100%);
+  --btn-primary-grad-hover: linear-gradient(135deg, #F97316 0%, #C2410C 100%);
+  --btn-primary-glow: inset 0 1px 0 rgba(255,255,255,0.25), 0 0 22px rgba(249,115,22,0.35), 0 4px 14px rgba(234,88,12,0.28);
+}
+
+/* ============================================================
+   RESET
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: var(--font);
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.055 0'/></filter><rect width='220' height='220' filter='url(%23n)'/></svg>"),
+    radial-gradient(ellipse at 12% 8%, rgba(249,115,22,0.10) 0%, transparent 45%),
+    radial-gradient(ellipse at 85% 22%, rgba(160,165,180,0.05) 0%, transparent 55%),
+    radial-gradient(ellipse at 55% 100%, rgba(249,115,22,0.045) 0%, transparent 60%),
+    var(--page-bg);
+  background-attachment: fixed;
+  color: var(--text-body);
+  display: flex;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3C4049; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #5A5F6C; }
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+.sidebar {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: 240px;
+  background: linear-gradient(180deg, #2A2E37 0%, #1C1F26 50%, #0D0F13 100%);
+  color: #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  border-right: 1px solid #2A2E37;
+  overflow: visible;
+}
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0; right: -56px; bottom: 0;
+  width: 56px;
+  background: linear-gradient(90deg, rgba(28,31,38,0.22) 0%, rgba(249,115,22,0.05) 60%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+.sidebar-nav { flex: 1; overflow-y: auto; padding-bottom: 8px; direction: rtl; }
+.sidebar-nav > * { direction: ltr; }
+.sidebar-brand {
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid #3A3E47;
+  display: flex; align-items: center; gap: 12px;
+  position: relative; z-index: 4;
+  background: linear-gradient(180deg, #2A2E37 0%, #1C1F26 50%, #0D0F13 100%);
+  background-attachment: fixed;
+}
+.sidebar-logo {
+  width: 40px; height: 40px;
+  background: var(--primary);
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px; color: #fff;
+  flex-shrink: 0;
+}
+.sidebar-brand-text h1 { font-size: 14px; font-weight: 600; color: #fff; }
+.sidebar-brand-text p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.sidebar-section {
+  padding: 16px 12px 4px;
+  font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: #6B7084;
+  display: flex; align-items: center;
+  cursor: pointer; user-select: none;
+}
+.sidebar-section .chevron { font-size: 10px; transition: transform 0.2s; margin-left: auto; color: #6B7084; }
+.sidebar-section .tier-badge { margin-left: auto; }
+.sidebar-section .tier-badge ~ .chevron { margin-left: 8px; }
+.sidebar-section.collapsed .chevron { transform: rotate(-90deg); }
+.nav-group { overflow: hidden; transition: max-height 0.3s ease; }
+.nav-group.collapsed { max-height: 0 !important; }
+.nav-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 8px 16px;
+  border: none; background: transparent;
+  color: #cbd5e1; font-family: var(--font);
+  font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s;
+  border-radius: 12px; margin: 1px 8px;
+  text-align: left;
+}
+.nav-btn:hover { color: #fff; background: transparent; position: relative; z-index: 2; }
+.nav-btn.active { color: #fff; font-weight: 600; background: transparent; position: relative; z-index: 2; }
+.nav-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto;
+  font-size: 9px; font-weight: 600;
+  padding: 1px 6px; border-radius: 9999px;
+  background: #3A3E47; color: #9CA0AE;
+}
+.sidebar-footer {
+  margin-top: auto;
+  padding: 16px;
+  border-top: 1px solid #3A3E47;
+  position: relative; z-index: 4;
+  background: linear-gradient(180deg, #2A2E37 0%, #1C1F26 50%, #0D0F13 100%);
+  background-attachment: fixed;
+}
+.sidebar-footer-btn {
+  width: 100%; padding: 10px;
+  background: var(--primary); border: none;
+  border-radius: var(--btn-radius);
+  color: #fff; font-family: var(--font);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s;
+}
+.sidebar-footer-btn:hover { background: var(--primary-hover); }
+
+/* ============================================================
+   NAV NOTCH — active-screen indicator
+   ============================================================ */
+.nav-notch {
+  position: absolute;
+  left: 8px;
+  right: -10px;
+  height: 34px;
+  background: linear-gradient(135deg, #FB923C 0%, #EA580C 100%);
+  border-radius: 10px 0 0 10px;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%);
+  z-index: 1;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), inset 0 0 0 1px rgba(255,255,255,0.15);
+  filter: drop-shadow(0 0 10px rgba(251,146,60,0.5)) drop-shadow(0 3px 10px rgba(234,88,12,0.35));
+  opacity: 0;
+  top: -100px;
+}
+.nav-notch.visible { opacity: 1; }
+.nav-notch.animating { transition: top 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s; }
+
+.nav-notch-hover {
+  position: absolute;
+  left: 8px;
+  right: -10px;
+  height: 34px;
+  background: linear-gradient(135deg, rgba(251,146,60,0.18) 0%, rgba(234,88,12,0.2) 100%);
+  border-radius: 10px 0 0 10px;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%);
+  z-index: 1;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+  opacity: 0;
+  top: -100px;
+}
+.nav-notch-hover.visible { opacity: 1; }
+.nav-notch-hover.animating { transition: top 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s; }
+
+/* ============================================================
+   MAIN CONTENT
+   ============================================================ */
+.main {
+  margin-left: 240px;
+  flex: 1;
+  padding: 32px 40px 80px;
+}
+
+.page-head {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 24px; flex-wrap: wrap;
+}
+.page-head h1 {
+  font-size: 22px; font-weight: 700; color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.tier-badge {
+  font-size: 10px; font-weight: 600;
+  padding: 3px 8px; border-radius: 6px; border: 1px solid;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.tier-badge.grow { background: rgba(6,182,212,0.12); color: #67E8F9; border-color: rgba(6,182,212,0.30); }
+.tier-badge.scale { background: rgba(139,92,246,0.12); color: #C4B5FD; border-color: rgba(139,92,246,0.30); }
+.tier-badge.field { background: rgba(245,158,11,0.12); color: #FCD34D; border-color: rgba(245,158,11,0.30); }
+.tier-badge.admin { background: rgba(236,72,153,0.12); color: #F9A8D4; border-color: rgba(236,72,153,0.30); }
+.page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: -16px; margin-bottom: 20px; }
+
+/* ============================================================
+   COMPONENTS
+   ============================================================ */
+.card {
+  border: 3px solid transparent;
+  background:
+    linear-gradient(var(--card-bg), var(--card-bg)) padding-box,
+    linear-gradient(90deg, #7C2D12 0%, #EA580C 25%, #FDBA74 50%, #EA580C 75%, #7C2D12 100%) border-box;
+  border-radius: var(--card-radius);
+  padding: 20px;
+  box-shadow: 0 0 26px rgba(249,115,22,0.26), 0 12px 30px rgba(0,0,0,0.60);
+}
+.card-hover { transition: box-shadow 0.2s, transform 0.2s; cursor: pointer; }
+.card-hover:hover {
+  box-shadow: 0 0 34px rgba(249,115,22,0.34), 0 14px 34px rgba(0,0,0,0.65);
+  transform: translateY(-1px);
+}
+
+.dash-card { padding: 28px 32px; margin-bottom: 20px; }
+.dash-card-title {
+  position: relative;
+  font-size: 11px; font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  margin: 0 0 16px 0;
+  padding-bottom: 12px;
+}
+.dash-card-title::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1.5px;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 5' preserveAspectRatio='none'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='0'><stop offset='0' stop-color='%23F97316' stop-opacity='0.12'/><stop offset='0.18' stop-color='%23F97316' stop-opacity='0.85'/><stop offset='0.48' stop-color='%23FB923C' stop-opacity='1'/><stop offset='0.5' stop-color='%23FFFFFF' stop-opacity='0.55'/><stop offset='0.52' stop-color='%23FB923C' stop-opacity='1'/><stop offset='0.82' stop-color='%23F97316' stop-opacity='0.85'/><stop offset='1' stop-color='%23F97316' stop-opacity='0.12'/></linearGradient></defs><ellipse cx='100' cy='2.5' rx='100' ry='2.2' fill='url(%23g)'/></svg>");
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+.dash-card > *:last-child { margin-bottom: 0; }
+
+/* Stat card */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { padding: 18px 20px; }
+.stat-val { font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1.2; letter-spacing: -0.01em; }
+.stat-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.stat-trend { font-size: 11px; font-weight: 600; margin-top: 4px; }
+.stat-trend.up { color: #059669; }
+.stat-trend.down { color: #dc2626; }
+.stat-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 8px;
+}
+
+/* Badge */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 10px; border-radius: var(--badge-radius);
+  font-size: 11px; font-weight: 600; border: 1px solid;
+}
+.badge.green { background: var(--green-bg); color: var(--green-text); border-color: var(--green-border); }
+.badge.amber { background: var(--amber-bg); color: var(--amber-text); border-color: var(--amber-border); }
+.badge.red { background: var(--red-bg); color: var(--red-text); border-color: var(--red-border); }
+.badge.blue { background: var(--blue-bg); color: var(--blue-text); border-color: var(--blue-border); }
+.badge.purple { background: var(--purple-bg); color: var(--purple-text); border-color: var(--purple-border); }
+.badge.slate { background: var(--slate-bg); color: var(--slate-text); border-color: var(--slate-border); }
+
+/* Button */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 16px; border-radius: var(--btn-radius);
+  font-family: var(--font); font-size: 13px; font-weight: 600;
+  border: 1px solid transparent; cursor: pointer; transition: all 0.15s;
+  line-height: 1;
+}
+.btn-primary {
+  background: var(--btn-primary-grad);
+  color: #fff;
+  border: none;
+  box-shadow: var(--btn-primary-glow);
+  position: relative;
+}
+.btn-primary:hover { background: var(--btn-primary-grad-hover); transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 0 28px rgba(249,115,22,0.45), 0 6px 18px rgba(234,88,12,0.35); }
+.btn-primary:active { transform: translateY(0); }
+.btn-secondary {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--text-body);
+  box-shadow: 2px 2px 6px rgba(0,0,0,0.35), -1px -1px 4px rgba(255,255,255,0.04);
+}
+.btn-secondary:hover { border-color: #4A4E57; background: var(--inset-bg); box-shadow: 3px 3px 8px rgba(0,0,0,0.45), -2px -2px 6px rgba(255,255,255,0.05); }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+table th {
+  text-align: left; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); padding: 10px 12px;
+  border-bottom: 1px solid var(--card-border);
+  background: var(--inset-bg);
+}
+table td {
+  padding: 12px; font-size: 13px;
+  color: var(--text-body); border-bottom: 1px solid var(--border-light);
+}
+table tr:last-child td { border-bottom: none; }
+table .name { font-weight: 600; color: var(--text-primary); }
+table .money { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+table tr:hover { background: var(--inset-bg); }
+
+/* Input */
+.input, .select, textarea.input {
+  width: 100%; padding: 9px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--input-radius);
+  font-family: var(--font); font-size: 13px;
+  color: var(--text-primary); background: var(--inset-bg);
+  outline: none; transition: all 0.15s;
+}
+.input:focus, .select:focus, textarea.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(249,115,22,0.20);
+}
+.input::placeholder { color: var(--text-faint); }
+
+/* Tabs */
+.tab-container {
+  display: inline-flex; gap: 2px;
+  background: var(--inset-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--input-radius); padding: 3px;
+}
+.tab-btn {
+  padding: 5px 14px; border-radius: 6px;
+  font-family: var(--font); font-size: 12px; font-weight: 500;
+  border: none; cursor: pointer; background: transparent;
+  color: var(--text-muted); transition: all 0.15s;
+}
+.tab-btn.active {
+  background: var(--card-bg); color: var(--text-primary); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.40);
+}
+
+/* Toggle */
+.toggle { width: 36px; height: 20px; border-radius: 9999px; padding: 2px; cursor: pointer; display: inline-flex; align-items: center; transition: background 0.15s; }
+.toggle.on { background: var(--primary); }
+.toggle.off { background: #3C4049; }
+.toggle-thumb { width: 16px; height: 16px; border-radius: 9999px; background: #E5E5E0; box-shadow: 0 1px 2px rgba(0,0,0,0.40); transition: margin 0.15s; }
+.toggle.on .toggle-thumb { margin-left: auto; }
+
+/* Avatar */
+.avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 9999px; font-weight: 600; color: #fff;
+  background: var(--primary); flex-shrink: 0;
+}
+.avatar-sm { width: 30px; height: 30px; font-size: 11px; }
+.avatar-md { width: 40px; height: 40px; font-size: 13px; }
+
+/* Info banner */
+.info-banner {
+  background: var(--primary-bg);
+  border: 1px solid var(--primary-soft);
+  border-radius: var(--card-radius);
+  padding: 12px 16px;
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-bottom: 20px;
+  font-size: 13px; color: var(--primary-hover);
+}
+.info-banner strong { color: var(--text-primary); }
+
+/* Progress bar */
+.progress-track { height: 8px; background: var(--border-light); border-radius: 9999px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 9999px; background: var(--primary); }
+
+/* Stars */
+.stars { display: flex; gap: 2px; }
+.star-filled { color: #f59e0b; }
+.star-empty { color: #e2e8f0; }
+
+/* Grid helpers */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+.flex-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gap-20 { gap: 20px; }
+.mb-12 { margin-bottom: 12px; }
+.mb-20 { margin-bottom: 20px; }
+.mb-24 { margin-bottom: 24px; }
+.mt-4 { margin-top: 4px; }
+.text-sm { font-size: 13px; }
+.text-xs { font-size: 11px; }
+.text-muted { color: var(--text-muted); }
+.text-primary { color: var(--text-primary); }
+.font-bold { font-weight: 700; }
+.font-semi { font-weight: 600; }
+
+/* Screens */
+.screen { display: none; }
+.screen.active { display: block; }
+
+.section-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
+.section-subtitle { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+
+/* Dashboard hero */
+.dash-hero {
+  background:
+    linear-gradient(rgba(249,115,22,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(249,115,22,0.07) 1px, transparent 1px),
+    linear-gradient(135deg, #7C2D12 0%, #1C1F26 55%, #0D0F13 100%);
+  background-size: 44px 44px, 44px 44px, auto;
+  border-radius: var(--card-radius);
+  padding: 28px;
+  color: #fff; margin-bottom: 20px;
+  position: relative; overflow: hidden;
+  border: 1px solid rgba(249,115,22,0.2);
+  box-shadow: 6px 6px 18px rgba(28,31,38,0.18), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.dash-hero::before {
+  content: '';
+  position: absolute;
+  top: -80px; right: -40px;
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(251,146,60,0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+.dash-hero::after {
+  content: '';
+  position: absolute;
+  bottom: -60px; right: 80px;
+  width: 160px; height: 160px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.04);
+  pointer-events: none;
+}
+.dash-hero > * { position: relative; z-index: 1; }
+.dash-hero h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.01em; }
+.dash-hero .sub { font-size: 12px; color: #CFCDC9; }
+.dash-hero-stats { display: flex; gap: 28px; margin-top: 18px; flex-wrap: wrap; }
+.dash-hero-stat .val { font-size: 26px; font-weight: 700; color: #fff; }
+.dash-hero-stat .lbl { font-size: 10px; color: #9CA0AE; }
+
+.dash-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .dash-cols { grid-template-columns: 1fr; } }
+
+/* Dashboard switcher — glass/frosted pills */
+.dash-switcher { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
+.dash-sw-btn {
+  padding: 6px 14px; border-radius: 9999px;
+  font-family: var(--font); font-size: 11px; font-weight: 600;
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text-body); cursor: pointer; transition: all 0.2s;
+  box-shadow: 2px 2px 8px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.dash-sw-btn:hover { border-color: rgba(255,255,255,0.15); background: rgba(255,255,255,0.08); transform: translateY(-1px); }
+.dash-sw-btn.active {
+  background: var(--btn-primary-grad);
+  border-color: transparent; color: #fff; font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 0 18px rgba(249,115,22,0.3), 0 3px 10px rgba(234,88,12,0.22);
+}
+.dash-layout { display: none; }
+.dash-layout.active { display: block; }
+
+/* Revenue bar chart */
+.rev-chart { display: flex; align-items: flex-end; gap: 8px; height: 100px; padding-top: 12px; }
+.rev-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.rev-bar { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; }
+.rev-bar-lbl { font-size: 10px; color: var(--text-muted); }
+
+/* Quick actions */
+.quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.qa-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 16px 10px; border-radius: 10px;
+  border: 1px solid var(--card-border); background: var(--card-bg);
+  font-family: var(--font); font-size: 12px; font-weight: 500;
+  color: var(--text-body); cursor: pointer;
+  transition: all 0.15s;
+}
+.qa-btn:hover { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); }
+.qa-icon { font-size: 20px; }
+
+/* Schedule block — neumorphic, keeps colored left border */
+.sched-block {
+  padding: 10px 14px; border-radius: 8px;
+  margin-bottom: 6px; font-size: 12px;
+  border: 0 solid;
+  border-left: 3px solid;
+  background: var(--inner-bg);
+  box-shadow:
+    4px 4px 14px rgba(0,0,0,0.50),
+    -2px -2px 6px rgba(255,255,255,0.035),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* Pipeline */
+.pipeline-cols { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+.pipeline-col-head {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-muted);
+  padding: 6px 4px; margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.pipeline-card {
+  background: var(--inner-bg);
+  border: 1px solid transparent;
+  border-radius: 10px; padding: 12px; margin-bottom: 8px;
+  box-shadow:
+    4px 4px 14px rgba(0,0,0,0.50),
+    -2px -2px 6px rgba(255,255,255,0.035),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.pipeline-card:hover {
+  box-shadow:
+    6px 6px 18px rgba(0,0,0,0.60),
+    -3px -3px 8px rgba(255,255,255,0.05),
+    inset 0 1px 0 rgba(255,255,255,0.07);
+  transform: translateY(-1px);
+}
+
+/* Calendar */
+.cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 2px; text-align: center; }
+.cal-day { padding: 8px 4px; font-size: 12px; border-radius: 6px; color: var(--text-body); cursor: pointer; transition: background 0.15s; }
+.cal-day:hover { background: var(--inset-bg); }
+.cal-day.today { background: var(--primary); color: #fff; font-weight: 700; }
+.cal-day.today:hover { background: var(--primary-hover); }
+.cal-day.past { color: var(--text-faint); cursor: default; }
+.cal-day.past:hover { background: transparent; }
+.cal-header { font-size: 10px; color: var(--text-muted); font-weight: 600; padding: 6px 4px; }
+
+/* Photo placeholder */
+.photo-placeholder {
+  aspect-ratio: 4/3; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 500; color: var(--text-faint);
+  background: var(--inset-bg);
+  border: 1px solid var(--card-border);
+}
+
+/* Checklist */
+.check-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--border-light);
+  font-size: 13px;
+}
+.check-item:last-child { border-bottom: none; }
+.check-box {
+  width: 20px; height: 20px; border-radius: 5px;
+  border: 2px solid var(--border-mid); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.check-box.done { background: var(--primary); border-color: var(--primary); color: #fff; font-size: 12px; }
+
+/* Step flow */
+.step-flow { display: flex; align-items: center; gap: 0; margin-bottom: 16px; }
+.step-node { display: flex; align-items: center; gap: 8px; }
+.step-icon {
+  width: 32px; height: 32px; border-radius: 9999px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0; font-weight: 600;
+}
+.step-connector { width: 36px; height: 1px; background: var(--border-mid); margin: 0 6px; }
+
+/* Booking header */
+.booking-header {
+  background: linear-gradient(135deg, var(--primary) 0%, #7C2D12 100%);
+  color: #fff; text-align: center;
+  padding: 28px 20px;
+  border-radius: var(--card-radius) var(--card-radius) 0 0;
+}
+.booking-header h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.booking-header p { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+
+/* Pick button */
+.pick-btn {
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 100%), var(--inset-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 11px 8px;
+  text-align: center;
+  font-size: 13px; font-weight: 500;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 2px 2px 8px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+  position: relative; overflow: hidden;
+}
+.pick-btn:hover { border-color: var(--primary-light); color: var(--primary-light); transform: translateY(-1px); background: linear-gradient(180deg, rgba(249,115,22,0.08) 0%, rgba(249,115,22,0.02) 100%), var(--inset-bg); box-shadow: 3px 3px 12px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08); }
+.pick-btn.selected {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 55%),
+    linear-gradient(135deg, #FB923C 0%, #EA580C 100%);
+  border-color: transparent;
+  color: #fff; font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 0 18px rgba(249,115,22,0.35), 0 3px 10px rgba(234,88,12,0.25);
+}
+.pick-btn.selected::before {
+  content: '';
+  position: absolute; top: 0; left: 10%; right: 10%;
+  height: 45%;
+  background: radial-gradient(ellipse at center top, rgba(255,255,255,0.35) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Stock bar */
+.stock-bar { display: flex; align-items: center; gap: 8px; }
+.stock-track { flex: 1; height: 6px; background: var(--border-light); border-radius: 9999px; overflow: hidden; }
+.stock-fill { height: 100%; border-radius: 9999px; }
+
+/* Drip flow */
+.drip-flow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+.drip-node { display: flex; align-items: center; gap: 10px; }
+.drip-icon { width: 36px; height: 36px; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--primary-bg); color: var(--primary); border: 1px solid var(--primary-soft); }
+.drip-connector { width: 32px; height: 1px; background: var(--border-mid); margin: 0 4px; }
+
+/* Chart placeholder */
+.chart-placeholder {
+  height: 160px; border-radius: 8px;
+  background: var(--inset-bg);
+  border: 1px solid var(--border-light);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-faint); font-size: 12px;
+}
+
+/* Bar chart */
+.bar-chart { display: flex; align-items: flex-end; gap: 6px; height: 120px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.bar { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; background: var(--primary); }
+.bar-label { font-size: 10px; color: var(--text-muted); }
+
+/* Addon card */
+.addon-card {
+  border: 3px solid transparent;
+  background:
+    linear-gradient(var(--card-bg), var(--card-bg)) padding-box,
+    linear-gradient(90deg, #7C2D12 0%, #EA580C 25%, #FDBA74 50%, #EA580C 75%, #7C2D12 100%) border-box;
+  border-radius: var(--card-radius); padding: 20px;
+  text-align: center;
+  transition: box-shadow 0.15s, transform 0.15s;
+  box-shadow: 0 0 22px rgba(249,115,22,0.22), 0 10px 26px rgba(0,0,0,0.55);
+}
+.addon-card:hover {
+  box-shadow: 0 0 30px rgba(249,115,22,0.32), 0 14px 32px rgba(0,0,0,0.62);
+  transform: translateY(-2px);
+}
+.addon-icon {
+  width: 44px; height: 44px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 12px; font-size: 20px;
+  background: var(--primary-bg); color: var(--primary);
+}
+
+/* Team row */
+.team-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.team-member { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.team-avatar-wrap { position: relative; display: inline-flex; }
+.team-status-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  position: absolute; bottom: 0; right: 0;
+  border: 2px solid var(--card-bg);
+}
+
+/* Timeline */
+.tl-track { position: relative; padding-left: 24px; }
+.tl-line { position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--border-mid); }
+.tl-item { position: relative; padding-bottom: 16px; }
+.tl-dot { position: absolute; left: -20px; top: 4px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--primary); background: var(--card-bg); }
+.tl-item.done .tl-dot { background: var(--primary); }
+.tl-item.active .tl-dot { background: var(--primary); box-shadow: 0 0 0 4px rgba(249,115,22,0.15); }
+.tl-time { font-size: 10px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.04em; }
+.tl-card {
+  margin-top: 4px; padding: 10px 14px; border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--inner-bg);
+  box-shadow:
+    4px 4px 14px rgba(0,0,0,0.50),
+    -2px -2px 6px rgba(255,255,255,0.035),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* Metric strip */
+.metric-strip {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
+  border-radius: var(--card-radius); overflow: hidden; margin-bottom: 20px;
+  border: 3px solid transparent;
+  background:
+    linear-gradient(var(--card-bg), var(--card-bg)) padding-box,
+    linear-gradient(90deg, #7C2D12 0%, #EA580C 25%, #FDBA74 50%, #EA580C 75%, #7C2D12 100%) border-box;
+  box-shadow: 0 0 26px rgba(249,115,22,0.26), 0 12px 30px rgba(0,0,0,0.60);
+}
+.metric-cell {
+  padding: 22px 24px;
+  background: linear-gradient(160deg, var(--card-bg) 0%, var(--inset-bg) 100%);
+  border-right: 1px solid var(--card-border);
+  position: relative;
+}
+.metric-cell:nth-child(1) { background: linear-gradient(160deg, var(--card-bg) 0%, rgba(249,115,22,0.10) 100%); }
+.metric-cell:nth-child(2) { background: linear-gradient(160deg, var(--card-bg) 0%, rgba(168,85,247,0.10) 100%); }
+.metric-cell:nth-child(3) { background: linear-gradient(160deg, var(--card-bg) 0%, var(--inset-bg) 100%); }
+.metric-cell::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--btn-primary-grad);
+  opacity: 0.6;
+}
+.metric-cell:last-child { border-right: none; }
+.metric-cell .val { font-size: 26px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }
+.metric-cell .lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.metric-cell .trend { font-size: 11px; font-weight: 600; margin-top: 4px; }
+
+/* ============================================================
+   INNER CARD COLOR — locked to Copper Blaze
+   Dark-burnt → orange diagonal gradient baked into :root tokens.
+   ============================================================ */
+
+:root {
+  --inner-bg: linear-gradient(135deg, #7C2D12 0%, #C2410C 50%, #F97316 100%);
+  --inner-border: rgba(249,115,22,0.7);
+}
+
+/* ============================================================
+   HEADER TEXT — White Hot (locked in).
+   Crisp white with subtle orange halo, applied to main card headers.
+   ============================================================ */
+.dash-card-title,
+.section-title,
+.page-head h1 {
+  color: #FFFFFF;
+  -webkit-text-fill-color: #FFFFFF;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5), 0 0 6px rgba(249,115,22,0.40);
+}
+
+/* ============================================================
+   BADGE READABILITY — scoped for bright inner-card backgrounds.
+   Solid dark pill so saturated text reads against any gradient.
+   ============================================================ */
+.pipeline-card .badge,
+.tl-card .badge,
+.sched-block .badge {
+  background: rgba(13,15,19,0.82);
+  border-width: 1.5px;
+  border-color: currentColor;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+.pipeline-card .badge.slate,
+.tl-card .badge.slate,
+.sched-block .badge.slate {
+  color: #E2E8F0;
+  border-color: rgba(226,232,240,0.85);
+}
+
+/* Muted detail text inside inner cards — tighten contrast against bright gradients */
+.pipeline-card .text-muted,
+.tl-card .text-muted,
+.sched-block .text-muted {
+  color: rgba(255,255,255,0.88);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.55);
+}
+
+/* ============================================================
+   MOBILE HEADER / HAMBURGER
+   ============================================================ */
+.mobile-header {
+  display: none;
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 56px; z-index: 60;
+  background: var(--sidebar-bg);
+  align-items: center; gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid #2A2E37;
+}
+.hamburger { width: 40px; height: 40px; background: transparent; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+.hamburger span { display: block; width: 20px; height: 2px; background: #9CA0AE; border-radius: 2px; position: relative; transition: all 0.3s; }
+.hamburger span::before, .hamburger span::after { content: ''; position: absolute; left: 0; width: 20px; height: 2px; background: #9CA0AE; border-radius: 2px; transition: all 0.3s; }
+.hamburger span::before { top: -6px; }
+.hamburger span::after { top: 6px; }
+.hamburger.open span { background: transparent; }
+.hamburger.open span::before { top: 0; transform: rotate(45deg); }
+.hamburger.open span::after { top: 0; transform: rotate(-45deg); }
+.mobile-header .mobile-brand { font-size: 14px; font-weight: 600; color: #fff; }
+.mobile-header .mobile-sub { font-size: 10px; color: #94a3b8; }
+
+.sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(13,15,19,0.5); z-index: 49; }
+
+/* ============================================================
+   MESSAGING — chat bubble layout (new)
+   ============================================================ */
+.msg-layout { display: grid; grid-template-columns: 280px 1fr; height: 520px; overflow: hidden; }
+.msg-list { border-right: 1px solid var(--card-border); overflow-y: auto; }
+.msg-item { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; border-bottom: 1px solid var(--border-light); transition: background 0.15s; }
+.msg-item:hover { background: var(--inset-bg); }
+.msg-item.active { background: var(--primary-bg); border-left: 3px solid var(--primary); }
+.msg-preview { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.msg-time { font-size: 10px; color: var(--text-faint); margin-left: auto; white-space: nowrap; }
+.msg-unread { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
+.chat-area { display: flex; flex-direction: column; }
+.chat-header { padding: 12px 20px; border-bottom: 1px solid var(--card-border); display: flex; align-items: center; gap: 10px; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.chat-bubble { max-width: 70%; padding: 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.4; }
+.chat-bubble.incoming { align-self: flex-start; background: var(--inset-bg); border: 1px solid var(--border-light); color: var(--text-body); border-bottom-left-radius: 4px; }
+.chat-bubble.outgoing { align-self: flex-end; background: var(--btn-primary-grad); color: #fff; border-bottom-right-radius: 4px; }
+.chat-bubble .chat-time { font-size: 10px; opacity: 0.7; margin-top: 4px; }
+.chat-compose { padding: 12px 16px; border-top: 1px solid var(--card-border); display: flex; gap: 8px; align-items: center; }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 900px) {
+  .sidebar { width: 220px; }
+  .main { margin-left: 220px; padding: 24px 20px 60px; }
+  .pipeline-cols { grid-template-columns: 1fr 1fr; }
+  .grid-4 { grid-template-columns: 1fr 1fr; }
+  .dash-cols { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .mobile-header { display: flex; }
+  .sidebar { width: 260px; transform: translateX(-100%); transition: transform 0.3s cubic-bezier(0.4,0,0.2,1); padding-top: 56px; }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .sidebar-overlay.visible { display: block; }
+  .sidebar .sidebar-brand { display: none; }
+  .nav-notch, .nav-notch-hover { display: none; }
+  .main { margin-left: 0; padding: 72px 16px 60px; }
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  .pipeline-cols { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .bar-chart { height: 80px; }
+  .cal-day { padding: 4px; font-size: 10px; }
+  .page-head h1 { font-size: 18px; }
+  .stat-val { font-size: 22px; }
+  /* Messaging: mobile chat-app layout */
+  #messaging.screen.active { display: flex; flex-direction: column; height: calc(100vh - 80px); overflow: hidden; }
+  #messaging .page-head { flex-shrink: 0; }
+  #messaging > .card:first-of-type { flex: 1; min-height: 0; overflow: hidden !important; }
+  #messaging > .card:last-of-type { flex-shrink: 0; }
+  .msg-layout { grid-template-columns: 1fr; height: 100%; }
+  .msg-list { display: none; }
+  .chat-area { display: flex; flex-direction: column; height: 100%; }
+  .chat-header { flex-shrink: 0; }
+  .chat-messages { flex: 1; min-height: 0; overflow-y: auto; }
+  .metric-strip { grid-template-columns: 1fr; }
+}
+/* ============================================================
+   SWATCH BOARD CHROME — layout helpers, NOT app classes.
+   Everything below is scoped to .sb-* and exists only for the
+   catalog layout. Delete the sb-* rules to extract pure app CSS.
+   ============================================================ */
+
+body { display: block; }  /* override app sidebar flex assumption */
+
+.sb-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 32px;
+  padding: 32px;
+  max-width: 1600px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+}
+
+.sb-toc {
+  position: sticky;
+  top: 32px;
+  align-self: start;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  padding: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  box-shadow: var(--neu-shadow);
+}
+
+.sb-toc h1 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+  letter-spacing: -0.01em;
+  background: linear-gradient(135deg, #FB923C 0%, #F97316 40%, #7C2D12 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.sb-toc .sb-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.sb-toc h2 {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin: 12px 0 6px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.sb-toc ul {
+  list-style: none;
+  margin: 0 0 12px 0;
+  padding: 0;
+}
+
+.sb-toc li { margin-bottom: 2px; }
+
+.sb-toc a {
+  color: var(--text-body);
+  text-decoration: none;
+  font-size: 11px;
+  display: block;
+  padding: 3px 6px;
+  border-radius: 5px;
+  transition: all 0.15s;
+}
+
+.sb-toc a:hover {
+  background: var(--inset-bg);
+  color: var(--primary);
+}
+
+.sb-group { margin-bottom: 12px; }
+
+.sb-group-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 4px 0;
+}
+
+.sb-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.sb-btn {
+  padding: 3px 7px;
+  border: 1px solid var(--card-border);
+  background: var(--inset-bg);
+  color: var(--text-primary);
+  border-radius: 5px;
+  font-size: 9px;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all 0.15s;
+  font-weight: 500;
+}
+
+.sb-btn:hover { border-color: var(--primary); }
+
+.sb-btn.active {
+  background: var(--btn-primary-grad);
+  color: #fff;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.sb-btn-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sb-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.3);
+}
+
+.sb-reset {
+  width: 100%;
+  padding: 8px;
+  background: var(--btn-primary-grad);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font);
+  margin-top: 10px;
+  box-shadow: var(--btn-primary-glow);
+}
+
+.sb-content { min-width: 0; }
+
+.sb-intro {
+  padding: 20px 24px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  margin-bottom: 32px;
+  border-left: 3px solid var(--primary);
+}
+
+.sb-intro h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px 0;
+  background: linear-gradient(135deg, #FB923C 0%, #F97316 40%, #7C2D12 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.sb-intro p {
+  font-size: 12px;
+  color: var(--text-body);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.sb-section {
+  margin-bottom: 48px;
+  scroll-margin-top: 20px;
+}
+
+.sb-section-head {
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.sb-section-head h2 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 3px 0;
+  letter-spacing: -0.01em;
+}
+
+.sb-selector {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 11px;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.sb-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.sb-frame {
+  padding: 24px;
+  border: 1px dashed var(--border-mid);
+  border-radius: 12px;
+  background: transparent;
+  margin-bottom: 12px;
+}
+
+.sb-frame-plain {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.sb-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.sb-swatch {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+}
+
+.sb-swatch-chip {
+  width: 100%;
+  height: 40px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border-light);
+}
+
+.sb-swatch-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'Space Grotesk', monospace;
+}
+
+.sb-swatch-value {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: monospace;
+  margin-top: 1px;
+}
+
+.sb-grid-9 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.sb-grid-4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.sb-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.sb-grid-6 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.sb-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+
+.sb-variant-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+}
+
+.sb-variant-sub {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sb-variant-frame {
+  padding: 16px;
+  background: var(--page-bg);
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+}
+
+/* Force-scope variant overrides so the 4 inner styles render side-by-side */
+.sb-force-lifted .sched-block,
+.sb-force-lifted .pipeline-card,
+.sb-force-lifted .tl-card {
+  background: var(--ic-grad, var(--ic-bg)) !important;
+  background-color: var(--ic-bg) !important;
+  border: 1px solid var(--ic-border) !important;
+  border-left-color: var(--ic-border) !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06) !important;
+}
+
+.sb-force-neumorph .sched-block,
+.sb-force-neumorph .pipeline-card,
+.sb-force-neumorph .tl-card {
+  background: var(--ic-grad, var(--ic-bg)) !important;
+  background-color: var(--ic-bg) !important;
+  border: 1px solid var(--ic-border) !important;
+  border-left-color: var(--ic-border) !important;
+  box-shadow: 3px 3px 8px var(--ic-neu-lo), -2px -2px 6px var(--ic-neu-hi), inset 0 1px 0 rgba(255,255,255,0.06) !important;
+}
+
+.sb-force-glasspane .sched-block,
+.sb-force-glasspane .pipeline-card,
+.sb-force-glasspane .tl-card {
+  background: var(--ic-glass) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.35) !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.6) !important;
+}
+
+.sb-force-topline .sched-block,
+.sb-force-topline .pipeline-card,
+.sb-force-topline .tl-card {
+  background: var(--ic-grad, var(--ic-bg)) !important;
+  background-color: var(--ic-bg) !important;
+  border: 1px solid var(--ic-border) !important;
+  border-top: 2px solid rgba(30,143,232,0.35) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;
+}
+
+.sb-spec {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--inset-bg);
+  border-radius: 6px;
+  border-left: 2px solid var(--primary);
+  font-family: 'Space Grotesk', monospace;
+  font-size: 10px;
+  color: var(--text-body);
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.5;
+}
+
+/* Inline demo helpers */
+.sb-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.sb-stack { display: flex; flex-direction: column; gap: 10px; }
+.sb-caption {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+/* Click palette swatch card */
+.sb-palette-card {
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.sb-palette-card:hover { transform: translateY(-2px); border-color: var(--primary); }
+.sb-palette-card.active { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(30,143,232,0.3); }
+
+/* Shadow comparison grid */
+.sb-shadow-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+.sb-shadow-cell { text-align: center; }
+.sb-shadow-cell .card { margin-bottom: 6px; }
+
+/* ============================================================
+   TIER SECTION HELPERS — used by Container / Block / Row / Tile
+   ============================================================ */
+
+.sb-toc-group {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--primary);
+  margin: 14px 0 4px 0;
+  padding: 0;
+  border: none;
+}
+
+.sb-tier-spec {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  background: rgba(30,143,232,0.04);
+  border: 1px solid rgba(30,143,232,0.18);
+  border-radius: 10px;
+}
+
+.sb-tier-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.sb-tier-table th,
+.sb-tier-table td {
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(30,143,232,0.08);
+}
+.sb-tier-table tr:last-child th,
+.sb-tier-table tr:last-child td {
+  border-bottom: none;
+}
+.sb-tier-table th {
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 9px;
+  width: 150px;
+  white-space: nowrap;
+}
+.sb-tier-table td {
+  color: var(--text-primary);
+  font-family: 'Space Grotesk', monospace;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.sb-tier-members-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  margin: 22px 0 10px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(30,143,232,0.2);
+}
+
+.sb-tier-member {
+  margin-bottom: 18px;
+}
+.sb-tier-member:last-of-type {
+  margin-bottom: 0;
+}
+
+.sb-tier-howto {
+  margin-top: 22px;
+  padding: 14px 16px;
+  background: var(--inset-bg);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 8px 8px 0;
+}
+.sb-tier-howto h3 {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  margin: 0 0 6px 0;
+}
+.sb-tier-howto p {
+  font-size: 11px;
+  color: var(--text-body);
+  margin: 0 0 8px 0;
+  line-height: 1.55;
+}
+.sb-tier-howto p:last-child { margin-bottom: 0; }
+
+.sb-spec-block {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--inset-bg);
+  border-radius: 6px;
+  font-family: 'Space Grotesk', monospace;
+  font-size: 10px;
+  color: var(--text-primary);
+  overflow-x: auto;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.sb-tier-deprecated {
+  margin-top: 22px;
+  padding: 14px 16px;
+  background: rgba(220,38,38,0.06);
+  border: 1px dashed rgba(220,38,38,0.35);
+  border-radius: 8px;
+}
+.sb-tier-deprecated h3 {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #f87171;
+  margin: 0 0 6px 0;
+}
+.sb-tier-deprecated p {
+  font-size: 11px;
+  color: var(--text-body);
+  margin: 0 0 6px 0;
+  line-height: 1.55;
+}
+.sb-tier-deprecated p:last-child { margin-bottom: 0; }
+
+/* Swatchboard-only: mirror #portal contextual overrides without requiring <div id="portal">.
+   Source of truth is main theme lines 967-989. Used only in §24 Client Portal composite.
+   Containers match the messaging chat-bubble.outgoing orange gradient (var(--btn-primary-grad)). */
+.sb-portal-scope .card .card {
+  background: var(--btn-primary-grad);
+  border: 1px solid var(--primary-light);
+  border-radius: 12px;
+  box-shadow: var(--btn-primary-glow);
+}
+.sb-portal-scope .stat-grid .card.stat-card {
+  padding: 18px 20px;
+}
+.sb-portal-scope .stat-grid .card.stat-card .stat-val {
+  color: #000;
+  font-weight: 700;
+}
+.sb-portal-scope .stat-grid .card.stat-card .stat-label {
+  color: rgba(0,0,0,0.75);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.sb-portal-scope .card .card .text-primary { color: #000; }
+.sb-portal-scope .card .card .text-muted { color: rgba(0,0,0,0.70); }
+
+/* Swatchboard-only: demote .sidebar from position:fixed to position:relative so the
+   Navigation section can render inline inside an .sb-frame. All other sidebar CSS
+   (gradient, ::before/::after accents, .nav-btn, .nav-notch, .nav-notch-hover) is
+   inherited verbatim from the main theme. Source of truth: theme_polishpoint_blue.html
+   lines 139-305 and 2530-2634 (showScreen/updateNavNotch/toggleGroup JS). */
+.sb-nav-scope {
+  position: relative;
+  padding: 0 72px 0 0;   /* right breathing room for the 56px sidebar::after shadow leak */
+  min-height: 780px;
+  isolation: isolate;
+}
+.sb-nav-scope .sidebar {
+  position: relative;
+  top: auto; left: auto; bottom: auto;
+  height: 780px;        /* tall enough for brand + 4 collapsible groups + 14 buttons + footer without scrolling */
+  width: 240px;
+}
+.sb-nav-scope .sb-nav-caption {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-body);
+  line-height: 1.6;
+  max-width: 720px;
+}
+.sb-nav-scope .sb-nav-caption code { color: var(--primary-light); }
+
+/* Swatchboard-only: .chat-input has no main-theme CSS; mirror .input sizing so
+   the Form Controls showcase doesn't clip the placeholder. Scoped darker-orange
+   placeholder for §11 — prior faint-gray blended into the inset background. */
+.chat-input {
+  width: 100%; padding: 9px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--input-radius);
+  font-family: var(--font); font-size: 13px;
+  color: var(--text-primary); background: var(--inset-bg);
+  outline: none; transition: all 0.15s;
+}
+.chat-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(249,115,22,0.20);
+}
+#forms .input::placeholder,
+#forms .chat-input::placeholder { color: #C2410C; }
+
+</style>
+</head>
+<body>
+
+<div class="sb-layout">
+
+  <!-- ============================================================
+       LEFT COLUMN — TOC + Variant Switcher
+       ============================================================ -->
+  <aside class="sb-toc">
+    <h1>Forge Swatch Board</h1>
+    <div class="sb-sub">Component reference for PolishPoint Forge theme</div>
+
+    <h2>Sections</h2>
+
+    <h3 class="sb-toc-group">Foundation</h3>
+    <ul>
+      <li><a href="#background">0. Background</a></li>
+      <li><a href="#tokens">1. Color Tokens</a>
+        <ul>
+          <li><a href="#tokens-primary">1.1 Primary</a></li>
+          <li><a href="#tokens-surface">1.2 Surface</a></li>
+          <li><a href="#tokens-text">1.3 Text</a></li>
+          <li><a href="#tokens-sidebar">1.4 Sidebar</a></li>
+          <li><a href="#tokens-semantic">1.5 Semantic</a></li>
+        </ul>
+      </li>
+      <li><a href="#typography">2. Typography</a></li>
+    </ul>
+
+    <h3 class="sb-toc-group">Tiers</h3>
+    <ul>
+      <li><a href="#tier-container">3. Container</a></li>
+      <li><a href="#tier-block">4. Block</a>
+        <ul>
+          <li><a href="#block-sched">4.1 .sched-block</a></li>
+          <li><a href="#block-pipeline">4.2 .pipeline-card</a></li>
+          <li><a href="#block-timeline">4.3 .tl-card</a></li>
+        </ul>
+      </li>
+      <li><a href="#tier-row">5. Row</a>
+        <ul>
+          <li><a href="#row-alerts">5.1 Alerts</a></li>
+          <li><a href="#row-top-clients">5.2 Top Clients</a></li>
+          <li><a href="#row-client-history">5.3 Client History</a></li>
+          <li><a href="#row-time-off">5.4 Time-off Requests</a></li>
+        </ul>
+      </li>
+      <li><a href="#tier-tile">6. Tile</a>
+        <ul>
+          <li><a href="#tile-widgets">6.1 KPI Stats</a></li>
+          <li><a href="#tile-invoicing">6.2 Invoicing Stats</a></li>
+          <li><a href="#tile-payroll">6.3 Payroll Stats</a></li>
+        </ul>
+      </li>
+    </ul>
+
+    <h3 class="sb-toc-group">Variant System</h3>
+    <ul>
+      <li><a href="#inner-styles">8. Inner Card Styles</a></li>
+    </ul>
+
+    <h3 class="sb-toc-group">Components</h3>
+    <ul>
+      <li><a href="#buttons">9. Buttons</a>
+        <ul>
+          <li><a href="#btn-page-head">9.1 Page-head actions</a></li>
+          <li><a href="#btn-primary-secondary">9.2 Primary / Secondary</a></li>
+          <li><a href="#btn-approve-deny">9.3 Approve / Deny</a></li>
+          <li><a href="#btn-referral">9.4 Referral card</a></li>
+        </ul>
+      </li>
+      <li><a href="#badges">10. Badges</a></li>
+      <li><a href="#forms">11. Form Controls</a>
+        <ul>
+          <li><a href="#form-inputs">11.1 Inputs</a></li>
+          <li><a href="#form-toggles">11.2 Toggles</a></li>
+          <li><a href="#form-checkboxes">11.3 Checkboxes</a></li>
+          <li><a href="#form-tabs">11.4 Tab containers</a></li>
+        </ul>
+      </li>
+      <li><a href="#avatars">12. Avatars</a>
+        <ul>
+          <li><a href="#avatar-sizes">12.1 Sizes</a></li>
+          <li><a href="#avatar-status-dot">12.2 Status dot</a></li>
+          <li><a href="#avatar-team-roster">12.3 Team roster</a></li>
+        </ul>
+      </li>
+      <li><a href="#progress">13. Progress Bars</a>
+        <ul>
+          <li><a href="#progress-field-ops">13.1 Field Ops</a></li>
+          <li><a href="#stock-bars">13.2 Inventory Stock Bars</a></li>
+        </ul>
+      </li>
+      <li><a href="#info-banner">14. Info Banner</a></li>
+      <li><a href="#chart-placeholder">15. Chart Placeholder</a></li>
+      <li><a href="#layout-switcher">16. Layout Switcher</a></li>
+    </ul>
+
+    <h3 class="sb-toc-group">Specialty</h3>
+    <ul>
+      <li><a href="#dash-hero">17. Dash Hero</a></li>
+      <li><a href="#metric-strip">18. Metric Strip</a></li>
+      <li><a href="#rev-chart">19. Revenue Chart</a></li>
+      <li><a href="#bar-chart">20. Bar Chart</a></li>
+      <li><a href="#pipeline-cols">21. Pipeline Columns</a></li>
+      <li><a href="#calendar-widget">22. Calendar Widget</a></li>
+      <li><a href="#drip-campaigns">23. Drip Campaigns</a></li>
+      <li><a href="#client-portal">24. Client Portal</a></li>
+      <li><a href="#messaging">25. Messaging</a></li>
+      <!-- §26 removed during midnight→blue cleanup — numbering gap is intentional -->
+    </ul>
+
+    <h3 class="sb-toc-group">Data</h3>
+    <ul>
+      <li><a href="#tables">27. Tables</a></li>
+    </ul>
+
+    <h3 class="sb-toc-group">Navigation</h3>
+    <ul>
+      <li><a href="#sidebar-nav">28. Sidebar / Navigation</a></li>
+    </ul>
+
+    <h3 class="sb-toc-group">Structure</h3>
+    <ul>
+      <li><a href="#page-header">29. Page Header</a>
+        <ul>
+          <li><a href="#page-head-plain">29.1 Plain title</a></li>
+          <li><a href="#page-head-grow">29.2 Grow tier</a></li>
+          <li><a href="#page-head-scale">29.3 Scale tier</a></li>
+          <li><a href="#page-head-field">29.4 Field tier</a></li>
+          <li><a href="#page-head-admin">29.5 Admin tier</a></li>
+        </ul>
+      </li>
+      <li><a href="#layouts">30. Layouts</a>
+        <ul>
+          <li><a href="#layout-grid-2">30.1 .grid-2</a></li>
+          <li><a href="#layout-grid-4">30.2 .grid-4</a></li>
+          <li><a href="#layout-dash-cols">30.3 .dash-cols</a></li>
+        </ul>
+      </li>
+    </ul>
+
+    <!-- Forge is a single-flavor theme: no inner-card variants. §8 exists as a placeholder noting this. -->
+
+  </aside>
+
+  <!-- ============================================================
+       RIGHT COLUMN — Swatch Sections
+       ============================================================ -->
+  <div class="sb-content">
+
+    <!-- ========== 0. BACKGROUND ========== -->
+    <section class="sb-section" id="background">
+      <div class="sb-section-head">
+        <h2>0. Background</h2>
+        <div class="sb-selector">body / body::before (aurora)</div>
+        <div class="sb-note">Page background + static aurora overlay. <code>body::before</code> is fixed-position, pointer-events: none, z-index: 0.</div>
+      </div>
+
+      <div class="sb-variant-label" id="bg-page">0.1 Page background <span class="sb-variant-sub">body background — layered radial gradients on --page-bg</span></div>
+      <div class="sb-frame" style="height:80px;position:relative;overflow:hidden;border-radius:12px;background:radial-gradient(ellipse at 12% 8%, rgba(249,115,22,0.10) 0%, transparent 45%),radial-gradient(ellipse at 85% 22%, rgba(160,165,180,0.05) 0%, transparent 55%),radial-gradient(ellipse at 55% 100%, rgba(249,115,22,0.045) 0%, transparent 60%),var(--page-bg);">
+        <div style="position:absolute;bottom:8px;left:12px;font-size:10px;color:var(--text-muted);">--page-bg: #0A0C10 + orange/slate radial tints + SVG noise overlay</div>
+      </div>
+
+      <div class="sb-variant-label" id="bg-aurora" style="margin-top:14px;">0.2 Noise texture + radial tints <span class="sb-variant-sub">body — SVG noise overlay blended with fiery radial gradients on --page-bg</span></div>
+      <div class="sb-frame" style="height:120px;position:relative;overflow:hidden;border-radius:12px;background:var(--page-bg);">
+        <div style="position:absolute;inset:0;pointer-events:none;background:url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22220%22 height=%22220%22><filter id=%22n%22><feTurbulence type=%22fractalNoise%22 baseFrequency=%220.9%22 numOctaves=%222%22 stitchTiles=%22stitch%22/><feColorMatrix values=%220 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.055 0%22/></filter><rect width=%22220%22 height=%22220%22 filter=%22url(%23n)%22/></svg>'),radial-gradient(ellipse at 12% 8%, rgba(249,115,22,0.18) 0%, transparent 45%),radial-gradient(ellipse at 85% 22%, rgba(160,165,180,0.06) 0%, transparent 55%),radial-gradient(ellipse at 55% 100%, rgba(249,115,22,0.08) 0%, transparent 60%);"></div>
+        <div style="position:relative;z-index:1;padding:12px;font-size:10px;color:var(--text-muted);">SVG fractalNoise texture at 5.5% alpha tiled over three fiery radial stops on --page-bg. No separate ::before overlay.</div>
+      </div>
+
+      <div class="sb-spec"><strong>body</strong>: SVG fractalNoise (baseFrequency 0.9, 2 octaves, 5.5% alpha) tiled 220&times;220 + three radial gradients over var(--page-bg), background-attachment: fixed  |  Gradients: ellipse at 12% 8% (rgba(249,115,22,0.10)), ellipse at 85% 22% (rgba(160,165,180,0.05)), ellipse at 55% 100% (rgba(249,115,22,0.045))  |  No body::before aurora overlay</div>
+    </section>
+
+    <!-- ========== 1. COLOR TOKENS ========== -->
+    <section class="sb-section" id="tokens">
+      <div class="sb-section-head">
+        <h2>1. Color Tokens</h2>
+        <div class="sb-selector">:root custom properties</div>
+        <div class="sb-note">Source: <code>theme_polishpoint_forge.html</code> :root.</div>
+      </div>
+
+      <div class="sb-variant-label" id="tokens-primary">1.1 Primary <span class="sb-variant-sub">orange scale</span></div>
+      <div class="sb-swatch-grid" style="margin-bottom:18px;">
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#F97316;"></div><div class="sb-swatch-name">--primary</div><div class="sb-swatch-value">#F97316</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#FB923C;"></div><div class="sb-swatch-name">--primary-light</div><div class="sb-swatch-value">#FB923C</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#EA580C;"></div><div class="sb-swatch-name">--primary-hover</div><div class="sb-swatch-value">#EA580C</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#7C2D12;"></div><div class="sb-swatch-name">--primary-deep</div><div class="sb-swatch-value">#7C2D12</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:rgba(249,115,22,0.18);"></div><div class="sb-swatch-name">--primary-soft</div><div class="sb-swatch-value">rgba(249,115,22,0.18)</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:rgba(249,115,22,0.08);"></div><div class="sb-swatch-name">--primary-bg</div><div class="sb-swatch-value">rgba(249,115,22,0.08)</div></div>
+      </div>
+
+      <div class="sb-variant-label" id="tokens-surface">1.2 Surface <span class="sb-variant-sub">light containers</span></div>
+      <div class="sb-swatch-grid" style="margin-bottom:18px;">
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#0A0C10;border:1px solid #343843;"></div><div class="sb-swatch-name">--page-bg</div><div class="sb-swatch-value">#0A0C10</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#1C1F26;border:1px solid #343843;"></div><div class="sb-swatch-name">--card-bg</div><div class="sb-swatch-value">#1C1F26</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#343843;"></div><div class="sb-swatch-name">--card-border</div><div class="sb-swatch-value">#343843</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#262A33;border:1px solid #343843;"></div><div class="sb-swatch-name">--inset-bg</div><div class="sb-swatch-value">#262A33</div></div>
+      </div>
+
+      <div class="sb-variant-label" id="tokens-text">1.3 Text</div>
+      <div class="sb-swatch-grid" style="margin-bottom:18px;">
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#F5F5F3;"></div><div class="sb-swatch-name">--text-primary</div><div class="sb-swatch-value">#F5F5F3</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#CDD0D8;"></div><div class="sb-swatch-name">--text-body</div><div class="sb-swatch-value">#CDD0D8</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#8A8F9D;"></div><div class="sb-swatch-name">--text-muted</div><div class="sb-swatch-value">#8A8F9D</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#5A5F6C;"></div><div class="sb-swatch-name">--text-faint</div><div class="sb-swatch-value">#5A5F6C</div></div>
+      </div>
+
+      <div class="sb-variant-label" id="tokens-sidebar">1.4 Sidebar <span class="sb-variant-sub">gunmetal gradient stack</span></div>
+      <div class="sb-swatch-grid" style="margin-bottom:18px;">
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#1C1F26;"></div><div class="sb-swatch-name">--sidebar-bg</div><div class="sb-swatch-value">#1C1F26</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#2A2E37;"></div><div class="sb-swatch-name">--sidebar-mid</div><div class="sb-swatch-value">#2A2E37</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#0D0F13;"></div><div class="sb-swatch-name">--sidebar-deep</div><div class="sb-swatch-value">#0D0F13</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#F97316;"></div><div class="sb-swatch-name">--sidebar-active</div><div class="sb-swatch-value">#F97316</div></div>
+      </div>
+
+      <div class="sb-variant-label" id="tokens-semantic">1.5 Semantic</div>
+      <div class="sb-swatch-grid">
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#047857;"></div><div class="sb-swatch-name">--green-text</div><div class="sb-swatch-value">#047857</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#b45309;"></div><div class="sb-swatch-name">--amber-text</div><div class="sb-swatch-value">#b45309</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#b91c1c;"></div><div class="sb-swatch-name">--red-text</div><div class="sb-swatch-value">#b91c1c</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#FB923C;"></div><div class="sb-swatch-name">--blue-text</div><div class="sb-swatch-value">#FB923C</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#7c3aed;"></div><div class="sb-swatch-name">--purple-text</div><div class="sb-swatch-value">#7c3aed</div></div>
+        <div class="sb-swatch"><div class="sb-swatch-chip" style="background:#8A8F9D;"></div><div class="sb-swatch-name">--slate-text</div><div class="sb-swatch-value">#8A8F9D</div></div>
+      </div>
+    </section>
+
+    <!-- ========== 2. TYPOGRAPHY ========== -->
+    <section class="sb-section" id="typography">
+      <div class="sb-section-head">
+        <h2>2. Typography</h2>
+        <div class="sb-selector">.text-primary / .text-body / .text-muted / .text-faint / .section-title</div>
+        <div class="sb-note">Poppins. <code>.section-title</code> — used 10+ times across Portal, Pipeline, HR, Inventory, Analytics.</div>
+      </div>
+      <div class="sb-frame">
+        <h1 style="font-size:28px; font-weight:700; margin:0 0 8px 0; background: linear-gradient(135deg, #FB923C 0%, #F97316 40%, #7C2D12 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">Forge Gradient Heading — 28/700</h1>
+        <h2 style="font-size:18px;font-weight:700;color:var(--text-primary);margin:0 0 6px 0;">Section Heading — 18/700</h2>
+        <div class="section-title" style="margin-bottom:10px;">Section Title — .section-title / 15/600</div>
+        <div class="dash-card-title" style="border-bottom:none;padding-bottom:0;margin-bottom:10px;">Card Title — 11/600 uppercase</div>
+        <p class="text-primary" style="font-size:13px;margin:0 0 6px 0;">Primary body text — 13/400. Used for main reading content inside cards.</p>
+        <p class="text-body" style="font-size:12px;margin:0 0 6px 0;">Body text — 12/400. Secondary information.</p>
+        <p class="text-muted" style="font-size:11px;margin:0 0 6px 0;">Muted text — 11/400. Timestamps, captions, metadata.</p>
+        <p class="text-faint" style="font-size:10px;margin:0;">Faint text — 10/400. Placeholder and least emphasis.</p>
+      </div>
+    </section>
+
+    <!-- ========== 3. CONTAINER (TIER) ========== -->
+    <section class="sb-section" id="tier-container">
+      <div class="sb-section-head">
+        <h2>3. Container <span style="color:var(--text-muted);font-size:13px;">— Tier</span></h2>
+        <div class="sb-selector">Tier definition</div>
+      </div>
+
+      <div class="sb-tier-spec">
+        <table class="sb-tier-table">
+          <tr><th>Padding</th><td>28px 32px (<code>.dash-card</code>) / 20px base</td></tr>
+          <tr><th>Border radius</th><td>var(--card-radius) — 20px</td></tr>
+          <tr><th>Background</th><td><code>linear-gradient(var(--card-bg), var(--card-bg)) padding-box</code> + <code>linear-gradient(90deg, #7C2D12 0%, #EA580C 25%, #FDBA74 50%, #EA580C 75%, #7C2D12 100%) border-box</code> — fiery gradient rim</td></tr>
+          <tr><th>Border</th><td>3px solid transparent (gradient painted via border-box)</td></tr>
+          <tr><th>Box shadow</th><td><code>0 0 26px rgba(249,115,22,0.26)</code>, <code>0 12px 30px rgba(0,0,0,0.60)</code> — orange bloom + deep drop</td></tr>
+          <tr><th>Where it lives</th><td>Page layout root (not nested)</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sb-tier-members-label">Member classes</h3>
+
+      <div class="sb-tier-member">
+        <div class="sb-variant-label">.dash-card <span class="sb-variant-sub">add to a .card element &mdash; currently the only Container member</span></div>
+        <div class="sb-frame sb-frame-plain">
+          <div class="card dash-card">
+            <div class="dash-card-title">Today's Schedule</div>
+            <div class="sched-block" style="border-left-color:#059669;"><div class="flex-row"><strong class="text-primary">8:00 AM</strong><strong style="margin-left:12px;">Marcus Chen</strong><span class="badge green" style="margin-left:auto;">Done</span></div></div>
+            <div class="sched-block" style="border-left-color:var(--primary);"><div class="flex-row"><strong class="text-primary">11:00 AM</strong><strong style="margin-left:12px;">Tom Bradley</strong><span class="badge blue" style="margin-left:auto;">Active</span></div></div>
+          </div>
+        </div>
+        <div class="sb-note">Main theme lines 1663–1670 (Today's Schedule). Markup: <code>&lt;div class="card dash-card"&gt;</code>.</div>
+      </div>
+    </section>
+
+    <!-- ========== 4. BLOCK (TIER) ========== -->
+    <section class="sb-section" id="tier-block">
+      <div class="sb-section-head">
+        <h2>4. Block <span style="color:var(--text-muted);font-size:13px;">— Tier</span></h2>
+        <div class="sb-selector">Tier definition</div>
+      </div>
+
+      <div class="sb-tier-spec">
+        <table class="sb-tier-table">
+          <tr><th>Padding</th><td>14px 16px (accent-bar variants +4px left for ::before)</td></tr>
+          <tr><th>Border radius</th><td>12px</td></tr>
+          <tr><th>Background</th><td>#fff with subtle blue tint via card gradient</td></tr>
+          <tr><th>Border</th><td>1px solid var(--card-border)</td></tr>
+          <tr><th>Box shadow</th><td><code>var(--shadow-sm)</code></td></tr>
+          <tr><th>Where it lives</th><td>Inside a Container</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sb-tier-members-label">Member classes (3)</h3>
+
+      <div class="sb-tier-member">
+        <div class="sb-variant-label" id="block-sched">4.1 .sched-block <span class="sb-variant-sub">schedule row &mdash; has a 5px left accent bar via ::before</span></div>
+        <div class="sb-frame">
+          <div class="sched-block" style="border-left-color:#059669;"><div class="flex-row"><strong class="text-primary">8:00 AM</strong><span class="text-xs text-muted">9:30 AM</span><strong style="margin-left:12px;">Marcus &amp; Julie Chen</strong><span class="badge green" style="margin-left:auto;">Completed</span></div><div class="text-xs text-muted mt-4">Recurring &mdash; Weekly &middot; $130</div></div>
+          <div class="sched-block" style="border-left-color:var(--primary);"><div class="flex-row"><strong class="text-primary">11:00 AM</strong><span class="text-xs text-muted">1:00 PM</span><strong style="margin-left:12px;">Tom Bradley</strong><span class="badge blue" style="margin-left:auto;">In Progress</span></div><div class="text-xs text-muted mt-4">Standard Clean &middot; $150</div></div>
+          <div class="sched-block" style="border-left-color:#94a3b8;"><div class="flex-row"><strong class="text-primary">2:00 PM</strong><span class="text-xs text-muted">4:00 PM</span><strong style="margin-left:12px;">Nina Petrova</strong><span class="badge slate" style="margin-left:auto;">Upcoming</span></div><div class="text-xs text-muted mt-4">Deep Clean &middot; $275</div></div>
+        </div>
+        <div class="sb-note">Main theme lines 1665–1669. Left accent via inline <code>border-left-color</code> → feeds a <code>::before</code>, not a real border.</div>
+      </div>
+
+      <div class="sb-tier-member">
+        <div class="sb-variant-label" id="block-pipeline">4.2 .pipeline-card <span class="sb-variant-sub">kanban lead &mdash; has a :hover state with border glow</span></div>
+        <div class="sb-frame">
+          <div class="sb-grid-3">
+            <div class="pipeline-card"><strong class="text-sm text-primary">Jennifer Walsh</strong><div class="text-xs text-muted mt-4">Deep Clean &middot; $275</div><div class="text-xs text-muted">Source: Google</div></div>
+            <div class="pipeline-card"><strong class="text-sm text-primary">David Park</strong><div class="text-xs text-muted mt-4">Move-In &middot; $350</div><div class="text-xs text-muted">Source: Referral</div></div>
+            <div class="pipeline-card"><strong class="text-sm text-primary">Rachel Green</strong><div class="text-xs text-muted mt-4">Weekly &middot; $130/wk</div><div class="text-xs" style="color:var(--primary);margin-top:6px;">&#8627; Follow up Apr 10</div></div>
+          </div>
+        </div>
+        <div class="sb-note">Main theme lines 1912–1917 (Pipeline). Has <code>:hover</code> border glow.</div>
+      </div>
+
+      <div class="sb-tier-member">
+        <div class="sb-variant-label" id="block-timeline">4.3 .tl-card <span class="sb-variant-sub">timeline entry &mdash; lives inside .tl-track with vertical line + dots</span></div>
+        <div class="sb-frame">
+          <div class="tl-track">
+            <div class="tl-line"></div>
+            <div class="tl-item done"><div class="tl-dot"></div><div class="tl-time">8:00 AM</div><div class="tl-card"><strong class="text-sm text-primary">Marcus &amp; Julie Chen</strong><div class="text-xs text-muted">Weekly Clean &middot; $130 &middot; Jillayna &amp; Diana</div><span class="badge green" style="margin-top:4px;">Completed</span></div></div>
+            <div class="tl-item active"><div class="tl-dot"></div><div class="tl-time">11:00 AM</div><div class="tl-card"><strong class="text-sm text-primary">Tom Bradley</strong><div class="text-xs text-muted">Standard Clean &middot; $150 &middot; Jillayna</div><span class="badge blue" style="margin-top:4px;">In Progress</span></div></div>
+            <div class="tl-item"><div class="tl-dot"></div><div class="tl-time">2:00 PM</div><div class="tl-card"><strong class="text-sm text-primary">Nina Petrova</strong><div class="text-xs text-muted">Deep Clean &middot; $275 &middot; Jillayna &amp; Tasha</div><span class="badge slate" style="margin-top:4px;">Upcoming</span></div></div>
+          </div>
+        </div>
+        <div class="sb-note">Main theme lines 1774–1778 (LAYOUT D Today's Timeline). <code>.tl-card</code> sits inside <code>.tl-track</code> with <code>.tl-dot</code> <code>.done</code>/<code>.active</code> states.</div>
+      </div>
+    </section>
+
+    <!-- ========== 5. ROW (TIER) ========== -->
+    <section class="sb-section" id="tier-row">
+      <div class="sb-section-head">
+        <h2>5. Row <span style="color:var(--text-muted);font-size:13px;">— Tier</span></h2>
+        <div class="sb-selector">Tier definition</div>
+        <div class="sb-note">Plain list rows. Separated by border-bottom. No zebra — inherits parent card background.</div>
+      </div>
+
+      <div class="sb-tier-spec">
+        <table class="sb-tier-table">
+          <tr><th>Padding</th><td>10px 0</td></tr>
+          <tr><th>Border radius</th><td>None</td></tr>
+          <tr><th>Background</th><td>Transparent (inherits from parent card)</td></tr>
+          <tr><th>Border</th><td>border-bottom: 1px solid var(--border-light)</td></tr>
+          <tr><th>Layout</th><td><code>display:flex; gap:12px</code></td></tr>
+          <tr><th>Font size</th><td>13px</td></tr>
+          <tr><th>Where it lives</th><td>Inside a Container</td></tr>
+        </table>
+      </div>
+
+      <h3 class="sb-tier-members-label">Member classes</h3>
+
+      <div class="sb-tier-member">
+        <div class="sb-variant-label">.check-item <span class="sb-variant-sub">generic flat list row &mdash; 4 real-use patterns shown below</span></div>
+
+        <div class="sb-variant-label" id="row-alerts" style="margin-top:10px;font-size:9px;">5.1 Alerts &amp; Notifications <span class="sb-variant-sub">stat-icon + text + colored badge (main theme lines 1710&ndash;1714)</span></div>
+        <div class="sb-frame">
+          <div class="card dash-card" style="margin-bottom:0;">
+            <div class="dash-card-title">Alerts &amp; Notifications</div>
+            <div class="check-item"><div class="stat-icon" style="background:var(--blue-bg);color:var(--primary);width:28px;height:28px;border-radius:9999px;margin:0;">&#9993;</div><div style="flex:1;"><strong class="text-sm text-primary">2 unread messages</strong><div class="text-xs text-muted">Nina Petrova, Tom Bradley</div></div><span class="badge blue">Messages</span></div>
+            <div class="check-item"><div class="stat-icon" style="background:var(--amber-bg);color:#d97706;width:28px;height:28px;border-radius:9999px;margin:0;">&#9888;</div><div style="flex:1;"><strong class="text-sm text-primary">Expiring certification</strong><div class="text-xs text-muted">Tasha King &mdash; OSHA cert expires Apr 15</div></div><span class="badge amber">Crew</span></div>
+            <div class="check-item"><div class="stat-icon" style="background:var(--red-bg);color:#dc2626;width:28px;height:28px;border-radius:9999px;margin:0;">&#128230;</div><div style="flex:1;"><strong class="text-sm text-primary">Low stock: Glass cleaner</strong><div class="text-xs text-muted">2 bottles remaining &mdash; reorder threshold: 5</div></div><span class="badge red">Inventory</span></div>
+            <div class="check-item"><div class="stat-icon" style="background:#fef3c7;color:#d97706;width:28px;height:28px;border-radius:9999px;margin:0;">&#9733;</div><div style="flex:1;"><strong class="text-sm text-primary">New 5-star review</strong><div class="text-xs text-muted">"Jillayna and Diana were amazing!" &mdash; Brooke Adams</div></div><span class="badge green">Reviews</span></div>
+          </div>
+        </div>
+
+        <div class="sb-variant-label" id="row-top-clients" style="margin-top:14px;font-size:9px;">5.2 Top Clients <span class="sb-variant-sub">avatar + name + money (main theme lines 1735&ndash;1737)</span></div>
+        <div class="sb-frame">
+          <div class="card dash-card" style="margin-bottom:0;">
+            <div class="dash-card-title">Top Clients</div>
+            <div class="check-item"><div class="avatar avatar-sm">MC</div><strong class="text-sm text-primary" style="flex:1;">Marcus &amp; Julie Chen</strong><span class="money text-sm">$2,340</span></div>
+            <div class="check-item"><div class="avatar avatar-sm" style="background:#8b5cf6;">WF</div><strong class="text-sm text-primary" style="flex:1;">Whitfield Family</strong><span class="money text-sm">$1,950</span></div>
+            <div class="check-item"><div class="avatar avatar-sm" style="background:#C2410C;">HO</div><strong class="text-sm text-primary" style="flex:1;">Helen O'Brien</strong><span class="money text-sm">$1,620</span></div>
+          </div>
+        </div>
+
+        <div class="sb-variant-label" id="row-client-history" style="margin-top:14px;font-size:9px;">5.3 Client History <span class="sb-variant-sub">green check + text (main theme lines 1843&ndash;1846)</span></div>
+        <div class="sb-frame">
+          <div class="card dash-card" style="margin-bottom:0;">
+            <div class="check-item"><div class="stat-icon" style="background:#fff;color:#059669;width:28px;height:28px;font-size:18px;border-radius:9999px;margin:0;box-shadow:0 0 0 2px var(--primary);">&#10003;</div><div><strong class="text-sm text-primary">Apr 8, 2026 &mdash; Standard Clean</strong><div class="text-xs text-muted">Jillayna Jackson &middot; 1.5 hrs &middot; $130 &middot; Paid</div></div></div>
+            <div class="check-item"><div class="stat-icon" style="background:#fff;color:#059669;width:28px;height:28px;font-size:18px;border-radius:9999px;margin:0;box-shadow:0 0 0 2px var(--primary);">&#10003;</div><div><strong class="text-sm text-primary">Apr 1, 2026 &mdash; Standard Clean</strong><div class="text-xs text-muted">Jillayna Jackson &middot; 1.5 hrs &middot; $130 &middot; Paid</div></div></div>
+            <div class="check-item"><div class="stat-icon" style="background:#fff;color:var(--primary);width:28px;height:28px;font-size:18px;border-radius:9999px;margin:0;box-shadow:0 0 0 2px var(--primary);">&#9733;</div><div><strong class="text-sm text-primary">Mar 20, 2026 &mdash; 5-star review left</strong><div class="text-xs text-muted">"Always thorough and on time. Love Clean River Tides!"</div></div></div>
+          </div>
+        </div>
+
+        <div class="sb-variant-label" id="row-time-off" style="margin-top:14px;font-size:9px;">5.4 Time-off Requests <span class="sb-variant-sub">avatar + text + action buttons (main theme lines 2120&ndash;2121)</span></div>
+        <div class="sb-frame">
+          <div class="card dash-card" style="margin-bottom:0;">
+            <div class="check-item"><div class="avatar avatar-sm" style="background:#64748b;">RM</div><div style="flex:1;"><strong class="text-sm text-primary">Ramon Mendez</strong><div class="text-xs text-muted">Apr 14&ndash;16, 2026 (3 days) &middot; Personal</div></div><div class="flex-row" style="gap:6px;"><button class="btn btn-sm btn-primary" style="min-width:80px;">Approve</button><button class="btn btn-sm btn-deny" style="min-width:80px;">Deny</button></div></div>
+            <div class="check-item"><div class="avatar avatar-sm" style="background:#C2410C;">TK</div><div style="flex:1;"><strong class="text-sm text-primary">Tasha King</strong><div class="text-xs text-muted">Apr 22, 2026 (1 day) &middot; Medical</div></div><div class="flex-row" style="gap:6px;"><button class="btn btn-sm btn-primary" style="min-width:80px;">Approve</button><button class="btn btn-sm btn-deny" style="min-width:80px;">Deny</button></div></div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ========== 6. TILE (TIER) ========== -->
+    <section class="sb-section" id="tier-tile">
+      <div class="sb-section-head">
+        <h2>6. Tile <span style="color:var(--text-muted);font-size:13px;">— Tier</span></h2>
+        <div class="sb-selector">Tier definition</div>
+        <div class="sb-note">KPI tile. Consistent dark gunmetal card with fiery gradient rim and orange glow, regardless of variant settings.</div>
+      </div>
+
+      <div class="sb-tier-spec">
+        <table class="sb-tier-table">
+          <tr><th>Padding</th><td>18px 20px</td></tr>
+          <tr><th>Border radius</th><td>var(--card-radius) — 20px</td></tr>
+          <tr><th>Background</th><td><code>var(--card-bg)</code> (#1C1F26) with fiery gradient border-box rim — inherited from <code>.card</code></td></tr>
+          <tr><th>Border</th><td>3px solid transparent (gradient painted via border-box)</td></tr>
+          <tr><th>Box shadow</th><td><code>0 0 26px rgba(249,115,22,0.26)</code>, <code>0 12px 30px rgba(0,0,0,0.60)</code> — inherited from <code>.card</code></td></tr>
+          <tr><th>Where it lives</th><td>Page root, usually in a <code>.stat-grid</code></td></tr>
+        </table>
+      </div>
+
+      <h3 class="sb-tier-members-label">Member classes</h3>
+
+      <div class="sb-tier-member">
+        <div class="sb-variant-label">.stat-card <span class="sb-variant-sub">add to a .card element &mdash; currently the only Tile member</span></div>
+
+        <div class="sb-variant-label" id="tile-widgets" style="margin-top:10px;font-size:9px;">6.1 KPI Stats <span class="sb-variant-sub">stat-val + stat-label + stat-trend (main theme lines 1722&ndash;1727)</span></div>
+        <div class="sb-frame">
+          <div class="stat-grid">
+            <div class="card stat-card"><div class="stat-val">5</div><div class="stat-label">Jobs Today</div><div class="stat-trend up">&#8593; 2 vs yesterday</div></div>
+            <div class="card stat-card"><div class="stat-val">$835</div><div class="stat-label">Today's Revenue</div><div class="stat-trend up">&#8593; 18%</div></div>
+            <div class="card stat-card"><div class="stat-val">3/5</div><div class="stat-label">Completed</div><div class="stat-trend up">On track</div></div>
+            <div class="card stat-card"><div class="stat-val">4.9&#9733;</div><div class="stat-label">Avg Rating</div><div class="stat-trend up">&#8593; 0.1</div></div>
+          </div>
+        </div>
+
+        <div class="sb-variant-label" id="tile-invoicing" style="margin-top:14px;font-size:9px;">6.2 Invoicing Stats <span class="sb-variant-sub">color-coded values (main theme lines 1854&ndash;1858)</span></div>
+        <div class="sb-frame">
+          <div class="stat-grid">
+            <div class="card stat-card"><div class="stat-val" style="color:#059669;">$4,280</div><div class="stat-label">Collected This Month</div></div>
+            <div class="card stat-card"><div class="stat-val" style="color:#d97706;">$1,350</div><div class="stat-label">Outstanding</div></div>
+            <div class="card stat-card"><div class="stat-val" style="color:#dc2626;">$275</div><div class="stat-label">Overdue</div></div>
+          </div>
+        </div>
+
+        <div class="sb-variant-label" id="tile-payroll" style="margin-top:14px;font-size:9px;">6.3 Payroll Stats <span class="sb-variant-sub">compact values (main theme lines 2102&ndash;2104)</span></div>
+        <div class="sb-frame">
+          <div class="stat-grid">
+            <div class="card stat-card"><div class="stat-val" style="font-size:22px;">$4,820</div><div class="stat-label">Last Payroll</div></div>
+            <div class="card stat-card"><div class="stat-val" style="font-size:22px;">162 hrs</div><div class="stat-label">Total Hours (Period)</div></div>
+            <div class="card stat-card"><div class="stat-val" style="font-size:22px;">4</div><div class="stat-label">Active Employees</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- .addon-card removed — zero HTML instances, deprecated -->
+    </section>
+
+    <!-- ========== 8. INNER CARD STYLES ========== -->
+    <section class="sb-section" id="inner-styles">
+      <div class="sb-section-head">
+        <h2>8. Inner Card Styles</h2>
+        <div class="sb-selector">body.inner-*</div>
+        <div class="sb-note"><strong>Not implemented in Blue.</strong> Single inner treatment (<code>--neu-shadow</code>); adding variants is a Material Change.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="card" style="padding:24px;max-width:400px;">
+          <div class="dash-card-title">Sample Card</div>
+          <div class="text-sm text-body">Single inner style: <code>.card</code> with <code>--neu-shadow</code> on <code>--card-bg</code>.</div>
+        </div>
+      </div>
+      <div class="sb-spec"><code>--neu-shadow:</code> <code>4px 4px 12px rgba(15,23,42,0.06), -2px -2px 8px rgba(255,255,255,0.9)</code></div>
+    </section>
+
+    <!-- ========== 9. BUTTONS ========== -->
+    <section class="sb-section" id="buttons">
+      <div class="sb-section-head">
+        <h2>9. Buttons</h2>
+        <div class="sb-selector">.btn / .btn-primary / .btn-secondary / .btn-sm</div>
+        <div class="sb-note">Primary = blue gradient, secondary = light neumorph, sm = compact.</div>
+      </div>
+
+      <div class="sb-variant-label" id="btn-page-head">9.1 Page-head actions <span class="sb-variant-sub">main theme line 1786, 1824, 1852</span></div>
+      <div class="sb-frame">
+        <div class="sb-row">
+          <button class="btn btn-primary">+ Add Job</button>
+          <button class="btn btn-primary">+ Add Client</button>
+          <button class="btn btn-primary">+ New Invoice</button>
+          <button class="btn btn-primary">+ Add Item</button>
+        </div>
+      </div>
+
+      <div class="sb-variant-label" id="btn-primary-secondary" style="margin-top:14px;">9.2 Primary vs Secondary small <span class="sb-variant-sub">remaining blue/white pairs after Approve/Deny were promoted to semantic</span></div>
+      <div class="sb-frame">
+        <div class="sb-row">
+          <button class="btn btn-sm btn-primary">Pay Now</button>
+          <button class="btn btn-sm btn-primary">Copy URL</button>
+          <button class="btn btn-sm btn-primary">Preview Widget</button>
+          <button class="btn btn-sm btn-primary">Send</button>
+        </div>
+      </div>
+
+      <div class="sb-variant-label" id="btn-approve-deny" style="margin-top:14px;">9.3 Approve / Deny semantic pair <span class="sb-variant-sub">green/red treatment, HR Time-Off actions (main theme lines 2249–2250). Same scoped rule as §5.4.</span></div>
+      <div class="sb-frame">
+        <div class="sb-row sb-approve-deny">
+          <button class="btn btn-sm btn-primary" style="min-width:80px;">Approve</button>
+          <button class="btn btn-sm btn-deny" style="min-width:80px;">Deny</button>
+        </div>
+      </div>
+
+      <div class="sb-variant-label" id="btn-referral" style="margin-top:14px;">9.4 Referral code card <span class="sb-variant-sub">main theme line 2025 — secondary small in context</span></div>
+      <div class="sb-frame">
+        <div class="card" style="padding:14px;text-align:center;max-width:300px;"><div class="text-sm text-primary font-semi mb-12">Share your code &amp; earn $25 off!</div><div style="background:var(--primary);border:2px solid var(--primary-light);padding:12px;border-radius:8px;font-size:18px;font-weight:700;color:#fff;letter-spacing:0.05em;">MARCUS-SPARKLE</div><button class="btn btn-secondary btn-sm" style="margin-top:10px;">Copy &amp; Share</button></div>
+      </div>
+
+      <div class="sb-spec">.btn base: 9px 16px padding, 13px/600 text, border-radius var(--btn-radius) [10px], transition all 0.15s  |  .btn-primary: var(--btn-primary-grad) bg, white text, var(--btn-primary-glow) shadow  |  .btn-secondary: #fff bg, var(--card-border), neumorph shadow  |  .btn-deny: red gradient (ef4444→b91c1c), white text, red glow — used for Deny actions  |  .btn-sm: 6px 12px padding, 12px font</div>
+    </section>
+
+    <!-- ========== 10. BADGES ========== -->
+    <section class="sb-section" id="badges">
+      <div class="sb-section-head">
+        <h2>10. Badges</h2>
+        <div class="sb-selector">.badge.{green|amber|red|blue|purple|slate|white}</div>
+      </div>
+      <div class="sb-frame">
+        <div class="sb-row">
+          <span class="badge green" style="background:#047857;border-color:#047857;color:#fff;box-shadow:inset 0 0 8px rgba(52,211,153,0.55),0 0 10px rgba(4,120,87,0.55);">Completed</span>
+          <span class="badge amber" style="background:#b45309;border-color:#b45309;color:#fff;box-shadow:inset 0 0 8px rgba(251,191,36,0.55),0 0 10px rgba(180,83,9,0.55);">Pending</span>
+          <span class="badge red" style="background:#b91c1c;border-color:#b91c1c;color:#fff;box-shadow:inset 0 0 8px rgba(248,113,113,0.55),0 0 10px rgba(185,28,28,0.55);">Overdue</span>
+          <span class="badge blue" style="background:#1D4ED8;border-color:#1D4ED8;color:#fff;box-shadow:inset 0 0 8px rgba(96,165,250,0.55),0 0 10px rgba(29,78,216,0.55);">In Progress</span>
+          <span class="badge purple" style="background:#7c3aed;border-color:#7c3aed;color:#fff;box-shadow:inset 0 0 8px rgba(167,139,250,0.55),0 0 10px rgba(124,58,237,0.55);">VIP</span>
+          <span class="badge blue" style="background:#EA580C;border-color:#EA580C;color:#fff;box-shadow:inset 0 0 8px rgba(251,146,60,0.55),0 0 10px rgba(234,88,12,0.55);">Upcoming</span>
+          <span class="badge white" style="background:#f1f5f9;border-color:#f1f5f9;color:#000;box-shadow:inset 0 0 8px rgba(255,255,255,0.55),0 0 10px rgba(203,213,225,0.55);">&#128247; 5 photos</span>
+        </div>
+      </div>
+      <div class="sb-spec">Gradient pill style  |  border-radius: 9999px  |  padding: 3px 12px  |  font-size: 11px / 600  |  min-width: 88px  |  Each color is a two-tone gradient with matching drop shadow: .green (#10B981→#047857), .amber (#f59e0b→#b45309), .red (#ef4444→#b91c1c), .blue (#FB923C→#EA580C), .purple (#a78bfa→#7c3aed), .slate/teal (#2dd4bf→#0d9488), .white (white→#f1f5f9 + border)</div>
+    </section>
+
+    <!-- ========== 11. FORM CONTROLS ========== -->
+    <section class="sb-section" id="forms">
+      <div class="sb-section-head">
+        <h2>11. Form Controls</h2>
+        <div class="sb-selector">.input / textarea.input / .chat-input / .toggle / .check-box / .tab-container / .tab-btn</div>
+        <div class="sb-note">Main theme: Clients search 1825, Portal review 2023, Settings toggles 2223–2226, HR onboarding 2138–2142.</div>
+      </div>
+
+      <div class="sb-variant-label" id="form-inputs">11.1 Inputs <span class="sb-variant-sub">.input / textarea.input / .chat-input</span></div>
+      <div class="sb-frame">
+        <div class="sb-stack">
+          <input class="input" placeholder="Search clients by name, address, or service type...">
+          <input class="input" placeholder="Standard text input">
+          <textarea class="input" rows="2" placeholder="Tell us about your experience..."></textarea>
+          <input class="chat-input" placeholder="Type a message to Marcus Chen...">
+        </div>
+      </div>
+
+      <div class="sb-variant-label" id="form-toggles" style="margin-top:18px;">11.2 Toggles in settings <span class="sb-variant-sub">main theme lines 2223–2226</span></div>
+      <div class="sb-frame">
+        <div class="card dash-card" style="margin-bottom:0;">
+          <div class="dash-card-title">Integrations</div>
+          <div class="check-item"><div style="flex:1;"><strong class="text-sm text-primary">QuickBooks Online</strong><div class="text-xs text-muted">Sync invoices &amp; expenses automatically</div></div><div class="toggle on"><div class="toggle-thumb"></div></div></div>
+          <div class="check-item"><div style="flex:1;"><strong class="text-sm text-primary">Gusto Payroll</strong><div class="text-xs text-muted">Sync timesheets &amp; run payroll</div></div><div class="toggle on"><div class="toggle-thumb"></div></div></div>
+          <div class="check-item"><div style="flex:1;"><strong class="text-sm text-primary">Stripe Payments</strong><div class="text-xs text-muted">Accept online payments &amp; auto-reconcile</div></div><div class="toggle on"><div class="toggle-thumb"></div></div></div>
+          <div class="check-item"><div style="flex:1;"><strong class="text-sm text-primary">Google Calendar</strong><div class="text-xs text-muted">Two-way sync with team calendars</div></div><div class="toggle off"><div class="toggle-thumb"></div></div></div>
+        </div>
+      </div>
+
+      <div class="sb-variant-label" id="form-checkboxes" style="margin-top:18px;">11.3 Checkboxes in onboarding <span class="sb-variant-sub">main theme lines 2138–2142</span></div>
+      <div class="sb-frame">
+        <div class="card dash-card" style="margin-bottom:0;">
+          <div class="flex-row mb-12"><span class="text-sm text-primary font-semi">Onboarding Progress</span><span class="text-xs text-muted" style="margin-left:auto;">2 of 5 complete (40%)</span></div>
+          <div class="progress-track mb-20"><div class="progress-fill" style="width:40%;background:#FBBF24;"></div></div>
+          <div class="check-item"><div class="check-box done">&#10003;</div><div style="flex:1;"><strong class="text-sm text-primary">Background check</strong></div><span class="badge green">Complete</span></div>
+          <div class="check-item"><div class="check-box done">&#10003;</div><div style="flex:1;"><strong class="text-sm text-primary">W-4 form</strong></div><span class="badge green">Complete</span></div>
+          <div class="check-item"><div class="check-box"></div><div style="flex:1;"><strong class="text-sm text-primary">I-9 verification</strong></div><span class="badge amber">Pending</span></div>
+          <div class="check-item"><div class="check-box"></div><div style="flex:1;"><strong class="text-sm text-primary">E-signature (employment agreement)</strong></div><span class="badge amber">Pending</span></div>
+          <div class="check-item"><div class="check-box"></div><div style="flex:1;"><strong class="text-sm text-primary">Training quiz</strong></div><span class="badge slate">Not Started</span></div>
+        </div>
+      </div>
+
+      <div class="sb-variant-label" id="form-tabs" style="margin-top:18px;">11.4 Tab containers <span class="sb-variant-sub">various</span></div>
+      <div class="sb-frame">
+        <div class="sb-stack">
+          <div class="tab-container"><button class="tab-btn">Day</button><button class="tab-btn active">Week</button><button class="tab-btn">Month</button></div>
+          <div class="tab-container"><button class="tab-btn active">Active</button><button class="tab-btn">Today</button><button class="tab-btn">Pending Verification</button></div>
+          <div class="tab-container"><button class="tab-btn">7d</button><button class="tab-btn active">30d</button><button class="tab-btn">90d</button><button class="tab-btn">1y</button></div>
+          <div class="tab-container"><button class="tab-btn active">Info</button><button class="tab-btn">Certifications</button><button class="tab-btn">Inspections</button><button class="tab-btn">Documents</button><button class="tab-btn">Clock History</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 12. AVATARS ========== -->
+    <section class="sb-section" id="avatars">
+      <div class="sb-section-head">
+        <h2>12. Avatars</h2>
+        <div class="sb-selector">.avatar.avatar-sm / .avatar.avatar-md / .team-avatar-wrap / .team-status-dot</div>
+        <div class="sb-note">Main theme: Who's Clocked In 1701–1704, Team roster 2070–2073, Field Ops 2037+. Inline <code>background</code> differentiates members.</div>
+      </div>
+
+      <div class="sb-variant-label" id="avatar-sizes">12.1 Sizes <span class="sb-variant-sub">.avatar-sm (30px) vs .avatar-md (40px)</span></div>
+      <div class="sb-frame">
+        <div class="sb-row">
+          <div class="avatar avatar-sm">JJ</div>
+          <div class="avatar avatar-sm" style="background:#8b5cf6;">DR</div>
+          <div class="avatar avatar-sm" style="background:#C2410C;">TK</div>
+          <div class="avatar avatar-sm" style="background:#64748b;">RM</div>
+          <div class="avatar avatar-sm" style="background:#059669;">HO</div>
+          <span style="flex-basis:100%;height:0;"></span>
+          <div class="avatar avatar-md">JJ</div>
+          <div class="avatar avatar-md" style="background:#8b5cf6;">DR</div>
+          <div class="avatar avatar-md" style="background:#C2410C;">TK</div>
+          <div class="avatar avatar-md" style="background:#64748b;">RM</div>
+        </div>
+      </div>
+
+      <div class="sb-variant-label" id="avatar-status-dot" style="margin-top:18px;">12.2 With status dot <span class="sb-variant-sub">.team-avatar-wrap + .team-status-dot — Who's Clocked In</span></div>
+      <div class="sb-frame">
+        <div class="team-row">
+          <div class="team-member"><div class="team-avatar-wrap"><div class="avatar avatar-md">JJ</div><div class="team-status-dot" style="background:#10b981;"></div></div><span class="text-xs">Jillayna</span></div>
+          <div class="team-member"><div class="team-avatar-wrap"><div class="avatar avatar-md" style="background:#8b5cf6;">DR</div><div class="team-status-dot" style="background:#10b981;"></div></div><span class="text-xs">Diana</span></div>
+          <div class="team-member"><div class="team-avatar-wrap"><div class="avatar avatar-md" style="background:#C2410C;">TK</div><div class="team-status-dot" style="background:#f59e0b;"></div></div><span class="text-xs">Tasha</span></div>
+          <div class="team-member"><div class="team-avatar-wrap"><div class="avatar avatar-md" style="background:#64748b;">RM</div><div class="team-status-dot" style="background:#94a3b8;"></div></div><span class="text-xs">Ramon</span></div>
+        </div>
+      </div>
+
+      <div class="sb-variant-label" id="avatar-team-roster" style="margin-top:18px;">12.3 In a team roster <span class="sb-variant-sub">main theme lines 2070–2073</span></div>
+      <div class="sb-frame">
+        <div class="card dash-card" style="margin-bottom:0;">
+          <div class="dash-card-title">Team Members</div>
+          <div class="check-item"><div class="team-avatar-wrap"><div class="avatar avatar-md">JJ</div><div class="team-status-dot" style="background:#10b981;"></div></div><div style="flex:1;"><strong class="text-sm text-primary">Jillayna Jackson</strong><div class="text-xs text-muted">Lead &middot; On site &middot; Tom Bradley</div></div><span class="badge green">Active</span></div>
+          <div class="check-item"><div class="team-avatar-wrap"><div class="avatar avatar-md" style="background:#8b5cf6;">DR</div><div class="team-status-dot" style="background:#10b981;"></div></div><div style="flex:1;"><strong class="text-sm text-primary">Diana Rivera</strong><div class="text-xs text-muted">Senior &middot; En route &middot; ETA 12m</div></div><span class="badge blue">En Route</span></div>
+          <div class="check-item"><div class="team-avatar-wrap"><div class="avatar avatar-md" style="background:#C2410C;">TK</div><div class="team-status-dot" style="background:#f59e0b;"></div></div><div style="flex:1;"><strong class="text-sm text-primary">Tasha King</strong><div class="text-xs text-muted">Junior &middot; Break</div></div><span class="badge amber">Break</span></div>
+          <div class="check-item"><div class="team-avatar-wrap"><div class="avatar avatar-md" style="background:#64748b;">RM</div><div class="team-status-dot" style="background:#94a3b8;"></div></div><div style="flex:1;"><strong class="text-sm text-primary">Ramon Mendez</strong><div class="text-xs text-muted">Junior &middot; Off shift</div></div><span class="badge slate">Offline</span></div>
+        </div>
+      </div>
+
+      <div class="sb-spec">.avatar: inline-flex, border-radius 9999px, var(--primary) bg default, #fff text, font-weight 600  |  .avatar-sm: 30px  |  .avatar-md: 40px  |  .team-status-dot: 10px absolute bottom-right, 2px white border</div>
+    </section>
+
+    <!-- ========== 13. PROGRESS BARS ========== -->
+    <section class="sb-section" id="progress">
+      <div class="sb-section-head">
+        <h2>13. Progress Bars</h2>
+        <div class="sb-selector">.progress-track / .progress-fill / .stock-bar / .stock-track / .stock-fill</div>
+        <div class="sb-note">Main theme: Field Ops 2036–2059, Onboarding 2137, Inventory stock 2153–2157.</div>
+      </div>
+
+      <div class="sb-variant-label" id="progress-field-ops">13.1 Field Ops — Active Job progress <span class="sb-variant-sub">main theme lines 2036–2059</span></div>
+      <div class="sb-frame">
+        <div class="sb-grid-2">
+          <div class="card dash-card" style="margin-bottom:0;">
+            <div class="flex-row mb-12"><div class="avatar avatar-sm">JJ</div><div><strong class="text-sm text-primary">Tom Bradley</strong><div class="text-xs text-muted">Jillayna Jackson &middot; Standard Clean</div></div><span class="badge blue" style="margin-left:auto;">In Progress</span></div>
+            <div class="text-xs text-muted mb-12">Checklist: 4 / 6 items</div>
+            <div class="progress-track mb-12"><div class="progress-fill" style="width:67%;"></div></div>
+            <div class="flex-row"><span class="badge white" style="font-size:10px;">&#128247; 3 photos</span><span class="badge green" style="font-size:10px;">&#128205; GPS Verified</span></div>
+          </div>
+          <div class="card dash-card" style="margin-bottom:0;">
+            <div class="flex-row mb-12"><div class="avatar avatar-sm" style="background:#8b5cf6;">DR</div><div><strong class="text-sm text-primary">Whitfield Family</strong><div class="text-xs text-muted">Diana Rivera &middot; Weekly Clean</div></div><span class="badge green" style="margin-left:auto;">Completed</span></div>
+            <div class="text-xs text-muted mb-12">Checklist: 6 / 6 items</div>
+            <div class="progress-track mb-12"><div class="progress-fill" style="width:100%;background:#059669;"></div></div>
+            <div class="flex-row"><span class="badge white" style="font-size:10px;">&#128247; 5 photos</span><span class="badge green" style="font-size:10px;">&#128205; GPS Verified</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sb-variant-label" id="stock-bars" style="margin-top:18px;">13.2 Inventory stock bars <span class="sb-variant-sub">main theme lines 2153–2157 — different color per threshold</span></div>
+      <div class="sb-frame">
+        <div class="card dash-card" style="margin-bottom:0;">
+          <div class="dash-card-title">Supply Levels</div>
+          <div class="check-item" style="display:grid;grid-template-columns:140px 1fr 55px auto;align-items:center;gap:10px;"><strong class="text-sm text-primary">All-Purpose Cleaner</strong><div class="stock-track"><div class="stock-fill" style="width:75%;background:#059669;"></div></div><span class="text-xs text-muted" style="text-align:right;">18 / 24</span><span style="width:88px;"></span></div>
+          <div class="check-item" style="display:grid;grid-template-columns:140px 1fr 55px auto;align-items:center;gap:10px;"><strong class="text-sm text-primary">Microfiber Cloths</strong><div class="stock-track"><div class="stock-fill" style="width:60%;background:#F97316;"></div></div><span class="text-xs text-muted" style="text-align:right;">30 / 50</span><span style="width:88px;"></span></div>
+          <div class="check-item" style="display:grid;grid-template-columns:140px 1fr 55px auto;align-items:center;gap:10px;"><strong class="text-sm text-primary">Glass Cleaner</strong><div class="stock-track"><div class="stock-fill" style="width:15%;background:#dc2626;"></div></div><span class="text-xs text-muted" style="text-align:right;">2 / 12</span><span class="badge red">Low Stock</span></div>
+          <div class="check-item" style="display:grid;grid-template-columns:140px 1fr 55px auto;align-items:center;gap:10px;"><strong class="text-sm text-primary">Trash Bags (13 gal)</strong><div class="stock-track"><div class="stock-fill" style="width:35%;background:#d97706;"></div></div><span class="text-xs text-muted" style="text-align:right;">35 / 100</span><span class="badge amber">Order Soon</span></div>
+          <div class="check-item" style="display:grid;grid-template-columns:140px 1fr 55px auto;align-items:center;gap:10px;"><strong class="text-sm text-primary">Vacuum Bags</strong><div class="stock-track"><div class="stock-fill" style="width:50%;background:#7c3aed;"></div></div><span class="text-xs text-muted" style="text-align:right;">6 / 12</span><span style="width:88px;"></span></div>
+        </div>
+      </div>
+
+      <div class="sb-spec">.progress-track: 8px height, border-radius 9999px, var(--border-light) bg  |  .progress-fill: 100% height, border-radius 9999px, var(--primary) default  |  inline bg override for green/red/amber states</div>
+    </section>
+
+    <!-- ========== 14. INFO BANNER ========== -->
+    <section class="sb-section" id="info-banner">
+      <div class="sb-section-head">
+        <h2>14. Info Banner</h2>
+        <div class="sb-selector">.info-banner</div>
+        <div class="sb-note">Main theme CSS 474–488; markup 1855 (Invoicing/Stripe). Used 6× — Stripe, QuickBooks, Gusto, GPS, Marketing reactivation, Settings voice AI.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="info-banner">&#128279; <div><strong>Stripe connected</strong> &mdash; Last payment processed 12 min ago &middot; <strong>QuickBooks synced</strong> 4 min ago</div></div>
+      </div>
+      <div class="sb-spec">display: flex  |  padding, background, and border-radius per main theme  |  emoji + strong label + description children</div>
+    </section>
+
+    <!-- ========== 15. CHART PLACEHOLDER ========== -->
+    <section class="sb-section" id="chart-placeholder">
+      <div class="sb-section-head">
+        <h2>15. Chart Placeholder</h2>
+        <div class="sb-selector">.chart-placeholder</div>
+        <div class="sb-note">Main theme CSS 732–735. Used 5×: Dashboard 1733, Team map 2079, Analytics 2214/2215. Dev stub, not a real chart treatment.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="sb-stack">
+          <div class="chart-placeholder">[ Line chart placeholder ]</div>
+          <div class="chart-placeholder" style="height:160px;">[ Map with team pins ]</div>
+        </div>
+      </div>
+      <div class="sb-spec">display: flex  |  centered text  |  muted color  |  default auto height, inline <code>height</code> override for taller variants (maps, wide charts)</div>
+    </section>
+
+    <!-- ========== 16. LAYOUT SWITCHER ========== -->
+    <section class="sb-section" id="layout-switcher">
+      <div class="sb-section-head">
+        <h2>16. Layout Switcher</h2>
+        <div class="sb-selector">.dash-switcher / .dash-sw-btn</div>
+        <div class="sb-note">Dashboard layout toggles. Active state = primary gradient.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="dash-switcher">
+          <button class="dash-sw-btn active">A — Hero</button>
+          <button class="dash-sw-btn">B — Widgets</button>
+          <button class="dash-sw-btn">C — Metrics</button>
+          <button class="dash-sw-btn">D — Timeline</button>
+        </div>
+      </div>
+      <div class="sb-spec">border-radius: 9999px  |  padding: 6px 14px  |  .active: blue gradient + glow</div>
+    </section>
+
+    <!-- ========== 17. DASH HERO ========== -->
+    <section class="sb-section" id="dash-hero">
+      <div class="sb-section-head">
+        <h2>17. Dash Hero</h2>
+        <div class="sb-selector">.dash-hero</div>
+        <div class="sb-note">Specialty — doesn't fit the tier system.</div>
+      </div>
+      <div class="sb-frame sb-frame-plain">
+        <div class="dash-hero">
+          <h1>Good afternoon, Jillayna</h1>
+          <div class="sub">Tuesday, April 8, 2026</div>
+          <div class="dash-hero-stats">
+            <div class="dash-hero-stat"><div class="val">5</div><div class="lbl">Jobs Today</div></div>
+            <div class="dash-hero-stat"><div class="val">$835</div><div class="lbl">Today's Revenue</div></div>
+            <div class="dash-hero-stat"><div class="val">3/5</div><div class="lbl">Completed</div></div>
+            <div class="dash-hero-stat"><div class="val">4.9★</div><div class="lbl">Avg Rating</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="sb-spec">background: 5-stop amber → black gradient  |  border-radius: 20px  |  padding: 28px</div>
+    </section>
+
+    <!-- ========== 18. METRIC STRIP ========== -->
+    <section class="sb-section" id="metric-strip">
+      <div class="sb-section-head">
+        <h2>18. Metric Strip</h2>
+        <div class="sb-selector">.metric-strip / .metric-cell</div>
+        <div class="sb-note">3-column metric bar. Specialty — doesn't fit the tier system. <code>shadow-*</code> only.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="metric-strip">
+          <div class="metric-cell"><div class="val">$12,480</div><div class="lbl">Monthly Revenue</div><div class="trend" style="color:#059669;">↑ 12% vs last month</div></div>
+          <div class="metric-cell"><div class="val">38</div><div class="lbl">Active Clients</div><div class="trend" style="color:#059669;">↑ 3 new</div></div>
+          <div class="metric-cell"><div class="val">4.9</div><div class="lbl">Avg Rating</div><div class="trend" style="color:#059669;">↑ 0.1</div></div>
+        </div>
+      </div>
+      <div class="sb-spec">display: grid (3 cols)  |  border-radius: 24px  |  .metric-cell: 22px 24px padding + top gradient bar</div>
+    </section>
+
+    <!-- ========== 19. REVENUE CHART ========== -->
+    <section class="sb-section" id="rev-chart">
+      <div class="sb-section-head">
+        <h2>19. Revenue Chart</h2>
+        <div class="sb-selector">.rev-chart / .rev-bar-wrap / .rev-bar / .rev-bar-lbl</div>
+        <div class="sb-note">Main theme markup 1688–1694 (Revenue Snapshot LAYOUT A); CSS 565–568. <code>barstyle-*</code> variants (1414–1466) dead-code.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="rev-chart">
+          <div class="rev-bar-wrap"><div class="rev-bar" style="height:40%;background:var(--primary);"></div><div class="rev-bar-lbl">Mon</div></div>
+          <div class="rev-bar-wrap"><div class="rev-bar" style="height:65%;background:var(--primary);"></div><div class="rev-bar-lbl">Tue</div></div>
+          <div class="rev-bar-wrap"><div class="rev-bar" style="height:55%;background:var(--primary);"></div><div class="rev-bar-lbl">Wed</div></div>
+          <div class="rev-bar-wrap"><div class="rev-bar" style="height:80%;background:var(--primary);"></div><div class="rev-bar-lbl">Thu</div></div>
+          <div class="rev-bar-wrap"><div class="rev-bar" style="height:100%;background:var(--primary);"></div><div class="rev-bar-lbl">Fri</div></div>
+        </div>
+      </div>
+      <div class="sb-spec">display: flex (row)  |  height: 100px  |  gap: 8px  |  .rev-bar: border-radius 4px 4px 0 0, min-height 4px, inline height + background</div>
+    </section>
+
+    <!-- ========== 20. BAR CHART ========== -->
+    <section class="sb-section" id="bar-chart">
+      <div class="sb-section-head">
+        <h2>20. Bar Chart</h2>
+        <div class="sb-selector">.bar-chart / .bar-col / .bar / .bar-label</div>
+        <div class="sb-note">Main theme CSS 739–742. Used 2×: Service Mix 1757–1763 (inline per-bar colors), Revenue Trend 2190–2195. <code>.bar-muted</code> modifier + <code>barstyle-*</code> variants (1414–1474) dead-code.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="bar-chart">
+          <div class="bar-col"><div class="bar" style="height:70%;"></div><div class="bar-label">Weekly</div></div>
+          <div class="bar-col"><div class="bar" style="height:45%;background:var(--primary-light);"></div><div class="bar-label">Biweekly</div></div>
+          <div class="bar-col"><div class="bar" style="height:30%;background:var(--primary);"></div><div class="bar-label">Deep</div></div>
+          <div class="bar-col"><div class="bar" style="height:20%;background:#cbd5e1;"></div><div class="bar-label">Move</div></div>
+          <div class="bar-col"><div class="bar" style="height:15%;background:#e2e8f0;"></div><div class="bar-label">Post-Con</div></div>
+        </div>
+      </div>
+      <div class="sb-spec">display: flex (row)  |  height: 120px (80px mobile)  |  gap: 6px  |  .bar: default bg var(--primary), inline override per bar</div>
+    </section>
+
+    <!-- ========== 21. PIPELINE COLUMNS ========== -->
+    <section class="sb-section" id="pipeline-cols">
+      <div class="sb-section-head">
+        <h2>21. Pipeline Columns</h2>
+        <div class="sb-selector">.pipeline-head-bar (unified Latte Cream header) / .pipeline-cols / nested .pipeline-card (Block tier)</div>
+        <div class="sb-note">Main theme 1912–1930 (Pipeline); CSS 614–620. Cards themselves are §4 Block. Won column uses inline <code>border-left</code>.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="pipeline-head-bar">
+          <div>New Lead</div>
+          <div>Contacted</div>
+          <div>Quoted</div>
+          <div>Won</div>
+        </div>
+        <div class="pipeline-cols">
+          <div>
+            <div class="pipeline-card"><strong class="text-sm text-primary">Jennifer Walsh</strong><div class="text-xs text-muted mt-4">Deep Clean &middot; $275</div><div class="text-xs text-muted">Source: Google</div></div>
+            <div class="pipeline-card"><strong class="text-sm text-primary">David Park</strong><div class="text-xs text-muted mt-4">Move-In &middot; $350</div><div class="text-xs text-muted">Source: Referral</div></div>
+            <div class="pipeline-card"><strong class="text-sm text-primary">Lisa Monroe</strong><div class="text-xs text-muted mt-4">Weekly &middot; $130/wk</div><div class="text-xs text-muted">Source: Website</div></div>
+          </div>
+          <div>
+            <div class="pipeline-card"><strong class="text-sm text-primary">Rachel Green</strong><div class="text-xs text-muted mt-4">Weekly &middot; $130/wk</div><div class="text-xs" style="color:var(--primary);margin-top:6px;">&#8627; Follow up Apr 10</div></div>
+            <div class="pipeline-card"><strong class="text-sm text-primary">Mike Thompson</strong><div class="text-xs text-muted mt-4">Biweekly &middot; $135</div><div class="text-xs" style="color:var(--primary);margin-top:6px;">&#8627; Awaiting callback</div></div>
+          </div>
+          <div>
+            <div class="pipeline-card"><strong class="text-sm text-primary">Sam Rodriguez</strong><div class="text-xs text-muted mt-4">Post-Construction &middot; $400</div></div>
+            <div class="pipeline-card"><strong class="text-sm text-primary">Eva &amp; Chris Tan</strong><div class="text-xs text-muted mt-4">Biweekly &middot; $135/visit</div></div>
+          </div>
+          <div>
+            <div class="pipeline-card" style="border-left:3px solid #059669;"><strong class="text-sm text-primary">Brooke Adams</strong><div class="text-xs text-muted mt-4">Weekly &middot; $130/wk</div></div>
+            <div class="pipeline-card" style="border-left:3px solid #059669;"><strong class="text-sm text-primary">Tom Bradley</strong><div class="text-xs text-muted mt-4">Standard &middot; $150</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="sb-spec">.pipeline-head-bar: grid repeat(4,1fr), bg #E8DFC9 (Latte Cream, new palette entry), text #2B2416, radius 10px, no internal gap — reads as one continuous strip  |  .pipeline-cols: grid repeat(4,1fr), gap 12px  |  counter pills removed in V2 rollout (was `.badge` per column header)</div>
+    </section>
+
+    <!-- ========== 22. CALENDAR WIDGET ========== -->
+    <section class="sb-section" id="calendar-widget">
+      <div class="sb-section-head">
+        <h2>22. Calendar Widget</h2>
+        <div class="sb-selector">.cal-grid / .cal-header / .cal-day (with .past and .today modifiers)</div>
+        <div class="sb-note">Main theme 1805–1811 (Schedule Week); CSS 637–644. <code>.past</code> dims, <code>.today</code> highlights with blue accent.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="card dash-card" style="margin:0;">
+          <div class="dash-card-title">April 2026</div>
+          <div class="cal-grid">
+            <div class="cal-header">Su</div><div class="cal-header">Mo</div><div class="cal-header">Tu</div><div class="cal-header">We</div><div class="cal-header">Th</div><div class="cal-header">Fr</div><div class="cal-header">Sa</div>
+            <div class="cal-day past"></div><div class="cal-day past"></div><div class="cal-day past"></div><div class="cal-day past">1</div><div class="cal-day past">2</div><div class="cal-day past">3</div><div class="cal-day past">4</div>
+            <div class="cal-day past">5</div><div class="cal-day past">6</div><div class="cal-day past">7</div><div class="cal-day today">8</div><div class="cal-day">9</div><div class="cal-day">10</div><div class="cal-day">11</div>
+            <div class="cal-day">12</div><div class="cal-day">13</div><div class="cal-day">14</div><div class="cal-day">15</div><div class="cal-day">16</div><div class="cal-day">17</div><div class="cal-day">18</div>
+            <div class="cal-day">19</div><div class="cal-day">20</div><div class="cal-day">21</div><div class="cal-day">22</div><div class="cal-day">23</div><div class="cal-day">24</div><div class="cal-day">25</div>
+            <div class="cal-day">26</div><div class="cal-day">27</div><div class="cal-day">28</div><div class="cal-day">29</div><div class="cal-day">30</div><div class="cal-day"></div><div class="cal-day"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sb-spec">display: grid  |  grid-template-columns: repeat(7, 1fr)  |  .cal-header: day-of-week label  |  .cal-day: date cell  |  modifiers: .past (dimmed), .today (blue accent)</div>
+    </section>
+
+    <!-- ========== 23. DRIP CAMPAIGNS ========== -->
+    <section class="sb-section" id="drip-campaigns">
+      <div class="sb-section-head">
+        <h2>23. Drip Campaigns</h2>
+        <div class="sb-selector">.drip-flow / .drip-node / .drip-icon / .drip-connector</div>
+        <div class="sb-note">Main theme CSS 726–730. Used 4×: Pipeline welcome 1947, Marketing email 1966, Marketing SMS 1984, review-ask 1991.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="card dash-card" style="margin:0;">
+          <div class="dash-card-title">New Lead Welcome Sequence</div>
+          <div class="drip-flow">
+            <div class="drip-node"><div class="drip-icon">&#9993;</div><div><div class="text-xs font-semi text-primary">Day 0</div><div class="text-xs text-muted">Welcome Email</div></div></div>
+            <div class="drip-connector"></div>
+            <div class="drip-node"><div class="drip-icon">&#128172;</div><div><div class="text-xs font-semi text-primary">Day 1</div><div class="text-xs text-muted">SMS Follow-up</div></div></div>
+            <div class="drip-connector"></div>
+            <div class="drip-node"><div class="drip-icon">&#9993;</div><div><div class="text-xs font-semi text-primary">Day 3</div><div class="text-xs text-muted">Special Offer</div></div></div>
+            <div class="drip-connector"></div>
+            <div class="drip-node"><div class="drip-icon">&#128172;</div><div><div class="text-xs font-semi text-primary">Day 7</div><div class="text-xs text-muted">Final Nudge</div></div></div>
+          </div>
+          <div class="flex-row mt-4"><span class="badge green">Active</span><span class="text-xs text-muted" style="margin-left:8px;">12 contacts enrolled &middot; 42% open rate</span></div>
+        </div>
+      </div>
+      <div class="sb-spec">.drip-node: gradient wash (primary-soft→primary-bg), 12px radius, blue border, inset glow — matches Block treatment  |  .drip-icon: 36px circle, primary bg, white icon  |  .drip-connector: 32px horizontal line, border-mid</div>
+    </section>
+
+    <!-- ========== 24. CLIENT PORTAL (COMPOSITE) ========== -->
+    <section class="sb-section" id="client-portal">
+      <div class="sb-section-head">
+        <h2>24. Client Portal</h2>
+        <div class="sb-selector">.booking-header + .stars + .star-filled + .section-title + #portal contextual overrides</div>
+        <div class="sb-note">Main theme 2013–2030 (Client Portal). Warm-brown cards + gradient stats come from <code>#portal</code> contextual overrides (966–989); swatchboard mirrors these via <code>.sb-portal-scope</code> for display only. Only main-theme appearance of <code>.booking-header</code>, <code>.stars</code>, <code>.star-filled</code>.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="sb-portal-scope">
+          <div class="card" style="max-width:640px;margin:0 auto;padding:0;overflow:hidden;">
+            <div class="booking-header"><h2>Welcome back, Marcus</h2><p>Your cleaning schedule &amp; history</p></div>
+            <div style="padding:24px;">
+              <div class="stat-grid" style="margin-bottom:20px;">
+                <div class="card stat-card"><div class="stat-val">18</div><div class="stat-label">Visits This Year</div></div>
+                <div class="card stat-card"><div class="stat-val">$2,340</div><div class="stat-label">Total Spent</div></div>
+              </div>
+              <div class="section-title">Next Appointment</div>
+              <div class="card mb-20" style="padding:14px;"><div class="flex-row"><div><strong class="text-sm text-primary">Friday, April 10 &middot; 10:00 AM</strong><div class="text-xs text-muted">Standard Clean &middot; Jillayna &amp; Diana</div></div><button class="btn btn-sm btn-secondary" style="margin-left:auto;">Reschedule</button></div></div>
+              <div class="section-title">Outstanding Invoice</div>
+              <div class="card mb-20" style="padding:14px;"><div class="flex-row"><div><strong class="text-sm text-primary">INV-2026-031 &middot; $130.00</strong><div class="text-xs text-muted">Weekly Clean &middot; Due Apr 15</div></div><button class="btn btn-sm btn-primary" style="margin-left:auto;">Pay Now</button></div></div>
+              <div class="section-title">Leave a Review</div>
+              <div class="card mb-20" style="padding:14px;text-align:center;"><div class="text-sm text-muted mb-12">How was your last cleaning?</div><div class="stars" style="justify-content:center;font-size:24px;"><span class="star-filled">&#9733;</span><span class="star-filled">&#9733;</span><span class="star-filled">&#9733;</span><span class="star-filled">&#9733;</span><span class="star-filled">&#9733;</span></div><textarea class="input" rows="2" placeholder="Tell us about your experience..." style="margin-top:12px;"></textarea><button class="btn btn-primary btn-sm" style="margin-top:10px;">Submit Review</button></div>
+              <div class="section-title">Referral Program</div>
+              <div class="card" style="padding:14px;text-align:center;"><div class="text-sm text-primary font-semi mb-12">Share your code &amp; earn $25 off!</div><div style="background:var(--primary);border:2px solid var(--primary-light);padding:12px;border-radius:8px;font-size:18px;font-weight:700;color:#fff;letter-spacing:0.05em;">MARCUS-SPARKLE</div><button class="btn btn-secondary btn-sm" style="margin-top:10px;">Copy &amp; Share</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="sb-spec">Composite shell: outer .card (max-width 640, centered, padding:0, overflow:hidden) &rarr; .booking-header blue hero &rarr; padded body with .stat-grid + nested .card mb-20 Block-like rows + review card + referral card. All inside .sb-portal-scope for the #portal context override.</div>
+    </section>
+
+    <!-- ========== 25. MESSAGING ========== -->
+    <section class="sb-section" id="messaging">
+      <div class="sb-section-head">
+        <h2>25. Messaging</h2>
+        <div class="sb-selector">.msg-layout / .msg-list / .msg-item / .chat-area / .chat-header / .chat-bubble / .chat-compose</div>
+        <div class="sb-note">Main theme lines 1876–1903 (Messaging). Specialty layout — doesn't fit the tier system.</div>
+      </div>
+      <div class="sb-frame sb-frame-plain">
+        <div class="card" style="padding:0;overflow:hidden;border-radius:var(--card-radius) var(--card-radius) 0 0;">
+          <div class="msg-layout">
+            <div class="msg-list">
+              <div class="msg-item active"><div class="avatar avatar-sm">MC</div><div style="flex:1;min-width:0;"><strong class="text-sm text-primary">Marcus Chen</strong><div class="msg-preview">See you Friday at 10am!</div></div><div class="msg-time">2m</div></div>
+              <div class="msg-item"><div class="avatar avatar-sm" style="background:#8b5cf6;">NP</div><div style="flex:1;min-width:0;"><strong class="text-sm text-primary">Nina Petrova</strong><div class="msg-preview">Can we reschedule to next week?</div></div><div class="msg-time">1h</div><div class="msg-unread"></div></div>
+              <div class="msg-item"><div class="avatar avatar-sm" style="background:#C2410C;">TB</div><div style="flex:1;min-width:0;"><strong class="text-sm text-primary">Tom Bradley</strong><div class="msg-preview">Thanks, the place looks great!</div></div><div class="msg-time">3h</div></div>
+              <div class="msg-item"><div class="avatar avatar-sm" style="background:#059669;">HO</div><div style="flex:1;min-width:0;"><strong class="text-sm text-primary">Helen O'Brien</strong><div class="msg-preview">What's included in deep clean?</div></div><div class="msg-time">1d</div></div>
+              <div class="msg-item"><div class="avatar avatar-sm" style="background:#64748b;">AY</div><div style="flex:1;min-width:0;"><strong class="text-sm text-primary">Ahmed Youssef</strong><div class="msg-preview">Confirmed for Thursday</div></div><div class="msg-time">2d</div></div>
+            </div>
+            <div class="chat-area">
+              <div class="chat-header"><div class="avatar avatar-sm">MC</div><div><strong class="text-sm text-primary">Marcus Chen</strong><div class="text-xs text-muted">(512) 555-0142</div></div></div>
+              <div class="chat-messages">
+                <div class="chat-bubble incoming">Hi, just confirming our appointment for Friday?<div class="chat-time">10:02 AM</div></div>
+                <div class="chat-bubble outgoing">Hi Marcus! Yes, confirmed for Friday April 10 at 10:00 AM.<div class="chat-time">10:04 AM</div></div>
+                <div class="chat-bubble incoming">Perfect. Same crew as usual?<div class="chat-time">10:05 AM</div></div>
+                <div class="chat-bubble outgoing">Yes! Jillayna and Diana will be there. We'll arrive between 9:55-10:00.<div class="chat-time">10:06 AM</div></div>
+                <div class="chat-bubble incoming">Great. See you Friday at 10am!<div class="chat-time">10:07 AM</div></div>
+                <div class="chat-bubble outgoing">See you then! Let us know if anything changes. &#128578;<div class="chat-time">10:08 AM</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="padding:14px 20px;border-radius:0 0 var(--card-radius) var(--card-radius);border-top:none;margin-top:-1px;">
+          <div style="display:flex;gap:10px;align-items:center;">
+            <input class="chat-input" placeholder="Type a message to Marcus Chen..." style="flex:1;">
+            <button class="btn btn-primary btn-sm">Send</button>
+          </div>
+        </div>
+      </div>
+      <div class="sb-spec">.msg-layout: grid 280px / 1fr, height 520px  |  .msg-item.active: primary-bg + left border  |  .chat-bubble.incoming: inset-bg left-aligned  |  .chat-bubble.outgoing: blue gradient right-aligned</div>
+    </section>
+
+    <!-- ========== 27. TABLES ========== -->
+    <section class="sb-section" id="tables">
+      <div class="sb-section-head">
+        <h2>27. Tables</h2>
+        <div class="sb-selector">table / table th / table td / table tr:hover / table tr:last-child td / table .name / table .money</div>
+        <div class="sb-note">Tag selectors, not classes — any <code>&lt;table&gt;</code> inside a card inherits. Main theme CSS 404–420. 8 instances: Schedule 1808, Clients 1846, Invoicing 1879, Pipeline Estimates 1951 (shown), Marketing 2016, HR 2126/2145, Inventory 2171+. <code>.table-wrap</code> dead-code.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table>
+            <thead><tr><th>Estimate</th><th>Client</th><th>Service</th><th>Amount</th><th>Sent</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td class="name">EST-0042</td><td>Jennifer Walsh</td><td>Deep Clean</td><td class="money">$275</td><td>Apr 7</td><td><span class="badge blue">Viewed</span></td></tr>
+              <tr><td class="name">EST-0041</td><td>David Park</td><td>Move-In Clean</td><td class="money">$350</td><td>Apr 6</td><td><span class="badge amber">Sent</span></td></tr>
+              <tr><td class="name">EST-0040</td><td>Sam Rodriguez</td><td>Post-Construction</td><td class="money">$400</td><td>Apr 4</td><td><span class="badge green">Accepted</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="sb-spec">width: 100%  |  border-collapse: collapse  |  <strong>th</strong>: 11px/600 uppercase, 0.04em tracking, <code>--inset-bg</code> header bg, bottom border <code>--card-border</code>  |  <strong>td</strong>: 12px padding, 13px font, <code>--text-body</code> text, no bottom border  |  <strong>tbody tr:nth-child(odd)</strong>: <code>--primary</code> <code>#F97316</code>  |  <strong>tbody tr:nth-child(even)</strong>: <code>--primary-light</code> <code>#FB923C</code> (Row-tier zebra analog, matches <code>.check-item</code>)  |  <strong>tr:hover</strong>: <code>filter: brightness(0.94)</code>  |  <strong>.name</strong>: 600 weight  |  <strong>.money</strong>: 700 weight + tabular-nums</div>
+
+      <div class="sb-note" style="margin-top:18px;"><strong>Schedule calendar variant — not implemented in Blue.</strong> Adding <code>.schedule-grid</code> is a Material Change.</div>
+    
+    </section>
+
+    <!-- ========== 28. SIDEBAR / NAVIGATION ========== -->
+    <section class="sb-section" id="sidebar-nav">
+      <div class="sb-section-head">
+        <h2>28. Sidebar / Navigation</h2>
+        <div class="sb-selector">.sidebar / .sidebar-nav / .sidebar-section / .nav-group / .nav-btn::before / .nav-badge / .sidebar-footer</div>
+        <div class="sb-note">Click a button to activate. Indicator is a single <code>.nav-btn::before</code> — rounded-left body + right-pointing tip composed via SVG mask (<code>mask-composite: add</code>), so the whole shape paints as one surface with a seamless vertical gradient. Tip extends 10px past the sidebar. <code>.sidebar-nav</code> is <code>overflow: visible</code>, <code>.nav-group</code> is <code>overflow-x: visible; overflow-y: clip</code> so group-collapse still hides content on Y while X stays uncropped for the tip.</div>
+      </div>
+      <div class="sb-frame">
+        <div class="sb-nav-scope">
+          <nav class="sidebar">
+            <div class="sidebar-brand">
+              <div class="sidebar-logo">CR</div>
+              <div class="sidebar-brand-text">
+                <h1>Sparkle &amp; Shine</h1>
+                <p>Austin, TX</p>
+              </div>
+            </div>
+
+            <div class="sidebar-nav">
+              <!-- CORE -->
+              <div class="sidebar-section" onclick="sbToggleGroup(this)">Core <span class="chevron">&#9662;</span></div>
+              <div class="nav-group" style="max-height:300px">
+                <button class="nav-btn active" onclick="sbShowScreen('dashboard',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6z"/><path d="M3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25z"/><path d="M13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6z"/><path d="M13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z"/></svg>Dashboard</button>
+                <button class="nav-btn" onclick="sbShowScreen('schedule',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/></svg>Schedule</button>
+                <button class="nav-btn" onclick="sbShowScreen('clients',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>Clients</button>
+                <button class="nav-btn" onclick="sbShowScreen('invoices',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>Invoicing</button>
+                <button class="nav-btn" onclick="sbShowScreen('messaging',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/></svg>Messaging</button>
+              </div>
+
+              <!-- GROWTH -->
+              <div class="sidebar-section" onclick="sbToggleGroup(this)">Growth <span class="tier-badge grow" style="font-size:8px;padding:1px 5px;">Grow</span> <span class="chevron">&#9662;</span></div>
+              <div class="nav-group" style="max-height:200px">
+                <button class="nav-btn" onclick="sbShowScreen('pipeline',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"/></svg>Pipeline</button>
+                <button class="nav-btn" onclick="sbShowScreen('marketing',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 110-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 01-1.44-4.282m3.102.069a18.03 18.03 0 01-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 018.835 2.535M10.34 6.66a23.847 23.847 0 008.835-2.535m0 0A23.74 23.74 0 0018.795 3m.38 1.125a23.91 23.91 0 011.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 001.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 010 3.46"/></svg>Marketing</button>
+                <button class="nav-btn" onclick="sbShowScreen('portal',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>Client Portal</button>
+              </div>
+
+              <!-- OPERATIONS -->
+              <div class="sidebar-section" onclick="sbToggleGroup(this)">Operations <span class="tier-badge field" style="font-size:8px;padding:1px 5px;">Field</span> <span class="chevron">&#9662;</span></div>
+              <div class="nav-group" style="max-height:150px">
+                <button class="nav-btn" onclick="sbShowScreen('fieldops',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>Field Ops</button>
+                <button class="nav-btn" onclick="sbShowScreen('team',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z"/></svg>Team</button>
+              </div>
+
+              <!-- ADMIN -->
+              <div class="sidebar-section" onclick="sbToggleGroup(this)">Admin <span class="tier-badge admin" style="font-size:8px;padding:1px 5px;">Admin</span> <span class="chevron">&#9662;</span></div>
+              <div class="nav-group" style="max-height:250px">
+                <button class="nav-btn" onclick="sbShowScreen('hr',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 00.75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0112 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 01-.673-.38m0 0A2.18 2.18 0 013 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 013.413-.387m7.5 0V5.25A2.25 2.25 0 0013.5 3h-3a2.25 2.25 0 00-2.25 2.25v.894m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>HR</button>
+                <button class="nav-btn" onclick="sbShowScreen('inventory',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>Inventory</button>
+                <button class="nav-btn" onclick="sbShowScreen('analytics',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>Analytics</button>
+                <button class="nav-btn" onclick="sbShowScreen('settings',this)"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>Settings</button>
+              </div>
+            </div>
+
+            <div class="sidebar-footer">
+              <button class="sidebar-footer-btn">See Plans &amp; Pricing</button>
+            </div>
+          </nav>
+        </div>
+      </div>
+      <div class="sb-spec"><strong>.sidebar</strong> 240&times;full-height, <code>linear-gradient(180deg, #2A2E37 0%, #1C1F26 50%, #0D0F13 100%)</code> (gunmetal gradient stack), right border <code>1px solid #2A2E37</code>, <code>overflow: visible</code>  |  <strong>.sidebar::after</strong> 56px glow bleed off the right edge — <code>linear-gradient(90deg, rgba(28,31,38,0.22) 0%, rgba(249,115,22,0.05) 60%, transparent 100%)</code>  |  <strong>.nav-btn</strong> 13/500, 8×16 padding, 12px radius, transparent background, color <code>#cbd5e1</code>; <code>:hover</code> / <code>.active</code> set text <code>#fff</code> with <code>background: transparent</code> — the highlight is painted by a separate floating element, not a pseudo  |  <strong>.nav-notch</strong> JS-positioned absolute element (34px tall): <code>linear-gradient(135deg, #FB923C 0%, #EA580C 100%)</code>, <code>border-radius: 10px 0 0 10px</code>, <code>clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%)</code> for the arrow tip, inset white highlights, <code>filter: drop-shadow(0 0 10px rgba(251,146,60,0.5)) drop-shadow(0 3px 10px rgba(234,88,12,0.35))</code> for the fiery glow  |  <strong>.nav-notch-hover</strong> mirror element, same clip-path, semi-transparent orange <code>linear-gradient(135deg, rgba(251,146,60,0.18) 0%, rgba(234,88,12,0.2) 100%)</code>  |  <strong>.sidebar-footer-btn</strong>: flat <code>var(--primary)</code> background, <code>var(--btn-radius)</code> 8px pill  |  JS drives <code>top</code> of both notches to the active/hover button on <code>updateNavNotch()</code>, with <code>transition: top 0.25s cubic-bezier(0.4, 0, 0.2, 1)</code></div>
+      <div class="sb-nav-caption">
+        Refactored 2026-04-10 from a JS-positioned floating <code>.nav-notch</code> system to a pure-CSS per-button <code>::before</code>. The previous <code>clip-path</code> approach was rejected because it overrides <code>border-radius</code>, producing a square artifact on the rounded left edge. The <code>mask-image</code> + <code>mask-composite: add</code> approach keeps <code>border-radius</code> intact on the body half while a triangular SVG mask handles the tip — everything paints in a single pseudo with one continuous vertical gradient, so there's no seam where body meets tip.
+      </div>
+    </section>
+
+    <!-- ========== 29. PAGE HEADER ========== -->
+    <section class="sb-section" id="page-header">
+      <div class="sb-section-head">
+        <h2>29. Page Header</h2>
+        <div class="sb-selector">.page-head / .page-head h1 / .page-subtitle / .tier-badge / .tier-badge.grow / .tier-badge.scale / .tier-badge.field / .tier-badge.admin</div>
+        <div class="sb-note">Main theme CSS 316–333. Per-screen title block used on all 14 screens. Tier-badge mapping: no badge (Dashboard, Schedule, Clients, Invoicing, Messaging), <code>.grow</code> (Pipeline, Marketing, Portal), <code>.field</code> (Field Ops, Team), <code>.admin</code> (HR, Inventory, Analytics, Settings).</div>
+      </div>
+      <div class="sb-variant-label" id="page-head-plain">29.1 Plain title (no tier badge) <span class="sb-variant-sub">Dashboard / Schedule / Clients / Invoicing / Messaging pattern.</span></div>
+      <div class="sb-frame">
+        <div class="page-head"><h1>Dashboard</h1></div>
+        <div class="page-subtitle">Welcome back &mdash; here's what's happening today</div>
+      </div>
+      <div class="sb-variant-label" id="page-head-grow" style="margin-top:14px;">29.2 Grow tier (cyan pastel) <span class="sb-variant-sub">Pipeline / Marketing / Client Portal.</span></div>
+      <div class="sb-frame">
+        <div class="page-head"><h1>Pipeline</h1><span class="tier-badge grow">Grow</span></div>
+        <div class="page-subtitle">Leads, estimates, and conversion tracking</div>
+      </div>
+      <div class="sb-variant-label" id="page-head-scale" style="margin-top:14px;">29.3 Scale tier (lavender pastel) <span class="sb-variant-sub">Reserved tier &mdash; not currently assigned to any screen in the main theme, but the color modifier exists for future use.</span></div>
+      <div class="sb-frame">
+        <div class="page-head"><h1>Scale Example</h1><span class="tier-badge scale">Scale</span></div>
+        <div class="page-subtitle">Placeholder demo of the scale color modifier</div>
+      </div>
+      <div class="sb-variant-label" id="page-head-field" style="margin-top:14px;">29.4 Field tier (amber pastel) <span class="sb-variant-sub">Field Ops / Team.</span></div>
+      <div class="sb-frame">
+        <div class="page-head"><h1>Field Operations</h1><span class="tier-badge field">Field</span></div>
+        <div class="page-subtitle">Crews, routes, and on-site job tracking</div>
+      </div>
+      <div class="sb-variant-label" id="page-head-admin" style="margin-top:14px;">29.5 Admin tier (pink pastel) <span class="sb-variant-sub">HR / Inventory / Analytics / Settings.</span></div>
+      <div class="sb-frame">
+        <div class="page-head"><h1>Analytics</h1><span class="tier-badge admin">Admin</span></div>
+        <div class="page-subtitle">Revenue trends, employee performance, and business metrics</div>
+      </div>
+      <div class="sb-spec"><strong>.page-head</strong>: flex row, <code>gap: 12px</code>, <code>align-items: center</code>, <code>flex-wrap: wrap</code>, <code>margin-bottom: 24px</code>  |  <strong>.page-head h1</strong>: <code>22px/700</code>, <code>letter-spacing: -0.01em</code>, <code>color: var(--text-primary)</code>  |  <strong>.tier-badge</strong>: <code>10px/600</code> uppercase, <code>padding: 3px 8px</code>, <code>border-radius: 6px</code>, <code>border: 1px solid</code> (color per modifier), <code>letter-spacing: 0.04em</code>  |  <strong>.grow</strong>: <code>#ecfeff / #0e7490 / #a5f3fc</code>  |  <strong>.scale</strong>: <code>#f5f3ff / #6d28d9 / #ddd6fe</code>  |  <strong>.field</strong>: <code>#fef3c7 / #92400e / #fde68a</code>  |  <strong>.admin</strong>: <code>#fce7f3 / #9d174d / #fbcfe8</code>  |  <strong>.page-subtitle</strong>: <code>13px</code>, <code>color: var(--text-primary)</code>, <code>margin-top: -16px</code>, <code>margin-bottom: 20px</code> (the negative top margin tightens it against the h1 above)</div>
+    </section>
+
+    <!-- ========== 30. LAYOUTS ========== -->
+    <section class="sb-section" id="layouts">
+      <div class="sb-section-head">
+        <h2>30. Layouts</h2>
+        <div class="sb-selector">.grid-2 / .grid-4 / .dash-cols</div>
+        <div class="sb-note">Main theme CSS 583–594. <code>.grid-2</code> 8× (dashboard/fieldops/team/analytics/settings). <code>.grid-4</code> 1× (analytics). <code>.dash-cols</code> dashboard-specific <strong>1.2:1 asymmetric</strong> — NOT a <code>.grid-2</code> alias. Responsive collapses at 1200px and 900px.</div>
+      </div>
+      <div class="sb-variant-label" id="layout-grid-2">30.1 <code>.grid-2</code> <span class="sb-variant-sub">Even 1:1 split, 12px gap. Generic 2-column layout used on fieldops, team, analytics, settings.</span></div>
+      <div class="sb-frame">
+        <div class="grid-2">
+          <div class="card"><div class="dash-card-title">Left Column</div><div class="text-sm text-muted">1fr &mdash; equal width</div></div>
+          <div class="card"><div class="dash-card-title">Right Column</div><div class="text-sm text-muted">1fr &mdash; equal width</div></div>
+        </div>
+      </div>
+      <div class="sb-variant-label" id="layout-grid-4" style="margin-top:14px;">30.2 <code>.grid-4</code> <span class="sb-variant-sub">Four equal columns, 12px gap. Used 1&times; in analytics for employee performance cards. Collapses to 2-col under 1200px and 1-col under 900px.</span></div>
+      <div class="sb-frame">
+        <div class="grid-4">
+          <div class="card"><div class="dash-card-title">Col 1</div><div class="text-sm text-muted">1fr</div></div>
+          <div class="card"><div class="dash-card-title">Col 2</div><div class="text-sm text-muted">1fr</div></div>
+          <div class="card"><div class="dash-card-title">Col 3</div><div class="text-sm text-muted">1fr</div></div>
+          <div class="card"><div class="dash-card-title">Col 4</div><div class="text-sm text-muted">1fr</div></div>
+        </div>
+      </div>
+      <div class="sb-variant-label" id="layout-dash-cols" style="margin-top:14px;">30.3 <code>.dash-cols</code> <span class="sb-variant-sub"><strong>Asymmetric 1.2:1 split, 16px gap.</strong> Dashboard-specific &mdash; primary column gets more room than sidebar column. NOT an alias for <code>.grid-2</code>. Collapses to 1-col under 900px.</span></div>
+      <div class="sb-frame">
+        <div class="dash-cols">
+          <div class="card"><div class="dash-card-title">Primary Column</div><div class="text-sm text-muted">1.2fr &mdash; main dashboard content</div></div>
+          <div class="card"><div class="dash-card-title">Sidebar Column</div><div class="text-sm text-muted">1fr &mdash; secondary widgets</div></div>
+        </div>
+      </div>
+      <div class="sb-spec"><strong>.grid-2</strong>: <code>display: grid</code>, <code>grid-template-columns: 1fr 1fr</code>, <code>gap: 12px</code>  |  <strong>.grid-4</strong>: <code>display: grid</code>, <code>grid-template-columns: repeat(4,1fr)</code>, <code>gap: 12px</code>; responsive: <code>1fr 1fr</code> under 1200px, <code>1fr</code> under 900px  |  <strong>.dash-cols</strong>: <code>display: grid</code>, <code>grid-template-columns: 1.2fr 1fr</code>, <code>gap: 16px</code>; responsive: <code>1fr</code> under 900px  |  <strong>.gap-20</strong> utility: <code>gap: 20px</code> (overrides the default 12/16 gap on any grid when applied alongside)  |  <strong>.mb-24</strong> utility: <code>margin-bottom: 24px</code></div>
+      <div class="sb-notes"><strong>Utility reference:</strong> the allowed spacing utilities are <code>.mb-12</code>, <code>.mb-20</code>, <code>.mb-24</code>, <code>.mt-4</code>, and <code>.gap-20</code>. These are the only spacing modifiers permitted in the rebuild markup &mdash; anything outside this set should be replaced with inline <code>style=""</code> or added to the swatchboard first.</div>
+    </section>
+
+  </div><!-- /sb-content -->
+</div><!-- /sb-layout -->
+
+<script>
+/* Blue is single-flavor — sbSet is a no-op. Kept for structural parity. */
+function sbSet(group, value, btn) { /* no-op: Blue has no variant body classes */ }
+
+/* Blue is single-flavor — sbSetPalette is a no-op. Kept for structural parity. */
+function sbSetPalette(value, cardEl) { /* no-op */ }
+
+/* Reset to shipped default — Blue has no variant body classes, so this is a no-op */
+function sbReset() { /* intentionally empty for Blue single-flavor theme */ }
+
+/* Make toggles clickable (demo only) */
+document.querySelectorAll('.toggle').forEach(t => {
+  t.addEventListener('click', () => {
+    t.classList.toggle('on');
+    t.classList.toggle('off');
+  });
+});
+
+/* ============================================================
+   §28 Sidebar / Navigation — scoped interactive demo
+   Active/hover notches are pure CSS (.nav-btn::before) so the
+   only JS needed is toggling .active between buttons and
+   expanding/collapsing nav groups.
+   ============================================================ */
+function sbNavScope() { return document.querySelector('.sb-nav-scope'); }
+
+function sbShowScreen(id, btn) {
+  const scope = sbNavScope();
+  if (!scope) return;
+  scope.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+function sbToggleGroup(header) {
+  header.classList.toggle('collapsed');
+  header.nextElementSibling.classList.toggle('collapsed');
+}
+</script>
+
+</body>
+</html>

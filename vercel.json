@@ -1,6 +1,11 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "cleanUrls": true,
   "trailingSlash": false,
+  "rewrites": [
+    { "source": "/polishpoint/:path*", "destination": "/polishpoint/index.html" }
+  ],
   "headers": [
     {
       "source": "/css/(.*)",
@@ -16,6 +21,12 @@
     },
     {
       "source": "/images/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/polishpoint/assets/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]

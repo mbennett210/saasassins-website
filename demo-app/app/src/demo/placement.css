@@ -1,0 +1,8 @@
+/* In-context placement upsell (route-aware, bottom of a feature page).
+   Part of the removable demo layer — token-pure (see src/STYLING.md). */
+.pp-placement { margin: var(--space-8) 0 var(--space-4); display: grid; gap: var(--space-3); }
+.pp-placement-head { display: flex; align-items: center; gap: var(--space-2); }
+.pp-placement-head h3 {
+  margin: 0; font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold);
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: var(--letter-spacing-wide);
+}

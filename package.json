@@ -1,0 +1,12 @@
+{
+  "name": "saasassins-website",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SaaSassins marketing site + PolishPoint interactive demo (/polishpoint) with Stripe checkout.",
+  "scripts": {
+    "build": "npm --prefix demo-app/app install --no-audit --no-fund && npm --prefix demo-app/app run build:demo && node scripts/assemble-demo.mjs"
+  },
+  "dependencies": {
+    "stripe": "^22.2.0"
+  }
+}

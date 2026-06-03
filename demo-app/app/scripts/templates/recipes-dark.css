@@ -1,0 +1,228 @@
+  /* ==========================================================
+     RECIPES (DARK theme)
+     Same vocabulary as recipes-light; white inset highlights
+     dropped to near-zero, drop shadows deepened toward black.
+     Every input is a var(--token) reference or an allowed
+     literal (transparent, rgba(0,0,0,X)). See STYLING.md.
+     ========================================================== */
+
+  /* ── Sidebar ── */
+  --sidebar-grad:
+    linear-gradient(
+      180deg,
+      var(--color-neutral-900) 0%,
+      var(--color-neutral-800) 40%,
+      var(--color-brand-primary-700) 100%
+    );
+  --sidebar-edge:
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.45) 0%,
+      rgba(var(--color-brand-primary-600-rgb), 0.08) 60%,
+      transparent 100%
+    );
+  --sidebar-blend:
+    linear-gradient(
+      90deg,
+      rgba(var(--color-brand-primary-400-rgb), 0.18) 0%,
+      rgba(var(--color-brand-primary-rgb), 0.06) 60%,
+      transparent 100%
+    );
+  --sidebar-mid:     var(--color-neutral-800);
+  --sidebar-deep:    var(--color-neutral-900);
+
+  /* ── Neumorphic shadow stacks (generic surfaces, dark variant) ── */
+  --neu-shadow:
+    6px 6px 20px rgba(0, 0, 0, 0.55),
+    -1px -1px 2px rgba(var(--color-white-rgb), 0.03);
+  --neu-shadow-hover:
+    8px 8px 24px rgba(0, 0, 0, 0.65),
+    -2px -2px 3px rgba(var(--color-white-rgb), 0.05);
+  --neu-shadow-heavy:
+    10px 10px 28px rgba(0, 0, 0, 0.75),
+    -2px -2px 4px rgba(var(--color-white-rgb), 0.05);
+
+  /* ── Card shadows (dark variant: very subtle inset highlight, deeper outer shadow) ── */
+  --card-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.04),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.25),
+    0 4px 14px rgba(0, 0, 0, 0.4);
+  --card-shadow-hover:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.06),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.35),
+    0 8px 22px rgba(0, 0, 0, 0.55);
+  --stat-card-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.04),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.22),
+    0 4px 12px rgba(0, 0, 0, 0.4);
+
+  /* ── Button ── */
+  --btn-primary-grad:
+    linear-gradient(135deg, var(--color-brand-primary-400) 0%, var(--color-brand-primary-600) 100%);
+  --btn-primary-grad-hover:
+    linear-gradient(135deg, var(--color-brand-primary-500) 0%, var(--color-brand-primary-700) 100%);
+  --btn-primary-glow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.18),
+    0 0 22px rgba(var(--color-brand-primary-rgb), 0.45),
+    0 4px 14px rgba(0, 0, 0, 0.45);
+  --btn-primary-glow-hover:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.22),
+    0 0 28px rgba(var(--color-brand-primary-rgb), 0.55),
+    0 6px 18px rgba(0, 0, 0, 0.55);
+  --btn-secondary-shadow:
+    2px 2px 6px rgba(0, 0, 0, 0.4),
+    -1px -1px 4px rgba(var(--color-white-rgb), 0.03);
+
+  /* ── Nav (active state) ── */
+  --nav-hover-bg:
+    linear-gradient(
+      180deg,
+      rgba(var(--color-brand-primary-400-rgb), 0.22) 0%,
+      rgba(var(--color-brand-primary-600-rgb), 0.25) 100%
+    );
+  --nav-active-bg:
+    linear-gradient(180deg, var(--color-brand-primary-400) 0%, var(--color-brand-primary-600) 100%);
+  --nav-active-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.14),
+    inset 1px 0 0 rgba(var(--color-white-rgb), 0.06);
+  --nav-active-filter:
+    drop-shadow(0 0 10px rgba(var(--color-brand-primary-400-rgb), 0.55))
+    drop-shadow(0 3px 10px rgba(var(--color-brand-primary-600-rgb), 0.45));
+
+  /* ── Page aurora background ── */
+  --page-bg-layers:
+    radial-gradient(ellipse at 15% 10%, rgba(var(--color-brand-primary-400-rgb), 0.08) 0%, transparent 45%),
+    radial-gradient(ellipse at 85% 25%, rgba(var(--color-brand-primary-400-rgb), 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(0, 0, 0, 0.25) 0%, transparent 55%),
+    var(--color-surface-base);
+  --page-aurora:
+    radial-gradient(ellipse 60% 40% at 18% 30%, rgba(var(--color-brand-primary-400-rgb), 0.18) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 35% at 78% 22%, rgba(var(--color-brand-primary-400-rgb), 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 45% at 50% 85%, rgba(var(--color-brand-primary-400-rgb), 0.16) 0%, transparent 55%);
+
+  /* ── Dashboard hero ── */
+  --dash-hero-bg:
+    linear-gradient(135deg, var(--color-brand-primary-50) 0%, var(--color-brand-primary-100) 50%, var(--color-surface-raised) 100%);
+  --dash-hero-border:
+    rgba(var(--color-brand-primary-rgb), 0.3);
+  --dash-hero-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.04),
+    0 4px 14px rgba(0, 0, 0, 0.45);
+  --dash-hero-orb:
+    radial-gradient(circle, rgba(var(--color-brand-primary-400-rgb), 0.25) 0%, transparent 70%);
+
+  /* ── Dashboard switcher (glass pill, dark glass) ── */
+  --dash-sw-bg:      rgba(var(--color-white-rgb), 0.04);
+  --dash-sw-border:  rgba(var(--color-brand-primary-rgb), 0.25);
+  --dash-sw-shadow:
+    2px 2px 8px rgba(0, 0, 0, 0.35),
+    -1px -1px 4px rgba(var(--color-white-rgb), 0.03);
+  --dash-sw-active-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.08),
+    0 0 18px rgba(var(--color-brand-primary-rgb), 0.4),
+    0 3px 10px rgba(0, 0, 0, 0.45);
+
+  /* ── Input ── */
+  --input-border-grad:
+    linear-gradient(135deg, var(--color-brand-primary-400), var(--color-brand-primary-700));
+  --input-border-grad-focus:
+    linear-gradient(135deg, var(--color-brand-primary-500), var(--color-brand-primary-400));
+  --input-focus-shadow:
+    0 0 12px rgba(var(--color-brand-primary-rgb), 0.25);
+
+  /* ── Table ── */
+  --table-header-bg:
+    linear-gradient(180deg, var(--color-brand-primary-100) 0%, var(--color-brand-primary-50) 100%);
+  --table-header-border:
+    rgba(var(--color-brand-primary-rgb), 0.35);
+  --table-row-odd:   var(--color-brand-primary-50);
+  --table-row-even:  var(--color-brand-primary-100);
+  --table-row-hover: rgba(var(--color-brand-primary-rgb), 0.18);
+
+  /* ── Tabs ── */
+  --tab-bg:              rgba(var(--color-brand-primary-rgb), 0.14);
+  --tab-border:          rgba(var(--color-brand-primary-rgb), 0.25);
+  --tab-active-shadow:   0 3px 10px rgba(var(--color-brand-primary-rgb), 0.4);
+
+  /* ── Timeline card ── */
+  --tl-card-bg:
+    linear-gradient(180deg, var(--color-brand-primary-100) 0%, var(--color-brand-primary-50) 100%);
+  --tl-card-border:      rgba(var(--color-brand-primary-rgb), 0.35);
+  --tl-card-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.04),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.22),
+    0 4px 12px rgba(0, 0, 0, 0.4);
+  --tl-active-glow:      0 0 0 4px rgba(var(--color-brand-primary-rgb), 0.22);
+
+  /* ── Drip flow node ── */
+  --drip-node-bg:
+    linear-gradient(180deg, var(--color-brand-primary-100) 0%, var(--color-brand-primary-50) 100%);
+  --drip-node-border:    rgba(var(--color-brand-primary-rgb), 0.35);
+  --drip-node-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.04),
+    inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.22),
+    0 4px 12px rgba(0, 0, 0, 0.4);
+
+  /* ── Schedule block ── */
+  --sched-block-shadow:
+    inset 0 1px 0 rgba(var(--color-white-rgb), 0.04),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+
+  /* ── Messaging ── */
+  --msg-item-hover:      rgba(var(--color-brand-primary-rgb), 0.18);
+  --msg-active-border:   var(--color-brand-primary-500);
+
+  /* ── Metric strip (three colored cells) ── */
+  --metric-cell-1-bg:
+    linear-gradient(160deg, var(--color-surface-raised) 0%, var(--color-brand-primary-50) 100%);
+  --metric-cell-2-bg:
+    linear-gradient(160deg, var(--color-surface-raised) 0%, var(--color-accent-purple-50) 100%);
+  --metric-cell-3-bg:
+    linear-gradient(160deg, var(--color-surface-raised) 0%, var(--color-neutral-100) 100%);
+  --metric-top-bar:
+    linear-gradient(90deg, var(--color-brand-primary-400), var(--color-brand-primary-500));
+
+  /* ── Tier badges ── */
+  --tier-core-bg:        var(--color-brand-primary-50);
+  --tier-core-color:     var(--color-brand-primary-400);
+  --tier-core-border:    rgba(var(--color-brand-primary-400-rgb), 0.5);
+  --tier-addon-bg:       var(--color-neutral-100);
+  --tier-addon-color:    var(--color-neutral-400);
+  --tier-addon-border:   var(--color-neutral-200);
+
+  /* ── Badge gradients + colored shadows ── */
+  --badge-green-grad:
+    linear-gradient(135deg, var(--color-semantic-success-400), var(--color-semantic-success-600));
+  --badge-green-shadow:
+    0 3px 10px rgba(var(--color-semantic-success-rgb), 0.45);
+  --badge-amber-grad:
+    linear-gradient(135deg, var(--color-semantic-warning-400), var(--color-semantic-warning-500));
+  --badge-amber-shadow:
+    0 3px 10px rgba(var(--color-semantic-warning-rgb), 0.45);
+  --badge-red-grad:
+    linear-gradient(135deg, var(--color-semantic-error-400), var(--color-semantic-error-500));
+  --badge-red-shadow:
+    0 3px 10px rgba(var(--color-semantic-error-rgb), 0.45);
+  --badge-blue-grad:
+    linear-gradient(135deg, var(--color-brand-primary-400), var(--color-brand-primary-600));
+  --badge-blue-shadow:
+    0 3px 10px rgba(var(--color-brand-primary-rgb), 0.45);
+  --badge-purple-grad:
+    linear-gradient(135deg, var(--color-accent-purple-400), var(--color-accent-purple-500));
+  --badge-purple-shadow:
+    0 3px 10px rgba(var(--color-accent-purple-rgb), 0.45);
+  --badge-slate-grad:
+    linear-gradient(135deg, var(--color-neutral-500), var(--color-neutral-600));
+  --badge-slate-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.45);
+
+  /* ── Scrollbar ── */
+  --scrollbar-thumb:         var(--color-neutral-700);
+  --scrollbar-thumb-hover:   var(--color-neutral-600);
+
+  /* ── Mobile header (always brand-primary; works light or dark) ── */
+  --mobile-header-bg:        var(--color-brand-primary-500);
+  --mobile-header-border:    var(--color-brand-primary-600);
+  --mobile-sub-color:        rgba(var(--color-white-rgb), 0.75);
+  --hamburger-color:         var(--color-text-on-primary);
+  --overlay-bg:              rgba(0, 0, 0, 0.65);

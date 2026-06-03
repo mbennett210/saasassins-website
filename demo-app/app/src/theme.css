@@ -1,0 +1,258 @@
+/* ============================================================
+   SHELL DEFAULT THEME — Canonical Token Vocabulary
+   ------------------------------------------------------------
+   Values are the unthemed neutral-monochrome defaults. Matches
+   the Swatchboard seed (Tailwind `neutral` scale).
+
+   Structure:
+     1. TOKENS    — canonical vocabulary (do not invent new names)
+     2. ALIASES   — shell-wide role pointers to tokens
+     3. RECIPES   — theme-specific compositions (none in default)
+
+   See app/src/STYLING.md for the full contract.
+   ============================================================ */
+
+:root {
+  /* ==========================================================
+     1. TOKENS
+     ========================================================== */
+
+  /* ── Base primitives (used inside recipes for alpha compositing) ── */
+  --color-white-rgb:      255, 255, 255;
+  --color-black-rgb:      0, 0, 0;
+
+  /* ── Color — neutral (matches Swatchboard seed: Tailwind neutral) ── */
+  --color-neutral-50:     #fafafa;
+  --color-neutral-100:    #f5f5f5;
+  --color-neutral-200:    #e5e5e5;
+  --color-neutral-300:    #d4d4d4;
+  --color-neutral-400:    #a3a3a3;
+  --color-neutral-500:    #737373;
+  --color-neutral-600:    #525252;
+  --color-neutral-700:    #404040;
+  --color-neutral-800:    #262626;
+  --color-neutral-900:    #171717;
+  --color-neutral-rgb:    115, 115, 115;
+
+  /* ── Color — brand primary (unthemed = monochrome neutral) ── */
+  --color-brand-primary-50:      #f5f5f5;
+  --color-brand-primary-100:     #e5e5e5;
+  --color-brand-primary-400:     #a3a3a3;
+  --color-brand-primary-500:     #737373;
+  --color-brand-primary-600:     #525252;
+  --color-brand-primary-700:     #404040;
+  --color-brand-primary-rgb:     115, 115, 115;
+  --color-brand-primary-400-rgb: 163, 163, 163;
+  --color-brand-primary-600-rgb: 82, 82, 82;
+
+  /* ── Color — surface ── */
+  --color-surface-base:      #ffffff;
+  --color-surface-raised:    #ffffff;
+  --color-surface-sunken:    #fafafa;
+  --color-surface-overlay:   #ffffff;
+
+  /* ── Color — text ── */
+  --color-text-primary:      var(--color-neutral-900);
+  --color-text-body:         var(--color-neutral-800);
+  --color-text-muted:        var(--color-neutral-800);
+  --color-text-faint:        var(--color-neutral-600);
+  --color-text-on-primary:   #ffffff;
+
+  /* ── Color — border ── */
+  --color-border-subtle:     var(--color-neutral-100);
+  --color-border-default:    var(--color-neutral-200);
+  --color-border-strong:     var(--color-neutral-300);
+
+  /* ── Color — semantic: success ── */
+  --color-semantic-success-50:    #d1fae5;
+  --color-semantic-success-200:   #a7f3d0;
+  --color-semantic-success-400:   #10b981;
+  --color-semantic-success-500:   #059669;
+  --color-semantic-success-600:   #047857;
+  --color-semantic-success-700:   #065f46;
+  --color-semantic-success-rgb:   5, 150, 105;
+
+  /* ── Color — semantic: warning ── */
+  --color-semantic-warning-50:    #fef3c7;
+  --color-semantic-warning-200:   #fde68a;
+  --color-semantic-warning-400:   #f59e0b;
+  --color-semantic-warning-500:   #d97706;
+  --color-semantic-warning-600:   #b45309;
+  --color-semantic-warning-700:   #92400e;
+  --color-semantic-warning-rgb:   217, 119, 6;
+
+  /* ── Color — semantic: error ── */
+  --color-semantic-error-50:      #fee2e2;
+  --color-semantic-error-200:     #fecaca;
+  --color-semantic-error-400:     #ef4444;
+  --color-semantic-error-500:     #dc2626;
+  --color-semantic-error-600:     #b91c1c;
+  --color-semantic-error-700:     #991b1b;
+  --color-semantic-error-rgb:     220, 38, 38;
+
+  /* ── Color — accent (shell extension; flagged for Swatchboard promotion) ── */
+  --color-accent-purple-50:       #faf5ff;
+  --color-accent-purple-200:      #e9d5ff;
+  --color-accent-purple-400:      #a78bfa;
+  --color-accent-purple-500:      #7c3aed;
+  --color-accent-purple-600:      #6d28d9;
+  --color-accent-orange-50:       #ffedd5;
+  --color-accent-orange-200:      #fed7aa;
+  --color-accent-orange-400:      #fb923c;
+  --color-accent-orange-500:      #ea580c;
+  --color-accent-orange-600:      #c2410c;
+  --color-accent-teal-50:         #ccfbf1;
+  --color-accent-teal-200:        #99f6e4;
+  --color-accent-teal-400:        #2dd4bf;
+  --color-accent-teal-500:        #14b8a6;
+  --color-accent-teal-600:        #0d9488;
+
+  /* ── Radius ── */
+  --radius-none:     0;
+  --radius-sm:       4px;
+  --radius-md:       8px;
+  --radius-lg:       12px;
+  --radius-xl:       16px;
+  --radius-full:     9999px;
+
+  /* ── Shadow (primitives — stacks live in RECIPES) ── */
+  --shadow-sm:       0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md:       0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg:       0 12px 28px rgba(0, 0, 0, 0.12);
+  --shadow-inset:    inset 0 2px 4px rgba(0, 0, 0, 0.04);
+
+  /* ── Spacing (4px grid) ── */
+  --space-0:         0;
+  --space-1:         4px;
+  --space-2:         8px;
+  --space-3:         12px;
+  --space-4:         16px;
+  --space-5:         20px;
+  --space-6:         24px;
+  --space-7:         28px;
+  --space-8:         32px;
+  --space-10:        40px;
+  --space-12:        48px;
+  --space-16:        64px;
+
+  /* ── Typography ── */
+  --font-family-sans:        'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family-mono:        ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --font-size-2xs:           10px;
+  --font-size-xs:            11px;
+  --font-size-sm:            13px;
+  --font-size-md:            14px;
+  --font-size-lg:            16px;
+  --font-size-xl:            20px;
+  --font-size-2xl:           24px;
+  --font-size-3xl:           30px;
+  --font-size-4xl:           36px;
+
+  --font-weight-regular:     400;
+  --font-weight-medium:      500;
+  --font-weight-semibold:    600;
+  --font-weight-bold:        700;
+
+  --line-height-tight:       1.2;
+  --line-height-normal:      1.5;
+  --line-height-relaxed:     1.75;
+
+  --letter-spacing-tight:    -0.02em;
+  --letter-spacing-normal:   0;
+  --letter-spacing-wide:     0.04em;
+  --letter-spacing-wider:    0.08em;
+
+  /* ── Motion ── */
+  --duration-fast:           100ms;
+  --duration-base:           200ms;
+  --duration-slow:           350ms;
+
+  --ease-in:                 cubic-bezier(0.4, 0, 1, 1);
+  --ease-out:                cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out:             cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring:             cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+  /* ── Z-index ── */
+  --z-base:          1;
+  --z-dropdown:      100;
+  --z-sticky:        200;
+  --z-overlay:       300;
+  --z-modal:         400;
+  --z-toast:         500;
+
+  /* ── Breakpoints (reference only; @media queries inline px) ── */
+  --breakpoint-sm:   640px;
+  --breakpoint-md:   1024px;
+
+  /* ==========================================================
+     2. ALIASES
+     Shell-wide role pointers. All aliases resolve to a
+     canonical token above. Add new aliases here only —
+     never in a component file.
+     ========================================================== */
+
+  --font:            var(--font-family-sans);
+
+  --page-bg:         var(--color-surface-base);
+  --card-bg:         var(--color-surface-raised);
+  --inset-bg:        var(--color-surface-sunken);
+
+  --card-border:     var(--color-border-default);
+  --border-light:    var(--color-border-subtle);
+  --border-mid:      var(--color-border-default);
+
+  /* Compatibility aliases for backported components that reference the
+     --color-* surface namespace directly (e.g. the Marketing module's inline
+     banners + the Gmail-connect instructions). They complete the existing
+     --color-* family so those surfaces resolve to the active theme instead of
+     falling back to the hardcoded generic hex baked into the inline styles. */
+  --color-border:    var(--color-border-default);
+  --color-info-bg:   var(--color-brand-primary-50);
+  --color-warning-bg: var(--color-semantic-warning-50);
+
+  --text-primary:    var(--color-text-primary);
+  --text-body:       var(--color-text-body);
+  --text-muted:      var(--color-text-muted);
+  --text-faint:      var(--color-text-faint);
+
+  --primary:         var(--color-brand-primary-500);
+  --primary-light:   var(--color-brand-primary-400);
+  --primary-hover:   var(--color-brand-primary-600);
+  --primary-deep:    var(--color-brand-primary-700);
+  --primary-soft:    var(--color-brand-primary-100);
+  --primary-bg:      var(--color-brand-primary-50);
+
+  --success:         var(--color-semantic-success-500);
+  --warning:         var(--color-semantic-warning-500);
+  --danger:          var(--color-semantic-error-500);
+
+  --card-radius:     var(--radius-lg);
+  --btn-radius:      var(--radius-md);
+  --input-radius:    var(--radius-md);
+  --badge-radius:    var(--radius-full);
+
+  --sidebar-bg:      var(--color-neutral-900);
+  --sidebar-border:  var(--color-neutral-800);
+
+  --color-avatar-1:  var(--color-brand-primary-500);
+  --color-avatar-2:  var(--color-semantic-success-500);
+  --color-avatar-3:  var(--color-accent-purple-500);
+  --color-avatar-4:  var(--color-semantic-error-500);
+  --color-avatar-5:  var(--color-accent-teal-600);
+
+  /* Legacy alias form used in existing index.css selectors */
+  --avatar-1:        var(--color-avatar-1);
+  --avatar-2:        var(--color-avatar-2);
+  --avatar-3:        var(--color-avatar-3);
+  --avatar-4:        var(--color-avatar-4);
+  --avatar-5:        var(--color-avatar-5);
+
+  /* ==========================================================
+     3. RECIPES
+     Theme-specific compositions (gradients, stacked shadows,
+     glow stacks). The unthemed default defines none — look &
+     feel is flat. Themed files (e.g. theme-polishpoint-blue.css)
+     override tokens and add their own RECIPES section.
+     ========================================================== */
+}
