@@ -20,7 +20,13 @@
 //   await testInboxSend(inboxId, { to, subject, body });
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BACKEND = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAIL_BACKEND_URL) || null;
+import { IS_DEMO } from '../demo/isDemo';
+
+// The demo build hard-pins this to stub mode regardless of any env var, so the
+// sales demo can never reach a real inbox backend (no OAuth, no SMTP, no poll).
+const BACKEND = IS_DEMO
+  ? null
+  : ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAIL_BACKEND_URL) || null);
 
 const STUB_DELAY_MS = 600;
 
@@ -67,7 +73,7 @@ export async function connectGoogle() {
   await delay(STUB_DELAY_MS);
   return {
     ok: true,
-    inbox: stubInbox({ provider: 'google', email: 'stub.kyle@gmail.com', displayName: 'Stub Kyle' }),
+    inbox: stubInbox({ provider: 'google', email: 'stub.user@gmail.com', displayName: 'Stub User' }),
   };
 }
 
@@ -79,7 +85,7 @@ export async function connectMicrosoft() {
   await delay(STUB_DELAY_MS);
   return {
     ok: true,
-    inbox: stubInbox({ provider: 'microsoft', email: 'stub.kyle@outlook.com', displayName: 'Stub Kyle' }),
+    inbox: stubInbox({ provider: 'microsoft', email: 'stub.user@outlook.com', displayName: 'Stub User' }),
   };
 }
 

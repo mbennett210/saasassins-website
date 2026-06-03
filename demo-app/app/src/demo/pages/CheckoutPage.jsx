@@ -5,6 +5,7 @@ import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { CORE, formatPrice, featuredModules } from '../modules.catalog';
 import { themeLabel, loadBrand, saveBrand } from '../brandTheme';
+import { IS_DEMO } from '../isDemo';
 import CheckoutThemeSelect from '../components/CheckoutThemeSelect';
 import ModuleCTA from '../components/ModuleCTA';
 import '../demo.css';
@@ -19,9 +20,10 @@ import '../demo.css';
 // right): 1) review the Core base + any added modules, 2) add more modules from a
 // compact checklist, 3) pick the brand style — the last step before paying.
 //
-// Payment: if a Stripe key is wired (api/checkout returns a hosted-checkout URL)
-// we redirect to it; otherwise we simulate a completed order and route to the
-// success page so the flow is fully clickable without a card.
+// Payment: in the demo build the order is always SIMULATED — we never call the
+// payment API (so no real Stripe session can ever be created). In a non-demo
+// product build, if a Stripe key is wired (api/checkout returns a hosted-checkout
+// URL) we redirect to it; otherwise we simulate a completed order.
 
 export default function CheckoutPage() {
   const company = selectCompany(useStore());
@@ -51,6 +53,13 @@ export default function CheckoutPage() {
       brandTheme: themeLabel(deployTheme),
     };
     const goSuccess = () => navigate('/checkout/success', { state: { demo: true, order } });
+
+    // Demo build: payments are dead-ended. Never touch /api/checkout (which could
+    // create/redirect to a real Stripe Checkout session) — always simulate the order.
+    if (IS_DEMO) {
+      goSuccess();
+      return;
+    }
 
     let res;
     try {

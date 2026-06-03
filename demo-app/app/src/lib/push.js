@@ -18,8 +18,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { BRAND } from '../brand.config.js';
+import { IS_DEMO } from '../demo/isDemo';
 
-const BACKEND = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PUSH_BACKEND_URL) || null;
+// The demo build hard-pins this to stub mode regardless of any env var, so the
+// sales demo can never reach a real push backend.
+const BACKEND = IS_DEMO
+  ? null
+  : ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_PUSH_BACKEND_URL) || null);
 const VAPID_PUBLIC_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_VAPID_PUBLIC_KEY) || null;
 

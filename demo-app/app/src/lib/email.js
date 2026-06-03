@@ -22,7 +22,13 @@
 // the send.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BACKEND = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAIL_BACKEND_URL) || null;
+import { IS_DEMO } from '../demo/isDemo';
+
+// The demo build hard-pins this to stub mode regardless of any env var, so the
+// sales demo can never reach a real email backend.
+const BACKEND = IS_DEMO
+  ? null
+  : ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAIL_BACKEND_URL) || null);
 
 const STUB_DELAY_MS = 600;
 const STUB_FAILURE_RATE = 0.05;
