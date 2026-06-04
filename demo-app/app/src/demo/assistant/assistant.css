@@ -1,0 +1,123 @@
+/* ============================================================
+   DEMO CONCIERGE WIDGET  (marketing demo only)
+   ------------------------------------------------------------
+   Prospect-facing chat launcher + panel. Mounted by DemoChrome
+   behind IS_DEMO, so none of this ships in a per-client build.
+   Sits bottom-LEFT to stay clear of the bottom-right cart FAB.
+   Token discipline: every value resolves to a var(--token) from
+   theme.css (see src/STYLING.md).
+   ============================================================ */
+
+/* ── Launcher FAB (mirrors the cart FAB, opposite corner) ── */
+.pp-concierge-fab {
+  position: fixed; left: var(--space-5); bottom: var(--space-5);
+  z-index: var(--z-sticky);
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  height: var(--space-12); padding: 0 var(--space-5);
+  border: none; border-radius: var(--radius-full);
+  background: var(--btn-primary-grad, var(--primary));
+  color: var(--color-text-on-primary);
+  font-family: var(--font); font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);
+  box-shadow: var(--shadow-lg); cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.pp-concierge-fab:hover { transform: translateY(-2px); }
+.pp-concierge-fab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.pp-concierge-fab-icon { font-size: var(--font-size-lg); line-height: 1; }
+
+/* ── Panel ── */
+@keyframes pp-concierge-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+.pp-concierge-panel {
+  position: fixed; left: var(--space-5); bottom: var(--space-5);
+  z-index: var(--z-modal);
+  width: min(380px, calc(100vw - 2 * var(--space-5)));
+  height: min(560px, calc(100dvh - 2 * var(--space-5)));
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--card-border); border-radius: var(--card-radius);
+  box-shadow: var(--shadow-lg);
+  animation: pp-concierge-in var(--duration-base) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) { .pp-concierge-panel { animation: none; } }
+
+.pp-concierge-head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-light); background: var(--card-bg);
+}
+.pp-concierge-title {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); color: var(--text-primary);
+}
+.pp-concierge-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--space-7); height: var(--space-7); padding: 0;
+  border: none; background: transparent; color: var(--text-faint);
+  font-size: var(--font-size-xl); line-height: 1; cursor: pointer; border-radius: var(--radius-md);
+}
+.pp-concierge-close:hover { background: var(--inset-bg); color: var(--text-primary); }
+
+/* ── Message log ── */
+.pp-concierge-log {
+  flex: 1 1 auto; overflow-y: auto;
+  padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-3);
+}
+.pp-msg {
+  max-width: 85%; padding: var(--space-3) var(--space-4);
+  border-radius: var(--card-radius); font-size: var(--font-size-sm);
+  line-height: var(--line-height-normal); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.pp-msg strong { font-weight: var(--font-weight-bold); }
+.pp-msg-assistant { align-self: flex-start; background: var(--inset-bg); color: var(--text-body); border-bottom-left-radius: var(--space-1); }
+.pp-msg-user { align-self: flex-end; background: var(--primary); color: var(--color-text-on-primary); border-bottom-right-radius: var(--space-1); }
+.pp-msg-caret { opacity: 0.6; }
+
+/* ── Suggested-prompt chips ── */
+.pp-concierge-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+.pp-chip {
+  border: 1px solid var(--primary); background: var(--primary-bg); color: var(--primary);
+  border-radius: var(--radius-full); padding: var(--space-2) var(--space-3);
+  font-family: var(--font); font-size: var(--font-size-xs); line-height: var(--line-height-tight);
+  text-align: left; cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.pp-chip:hover { background: var(--primary); color: var(--color-text-on-primary); }
+
+/* ── Typing indicator ── */
+@keyframes pp-typing-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-4px); opacity: 1; } }
+.pp-typing { align-self: flex-start; display: inline-flex; gap: 4px; padding: var(--space-3) var(--space-4); background: var(--inset-bg); border-radius: var(--card-radius); }
+.pp-typing span { width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--text-faint); animation: pp-typing-bounce 1.2s infinite ease-in-out; }
+.pp-typing span:nth-child(2) { animation-delay: 0.15s; }
+.pp-typing span:nth-child(3) { animation-delay: 0.3s; }
+@media (prefers-reduced-motion: reduce) { .pp-typing span { animation: none; } }
+
+/* ── Composer ── */
+.pp-concierge-compose { display: flex; gap: var(--space-2); padding: var(--space-3); border-top: 1px solid var(--border-light); background: var(--card-bg); }
+.pp-concierge-input {
+  flex: 1 1 auto; min-width: 0; height: var(--space-10); padding: 0 var(--space-3);
+  border: 1px solid var(--card-border); border-radius: var(--input-radius);
+  background: var(--color-surface-raised); color: var(--text-primary);
+  font-family: var(--font); font-size: var(--font-size-sm);
+}
+.pp-concierge-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.pp-concierge-send {
+  flex: 0 0 auto; width: var(--space-10); height: var(--space-10);
+  border: none; border-radius: var(--input-radius);
+  background: var(--primary); color: var(--color-text-on-primary);
+  font-size: var(--font-size-lg); line-height: 1; cursor: pointer;
+}
+.pp-concierge-send:disabled { opacity: 0.5; cursor: default; }
+
+.pp-concierge-disclosure {
+  margin: 0; padding: 0 var(--space-3) var(--space-3);
+  font-size: var(--font-size-2xs); color: var(--text-faint); text-align: center; background: var(--card-bg);
+}
+
+/* ── Mobile: fill the width, hug the corners ── */
+@media (max-width: 640px) {
+  .pp-concierge-fab { left: var(--space-3); bottom: var(--space-3); }
+  .pp-concierge-panel {
+    left: var(--space-3); right: var(--space-3); bottom: var(--space-3);
+    width: auto; height: min(72dvh, calc(100dvh - 2 * var(--space-3)));
+  }
+}
