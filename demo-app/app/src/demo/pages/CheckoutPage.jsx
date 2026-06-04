@@ -5,7 +5,6 @@ import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { CORE, formatPrice, featuredModules } from '../modules.catalog';
 import { themeLabel, loadBrand, saveBrand } from '../brandTheme';
-import { IS_DEMO } from '../isDemo';
 import CheckoutThemeSelect from '../components/CheckoutThemeSelect';
 import ModuleCTA from '../components/ModuleCTA';
 import '../demo.css';
@@ -20,10 +19,12 @@ import '../demo.css';
 // right): 1) review the Core base + any added modules, 2) add more modules from a
 // compact checklist, 3) pick the brand style — the last step before paying.
 //
-// Payment: in the demo build the order is always SIMULATED — we never call the
-// payment API (so no real Stripe session can ever be created). In a non-demo
-// product build, if a Stripe key is wired (api/checkout returns a hosted-checkout
-// URL) we redirect to it; otherwise we simulate a completed order.
+// Payment (LIVE): "Pay" POSTs the selected add-on ids to /api/checkout, which
+// creates a Stripe Checkout Session from SERVER-SIDE prices and returns a hosted-
+// checkout URL we redirect to. The chosen brand theme rides along as metadata.
+// In LOCAL DEV only (import.meta.env.DEV) — where there's no /api server — the
+// flow falls back to a simulated success so the UX stays testable without a
+// backend. In production a failure surfaces a real error; it never fakes a sale.
 
 export default function CheckoutPage() {
   const company = selectCompany(useStore());
@@ -44,56 +45,51 @@ export default function CheckoutPage() {
   const pay = async () => {
     setSubmitting(true);
     setError('');
-    const order = {
-      items: [
-        { name: CORE.name, price: CORE.price },
-        ...cart.items.map((m) => ({ name: m.name, price: m.price })),
-      ],
-      total,
-      brandTheme: themeLabel(deployTheme),
+
+    const brandTheme = themeLabel(deployTheme);
+    // Local-dev-only fallback: vite has no /api server, so complete to a simulated
+    // success page to keep the checkout UX testable without a backend.
+    const simulate = () => {
+      const order = {
+        items: [
+          { name: CORE.name, price: CORE.price },
+          ...cart.items.map((m) => ({ name: m.name, price: m.price })),
+        ],
+        total,
+        brandTheme,
+      };
+      navigate('/checkout/success', { state: { demo: true, order } });
     };
-    const goSuccess = () => navigate('/checkout/success', { state: { demo: true, order } });
 
-    // Demo build: payments are dead-ended. Never touch /api/checkout (which could
-    // create/redirect to a real Stripe Checkout session) — always simulate the order.
-    if (IS_DEMO) {
-      goSuccess();
-      return;
-    }
-
-    let res;
     try {
       // Only add-on ids go up; the server always adds the Core base line item.
-      res = await fetch('/api/checkout', {
+      const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ moduleIds: cart.ids }),
+        body: JSON.stringify({ moduleIds: cart.ids, brandTheme }),
       });
-    } catch {
-      goSuccess(); // no backend reachable (local demo) → simulate a completed order
-      return;
-    }
 
-    if (res.ok) {
-      const { url } = await res.json().catch(() => ({}));
-      if (url) {
-        window.location.href = url; // real Stripe Checkout
+      if (res.ok) {
+        const { url } = await res.json().catch(() => ({}));
+        if (url) {
+          window.location.href = url; // real Stripe hosted checkout
+          return;
+        }
+        throw new Error('Could not start checkout — no URL returned.');
+      }
+
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.error || `Checkout failed (${res.status}).`);
+    } catch (err) {
+      // In local dev (no backend), simulate so the demo flow stays testable.
+      // In production, never fake a sale — surface the failure to the buyer.
+      if (import.meta.env.DEV) {
+        simulate();
         return;
       }
-      goSuccess();
-      return;
+      setError(err.message || 'Checkout is temporarily unavailable. Please try again.');
+      setSubmitting(false);
     }
-
-    // 404 (no endpoint) / 503 (no Stripe key) → payments aren't wired; simulate.
-    if (res.status === 404 || res.status === 503) {
-      goSuccess();
-      return;
-    }
-
-    // Stripe is configured but the call genuinely failed — surface it.
-    const body = await res.json().catch(() => ({}));
-    setError(body.error || `Checkout failed (${res.status})`);
-    setSubmitting(false);
   };
 
   return (
