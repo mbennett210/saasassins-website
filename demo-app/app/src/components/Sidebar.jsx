@@ -8,6 +8,17 @@ import { IS_DEMO } from '../demo/isDemo';
 import { featuredModules } from '../demo/modules.catalog';
 import NavAddonItem from '../demo/components/NavAddonItem';
 
+// Public assets are served under Vite's base path ('/polishpoint/' in the demo
+// build, '/' in a per-client product build). company.logoUrl is stored
+// root-relative ('/polishpoint-logo.png'), so it must be prefixed with the base
+// at render time — otherwise it resolves to the origin root and 404s under a
+// non-root base. Absolute (http/https), data:, and blob: URLs pass through.
+const BASE_URL = import.meta.env.BASE_URL;
+function brandLogoSrc(url) {
+  if (!url || /^(https?:|data:|blob:)/i.test(url)) return url;
+  return `${BASE_URL.replace(/\/$/, '')}${url.startsWith('/') ? url : `/${url}`}`;
+}
+
 const NAV = [
   { to: '/',          label: 'Dashboard',  icon: 'dashboard', perm: 'dashboard.view', end: true },
   { to: '/schedule',  label: 'Schedule',   icon: 'schedule',  perm: 'schedule.view'  },
@@ -49,7 +60,7 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
     <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
       <div className={`sidebar-brand${company.logoUrl ? ' sidebar-brand-image' : ''}`}>
         {company.logoUrl ? (
-          <img className="sidebar-brand-img" src={company.logoUrl} alt={company.name} />
+          <img className="sidebar-brand-img" src={brandLogoSrc(company.logoUrl)} alt={company.name} />
         ) : (
           <>
             <div className="sidebar-logo">{company.logoInitials}</div>
