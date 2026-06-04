@@ -1,6 +1,33 @@
 # Shell Build — Handoff
 
-**Last session end (2026-06-02):** **Marketing module backported from an earlier proving build** — cold-email drip sequences with company-shared rotation inboxes, AI-routed replies, per-contact enrollments. Runs fully in stub mode on the shell (no backend). Storage v37 → v38. Also landed a small residual UI-primitive backport (Modal portal, eslint api/ block) earlier in the session. Details below.
+**Last session end (2026-06-03):** **Prospect-facing AI demo concierge shipped** (`polishpoint-demo` branch) — a bottom-left chat widget that answers product/pricing questions grounded on the module catalog and can drive the demo (navigate the info-pin tour, add modules to the cart, open the cart, go to checkout). Backed by a new `/api/assistant` OpenAI proxy with a grounded local-stub fallback, so `dev:demo` works with no key. Commit `9b2f166`. Details below. (Prior 2026-06-02: Marketing module backport, storage v38 — preserved below.)
+
+## What just shipped (2026-06-03) — Demo concierge (AI chat)
+
+Net-new **prospect-facing** chat concierge for the sales demo. Gated on `IS_DEMO`, so none of it compiles into per-client product builds. Commit `9b2f166` (8 files, +888).
+
+**Files:**
+- `api/assistant.js` (new) — Vercel serverless OpenAI proxy. Key stays server-side (same posture as `api/checkout.js`); grounded on `_modules.js` server prices; tool-calling (navigate / add-to-cart / open-cart / checkout); `DEMO_CHAT_ENABLED` kill switch; best-effort in-memory rate limit; input caps. Global `fetch`, no new deps. `GET` returns a health check.
+- `app/src/lib/demoAssistant.js` (new) — adapter. Calls the proxy when `VITE_ASSISTANT_BACKEND_URL` is set, else a grounded local stub; falls back to the stub on ANY backend error. **Intentionally NOT pinned to stub under `IS_DEMO`** (unlike twilio/email/push) — it's a read-only Q&A endpoint, like checkout, so the demo is allowed to reach it.
+- `app/src/demo/assistant/conciergeKnowledge.js` (new) — catalog/tour-derived stub brain, suggested prompts, and the validated action vocabulary (drops hallucinated module ids / routes).
+- `app/src/demo/assistant/ConciergeWidget.jsx` + `assistant.css` (new) — bottom-left launcher + panel, streaming reveal, chips, disclosure. Executes returned actions via `useNavigate` + `useCart`.
+- `app/src/demo/components/DemoChrome.jsx` — mounts the widget and hands it `onOpenCart` (the cart-drawer open state lives here).
+- `.env.example` (root) + `app/.env.example` — documented `OPENAI_API_KEY` / `OPENAI_MODEL` / `DEMO_CHAT_ENABLED` (server) and `VITE_ASSISTANT_BACKEND_URL` (frontend).
+
+**No store changes:** conversation state is in-memory in the widget — no seed/persist/STORAGE_KEY bump (still v38).
+
+**Verified (stub path — what `dev:demo` runs):** grounded Q&A ("How much is Marketing?" → "$600 one-time"); "take me to the pipeline" routes to `/pipeline` and the info-pin appears (it drove the tour); "add field ops to my order" → cart `["fieldops"]`, badge 1; zero console errors; lint clean on all four new frontend files. Mobile pass at 320/375/641 (zero horizontal scroll, panel on-screen) verified via assertions + `preview_inspect`.
+
+**Bug caught + fixed in verification:** "…to my order" matched the cart-summary intent before add-to-cart; reordered intent priority in the stub brain.
+
+**Deferred (productionization — NOT done):**
+- **Live-LLM path is code-complete but NOT runtime-verified** — plain `vite dev` doesn't serve `/api`. To activate: set `OPENAI_API_KEY` server-side + `VITE_ASSISTANT_BACKEND_URL=/api/assistant` in the demo's Vercel env (or run `vercel dev` locally). Until then it runs on the stub.
+- Raster `preview_screenshot` timed out in this environment (every attempt), so the commit-time screenshot pass is still owed at a workstation where the tool works; the no-horizontal-scroll assertions did pass at all three viewports.
+- Durable rate limiting (Vercel KV / Upstash; current limiter is in-memory per warm instance).
+- True token streaming (currently request/response + client-side typewriter reveal).
+- Pass cart contents into the model context; prospect-question analytics.
+
+---
 
 ## What just shipped (2026-06-02) — Marketing module
 
@@ -55,20 +82,22 @@ Landed in 6 commits (a0a902c → 546f46f):
 
 ## Open / suggested next pickup
 
-1. **Eyeball Forge / Midnight — done (2026-06-03, `polishpoint-demo` branch).** The dark themes (Forge, Midnight) were visually validated via the checkout MiniApp previews and render faithfully at desktop + mobile. The standalone `theme-polishpoint-{forge,midnight,pink}.css` files were then removed (the demo themes its checkout preview, not the live app). If a future client needs a dark *live* theme, regenerate it from the swatchboard via the converter and eyeball the `recipes-dark.css` surfaces (white insets → near-zero, deepened drop shadows) at that point.
+1. **Demo concierge — go live + harden.** Activate the live LLM by setting `OPENAI_API_KEY` (server) + `VITE_ASSISTANT_BACKEND_URL=/api/assistant` (frontend) in the demo's Vercel env, then smoke-test `/api/assistant` (the `GET` health check + a POST). Then harden: durable rate limiting (Vercel KV / Upstash), optionally true token streaming, feed cart contents into the model context, and add prospect-question analytics. Also run the raster screenshot pass on a workstation where `preview_screenshot` works.
 
-2. **Build the `--primary-hex` converter flag** (~30 min). Makes Scenario B (client gives only a hex color) a one-command operation:
+2. **Eyeball Forge / Midnight — done (2026-06-03, `polishpoint-demo` branch).** The dark themes (Forge, Midnight) were visually validated via the checkout MiniApp previews and render faithfully at desktop + mobile. The standalone `theme-polishpoint-{forge,midnight,pink}.css` files were then removed (the demo themes its checkout preview, not the live app). If a future client needs a dark *live* theme, regenerate it from the swatchboard via the converter and eyeball the `recipes-dark.css` surfaces (white insets → near-zero, deepened drop shadows) at that point.
+
+3. **Build the `--primary-hex` converter flag** (~30 min). Makes Scenario B (client gives only a hex color) a one-command operation:
    ```bash
    node app/scripts/swatchboard-to-theme.mjs <baseline-swatchboard> \
      --slug acme --primary-hex "#7C3AED" --name "Acme Corp"
    ```
    Currently Scenario B requires running the converter on a baseline swatchboard then hand-editing the brand-primary scale lines. Adopt this enhancement when re-skin volume justifies.
 
-3. **Optional: drop swatchboard-compatibility aliases into `theme.css`** (~10 min). Adds `--sidebar-hover`, `--sidebar-active`, `--green/amber/red/blue/purple/slate-bg/text/border` trio aliases. Only worth it if you ever want to embed swatchboard preview HTML inside the shell (e.g., a Storybook-style page). Skipped this session because nothing breaks without it.
+4. **Optional: drop swatchboard-compatibility aliases into `theme.css`** (~10 min). Adds `--sidebar-hover`, `--sidebar-active`, `--green/amber/red/blue/purple/slate-bg/text/border` trio aliases. Only worth it if you ever want to embed swatchboard preview HTML inside the shell (e.g., a Storybook-style page). Skipped this session because nothing breaks without it.
 
-4. **First per-client clone** — use the SOP in `STYLING.md` to create the next client deployment. Pick the closest theme family, run the converter (or hand-edit per Scenario B), push to a new client repo under their GitHub org.
+5. **First per-client clone** — use the SOP in `STYLING.md` to create the next client deployment. Pick the closest theme family, run the converter (or hand-edit per Scenario B), push to a new client repo under their GitHub org.
 
-5. **Continue CORE roadmap** in `SHELL_ROADMAP.md` — this theme-tooling work is supporting infrastructure, not a roadmap item. Pick up the next `[ ]` in CORE for the next session.
+6. **Continue CORE roadmap** in `SHELL_ROADMAP.md` — this theme-tooling work is supporting infrastructure, not a roadmap item. Pick up the next `[ ]` in CORE for the next session.
 
 ## Running the app
 
