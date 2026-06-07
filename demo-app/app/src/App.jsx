@@ -49,6 +49,11 @@ import CheckoutSuccess from './demo/pages/CheckoutSuccess';
 // '/polishpoint/'; strip the trailing slash and fall back to '/' for the root.
 const BASENAME = import.meta.env.BASE_URL.replace(/\/+$/, '') || '/';
 
+// Where "home" lives. In the marketing demo, the index (/polishpoint) is the
+// product LANDING page and the live app's home (Dashboard) sits at
+// /polishpoint/demo; per-client product builds keep the app at the index.
+const APP_HOME = IS_DEMO ? '/demo' : '/';
+
 function HomeRoute() {
   const hasDashboard = usePermission('dashboard.view');
   if (!hasDashboard) return <Navigate to="/schedule" replace />;
@@ -59,13 +64,18 @@ function AppRoutes() {
   return (
     <BrowserRouter basename={BASENAME}>
       <Routes>
-        {/* Standalone demo/commerce surfaces (no app sidebar), demo build only. */}
-        {IS_DEMO && <Route path="demo" element={<DemoLanding />} />}
+        {/* Standalone demo/commerce surfaces (no app sidebar), demo build only.
+            The index (/polishpoint) is the product landing page; the live app's
+            home moves to /polishpoint/demo (mounted inside AppLayout below). */}
+        {IS_DEMO && <Route index element={<DemoLanding />} />}
         {IS_DEMO && <Route path="checkout" element={<CheckoutPage />} />}
         {IS_DEMO && <Route path="checkout/success" element={<CheckoutSuccess />} />}
 
         <Route element={<AppLayout />}>
-          <Route index element={<HomeRoute />} />
+          {/* App home: the index for per-client product builds; /demo for the
+              marketing demo (whose index is the standalone landing above). */}
+          {!IS_DEMO && <Route index element={<HomeRoute />} />}
+          {IS_DEMO && <Route path="demo" element={<HomeRoute />} />}
 
           <Route path="schedule" element={<RequirePerm perm="schedule.view"><Schedule /></RequirePerm>} />
           <Route path="schedule/:jobId" element={<RequirePerm perm="schedule.view"><JobDetail /></RequirePerm>} />
@@ -82,7 +92,7 @@ function AppRoutes() {
           <Route path="invoices" element={<RequirePerm perm="invoices.view"><Invoices /></RequirePerm>} />
           <Route path="invoices/:invoiceId" element={<RequirePerm perm="invoices.view"><InvoiceDetail /></RequirePerm>} />
 
-          <Route path="reminders" element={<Navigate to="/" replace />} />
+          <Route path="reminders" element={<Navigate to={APP_HOME} replace />} />
 
           <Route path="messaging" element={<RequirePerm perm="messaging.use"><Messaging /></RequirePerm>} />
           <Route path="messaging/:conversationId" element={<RequirePerm perm="messaging.use"><Messaging /></RequirePerm>} />

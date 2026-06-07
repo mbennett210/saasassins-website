@@ -13,9 +13,11 @@ import '../placement.css';
 // the route has no mapped module, so it only appears "in the relevant section".
 // Driven off each module's `placements` in the catalog — add a module there and
 // it shows up here automatically.
+//
+// The dashboard lives at /demo in the marketing demo (the index is the landing).
 
 const ROUTE_PLACEMENT = [
-  { match: (p) => p === '/', key: 'dashboard' },
+  { match: (p) => p === '/demo' || p === '/', key: 'dashboard' },
   { match: (p) => p.startsWith('/invoices'), key: 'invoices' },
   { match: (p) => p.startsWith('/schedule'), key: 'schedule' },
   { match: (p) => p.startsWith('/settings/team'), key: 'team' },

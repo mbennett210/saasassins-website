@@ -9,18 +9,18 @@ import '../demo.css';
 // product concierge. Mounted once from App.jsx behind IS_DEMO, inside the Router
 // (it reads the current path) and the CartProvider.
 //
-// The cart FAB is hidden on the standalone /demo + /checkout surfaces (which
-// present the cart their own way), but the concierge rides along everywhere — the
-// /demo landing is exactly where a prospect is most likely to have questions. The
-// concierge can open the cart drawer, so the drawer's open state lives here and is
-// handed to it via onOpenCart.
+// The cart FAB is hidden on the landing ('/') and checkout surfaces (which present
+// the cart their own way), and shown across the live app (/demo + every CRM page)
+// where a prospect is actually adding modules. The concierge rides along
+// everywhere. The concierge can open the cart drawer, so the drawer's open state
+// lives here and is handed to it via onOpenCart.
 
 export default function DemoChrome() {
   const [open, setOpen] = useState(false);
   const cart = useCart();
   const { pathname } = useLocation();
 
-  const hideFab = pathname.startsWith('/demo') || pathname.startsWith('/checkout');
+  const hideFab = pathname === '/' || pathname.startsWith('/checkout');
 
   return (
     <>

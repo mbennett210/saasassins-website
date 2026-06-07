@@ -1,5 +1,10 @@
 import { Link } from 'react-router-dom';
 import { usePermission } from '../hooks/usePermission';
+import { IS_DEMO } from '../demo/isDemo';
+
+// "Home" is the app Dashboard — at the index for per-client product builds, and at
+// /demo for the marketing demo (whose index is the product landing page).
+const HOME_TO = IS_DEMO ? '/demo' : '/';
 
 export default function RequirePerm({ perm, children, fallbackLabel }) {
   const allowed = usePermission(perm);
@@ -16,7 +21,7 @@ export default function RequirePerm({ perm, children, fallbackLabel }) {
         </div>
         <h2>Page not available</h2>
         <p>You don&rsquo;t have access to{fallbackLabel ? ` ${fallbackLabel}` : ' this page'}.</p>
-        <Link to="/" className="btn btn-outline">Go home</Link>
+        <Link to={HOME_TO} className="btn btn-outline">Go home</Link>
       </div>
     </div>
   );

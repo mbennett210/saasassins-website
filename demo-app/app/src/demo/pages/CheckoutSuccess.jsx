@@ -96,8 +96,8 @@ export default function CheckoutSuccess() {
         )}
 
         <div className="pp-success-actions">
-          <button className="btn btn-primary" onClick={() => navigate('/')}>Back to the demo</button>
-          <button className="btn btn-outline" onClick={() => navigate('/demo')}>View modules</button>
+          <button className="btn btn-primary" onClick={() => navigate('/demo')}>Back to the demo</button>
+          <button className="btn btn-outline" onClick={() => navigate('/')}>Pricing &amp; modules</button>
         </div>
       </div>
     </div>

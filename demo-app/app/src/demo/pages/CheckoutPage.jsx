@@ -100,7 +100,7 @@ export default function CheckoutPage() {
           <span className="pp-addon-badge">Checkout</span>
         </span>
         <div className="pp-demo-topbar-actions">
-          <button className="pp-link-muted" onClick={() => navigate('/')}>← Back to demo</button>
+          <button className="pp-link-muted" onClick={() => navigate('/demo')}>← Back to demo</button>
         </div>
       </header>
 

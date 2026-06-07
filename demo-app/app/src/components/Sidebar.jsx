@@ -19,8 +19,12 @@ function brandLogoSrc(url) {
   return `${BASE_URL.replace(/\/$/, '')}${url.startsWith('/') ? url : `/${url}`}`;
 }
 
+// In the marketing demo the live app's home (Dashboard) lives at /polishpoint/demo
+// because the index is the product landing page; per-client builds keep it at '/'.
+const DASHBOARD_TO = IS_DEMO ? '/demo' : '/';
+
 const NAV = [
-  { to: '/',          label: 'Dashboard',  icon: 'dashboard', perm: 'dashboard.view', end: true },
+  { to: DASHBOARD_TO, label: 'Dashboard',  icon: 'dashboard', perm: 'dashboard.view', end: true },
   { to: '/schedule',  label: 'Schedule',   icon: 'schedule',  perm: 'schedule.view'  },
   { to: '/messaging', label: 'Messaging',  icon: 'messaging', perm: 'messaging.use'  },
   // Marketing is a real Core feature in per-client product builds, but the

@@ -12,14 +12,15 @@
 //                  <h1>; this combined selector catches both.
 //   side         : which way the info bubble opens from the pin.
 //
-// Note: Messaging uses a custom header (no .page-head) and is intentionally not
-// listed yet — it needs its own title selector before it gets a pin.
+// Note: the dashboard lives at /demo in the marketing demo (the index route is the
+// product landing page). Messaging uses a custom header (no .page-head) and is
+// intentionally not listed yet — it needs its own title selector before it gets a pin.
 
 const TITLE = '.page-head-title, .page-head h1';
 
 export const INFO_POINTS = [
   {
-    key: 'dashboard', path: '/', match: 'exact', selector: TITLE, side: 'bottom',
+    key: 'dashboard', path: '/demo', match: 'exact', selector: TITLE, side: 'bottom',
     title: 'Your dashboard',
     body: 'Your command center. We configure which cards surface here — revenue, today’s schedule, follow-ups — around what matters most to your business.',
   },
@@ -41,12 +42,12 @@ export const INFO_POINTS = [
   {
     key: 'invoices', path: '/invoices', match: 'prefix', selector: TITLE, side: 'bottom',
     title: 'Invoices & payments',
-    body: 'Log invoices and payments here. Add the Invoice Routing module for online card payments and automatic reminders.',
+    body: 'Log invoices and payments here. Add the Invoicing + Quoting module for online card payments and automatic reminders.',
   },
   {
     key: 'marketing', path: '/marketing', match: 'prefix', selector: TITLE, side: 'bottom',
     title: 'Marketing',
-    body: 'Multi-step cold-email sequences with shared rotation inboxes and AI-routed replies — an add-on module.',
+    body: 'Multi-step email sequences with shared rotation inboxes and AI-routed replies — an add-on module.',
   },
   {
     key: 'settings', path: '/settings', match: 'prefix', selector: TITLE, side: 'bottom',
