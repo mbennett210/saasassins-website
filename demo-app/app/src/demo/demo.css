@@ -5,7 +5,7 @@
    info buttons, module add-to-cart CTAs, the cart drawer/FAB,
    the sidebar Core/Add-on grouping, the checkout brand-style
    toggle + persistent dashboard preview (desktop + phone device
-   frames), the in-content info pins, the /polishpoint/demo landing,
+   frames), the in-content info pins, the /polishpoint landing,
    and /polishpoint/checkout.
 
    Loaded only when the demo components render (which are gated on
@@ -261,6 +261,51 @@
 .pp-core-list li { position: relative; padding-left: var(--space-5); font-size: var(--font-size-sm); color: var(--text-body); }
 .pp-core-list li::before { content: '✓'; position: absolute; left: 0; color: var(--success); font-weight: var(--font-weight-bold); }
 
+/* ── Pricing table (landing #pricing) — a grid "table" so it stays responsive
+   and collapses cleanly on mobile (no horizontal scroll). Prices come from the
+   catalog; the tag pill flags Core / Built / Add-on. ── */
+.pp-pricing-table {
+  border: 1px solid var(--card-border); border-radius: var(--card-radius);
+  background: var(--card-bg); box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.pp-pricing-row {
+  display: grid; grid-template-columns: minmax(0, 1.5fr) auto minmax(0, 2fr);
+  align-items: center; gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+}
+.pp-pricing-row + .pp-pricing-row { border-top: 1px solid var(--border-light); }
+.pp-pricing-head {
+  background: var(--inset-bg);
+  font-size: var(--font-size-2xs); font-weight: var(--font-weight-bold);
+  text-transform: uppercase; letter-spacing: var(--letter-spacing-wide);
+  color: var(--text-faint);
+}
+.pp-pricing-name {
+  display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); color: var(--text-primary);
+}
+.pp-pricing-price { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); color: var(--text-primary); white-space: nowrap; }
+.pp-pricing-note { font-size: var(--font-size-sm); color: var(--text-muted); line-height: var(--line-height-normal); }
+.pp-pricing-tag {
+  display: inline-flex; align-items: center; padding: 0 var(--space-2); height: var(--space-5);
+  border-radius: var(--badge-radius); font-size: var(--font-size-2xs); font-weight: var(--font-weight-semibold);
+  text-transform: uppercase; letter-spacing: var(--letter-spacing-wide); white-space: nowrap;
+  background: var(--primary-soft); color: var(--primary-deep);
+}
+.pp-pricing-tag.is-core { background: var(--primary); color: var(--color-text-on-primary); }
+.pp-pricing-tag.is-built { background: var(--success-bg, var(--primary-soft)); color: var(--success); }
+.pp-pricing-tag.is-addon { background: var(--inset-bg); color: var(--text-muted); }
+.pp-pricing-caption { margin: var(--space-4) 0 0; font-size: var(--font-size-2xs); color: var(--text-faint); line-height: var(--line-height-normal); }
+
+/* ── Landing closing CTA band ── */
+.pp-demo-cta {
+  margin-top: var(--space-12); padding: var(--space-10) var(--space-6); text-align: center;
+  border: 1px solid var(--card-border); border-radius: var(--card-radius); background: var(--inset-bg);
+}
+.pp-demo-cta h2 { margin: 0; font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); color: var(--text-primary); }
+.pp-demo-cta p { margin: var(--space-3) auto 0; max-width: 560px; font-size: var(--font-size-md); color: var(--text-muted); line-height: var(--line-height-relaxed); }
+.pp-demo-cta .pp-demo-hero-actions { margin-top: var(--space-6); }
+
 .pp-demo-footer { text-align: center; padding: var(--space-8) var(--space-4); color: var(--text-faint); font-size: var(--font-size-sm); border-top: 1px solid var(--border-light); margin-top: var(--space-10); }
 
 /* ── Checkout brand-style toggle + persistent dashboard preview ── */
@@ -458,4 +503,9 @@
   /* Tighten the gap on small screens; the phone-under-desktop stacking itself is
      handled by flex-wrap on the stage (the desktop shrinks, the phone wraps below). */
   .pp-preview-stage { gap: var(--space-4); }
+  /* Pricing table → stacked cards: name + price on one line, the note full-width
+     below. Header row is hidden (its labels are implied by the stacked layout). */
+  .pp-pricing-head { display: none; }
+  .pp-pricing-row { grid-template-columns: 1fr auto; gap: var(--space-2) var(--space-3); padding: var(--space-4); }
+  .pp-pricing-note { grid-column: 1 / -1; }
 }
