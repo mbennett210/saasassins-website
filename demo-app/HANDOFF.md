@@ -1,6 +1,34 @@
 # Shell Build — Handoff
 
-**Last session end (2026-06-03):** **Prospect-facing AI demo concierge shipped** (`polishpoint-demo` branch) — a bottom-left chat widget that answers product/pricing questions grounded on the module catalog and can drive the demo (navigate the info-pin tour, add modules to the cart, open the cart, go to checkout). Backed by a new `/api/assistant` OpenAI proxy with a grounded local-stub fallback, so `dev:demo` works with no key. Commit `9b2f166`. Details below. (Prior 2026-06-02: Marketing module backport, storage v38 — preserved below.)
+**Last session end (2026-06-07):** **Re-homed the demo to `saasassinsdev.com/polishpoint` + shipped a product landing page + re-priced to the agreed sheet midpoints** (`polishpoint-demo` branch). The SPA index (`/polishpoint`) is now a real product landing; the live app's home moved to `/polishpoint/demo`; checkout stays at `/polishpoint/checkout`. SMS broke out of Core into its own add-on, and three not-built sheet lines (Forms, Sales Automation, Data Migration) were added as paywall-gated add-ons. Details below. (Prior 2026-06-03: AI demo concierge; 2026-06-02: Marketing module, storage v38 — preserved below.)
+
+## What just shipped (2026-06-07) — Re-home + sheet pricing + product landing
+
+Consolidated the PolishPoint demo off the old **polishpointdev.com** to live under **saasassinsdev.com/polishpoint**, added the product landing page, and set every price to the agreed pricing-sheet MIDPOINTS. Everything is gated on `IS_DEMO`, so per-client product builds are untouched.
+
+**Route flip (demo build only):**
+- `/polishpoint` (SPA index) → **product landing** (was: straight into the app).
+- `/polishpoint/demo` → **live app home** (Dashboard). `App.jsx` mounts `HomeRoute` at `path="demo"` when `IS_DEMO`, keeps `index → HomeRoute` for per-client builds.
+- `/polishpoint/checkout` → unchanged.
+- Every "home = `/`" reference flipped to `/demo` in demo mode: `Sidebar` Dashboard link, `NotFound` / `RequirePerm` home links, `CheckoutPage` / `CheckoutSuccess` nav buttons, `DemoChrome` cart-FAB hide logic (now hides on `/` + `/checkout`, shows across the app incl. `/demo`), `PlacementCTAs` dashboard placement, `tour/infoPoints.js` dashboard path, and `api/assistant.js` `FEATURE_ROUTES.dashboard`.
+
+**Pricing → sheet midpoints** (display `src/demo/modules.catalog.js` ↔ charge `api/_modules.js` ↔ concierge `api/assistant.js`, kept in lockstep):
+- Core $1,500 → **$2,000**; Marketing → renamed **Email Marketing** $600 → **$2,000**; ipr → renamed **Invoicing + Quoting** $400 → **$1,500**; QuickBooks $300 → **$2,000**; Inventory → renamed **Inventory / Key Tracking** $400 → **$1,500**; EMS $800 → **$3,500**; Field Ops $600 → **$2,750**.
+- **SMS / Texting (Twilio + A2P)** pulled OUT of Core into its own **$625** add-on (per decision this session). Core's "SMS via Twilio + A2P" feature bullet removed.
+- New paywall-gated add-ons (`featured: true`, no `route` → info dialog, still purchasable): **Forms / Lead Capture $750**, **Sales Automation $1,500**, **Data Migration $500**.
+- **No store/seed/persist bump** — the catalog is a static module, not store state (still v38). Cart only persists module ids; we added ids, removed none.
+
+**Landing page** (`src/demo/pages/DemoLanding.jsx`, now the index route, PolishPoint-blue theme): hero + CTAs ("Explore the live demo" → `/demo`, "See pricing" → `#pricing`); add-on module grid; Core-included band; full **pricing table** (`#pricing` — all 11 sheet lines at midpoints with Core / Built / Add-on tags) + caption; closing CTA band. New `.pp-pricing-*` + `.pp-demo-cta` styles in `demo.css` (token-compliant, mobile-collapse to stacked cards).
+
+**Static site:** `showcase.html` "Visit PolishPoint" CTA repointed from `https://www.polishpointdev.com/` → `/polishpoint` (internal; dropped `target=_blank`/external arrow). The top-nav "Live Demo" buttons (`index/about/contact/showcase`) already point to relative `/polishpoint/demo` — which now lands straight in the live app — so they were left as-is.
+
+**Verified (dev:demo + production build):** landing renders all 11 pricing rows at correct midpoints; "Explore the live demo" → `/polishpoint/demo` (Dashboard with sidebar + cart FAB); sidebar Dashboard link returns to `/demo`; the 4 new add-ons open paywall info dialogs (SMS shows $625 + Add to cart + 5 features); checkout total math correct (Core $2,000 + Field Ops $2,750 = $4,750); "Back to demo" → `/demo`; ESLint clean on all changed files; mobile pass (no horizontal scroll, `scrollWidth === clientWidth`) at 320 / 375 / 641 on landing + checkout; `npm run build` (build:demo + assemble) succeeds; zero console errors. Raster `preview_screenshot` still times out in this environment — verified via DOM assertions + snapshots (same as the 2026-06-03 session).
+
+**Flagged (Vercel dashboard / Stripe — outside the repo):**
+- The new midpoint prices go **LIVE to Stripe on the next deploy** (checkout uses live keys via `api/_modules.js`). Confirm before deploying if that's not intended yet.
+- If `polishpointdev.com` is still attached to this Vercel project, add a host-conditional 308 redirect → `https://saasassinsdev.com/polishpoint` (offered, not added — depends on the domain's current attachment).
+
+---
 
 ## What just shipped (2026-06-03) — Demo concierge (AI chat)
 
@@ -17,6 +45,8 @@ Net-new **prospect-facing** chat concierge for the sales demo. Gated on `IS_DEMO
 **No store changes:** conversation state is in-memory in the widget — no seed/persist/STORAGE_KEY bump (still v38).
 
 **Verified (stub path — what `dev:demo` runs):** grounded Q&A ("How much is Marketing?" → "$600 one-time"); "take me to the pipeline" routes to `/pipeline` and the info-pin appears (it drove the tour); "add field ops to my order" → cart `["fieldops"]`, badge 1; zero console errors; lint clean on all four new frontend files. Mobile pass at 320/375/641 (zero horizontal scroll, panel on-screen) verified via assertions + `preview_inspect`.
+
+> **Note (2026-06-07):** concierge pricing answers now reflect the new midpoints automatically (the stub reads the catalog; the proxy reads `_modules.js`). The dashboard tour/navigate target moved to `/demo` in both `infoPoints.js` and `api/assistant.js`.
 
 **Bug caught + fixed in verification:** "…to my order" matched the cart-summary intent before add-to-cart; reordered intent priority in the stub brain.
 
@@ -82,9 +112,9 @@ Landed in 6 commits (a0a902c → 546f46f):
 
 ## Open / suggested next pickup
 
-1. **Demo concierge — go live + harden.** Activate the live LLM by setting `OPENAI_API_KEY` (server) + `VITE_ASSISTANT_BACKEND_URL=/api/assistant` (frontend) in the demo's Vercel env, then smoke-test `/api/assistant` (the `GET` health check + a POST). Then harden: durable rate limiting (Vercel KV / Upstash), optionally true token streaming, feed cart contents into the model context, and add prospect-question analytics. Also run the raster screenshot pass on a workstation where `preview_screenshot` works.
+1. **Confirm + deploy the re-home.** Verify the new midpoint prices in the live Stripe dashboard are intended before the next production deploy, then deploy. If `polishpointdev.com` is still attached to this Vercel project, set up the redirect → `saasassinsdev.com/polishpoint`.
 
-2. **Eyeball Forge / Midnight — done (2026-06-03, `polishpoint-demo` branch).** The dark themes (Forge, Midnight) were visually validated via the checkout MiniApp previews and render faithfully at desktop + mobile. The standalone `theme-polishpoint-{forge,midnight,pink}.css` files were then removed (the demo themes its checkout preview, not the live app). If a future client needs a dark *live* theme, regenerate it from the swatchboard via the converter and eyeball the `recipes-dark.css` surfaces (white insets → near-zero, deepened drop shadows) at that point.
+2. **Demo concierge — go live + harden.** Activate the live LLM by setting `OPENAI_API_KEY` (server) + `VITE_ASSISTANT_BACKEND_URL=/api/assistant` (frontend) in the demo's Vercel env, then smoke-test `/api/assistant` (the `GET` health check + a POST). Then harden: durable rate limiting (Vercel KV / Upstash), optionally true token streaming, feed cart contents into the model context, and add prospect-question analytics. Also run the raster screenshot pass on a workstation where `preview_screenshot` works.
 
 3. **Build the `--primary-hex` converter flag** (~30 min). Makes Scenario B (client gives only a hex color) a one-command operation:
    ```bash
@@ -97,7 +127,7 @@ Landed in 6 commits (a0a902c → 546f46f):
 
 5. **First per-client clone** — use the SOP in `STYLING.md` to create the next client deployment. Pick the closest theme family, run the converter (or hand-edit per Scenario B), push to a new client repo under their GitHub org.
 
-6. **Continue CORE roadmap** in `SHELL_ROADMAP.md` — this theme-tooling work is supporting infrastructure, not a roadmap item. Pick up the next `[ ]` in CORE for the next session.
+6. **Continue CORE roadmap** in `SHELL_ROADMAP.md` — pick up the next `[ ]` in CORE for the next session.
 
 ## Running the app
 
@@ -107,7 +137,7 @@ npm install              # first time
 npm run dev              # http://localhost:5173 (or first free port)
 ```
 
-`npm run dev` automatically runs the manifest prebuild step. `npm run build` does the same for production.
+`npm run dev` automatically runs the manifest prebuild step. `npm run build` does the same for production. The marketing demo uses `npm run dev:demo` / `build:demo` (mode `demo`, base `/polishpoint/`).
 
 ## Re-skin SOP (summary)
 
