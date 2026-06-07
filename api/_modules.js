@@ -1,8 +1,9 @@
 // Server-side module price catalog — the SOURCE OF TRUTH for what a module costs.
 //
 // The browser only ever sends add-on *ids*; prices are resolved here so a tampered
-// client can never set its own amount. Amounts are in cents (USD), one-time. Keep
-// names + amounts in sync with src/demo/modules.catalog.js (display side).
+// client can never set its own amount. Amounts are in cents (USD), one-time, and
+// equal the agreed pricing-sheet MIDPOINTS. Keep names + amounts in sync with
+// src/demo/modules.catalog.js (display side).
 //
 // The Core platform is the mandatory base line item — buildLineItems() always
 // prepends it, so every checkout charges Core + whatever add-ons were selected.
@@ -12,13 +13,17 @@
 const CORE_ID = 'core';
 
 const MODULES = {
-  core: { name: 'PolishPoint Core Platform', amount: 150000 },
-  marketing: { name: 'Marketing — Cold Email', amount: 60000 },
-  ipr: { name: 'Invoice & Payment Routing', amount: 40000 },
-  quickbooks: { name: 'QuickBooks Integration', amount: 30000 },
-  inventory: { name: 'Inventory Management', amount: 40000 },
-  ems: { name: 'Employee Management System', amount: 80000 },
-  fieldops: { name: 'Field Ops', amount: 60000 },
+  core: { name: 'PolishPoint Core Platform', amount: 200000 },
+  marketing: { name: 'Email Marketing', amount: 200000 },
+  ipr: { name: 'Invoicing + Quoting', amount: 150000 },
+  forms: { name: 'Forms / Lead Capture', amount: 75000 },
+  sms: { name: 'SMS / Texting (Twilio + A2P)', amount: 62500 },
+  quickbooks: { name: 'QuickBooks Integration', amount: 200000 },
+  fieldops: { name: 'Field Ops', amount: 275000 },
+  ems: { name: 'Employee Management System', amount: 350000 },
+  inventory: { name: 'Inventory / Key Tracking', amount: 150000 },
+  salesautomation: { name: 'Sales Automation', amount: 150000 },
+  datamigration: { name: 'Data Migration', amount: 50000 },
 };
 
 // Build Stripe Checkout line items from a list of add-on ids using SERVER-SIDE

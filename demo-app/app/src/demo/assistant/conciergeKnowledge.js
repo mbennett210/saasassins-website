@@ -30,7 +30,7 @@ export const CONCIERGE_DISCLOSURE =
 
 export const SUGGESTED_PROMPTS = [
   "What's included in the Core platform?",
-  'How much is the Marketing module?',
+  'How much is Email Marketing?',
   'Show me the sales pipeline',
   'Which add-ons can I get?',
 ];
@@ -65,14 +65,20 @@ export const NAV_TARGETS = INFO_POINTS.map((p) => ({
 
 const KNOWN_ROUTES = new Set([...NAV_TARGETS.map((t) => t.route), '/checkout']);
 
-// Keyword → module-id map for detecting which add-on a prospect means.
+// Keyword → module-id map for detecting which add-on a prospect means. Order
+// matters — detectModule returns the first match — so put more specific phrases
+// before broad ones (e.g. "sales automation" before bare "automation").
 const MODULE_KEYWORDS = {
-  marketing: ['marketing', 'cold email', 'email sequence', 'outbound', 'drip'],
-  ipr: ['invoice routing', 'invoice & payment', 'payment routing', 'online payment', 'card payment', 'ipr', 'billing engine'],
+  marketing: ['email marketing', 'cold email', 'warm outreach', 'email sequence', 'outbound', 'drip', 'marketing'],
+  ipr: ['invoicing', 'quoting', 'quote', 'quotes', 'invoice & payment', 'payment routing', 'online payment', 'card payment', 'ipr', 'billing engine'],
+  forms: ['form builder', 'forms', 'lead capture', 'lead-capture', 'web form', 'intake form', 'submission'],
+  sms: ['sms', 'texting', 'text message', 'twilio', 'a2p', '10dlc'],
   quickbooks: ['quickbooks', 'qbo', 'accounting sync', 'the books'],
-  inventory: ['inventory', 'stock', 'low-stock', 'low stock', 'supplies', 'physical keys'],
-  ems: ['employee management', 'ems', ' hr ', 'onboarding', 'certifications', 'clock-in', 'clock in', 'payroll', 'gusto', 'time-off', 'time off'],
   fieldops: ['field ops', 'fieldops', 'checklist', 'before/after', 'before and after', 'job completion', 'gps'],
+  ems: ['employee management', 'ems', ' hr ', 'onboarding', 'certifications', 'clock-in', 'clock in', 'payroll', 'gusto', 'time-off', 'time off'],
+  inventory: ['inventory', 'stock', 'low-stock', 'low stock', 'supplies', 'physical keys', 'key tracking'],
+  salesautomation: ['sales automation', 'automation', 'workflow', 'workflows', 'timed workflow', 'follow-up automation', 'triggers'],
+  datamigration: ['data migration', 'migration', 'migrate', 'import my data', 'gohighlevel', 'ghl', 'csv import'],
 };
 
 function detectModule(text) {
@@ -129,6 +135,9 @@ export function normalizeActions(raw) {
 const VERB_NAVIGATE = /\b(show|see|view|open|go to|take me|tour|visit|navigate|where)\b/;
 const VERB_ADD = /\b(add|want|include|get|buy|purchase|enable|i'?ll take)\b/;
 const list = (arr) => arr.map((s) => `• ${s}`).join('\n');
+// Human-readable list of every add-on name, derived from the catalog so it never
+// drifts as modules are added/renamed.
+const ADDON_NAMES = MODULE_CATALOG.map((m) => m.name).join(', ');
 
 function modulePitch(m) {
   return (
@@ -221,8 +230,7 @@ export function runStubConcierge(rawText, context = {}) {
     return {
       reply: `The **${CORE.name}** (${formatPrice(CORE.price)}) is the foundation every plan includes:\n\n` +
         `${list(CORE.features)}\n\n` +
-        `Everything else — Marketing, Invoice Routing, QuickBooks, Inventory, Employee Management, ` +
-        `Field Ops — is an optional add-on. Want details on any of them?`,
+        `Everything else — ${ADDON_NAMES} — is an optional add-on. Want details on any of them?`,
       actions: [],
     };
   }
@@ -232,7 +240,7 @@ export function runStubConcierge(rawText, context = {}) {
     const lines = MODULE_CATALOG.map((m) => `${m.icon} **${m.name}** (${formatPrice(m.price)}) — ${m.blurb}`);
     return {
       reply: `Here are the add-on modules you can layer onto Core:\n\n${lines.join('\n\n')}\n\n` +
-        `Say "tell me about Field Ops" for details, or "add Marketing" to drop one in your order.`,
+        `Say "tell me about Field Ops" for details, or "add Email Marketing" to drop one in your order.`,
       actions: [],
     };
   }

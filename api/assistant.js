@@ -27,24 +27,30 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 // Add-on display blurbs for grounding. Names + prices come from _modules.js (the
 // price source of truth); keep these blurbs in step with src/demo/modules.catalog.js.
 const ADDON_BLURBS = {
-  marketing: 'Multi-step cold-email sequences with shared rotation inboxes and reply-to-pipeline routing.',
-  ipr: 'Online card payments (Stripe), customizable invoice templates, automated overdue reminders, recurring billing.',
+  marketing: 'Multi-step email outreach with shared rotation inboxes, domain/inbox/DNS warmup, and reply-to-pipeline routing.',
+  ipr: 'Quotes that convert to invoices, customizable templates, online card payments (Stripe), automated overdue reminders, recurring billing.',
+  forms: 'Drag-and-drop form builder with a submissions inbox, analytics, and webhooks that create CRM contacts automatically.',
+  sms: 'Two-way business texting over Twilio, including A2P 10DLC registration and number provisioning, wired into the messaging inbox and reminders.',
   quickbooks: 'Two-way sync with QuickBooks Online — customers, invoices, and payments — with AR aging.',
-  inventory: 'Track physical client keys per site plus general supplies/equipment, with low-stock alerts.',
-  ems: 'HR layer: document storage with expiry, certifications, GPS clock-in/out, digital onboarding, payroll via Gusto.',
   fieldops: 'Digital cleaning checklists, before/after photos, and GPS job-completion verification — works offline.',
+  ems: 'HR layer: document storage with expiry, certifications, GPS clock-in/out, digital onboarding, payroll via Gusto.',
+  inventory: 'Track physical client keys per site plus general supplies/equipment, with low-stock alerts.',
+  salesautomation: 'Timed, trigger-based workflows that advance pipeline stages, send follow-up email/SMS, create tasks, and notify owners.',
+  datamigration: 'Per-source migration of your contacts, jobs, and history (e.g. GoHighLevel) via the CSV import wizard with field mapping and cleanup.',
 };
 
 const CORE_FEATURES = [
   'Operations Dashboard', 'Scheduling & Calendar', 'Client Database (Contacts + Accounts)',
-  'Sales Pipeline', 'Messaging Suite', 'SMS via Twilio + A2P',
+  'Sales Pipeline', 'Messaging Suite',
   'Invoice & Payment logging', 'Automated Reminders', 'Team, Roles & Permissions',
 ];
 
 // Navigable tour surfaces the bot can send a prospect to (route map mirrors
-// src/demo/tour/infoPoints.js). Used to validate the navigate tool's target.
+// src/demo/tour/infoPoints.js). The dashboard lives at /demo in the marketing
+// demo (the index route is the product landing page). Used to validate the
+// navigate tool's target.
 const FEATURE_ROUTES = {
-  dashboard: '/', schedule: '/schedule', contacts: '/contacts', pipeline: '/pipeline',
+  dashboard: '/demo', schedule: '/schedule', contacts: '/contacts', pipeline: '/pipeline',
   invoices: '/invoices', marketing: '/marketing', settings: '/settings',
 };
 
