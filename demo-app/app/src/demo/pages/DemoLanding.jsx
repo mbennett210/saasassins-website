@@ -9,10 +9,10 @@ import InfoButton from '../components/InfoButton';
 import CartDrawer from '../components/CartDrawer';
 import '../demo.css';
 
-// Demo entry at /polishpoint/demo — the marketing landing a prospect arrives on
-// from the SaaSassins site. Pitches the product, lets them jump into the live CRM
-// ("Enter live demo" → /), and browse the sellable add-on modules. Standalone (no
-// app sidebar). Brand name is read from the store company (PolishPoint by default).
+// Marketing landing at /polishpoint — the page a prospect arrives on from the
+// SaaSassins site. Pitches the product, lets them jump into the live CRM
+// ("Enter live demo" → /demo), and browse the sellable add-on modules. Standalone
+// (no app sidebar). Brand name is read from the store company (PolishPoint by default).
 
 export default function DemoLanding() {
   const navigate = useNavigate();
@@ -33,7 +33,7 @@ export default function DemoLanding() {
             🛒 Cart
             {cart.count > 0 && <span className="pp-cart-fab-count">{cart.count}</span>}
           </button>
-          <button className="btn btn-primary" onClick={() => navigate('/')}>Enter live demo →</button>
+          <button className="btn btn-primary" onClick={() => navigate('/demo')}>Enter live demo →</button>
         </div>
       </header>
 
@@ -46,7 +46,7 @@ export default function DemoLanding() {
             the modules you need and check out when you’re ready.
           </p>
           <div className="pp-demo-hero-actions">
-            <button className="btn btn-primary btn-lg" onClick={() => navigate('/')}>Explore the live demo</button>
+            <button className="btn btn-primary btn-lg" onClick={() => navigate('/demo')}>Explore the live demo</button>
             <a className="btn btn-outline btn-lg" href="#modules">See add-on modules</a>
           </div>
         </section>

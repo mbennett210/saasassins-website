@@ -59,13 +59,21 @@ function AppRoutes() {
   return (
     <BrowserRouter basename={BASENAME}>
       <Routes>
-        {/* Standalone demo/commerce surfaces (no app sidebar), demo build only. */}
-        {IS_DEMO && <Route path="demo" element={<DemoLanding />} />}
+        {/* Standalone demo/commerce surfaces (no app sidebar), demo build only.
+            In the demo the marketing LANDING is the entry at '/', and the live
+            app moves under '/demo' (see the AppLayout block below). Per-client
+            product builds leave IS_DEMO false, keep '/' as the Dashboard, and
+            mount none of this. */}
+        {IS_DEMO && <Route index element={<DemoLanding />} />}
         {IS_DEMO && <Route path="checkout" element={<CheckoutPage />} />}
         {IS_DEMO && <Route path="checkout/success" element={<CheckoutSuccess />} />}
 
         <Route element={<AppLayout />}>
-          <Route index element={<HomeRoute />} />
+          {/* Demo: the live app home sits at '/demo' (the landing owns '/').
+              Per-client product: the app home is the index. */}
+          {IS_DEMO
+            ? <Route path="demo" element={<HomeRoute />} />
+            : <Route index element={<HomeRoute />} />}
 
           <Route path="schedule" element={<RequirePerm perm="schedule.view"><Schedule /></RequirePerm>} />
           <Route path="schedule/:jobId" element={<RequirePerm perm="schedule.view"><JobDetail /></RequirePerm>} />
@@ -82,7 +90,7 @@ function AppRoutes() {
           <Route path="invoices" element={<RequirePerm perm="invoices.view"><Invoices /></RequirePerm>} />
           <Route path="invoices/:invoiceId" element={<RequirePerm perm="invoices.view"><InvoiceDetail /></RequirePerm>} />
 
-          <Route path="reminders" element={<Navigate to="/" replace />} />
+          <Route path="reminders" element={<Navigate to={IS_DEMO ? '/demo' : '/'} replace />} />
 
           <Route path="messaging" element={<RequirePerm perm="messaging.use"><Messaging /></RequirePerm>} />
           <Route path="messaging/:conversationId" element={<RequirePerm perm="messaging.use"><Messaging /></RequirePerm>} />

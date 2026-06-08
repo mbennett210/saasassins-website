@@ -20,7 +20,9 @@ function brandLogoSrc(url) {
 }
 
 const NAV = [
-  { to: '/',          label: 'Dashboard',  icon: 'dashboard', perm: 'dashboard.view', end: true },
+  // In the demo, the app home (Dashboard) lives at '/demo' — the marketing
+  // landing owns '/'. Per-client product builds keep the Dashboard at '/'.
+  { to: IS_DEMO ? '/demo' : '/', label: 'Dashboard', icon: 'dashboard', perm: 'dashboard.view', end: true },
   { to: '/schedule',  label: 'Schedule',   icon: 'schedule',  perm: 'schedule.view'  },
   { to: '/messaging', label: 'Messaging',  icon: 'messaging', perm: 'messaging.use'  },
   // Marketing is a real Core feature in per-client product builds, but the
