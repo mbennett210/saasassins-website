@@ -2,37 +2,39 @@ import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useCart } from '../cart/CartContext';
 import CartDrawer from './CartDrawer';
-import ConciergeWidget from '../assistant/ConciergeWidget';
 import '../demo.css';
 
-// App-wide demo chrome: a floating cart button + drawer, and the prospect-facing
-// product concierge. Mounted once from App.jsx behind IS_DEMO, inside the Router
-// (it reads the current path) and the CartProvider.
+// App-wide demo chrome: a floating Cart button + drawer. Mounted once from
+// App.jsx behind IS_DEMO, inside the Router (it reads the current path) and the
+// CartProvider.
 //
-// The cart FAB is hidden on the standalone /demo + /checkout surfaces (which
-// present the cart their own way), but the concierge rides along everywhere — the
-// /demo landing is exactly where a prospect is most likely to have questions. The
-// concierge can open the cart drawer, so the drawer's open state lives here and is
-// handed to it via onOpenCart.
+// The Cart FAB is hidden on surfaces that present the cart their own way — the
+// marketing landing ('/', whose topbar already has a Cart button) and the
+// /checkout flow. It rides along across the interactive app (the /demo dashboard
+// + inner CRM pages) so a prospect can review their selected modules from
+// anywhere in the product.
+//
+// NOTE: the prospect-facing concierge ("Ask") widget is temporarily removed.
+// Its components/libs are left in place (demo/assistant/*, lib/demoAssistant.js,
+// api/assistant.js) so it can be re-mounted here later.
 
 export default function DemoChrome() {
   const [open, setOpen] = useState(false);
   const cart = useCart();
   const { pathname } = useLocation();
 
-  const hideFab = pathname.startsWith('/demo') || pathname.startsWith('/checkout');
+  const hideFab = pathname === '/' || pathname.startsWith('/checkout');
 
   return (
     <>
       {!hideFab && (
-        <button className="pp-cart-fab" onClick={() => setOpen(true)} aria-label="Open your modules cart">
+        <button className="pp-cart-fab" onClick={() => setOpen(true)} aria-label="Open your cart">
           <span className="pp-cart-fab-icon" aria-hidden="true">🛒</span>
-          <span className="pp-cart-fab-label">Modules</span>
+          <span className="pp-cart-fab-label">Cart</span>
           {cart.count > 0 && <span className="pp-cart-fab-count">{cart.count}</span>}
         </button>
       )}
       <CartDrawer open={open} onClose={() => setOpen(false)} />
-      <ConciergeWidget onOpenCart={() => setOpen(true)} />
     </>
   );
 }
