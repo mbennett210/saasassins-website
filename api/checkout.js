@@ -1,10 +1,18 @@
-// POST /api/checkout  { moduleIds: string[], brandTheme?: string }  ->  { url }
-// GET  /api/checkout?session_id=cs_...  ->  { paymentStatus, amountTotal, currency, email, brandTheme, items[] }
+// POST /api/checkout  { moduleIds: string[], brandTheme?, brandThemeKey?, brandThemeHex? }  ->  { url }
+// GET  /api/checkout?session_id=cs_...  ->  { paymentStatus, amountTotal, currency, email, brandTheme, brandThemeKey, items[] }
 //
 // Creates a one-time Stripe Checkout Session from SERVER-SIDE prices (see
 // _modules.js) and returns the hosted-checkout URL for the browser to redirect to.
 // GET retrieves a completed session so the success page can render a real receipt.
 // Same-origin call (saasassinsdev.com/polishpoint -> /api/checkout), so no CORS.
+//
+// The chosen brand THEME is a $0 configuration choice (no line item) — it rides
+// along as metadata so fulfilment knows which styling direction the client wants.
+// We stamp it BOTH on the Checkout Session (for the success page) and on the
+// PaymentIntent (description + metadata) so it's impossible to miss on the order
+// in the Stripe Dashboard, where the team reads payments. We capture the stable
+// key (e.g. "blue") + hex alongside the display label so a renamed label can't
+// make an order ambiguous.
 //
 // Env: STRIPE_SECRET_KEY. Use a TEST-mode key (sk_test_...) to verify end-to-end
 // with Stripe's test cards (e.g. 4242 4242 4242 4242), THEN switch to a live key
@@ -12,7 +20,7 @@
 // and the frontend surfaces a "payments unavailable" error (it never fakes a sale).
 
 const Stripe = require('stripe');
-const { buildLineItems } = require('./_modules');
+const { buildLineItems, MODULES } = require('./_modules');
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -25,12 +33,14 @@ async function handleRetrieve(stripe, req, res) {
   if (!sessionId) return res.status(400).json({ error: 'Missing session_id.' });
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['line_items'] });
+    const md = session.metadata || {};
     return res.status(200).json({
       paymentStatus: session.payment_status, // 'paid' | 'unpaid' | 'no_payment_required'
       amountTotal: session.amount_total,
       currency: session.currency,
       email: (session.customer_details && session.customer_details.email) || null,
-      brandTheme: (session.metadata && session.metadata.brandTheme) || null,
+      brandTheme: md.brandTheme || null,
+      brandThemeKey: md.brandThemeKey || null,
       items: ((session.line_items && session.line_items.data) || []).map((li) => ({
         name: li.description,
         amount: li.amount_total,
@@ -76,7 +86,27 @@ module.exports = async function handler(req, res) {
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   const origin = `${proto}://${host}`;
 
+  // Brand theme — the $0 styling choice. Display label + stable key + hex, all
+  // length-capped (a tampered client can only mislabel its OWN order's metadata).
   const brandTheme = typeof body.brandTheme === 'string' ? body.brandTheme.slice(0, 80) : '';
+  const brandThemeKey = typeof body.brandThemeKey === 'string' ? body.brandThemeKey.slice(0, 40) : '';
+  const brandThemeHex = typeof body.brandThemeHex === 'string' ? body.brandThemeHex.slice(0, 9) : '';
+
+  // Human-readable order summary for the PaymentIntent description — the line the
+  // team sees first on the payment in the Stripe Dashboard. Theme leads.
+  const moduleNames = ids.map((id) => (MODULES[id] && MODULES[id].name) || id);
+  const themeText = brandTheme
+    ? `Theme: ${brandTheme}${brandThemeKey ? ` (${brandThemeKey})` : ''}`
+    : 'Theme: default';
+  const description = `PolishPoint order · ${themeText} · ${moduleNames.join(', ')}`.slice(0, 480);
+
+  // Metadata shared by the session (success page) and the PaymentIntent (dashboard).
+  const orderMetadata = {
+    moduleIds: ids.join(','),
+    brandTheme,
+    brandThemeKey,
+    brandThemeHex,
+  };
 
   try {
     const session = await stripe.checkout.sessions.create({
@@ -91,7 +121,14 @@ module.exports = async function handler(req, res) {
       ],
       success_url: `${origin}/polishpoint/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/polishpoint/checkout`,
-      metadata: { moduleIds: ids.join(','), brandTheme },
+      // On the Session (read back by the success page).
+      metadata: orderMetadata,
+      // On the PaymentIntent — what the team reads in the Dashboard. The theme +
+      // modules show in the payment's description line and its metadata section.
+      payment_intent_data: {
+        description,
+        metadata: orderMetadata,
+      },
     });
     return res.status(200).json({ url: session.url });
   } catch (err) {

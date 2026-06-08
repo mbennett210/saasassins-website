@@ -4,7 +4,7 @@ import { useStore } from '../../store';
 import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { CORE, formatPrice, featuredModules } from '../modules.catalog';
-import { themeLabel, loadBrand, saveBrand } from '../brandTheme';
+import { themeLabel, loadBrand, saveBrand, PALETTES } from '../brandTheme';
 import CheckoutThemeSelect from '../components/CheckoutThemeSelect';
 import ModuleCTA from '../components/ModuleCTA';
 import '../demo.css';
@@ -19,9 +19,11 @@ import '../demo.css';
 // right): 1) review the Core base + any added modules, 2) add more modules from a
 // compact checklist, 3) pick the brand style — the last step before paying.
 //
-// Payment (LIVE): "Pay" POSTs the selected add-on ids to /api/checkout, which
-// creates a Stripe Checkout Session from SERVER-SIDE prices and returns a hosted-
-// checkout URL we redirect to. The chosen brand theme rides along as metadata.
+// Payment (LIVE): "Pay" POSTs the selected add-on ids + the chosen brand theme
+// (label + stable key + hex) to /api/checkout, which creates a Stripe Checkout
+// Session from SERVER-SIDE prices and returns a hosted-checkout URL we redirect
+// to. The theme is a $0 choice — it rides along as order metadata so fulfilment
+// knows which styling direction the client wants.
 // In LOCAL DEV only (import.meta.env.DEV) — where there's no /api server — the
 // flow falls back to a simulated success so the UX stays testable without a
 // backend. In production a failure surfaces a real error; it never fakes a sale.
@@ -46,7 +48,13 @@ export default function CheckoutPage() {
     setSubmitting(true);
     setError('');
 
+    // The brand theme is a $0 styling choice — sent as order metadata, not a line
+    // item. Capture the display label + the STABLE key + hex so fulfilment is
+    // unambiguous even if a label is later renamed.
     const brandTheme = themeLabel(deployTheme);
+    const brandThemeKey = deployTheme;
+    const brandThemeHex = (PALETTES[deployTheme] || {}).swatch || '';
+
     // Local-dev-only fallback: vite has no /api server, so complete to a simulated
     // success page to keep the checkout UX testable without a backend.
     const simulate = () => {
@@ -66,7 +74,7 @@ export default function CheckoutPage() {
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ moduleIds: cart.ids, brandTheme }),
+        body: JSON.stringify({ moduleIds: cart.ids, brandTheme, brandThemeKey, brandThemeHex }),
       });
 
       if (res.ok) {
