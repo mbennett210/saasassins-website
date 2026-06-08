@@ -4,7 +4,7 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/polishpoint/:path*", "destination": "/polishpoint/index.html" }
+    { "source": "/polishpoint/:path*", "destination": "/polishpoint" }
   ],
   "headers": [
     {
