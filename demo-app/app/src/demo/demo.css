@@ -300,17 +300,19 @@ body.pp-has-appbar .main { padding-top: calc(var(--space-12) + var(--space-8)); 
    Without it the page is a flex item that shrink-wraps to its content and sits
    left-aligned, leaving the right half of wide screens blank. */
 .pp-demo-page { min-height: 100dvh; width: 100%; background: var(--page-bg); color: var(--text-body); font-family: var(--font); }
+/* 3-column grid (1fr auto 1fr) centers the brand (logo + Demo badge) in the bar
+   while the actions stay pinned to the right; the empty left column balances it. */
 .pp-demo-topbar {
   position: sticky; top: 0; z-index: var(--z-sticky);
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-4);
   padding: var(--space-3) var(--space-5);
   background: var(--color-surface-raised); border-bottom: 1px solid var(--border-light);
 }
-.pp-demo-topbar-brand { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--font-weight-bold); font-size: var(--font-size-lg); color: var(--text-primary); }
+.pp-demo-topbar-brand { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--font-weight-bold); font-size: var(--font-size-lg); color: var(--text-primary); grid-column: 2; justify-self: center; }
 /* Brand logo in the landing top bar — sized to match the demo app's brand logo
    (the wide horizontal wordmark, ~3.4:1); width auto preserves aspect. */
 .pp-demo-topbar-logo { height: var(--space-12); width: auto; display: block; }
-.pp-demo-topbar-actions { display: inline-flex; align-items: center; gap: var(--space-3); }
+.pp-demo-topbar-actions { display: inline-flex; align-items: center; gap: var(--space-3); grid-column: 3; justify-self: end; }
 .pp-demo-cartbtn { position: relative; }
 .pp-demo-cartbtn .pp-cart-fab-count { position: absolute; top: calc(-1 * var(--space-2)); right: calc(-1 * var(--space-2)); background: var(--primary); color: var(--color-text-on-primary); }
 /* In-app bar, the cart is a filled/primary CTA — flip the corner count badge to a
@@ -531,9 +533,11 @@ body.pp-has-appbar .main { padding-top: calc(var(--space-12) + var(--space-8)); 
 
 /* ── Mobile ── */
 @media (max-width: 640px) {
-  /* Topbar: let the actions drop to their own full-width row so buttons never clip. */
-  .pp-demo-topbar { flex-wrap: wrap; padding: var(--space-3) var(--space-4); }
-  .pp-demo-topbar-actions { width: 100%; justify-content: space-between; gap: var(--space-2); }
+  /* Topbar: single column — centered brand on top, actions on their own full-width
+     row below so buttons never clip. */
+  .pp-demo-topbar { grid-template-columns: 1fr; gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+  .pp-demo-topbar-brand { grid-column: 1; }
+  .pp-demo-topbar-actions { grid-column: 1; justify-self: stretch; width: 100%; justify-content: center; gap: var(--space-2); }
   .pp-module-cta { flex-wrap: wrap; }
   .pp-module-cta-aside { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
   .pp-module-grid { grid-template-columns: 1fr; }
