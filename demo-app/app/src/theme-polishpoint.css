@@ -2,7 +2,7 @@
    THEME: PolishPoint Blue
    ------------------------------------------------------------
    Slate neutrals + blue primary (#1E8FE8 anchor), neumorphic
-   depth, gradient primaries, glass switchers, ambient radial
+   depth, gradient primaries, glass switchers, flat page
    background. Brand secondary aliases to teal so the wider token
    contract (referenced by index.css) resolves cleanly.
 
@@ -220,16 +220,15 @@
     drop-shadow(0 0 10px rgba(var(--color-brand-primary-400-rgb), 0.5))
     drop-shadow(0 3px 10px rgba(var(--color-brand-primary-600-rgb), 0.35));
 
-  /* ── Page aurora background ── */
-  --page-bg-layers:
-    radial-gradient(ellipse at 15% 10%, rgba(var(--color-brand-primary-400-rgb), 0.05) 0%, transparent 45%),
-    radial-gradient(ellipse at 85% 25%, rgba(var(--color-brand-primary-400-rgb), 0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 100%, rgba(var(--color-neutral-rgb), 0.05) 0%, transparent 55%),
-    var(--color-surface-base);
-  --page-aurora:
-    radial-gradient(ellipse 60% 40% at 18% 30%, rgba(var(--color-brand-primary-400-rgb), 0.25) 0%, transparent 55%),
-    radial-gradient(ellipse 50% 35% at 78% 22%, rgba(var(--color-brand-primary-400-rgb), 0.18) 0%, transparent 55%),
-    radial-gradient(ellipse 70% 45% at 50% 85%, rgba(var(--color-brand-primary-400-rgb), 0.2) 0%, transparent 55%);
+  /* ── Page background ──
+     Blue bloom/aurora removed per demo request — the page renders on the
+     flat base surface with no ambient radial glow. The structural element
+     that paints --page-aurora (index.css body::before) stays in place but
+     paints nothing while this token is `none`, so other client themes can
+     still opt back in. The checkout mini-app preview is unaffected: it
+     receives its own --page-aurora via ThemeEngine.toCss (scoped tokens). */
+  --page-bg-layers:    var(--color-surface-base);
+  --page-aurora:       none;
 
   /* ── Dashboard hero ── */
   --dash-hero-bg:
