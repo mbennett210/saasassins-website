@@ -14,7 +14,7 @@ const CORE_ID = 'core';
 const MODULES = {
   core:        { name: 'PolishPoint Core Platform',           amount: 200000 },
   marketing:   { name: 'Marketing — Warm Outreach & Reviews', amount: 150000 },
-  leadscraper: { name: 'AI Lead Scraper',                     amount: 150000 }, // PLACEHOLDER price
+  leadscraper: { name: 'AI Lead Scraper',                     amount: 150000 },
   forms:       { name: 'Forms & Lead Capture',                amount: 75000 },
   invoicing:   { name: 'Invoicing + Quoting',                 amount: 75000 },
   quickbooks:  { name: 'QuickBooks Integration',              amount: 50000 },

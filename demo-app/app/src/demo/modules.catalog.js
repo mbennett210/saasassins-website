@@ -85,7 +85,7 @@ export const MODULE_CATALOG = [
     icon: '🧲',
     category: 'Growth',
     tier: 'addon',
-    price: 1500, // PLACEHOLDER — confirm final price
+    price: 1500,
     blurb: 'AI finds decision-makers that match your ICP and feeds them straight into your pipeline.',
     longDescription:
       'Constant top-of-funnel, on autopilot. The AI Lead Scraper searches for decision-makers that match your Ideal Customer Profile, enriches each with verified contact details, and drops them into a dedicated Pipeline stage — ready for your sequences and automations to work. Run it on a schedule for a steady drip of fresh leads, or trigger a search by hand whenever you want more. Standalone — but it plugs straight into your pipeline and automations for nonstop lead flow.',
