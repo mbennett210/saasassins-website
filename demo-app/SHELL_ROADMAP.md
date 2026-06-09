@@ -58,7 +58,7 @@ Largely built. Audit:
 - Activity timeline — **[x]**
 - ContactDetail / ClientDetail tabs — **[x]**
 - Email uniqueness — **[x]**
-- **Migration tooling** — **[x]** Contacts-only CSV import (GHL-style — accounts derive from contacts, not imported separately): file upload + paste, auto-mapping by header name, column-to-field mapping UI, preview with email-keyed dedup + identifier-presence validation, batch dispatch. Any one of email / phone / firstName / lastName / company is enough to accept a row; rows with no email surface a "dedup skipped" note. Unknown company names auto-create accounts (case-insensitive, batch-deduped) so contact-imports populate Accounts as a side effect. Built-in "Download sample CSV" link in the upload step. (Per-client data import billed separately as $200 add-on.)
+- **Migration tooling** — **[x]** Contacts-only CSV import (GHL-style — accounts derive from contacts, not imported separately): file upload + paste, auto-mapping by header name, column-to-field mapping UI, preview with email-keyed dedup + identifier-presence validation, batch dispatch. Any one of email / phone / firstName / lastName / company is enough to accept a row; rows with no email surface a "dedup skipped" note. Unknown company names auto-create accounts (case-insensitive, batch-deduped) so contact-imports populate Accounts as a side effect. Built-in "Download sample CSV" link in the upload step. (Per-client data import is the **Data Migration** add-on — $500 per source.)
 
 ## `[x]` Automated Reminders (staff/clients) `[Core]`
 
@@ -72,6 +72,8 @@ Customer-facing reminder scheduler — fully wired, no operator UI.
 **Architecture:** `lib/reminderScheduler.js` exposes pure functions (`shouldFire`, `getDueReminders`, `interpolate`, `buildTokens`). `components/ReminderScheduler.jsx` mounts at app root, ticks every 60s, dispatches `ADD_REMINDER_EVENT` (status `pending`) → calls `lib/twilio.sendSMS` or `lib/email.sendEmail` → dispatches `UPDATE_REMINDER_EVENT` with final status. Token interpolation: `{client_contact} {company} {service} {site_name} {date} {time}`. Module-level `inFlight` Set + state-based `hasFired()` handle dedup.
 
 The reminder *settings UI* (templates editor, sequence enable/disable, delivery inbox) was deleted in the v28 notifications redesign — operators don't need to edit templates or audit deliveries. The scheduler keeps firing in the background; failures fail silently. `state.reminderTemplates` and `state.reminderEvents` remain in seed/state because the scheduler reads them.
+
+> **Note:** these are **appointment/job** reminders (booking, 24h, day-of, post-service). **Invoice/overdue** reminders are a separate capability sold in the **Invoicing + Quoting** add-on — kept worded distinctly so the two never read as the same feature.
 
 ## `[x]` Per-user notification preferences + PWA + Web Push `[Core]`
 
@@ -123,6 +125,10 @@ Built. Audit:
 - Mobile-friendly behavior — **[x]** Single-pane mobile pattern: inbox by default, tap thread → message panel with back button, tap back → inbox. No auto-select on mobile.
 - User-to-user DMs — **[x]** Third inbox bucket alongside Inbox + Internal Chat. Channel `dm` + `participantUserIds: [a, b]` on `conversations`; privacy gated to participants in `selectConversationsForInbox` (owners/admins do NOT see DMs they aren't party to). `NewDmModal` reuses the AssignMenu-style picker. Storage bumped v19 → v20.
 
+## `[x]` Sales automation (timed workflows) `[Core]`
+
+Timed, trigger-based follow-up workflows ship with Core (built in the Rainier client app's automation engine). Triggers on form submit / pipeline stage change / tag / date; fires follow-up tasks, hand-offs, internal notifications, and nurture steps. **Was** a candidate "Sales Automation" add-on; folded into Core (2026-06) since it's already built. Surfaced as a Core feature line on the demo landing.
+
 ## `[x]` Marketing (cold-email sequences) `[Core]`
 
 Backported from an earlier proving build (2026-06). Multi-step email drip
@@ -130,6 +136,8 @@ sequences with company-shared rotation inboxes, AI-routed inbound replies, and
 per-contact enrollments. Distinct from Messaging (which is per-user, 1:1). Runs
 **fully in stub mode on the shell** — no backend required; the `api/inbox/*`
 Vercel routes + Supabase migrations are the deferred backend workstream.
+
+> **Demo packaging note (2026-06):** the sales demo sells this as the paid add-on **Marketing — Warm Outreach & Reviews ($1,500)** — it's the one live add-on page, and the add-on bundles review generation + reputation alongside the outreach engine. In per-client *product* builds it stays a built Core feature. Source of truth for the demo's price/copy is `demo-app/app/src/demo/modules.catalog.js`.
 
 **Architecture:** the send path routes through `lib/connectedInboxes.sendViaInbox()`
 (simulates locally when `VITE_EMAIL_BACKEND_URL` is unset). `lib/marketingScheduler.js`
@@ -168,11 +176,11 @@ Definition of done — all shipped:
 
 **Architecture chosen:** option (b) — frontend-adapter pattern. `lib/twilio.js` exposes the full integration surface (`connectTwilio`, `provisionNumber`, `disconnectTwilio`, `sendSMS`, `subscribeToDelivery`, `subscribeToInbound`, `simulateInbound`, `submitA2P`). When `VITE_TWILIO_BACKEND_URL` env var is set, calls hit the deployment backend; otherwise the adapter simulates locally with realistic timings (queued → sent → delivered, ~8% stub failure rate to exercise failure UI).
 
-Storage bumped v7 → v8 (`pp.store.v8`).
+Storage bumped v7 → v8 (`pp.store.v8`). SMS/A2P stays **in Core** — we stand up Twilio + the A2P 10DLC registration + number as part of every build (a complimentary value-add, not a metered add-on).
 
 ## `[x]` Logging invoices `[Core]`
 
-Built as `Invoices.jsx` + `InvoiceDetail.jsx`. **Note: only logging in Core** — full invoice/payment customization is the IPR add-on (per-client purchase). Audit Core scope:
+Built as `Invoices.jsx` + `InvoiceDetail.jsx`. **Note: only logging in Core** — full invoice/payment customization + quoting is the **Invoicing + Quoting** add-on (IPR merged with Quotes/e-sign; per-client purchase). Audit Core scope:
 - Manual invoice creation — **[x]**
 - Status tracking (draft / sent / paid / overdue) — **[x]**
 - Payment recording (manual entry only in Core) — **[x]**
@@ -242,20 +250,32 @@ For each new deployment:
 3. Drop the client logo PNG into `app/public/<logoFile>`; run `node scripts/gen-pwa-icons.mjs`
 4. Update `app/src/data/seed.js` company entity + team users; bump `INITIAL_STATE.version` + `STORAGE_KEY`
 5. Optional: tune role permission defaults in `roles.js` for the client's policy preferences
-6. Optional: CSV-import existing contacts ($200 migration add-on)
+6. Optional: CSV-import existing contacts (**Data Migration** add-on — $500 per source)
 7. Optional: phone line porting (Twilio number provision via Settings → Integrations)
 
 ---
 
-# Future add-on modules (per-client purchases — don't build until sold)
+# Commercial packaging — Core + add-on modules (2026-06 re-anchor)
 
-Listed here for shell-roadmap continuity only. When a client buys one of these, expand it into full DoDs at that time.
+The live commercial **source of truth** is the demo catalog:
+`demo-app/app/src/demo/modules.catalog.js` (display copy + prices) and
+`api/_modules.js` (server-side Stripe prices, in cents). Change prices there;
+this list mirrors them. Add-ons are listed for shell continuity and built
+per-client when sold — expand into full DoDs at that time.
 
-- `[Sold separately]` **Invoice & Payment Routing — $400** — customizable templates, automated invoice reminders, Stripe Connect, recurring billing, tipping, payment routing
-- `[Sold separately]` **QuickBooks Integration — $300** — bidirectional sync (customers / invoices / payments), AR aging surfaces
-- `[Sold separately]` **Inventory Management — $400** — physical key tracking + general inventory (supplies, equipment, stock alerts)
-- `[Sold separately]` **Employee Management System — $800** — document storage with expiration, certifications & training, GPS clock-in/out, ESIGN/UETA-compliant onboarding, supervisor inspections, raise/promotion workflow, time-off requests, Gusto integration
-- `[Sold separately]` **Field Ops — $600** — digital cleaning checklists, before/after photos, offline capability, job completion verification (checklist + photos + GPS)
+**Core platform — $2,000** (one-time): Operations Dashboard · Scheduling & Calendar · Client Database · Sales Pipeline · Sales automation (timed workflows) · Messaging (email + in-app) · SMS via Twilio (A2P 10DLC + number setup included) · Invoice & payment logging · Automated appointment reminders · Team / Roles / Permissions.
+
+Add-ons (one-time build fees; integrations connect to the client's **own** Twilio / Stripe / Gusto / QuickBooks accounts, billed separately). Build-status tags reflect what exists in the shell/demo today:
+
+- `[Built — Core]` **Marketing — Warm Outreach & Reviews — $1,500** — warm-email sequences (rotation inboxes, domain/DNS/warmup, AI-routed replies, reply-to-pipeline) **plus** review generation / monitoring / reputation. The one live add-on page (`/marketing`). (Built as Core in product builds; sold as an add-on in the demo.)
+- `[Not built]` **AI Lead Scraper — $1,500** — ICP decision-maker search + AI contact enrichment, auto-piped into a Pipeline stage; scheduled or manual runs; feeds sequences/automations.
+- `[Rainier — port pending]` **Forms & Lead Capture — $750** — drag-drop form builder, submissions inbox, analytics, webhooks, auto-route to Contacts + Pipeline. (Built in the Rainier client app; not yet ported into the shell/demo.)
+- `[Partly built]` **Invoicing + Quoting — $750** — quote/estimate builder + e-sign + one-click quote→invoice (Quoting built in Rainier) **plus** the IPR billing engine: customizable templates, Stripe Connect card payments, recurring/subscription billing, tipping, payment routing, overdue-invoice reminders. (Billing engine not built.)
+- `[Not built]` **QuickBooks Integration — $500** — bidirectional customer / invoice / payment sync + AR aging surfaces. Pairs best with Invoicing + Quoting.
+- `[Rainier — port pending]` **Inventory & Key Tracking — $500** — physical key tracking per site + general inventory (supplies, equipment) + low-stock alerts. (Maps to Rainier's Keys module.)
+- `[Not built]` **Field Ops — $800** — mobile crew app: push scheduled jobs, digital checklists, before/after photos, GPS-verified completion (offline-capable), live status board.
+- `[Not built]` **Employee Management System — $500** — document storage w/ expiration, certifications & training, GPS clock-in/out, ESIGN/UETA onboarding, supervisor inspections, raise/promotion workflow, time-off, Gusto payroll. Shares the crew mobile surface with Field Ops.
+- `[Service — CSV wizard built]` **Data Migration — $500 per source** — map + import existing contacts / accounts / history from the client's current system (e.g. a GoHighLevel export); field mapping, email-keyed dedup, validation. Uses the Core Client-Database import tooling + per-source config.
 
 ---
 
@@ -263,8 +283,8 @@ Listed here for shell-roadmap continuity only. When a client buys one of these, 
 
 These come up in client questionnaires but typically aren't in initial-package scope. Not promised, not sold. Don't build unless a client explicitly purchases.
 
-- 7-day sales sequence automation (would be a future "Sales Automation" add-on)
-- Quotes / Estimates module (most cleaning shops still gut-call quotes)
 - Generic client-onboarding workflow with department handoffs
 - Lifecycle email engine (welcome / first-clean recap)
 - Operational KPI cards (missed cleans / labor / complaints) — *unless rolled into Core dashboard for a specific client*
+
+*Moved out of Stretch (2026-06): **Sales automation** now ships in Core; **Quotes / Estimates** is part of the Invoicing + Quoting add-on.*
