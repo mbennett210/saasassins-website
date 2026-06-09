@@ -96,7 +96,7 @@ export default function ModuleCTA({ moduleId, variant = 'inline' }) {
           </span>
           <div className="pp-module-card-actions">
             <button type="button" className={`btn btn-sm ${inCart ? 'btn-success' : 'btn-primary'}`} onClick={onToggle}>
-              {inCart ? 'In cart ✓' : `Add — ${formatPrice(mod.price)}`}
+              {inCart ? 'In cart ✓' : 'Add'}
             </button>
           </div>
         </div>
