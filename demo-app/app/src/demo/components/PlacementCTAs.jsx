@@ -13,11 +13,18 @@ import '../placement.css';
 // the route has no mapped module, so it only appears "in the relevant section".
 // Driven off each module's `placements` in the catalog — add a module there and
 // it shows up here automatically.
+//
+// Placement keys ↔ routes. The demo dashboard lives at '/demo' (the landing owns
+// '/'); per-client product builds keep the dashboard at '/'. Contacts + pipeline
+// are mapped so Forms + the AI Lead Scraper surface where a prospect expects them
+// (capture leads on the CRM, constant lead flow into the pipeline).
 
 const ROUTE_PLACEMENT = [
-  { match: (p) => p === '/', key: 'dashboard' },
+  { match: (p) => p === '/' || p === '/demo', key: 'dashboard' },
   { match: (p) => p.startsWith('/invoices'), key: 'invoices' },
   { match: (p) => p.startsWith('/schedule'), key: 'schedule' },
+  { match: (p) => p.startsWith('/contacts'), key: 'clients' },
+  { match: (p) => p.startsWith('/pipeline'), key: 'pipeline' },
   { match: (p) => p.startsWith('/settings/team'), key: 'team' },
   { match: (p) => p.startsWith('/settings/integrations'), key: 'integrations' },
 ];

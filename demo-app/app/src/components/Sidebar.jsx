@@ -39,10 +39,13 @@ const NAV = [
   { to: '/invoices',  label: 'Invoices',   icon: 'invoices',  perm: 'invoices.view'  },
 ];
 
-// Operations group — lighter ops surfaces grouped under their own heading.
+// Operations group — lighter ops surfaces. Per-client product builds show both;
+// the DEMO trims them: Complaints is hidden (hideInDemo — it doesn't fit the
+// sales narrative), and Reviews moves into the Add-on group as part of the
+// Marketing module (demoAddon).
 const OPS_NAV = [
-  { to: '/complaints', label: 'Complaints', icon: 'warning', perm: 'complaints.view' },
-  { to: '/reviews',    label: 'Reviews',    icon: 'star',    perm: 'reviews.view'  },
+  { to: '/complaints', label: 'Complaints', icon: 'warning', perm: 'complaints.view', hideInDemo: true },
+  { to: '/reviews',    label: 'Reviews',    icon: 'star',    perm: 'reviews.view', demoAddon: true },
 ];
 
 export default function Sidebar({ mobileOpen, onCloseMobile }) {
@@ -55,9 +58,16 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
   const visible = NAV.filter((n) => check(n.perm) && (!n.hideWhen || !check(n.hideWhen)) && passesDevice(n));
   // In the demo, Marketing is repackaged as an add-on, so it drops out of Core.
   const coreItems = visible.filter((n) => !(IS_DEMO && n.demoAddon));
-  const opsItems = OPS_NAV.filter((n) => check(n.perm) && passesDevice(n));
+  // In the demo, Complaints is hidden and Reviews moves to the Add-on group;
+  // in product builds both show under Operations.
+  const opsItems = OPS_NAV.filter(
+    (n) => check(n.perm) && passesDevice(n) && !(IS_DEMO && (n.hideInDemo || n.demoAddon)),
+  );
   // Add-on modules surfaced in the nav (demo only); the catalog drives the list.
   const addonModules = IS_DEMO ? featuredModules() : [];
+  // Reviews is part of the Marketing module in the demo (not free Core), but it
+  // has its own built page — surface it alongside the add-ons so it stays reachable.
+  const showReviews = IS_DEMO && check('reviews.view');
 
   const renderLink = (item) => (
     <NavLink
@@ -101,7 +111,7 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
           </div>
         )}
 
-        {IS_DEMO && addonModules.length > 0 && (
+        {IS_DEMO && (addonModules.length > 0 || showReviews) && (
           <div className="nav-group" data-tour="addons">
             <p className="nav-group-label">Add-on modules</p>
             {addonModules.map((m) =>
@@ -119,6 +129,17 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
               ) : (
                 <NavAddonItem key={m.id} moduleId={m.id} />
               ),
+            )}
+            {showReviews && (
+              <NavLink
+                to="/reviews"
+                className={({ isActive }) => `nav-btn ${isActive ? 'active' : ''}`}
+                onClick={onCloseMobile}
+              >
+                <span className="nav-emoji" aria-hidden="true">⭐</span>
+                <span className="nav-btn-label">Reviews</span>
+                <span className="pp-addon-badge">Add-on</span>
+              </NavLink>
             )}
           </div>
         )}
