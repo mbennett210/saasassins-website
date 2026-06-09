@@ -31,6 +31,7 @@ async function handleRetrieve(stripe, req, res) {
       currency: session.currency,
       email: (session.customer_details && session.customer_details.email) || null,
       brandTheme: (session.metadata && session.metadata.brandTheme) || null,
+      brandThemeKey: (session.metadata && session.metadata.brandThemeKey) || null,
       items: ((session.line_items && session.line_items.data) || []).map((li) => ({
         name: li.description,
         amount: li.amount_total,
@@ -77,6 +78,15 @@ module.exports = async function handler(req, res) {
   const origin = `${proto}://${host}`;
 
   const brandTheme = typeof body.brandTheme === 'string' ? body.brandTheme.slice(0, 80) : '';
+  // The stable theme id (e.g. 'blue') — durable for fulfillment even if the
+  // display label ('Cobalt') is later renamed. The browser sends both.
+  const brandThemeKey = typeof body.brandThemeKey === 'string' ? body.brandThemeKey.slice(0, 40) : '';
+
+  // One metadata blob describing the order's fulfillment selections. Stamped on
+  // BOTH the Checkout Session AND the PaymentIntent, so the chosen modules +
+  // brand theme show up directly on the payment in the Dashboard — the Payments
+  // view reads PaymentIntent metadata, which the session's does NOT propagate to.
+  const orderMetadata = { moduleIds: ids.join(','), brandTheme, brandThemeKey };
 
   try {
     const session = await stripe.checkout.sessions.create({
@@ -91,7 +101,8 @@ module.exports = async function handler(req, res) {
       ],
       success_url: `${origin}/polishpoint/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/polishpoint/checkout`,
-      metadata: { moduleIds: ids.join(','), brandTheme },
+      metadata: orderMetadata,
+      payment_intent_data: { metadata: orderMetadata },
     });
     return res.status(200).json({ url: session.url });
   } catch (err) {

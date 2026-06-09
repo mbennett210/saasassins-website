@@ -66,7 +66,7 @@ export default function CheckoutPage() {
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ moduleIds: cart.ids, brandTheme }),
+        body: JSON.stringify({ moduleIds: cart.ids, brandTheme, brandThemeKey: deployTheme }),
       });
 
       if (res.ok) {
