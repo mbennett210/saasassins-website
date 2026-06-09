@@ -258,12 +258,42 @@
 .pp-demo-appbar-name { font-weight: var(--font-weight-bold); font-size: var(--font-size-md); color: var(--text-primary); }
 .pp-demo-appbar-label { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
 .pp-demo-appbar-actions { display: inline-flex; align-items: center; gap: var(--space-2); }
+/* Extra breathing room between the cart CTA and the notifications bell. */
+.pp-appbar-cartbtn { margin-right: 5px; }
 
 /* While the app bar is mounted, shift the app chrome down to clear it. */
 body.pp-has-appbar .sidebar { top: var(--space-12); }
 body.pp-has-appbar .sidebar-brand { display: none; }
 body.pp-has-appbar .mobile-header { top: var(--space-12); }
 body.pp-has-appbar .main { padding-top: calc(var(--space-12) + var(--space-8)); }
+
+/* ── Floating cart FAB (in-app, demo) ──────────────────────────────────────────
+   A white circle with the brand-blue cart icon, pinned bottom-right, that opens
+   the same cart drawer as the app-bar cart — so the cart is always in thumb reach.
+   A gentle left/right tilt every ~4s draws the eye (paused on hover; off under
+   reduced-motion). */
+@keyframes pp-cart-shake {
+  0%, 16%, 100% { transform: rotate(0deg); }
+  3%  { transform: rotate(-9deg); }
+  6%  { transform: rotate(9deg); }
+  9%  { transform: rotate(-7deg); }
+  12% { transform: rotate(7deg); }
+}
+.pp-demo-cartfab {
+  position: fixed; right: var(--space-5); bottom: var(--space-5); z-index: var(--z-sticky);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--space-12); height: var(--space-12);
+  border: 1px solid var(--border-light); border-radius: var(--radius-full);
+  background: var(--card-bg); color: var(--primary);
+  box-shadow: var(--shadow-lg); cursor: pointer;
+  animation: pp-cart-shake 4s var(--ease-in-out) infinite;
+}
+.pp-demo-cartfab:hover { box-shadow: var(--shadow-xl, var(--shadow-lg)); animation-play-state: paused; }
+.pp-demo-cartfab .pp-cart-fab-count {
+  position: absolute; top: calc(-1 * var(--space-1)); right: calc(-1 * var(--space-1));
+  background: var(--primary); color: var(--color-text-on-primary);
+}
+@media (prefers-reduced-motion: reduce) { .pp-demo-cartfab { animation: none; } }
 
 /* ── Demo landing + checkout shared page shell ── */
 /* width: 100% so the page fills #root (which is display:flex in index.css).
