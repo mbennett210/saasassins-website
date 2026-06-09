@@ -13,7 +13,9 @@ import '../demo.css';
 //   variant="row"              — tight checklist row for the checkout "Add more"
 //                                list (no blurb/features — name + price + Add)
 //
-// The glowing InfoButton beside each CTA opens the module's deep-dive copy.
+// The glowing InfoButton beside each CTA opens the module's deep-dive copy. On
+// the landing card it sits next to the module icon (top of the card); on the
+// inline row it sits beside the name.
 
 export default function ModuleCTA({ moduleId, variant = 'inline' }) {
   const mod = getModule(moduleId);
@@ -73,7 +75,10 @@ export default function ModuleCTA({ moduleId, variant = 'inline' }) {
     return (
       <div className={`pp-module-card${mod.featured ? ' is-featured' : ''}`}>
         <div className="pp-module-card-top">
-          <span className="pp-module-card-icon" aria-hidden="true">{mod.icon}</span>
+          <div className="pp-module-card-top-left">
+            <span className="pp-module-card-icon" aria-hidden="true">{mod.icon}</span>
+            {info}
+          </div>
           <span className="pp-addon-badge">Add-on</span>
         </div>
         <h3 className="pp-module-card-name">{mod.name}</h3>
@@ -90,7 +95,6 @@ export default function ModuleCTA({ moduleId, variant = 'inline' }) {
             <small>one-time</small>
           </span>
           <div className="pp-module-card-actions">
-            {info}
             <button type="button" className={`btn btn-sm ${inCart ? 'btn-success' : 'btn-primary'}`} onClick={onToggle}>
               {inCart ? 'In cart ✓' : `Add — ${formatPrice(mod.price)}`}
             </button>

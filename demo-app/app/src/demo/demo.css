@@ -141,6 +141,12 @@
 .pp-module-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .pp-module-card.is-featured { border-color: var(--primary); }
 .pp-module-card-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+/* Group the module icon + its info "i" together on the left, so the info
+   affordance reads as part of the icon rather than floating in the footer. */
+.pp-module-card-top-left { display: inline-flex; align-items: center; gap: var(--space-2); }
+/* Optical nudge: lift the info "i" a few px so it reads as vertically centered
+   against the much larger emoji icon (whose glyph sits high in its line box). */
+.pp-module-card-top-left .pp-info-btn { position: relative; top: -3px; }
 .pp-module-card-icon { font-size: var(--font-size-3xl); line-height: 1; }
 .pp-module-card-name { margin: var(--space-3) 0 0; font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
 .pp-module-card-cat { margin: var(--space-1) 0 0; font-size: var(--font-size-2xs); font-weight: var(--font-weight-semibold); color: var(--primary); text-transform: uppercase; letter-spacing: var(--letter-spacing-wide); }
@@ -255,11 +261,22 @@
 .pp-section-head h2 { margin: 0; font-size: var(--font-size-2xl); font-weight: var(--font-weight-semibold); color: var(--text-primary); }
 .pp-section-head p { margin: var(--space-1) 0 0; font-size: var(--font-size-sm); color: var(--text-muted); }
 
-/* core-features included band */
-.pp-core-band { margin-top: var(--space-6); padding: var(--space-6); border: 1px dashed var(--card-border); border-radius: var(--card-radius); background: var(--inset-bg); }
-.pp-core-list { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; gap: var(--space-2) var(--space-4); grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
-.pp-core-list li { position: relative; padding-left: var(--space-5); font-size: var(--font-size-sm); color: var(--text-body); }
-.pp-core-list li::before { content: '✓'; position: absolute; left: 0; color: var(--success); font-weight: var(--font-weight-bold); }
+/* core-features included band — styled as a card to match the module cards */
+.pp-core-band {
+  margin-top: var(--space-6); padding: var(--space-6);
+  border: 1px solid var(--card-border); border-radius: var(--card-radius);
+  background: var(--card-bg); box-shadow: var(--shadow-sm);
+}
+/* Multi-column flow: each column packs independently, so a 2-line feature never
+   knocks the neighbouring columns out of vertical alignment (the ragged look a
+   row-major grid produced). Collapses to one column on narrow screens. */
+.pp-core-list { list-style: none; margin: 0; padding: 0; columns: 240px 3; column-gap: var(--space-8); }
+.pp-core-list li {
+  position: relative; padding-left: var(--space-6);
+  margin: 0 0 var(--space-3); break-inside: avoid;
+  font-size: var(--font-size-sm); color: var(--text-body); line-height: var(--line-height-normal);
+}
+.pp-core-list li::before { content: '✓'; position: absolute; left: 0; top: 0; color: var(--success); font-weight: var(--font-weight-bold); }
 
 .pp-demo-footer { text-align: center; padding: var(--space-8) var(--space-4); color: var(--text-faint); font-size: var(--font-size-sm); border-top: 1px solid var(--border-light); margin-top: var(--space-10); }
 
