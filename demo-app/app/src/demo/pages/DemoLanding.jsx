@@ -4,6 +4,7 @@ import { useStore } from '../../store';
 import { selectCompany } from '../../store/selectors';
 import { CORE, featuredModules, formatPrice } from '../modules.catalog';
 import { useCart } from '../cart/CartContext';
+import { brandAssetUrl } from '../../lib/brandAssetUrl';
 import ModuleCTA from '../components/ModuleCTA';
 import InfoButton from '../components/InfoButton';
 import CartDrawer from '../components/CartDrawer';
@@ -12,7 +13,7 @@ import '../demo.css';
 // Marketing landing at /polishpoint — the page a prospect arrives on from the
 // SaaSassins site. Pitches the product, lets them jump into the live CRM
 // ("Enter live demo" → /demo), and browse the sellable add-on modules. Standalone
-// (no app sidebar). Brand name is read from the store company (PolishPoint by default).
+// (no app sidebar). Brand logo + name are read from the store company (PolishPoint by default).
 
 export default function DemoLanding() {
   const navigate = useNavigate();
@@ -25,7 +26,11 @@ export default function DemoLanding() {
     <div className="pp-demo-page">
       <header className="pp-demo-topbar">
         <span className="pp-demo-topbar-brand">
-          {company.name}
+          {company.logoUrl ? (
+            <img className="pp-demo-topbar-logo" src={brandAssetUrl(company.logoUrl)} alt={company.name} />
+          ) : (
+            company.name
+          )}
           <span className="pp-addon-badge">Demo</span>
         </span>
         <div className="pp-demo-topbar-actions">

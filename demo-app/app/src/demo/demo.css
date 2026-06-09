@@ -243,6 +243,9 @@
   background: var(--color-surface-raised); border-bottom: 1px solid var(--border-light);
 }
 .pp-demo-topbar-brand { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--font-weight-bold); font-size: var(--font-size-lg); color: var(--text-primary); }
+/* Brand logo in the top bar — height-capped so the source PNG (a wide horizontal
+   wordmark) fits the bar; width auto preserves aspect. */
+.pp-demo-topbar-logo { height: var(--space-7); width: auto; display: block; }
 .pp-demo-topbar-actions { display: inline-flex; align-items: center; gap: var(--space-3); }
 .pp-demo-cartbtn { position: relative; }
 .pp-demo-cartbtn .pp-cart-fab-count { position: absolute; top: calc(-1 * var(--space-2)); right: calc(-1 * var(--space-2)); background: var(--primary); color: var(--color-text-on-primary); }

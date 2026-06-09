@@ -5,6 +5,7 @@ import { selectCompany } from '../../store/selectors';
 import { useCart } from '../cart/CartContext';
 import { CORE, formatPrice, featuredModules } from '../modules.catalog';
 import { themeLabel, loadBrand, saveBrand } from '../brandTheme';
+import { brandAssetUrl } from '../../lib/brandAssetUrl';
 import CheckoutThemeSelect from '../components/CheckoutThemeSelect';
 import ModuleCTA from '../components/ModuleCTA';
 import '../demo.css';
@@ -96,7 +97,11 @@ export default function CheckoutPage() {
     <div className="pp-demo-page">
       <header className="pp-demo-topbar">
         <span className="pp-demo-topbar-brand">
-          {company.name}
+          {company.logoUrl ? (
+            <img className="pp-demo-topbar-logo" src={brandAssetUrl(company.logoUrl)} alt={company.name} />
+          ) : (
+            company.name
+          )}
           <span className="pp-addon-badge">Checkout</span>
         </span>
         <div className="pp-demo-topbar-actions">
