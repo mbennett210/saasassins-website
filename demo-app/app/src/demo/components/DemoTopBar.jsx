@@ -9,15 +9,19 @@ import CartDrawer from './CartDrawer';
 import '../demo.css';
 
 // Persistent demo app bar — a slim bar across the very top of the live app so a
-// prospect always has a way BACK to the modules landing and a clear path to their
-// Cart / Checkout. Mirrors the landing's top bar so the chrome feels continuous
-// when they click "Enter live demo." Mounted in AppLayout behind IS_DEMO (so it
-// only rides the in-app routes, never the standalone landing/checkout).
+// prospect always has a way BACK to the modules landing and into their cart.
+// Mirrors the landing's top bar so the chrome feels continuous when they click
+// "Enter live demo." Mounted in AppLayout behind IS_DEMO (so it only rides the
+// in-app routes, never the standalone landing/checkout).
+//
+// The cart icon is the single commerce entry point: it opens the cart drawer,
+// which carries the order total + the "Review & checkout" button. (No separate
+// top-level Checkout button — you check out from the cart, the standard pattern.)
 //
 // It toggles `body.pp-has-appbar` while mounted; that class shifts the app chrome
 // (sidebar, mobile header, main padding) down to clear this fixed bar and hides
-// the now-duplicate sidebar brand. The notifications bell folds in here — the
-// bell-floater + mobile-header bell are hidden in the demo (see AppLayout).
+// the now-duplicate sidebar brand. The notifications bell folds in here (the
+// bell-floater + mobile-header bell are hidden in the demo — see AppLayout).
 //
 // (This is also the natural mount point if the prospect-facing concierge widget,
 // currently parked, is re-added later.)
@@ -60,9 +64,6 @@ export default function DemoTopBar() {
             <span aria-hidden="true">🛒</span>
             <span className="pp-demo-appbar-cartword">&nbsp;Cart</span>
             {cart.count > 0 && <span className="pp-cart-fab-count">{cart.count}</span>}
-          </button>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/checkout')}>
-            Checkout
           </button>
           <NotificationsBell />
         </div>
