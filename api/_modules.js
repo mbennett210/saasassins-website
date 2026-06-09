@@ -12,13 +12,16 @@
 const CORE_ID = 'core';
 
 const MODULES = {
-  core: { name: 'PolishPoint Core Platform', amount: 150000 },
-  marketing: { name: 'Marketing — Cold Email', amount: 60000 },
-  ipr: { name: 'Invoice & Payment Routing', amount: 40000 },
-  quickbooks: { name: 'QuickBooks Integration', amount: 30000 },
-  inventory: { name: 'Inventory Management', amount: 40000 },
-  ems: { name: 'Employee Management System', amount: 80000 },
-  fieldops: { name: 'Field Ops', amount: 60000 },
+  core:        { name: 'PolishPoint Core Platform',           amount: 200000 },
+  marketing:   { name: 'Marketing — Warm Outreach & Reviews', amount: 150000 },
+  leadscraper: { name: 'AI Lead Scraper',                     amount: 150000 }, // PLACEHOLDER price
+  forms:       { name: 'Forms & Lead Capture',                amount: 75000 },
+  invoicing:   { name: 'Invoicing + Quoting',                 amount: 75000 },
+  quickbooks:  { name: 'QuickBooks Integration',              amount: 50000 },
+  inventory:   { name: 'Inventory & Key Tracking',            amount: 50000 },
+  fieldops:    { name: 'Field Ops',                           amount: 80000 },
+  ems:         { name: 'Employee Management System',          amount: 50000 },
+  migration:   { name: 'Data Migration',                      amount: 50000 },
 };
 
 // Build Stripe Checkout line items from a list of add-on ids using SERVER-SIDE

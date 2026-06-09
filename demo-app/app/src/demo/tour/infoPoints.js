@@ -26,7 +26,7 @@ export const INFO_POINTS = [
   {
     key: 'schedule', path: '/schedule', match: 'prefix', selector: TITLE, side: 'bottom',
     title: 'Scheduling & calendar',
-    body: 'Jobs, crews, and the calendar in one place — schedule work, assign your team, and keep the day organized.',
+    body: 'Jobs, crews, and the calendar in one place — schedule work, assign your team, and keep the day organized. Add Field Ops to push each job to a mobile crew app with checklists, photos, and GPS-verified completion.',
   },
   {
     key: 'clients', path: '/contacts', match: 'prefix', selector: TITLE, side: 'bottom',
@@ -41,12 +41,12 @@ export const INFO_POINTS = [
   {
     key: 'invoices', path: '/invoices', match: 'prefix', selector: TITLE, side: 'bottom',
     title: 'Invoices & payments',
-    body: 'Log invoices and payments here. Add the Invoice Routing module for online card payments and automatic reminders.',
+    body: 'Log invoices and payments here. Add the Invoicing + Quoting module for branded quotes with e-sign, online card payments, recurring billing, and automatic overdue-invoice reminders.',
   },
   {
     key: 'marketing', path: '/marketing', match: 'prefix', selector: TITLE, side: 'bottom',
     title: 'Marketing',
-    body: 'Multi-step cold-email sequences with shared rotation inboxes and AI-routed replies — an add-on module.',
+    body: 'Warm-email outreach with shared rotation inboxes and AI-routed replies, plus review generation and reputation management — an add-on module.',
   },
   {
     key: 'settings', path: '/settings', match: 'prefix', selector: TITLE, side: 'bottom',

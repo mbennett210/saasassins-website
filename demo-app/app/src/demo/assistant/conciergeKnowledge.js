@@ -52,7 +52,7 @@ const NAV_ALIASES = {
   clients: ['crm', 'contacts', 'clients', 'accounts', 'customers', 'people', 'database'],
   pipeline: ['pipeline', 'deals', 'kanban', 'sales pipeline', 'stages'],
   invoices: ['invoice', 'invoices', 'payments', 'billing'],
-  marketing: ['marketing', 'cold email', 'sequences', 'outbound', 'drip'],
+  marketing: ['marketing', 'cold email', 'warm outreach', 'sequences', 'outbound', 'drip', 'reviews', 'reputation'],
   settings: ['settings', 'company', 'team', 'roles', 'permissions', 'services'],
 };
 
@@ -65,14 +65,20 @@ export const NAV_TARGETS = INFO_POINTS.map((p) => ({
 
 const KNOWN_ROUTES = new Set([...NAV_TARGETS.map((t) => t.route), '/checkout']);
 
-// Keyword → module-id map for detecting which add-on a prospect means.
+// Keyword → module-id map for detecting which add-on a prospect means. Order
+// matters: the first id whose words match wins, so list more-specific modules
+// before broader ones. (Sales automation is a Core feature, not an add-on, so
+// it has no entry here.)
 const MODULE_KEYWORDS = {
-  marketing: ['marketing', 'cold email', 'email sequence', 'outbound', 'drip'],
-  ipr: ['invoice routing', 'invoice & payment', 'payment routing', 'online payment', 'card payment', 'ipr', 'billing engine'],
-  quickbooks: ['quickbooks', 'qbo', 'accounting sync', 'the books'],
-  inventory: ['inventory', 'stock', 'low-stock', 'low stock', 'supplies', 'physical keys'],
+  marketing: ['marketing', 'warm outreach', 'cold email', 'email sequence', 'outbound', 'drip', 'reviews', 'reputation', 'review request', 'google review'],
+  leadscraper: ['lead scraper', 'lead scraping', 'scraper', 'prospecting', 'lead gen', 'lead generation', 'find leads', 'lead finder', 'decision maker', 'decision-maker', 'icp', 'ideal customer'],
+  forms: ['form', 'forms', 'lead capture', 'intake', 'form builder', 'webhook'],
+  invoicing: ['invoicing', 'invoice routing', 'invoice & payment', 'quote', 'quoting', 'estimate', 'e-sign', 'esign', 'payment routing', 'online payment', 'card payment', 'recurring billing', 'tipping', 'billing engine'],
+  quickbooks: ['quickbooks', 'qbo', 'accounting sync', 'the books', 'ar aging'],
+  inventory: ['inventory', 'stock', 'low-stock', 'low stock', 'supplies', 'physical keys', 'key tracking'],
+  fieldops: ['field ops', 'fieldops', 'checklist', 'before/after', 'before and after', 'job completion', 'gps', 'dispatch', 'mobile field app'],
   ems: ['employee management', 'ems', ' hr ', 'onboarding', 'certifications', 'clock-in', 'clock in', 'payroll', 'gusto', 'time-off', 'time off'],
-  fieldops: ['field ops', 'fieldops', 'checklist', 'before/after', 'before and after', 'job completion', 'gps'],
+  migration: ['migration', 'data migration', 'import', 'csv', 'ghl', 'gohighlevel', 'go high level'],
 };
 
 function detectModule(text) {
@@ -221,8 +227,9 @@ export function runStubConcierge(rawText, context = {}) {
     return {
       reply: `The **${CORE.name}** (${formatPrice(CORE.price)}) is the foundation every plan includes:\n\n` +
         `${list(CORE.features)}\n\n` +
-        `Everything else — Marketing, Invoice Routing, QuickBooks, Inventory, Employee Management, ` +
-        `Field Ops — is an optional add-on. Want details on any of them?`,
+        `Everything else — Marketing, AI Lead Scraper, Forms, Invoicing + Quoting, QuickBooks, ` +
+        `Inventory, Field Ops, Employee Management, and Data Migration — is an optional add-on. ` +
+        `Want details on any of them?`,
       actions: [],
     };
   }
