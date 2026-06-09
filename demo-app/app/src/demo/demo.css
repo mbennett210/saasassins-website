@@ -3,10 +3,10 @@
    ------------------------------------------------------------
    Self-contained styles for the demo/commerce surfaces: glowing
    info buttons, module add-to-cart CTAs, the cart drawer/FAB,
-   the sidebar Core/Add-on grouping, the checkout brand-style
-   toggle + persistent dashboard preview (desktop + phone device
-   frames), the in-content info pins, the /polishpoint/demo landing,
-   and /polishpoint/checkout.
+   the sidebar Core/Add-on grouping, the persistent in-app demo
+   top bar, the checkout brand-style toggle + persistent dashboard
+   preview (desktop + phone device frames), the in-content info
+   pins, the /polishpoint/demo landing, and /polishpoint/checkout.
 
    Loaded only when the demo components render (which are gated on
    IS_DEMO), so none of this ships in a per-client product build.
@@ -231,6 +231,40 @@
 .pp-cart-clear { background: none; border: none; color: var(--text-faint); font-size: var(--font-size-sm); font-family: var(--font); cursor: pointer; text-decoration: underline; }
 .pp-cart-clear:hover { color: var(--danger); }
 
+/* ── Persistent demo app bar (in-app, demo only) ──────────────────────────────
+   A slim bar pinned across the very top of the live app (DemoTopBar). It gives a
+   prospect a constant way BACK to the modules landing + into the cart/checkout,
+   mirroring the landing's top bar. DemoTopBar toggles `body.pp-has-appbar`, which
+   shifts the app chrome (sidebar, mobile header, main) down to clear this fixed
+   bar and hides the now-duplicate sidebar brand. Inert without the body class. */
+.pp-demo-appbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 70;
+  height: var(--space-12);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: 0 var(--space-4);
+  background: var(--color-surface-raised);
+  border-bottom: 1px solid var(--border-light);
+}
+.pp-demo-appbar-back {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  background: none; border: none; cursor: pointer; font-family: var(--font);
+  color: var(--text-muted); border-radius: var(--radius-md);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.pp-demo-appbar-back:hover { background: var(--inset-bg); color: var(--text-primary); }
+.pp-demo-appbar-arrow { font-size: var(--font-size-lg); line-height: 1; }
+.pp-demo-appbar-logo { height: var(--space-7); width: auto; display: block; }
+.pp-demo-appbar-name { font-weight: var(--font-weight-bold); font-size: var(--font-size-md); color: var(--text-primary); }
+.pp-demo-appbar-label { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
+.pp-demo-appbar-actions { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+/* While the app bar is mounted, shift the app chrome down to clear it. */
+body.pp-has-appbar .sidebar { top: var(--space-12); }
+body.pp-has-appbar .sidebar-brand { display: none; }
+body.pp-has-appbar .mobile-header { top: var(--space-12); }
+body.pp-has-appbar .main { padding-top: calc(var(--space-12) + var(--space-8)); }
+
 /* ── Demo landing + checkout shared page shell ── */
 /* width: 100% so the page fills #root (which is display:flex in index.css).
    Without it the page is a flex item that shrink-wraps to its content and sits
@@ -243,9 +277,9 @@
   background: var(--color-surface-raised); border-bottom: 1px solid var(--border-light);
 }
 .pp-demo-topbar-brand { display: inline-flex; align-items: center; gap: var(--space-2); font-weight: var(--font-weight-bold); font-size: var(--font-size-lg); color: var(--text-primary); }
-/* Brand logo in the top bar — height-capped so the source PNG (a wide horizontal
-   wordmark) fits the bar; width auto preserves aspect. */
-.pp-demo-topbar-logo { height: var(--space-7); width: auto; display: block; }
+/* Brand logo in the landing top bar — sized to match the demo app's brand logo
+   (the wide horizontal wordmark, ~3.4:1); width auto preserves aspect. */
+.pp-demo-topbar-logo { height: var(--space-12); width: auto; display: block; }
 .pp-demo-topbar-actions { display: inline-flex; align-items: center; gap: var(--space-3); }
 .pp-demo-cartbtn { position: relative; }
 .pp-demo-cartbtn .pp-cart-fab-count { position: absolute; top: calc(-1 * var(--space-2)); right: calc(-1 * var(--space-2)); background: var(--primary); color: var(--color-text-on-primary); }
@@ -478,4 +512,9 @@
   /* Tighten the gap on small screens; the phone-under-desktop stacking itself is
      handled by flex-wrap on the stage (the desktop shrinks, the phone wraps below). */
   .pp-preview-stage { gap: var(--space-4); }
+  /* App bar: drop the "Modules" word + "Cart" word to icons so the bar never
+     crowds at phone widths; main clears the app bar + the 56px mobile header. */
+  .pp-demo-appbar-label { display: none; }
+  .pp-demo-appbar-cartword { display: none; }
+  body.pp-has-appbar .main { padding-top: calc(var(--space-12) + 64px); }
 }

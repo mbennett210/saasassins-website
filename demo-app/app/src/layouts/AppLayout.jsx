@@ -5,6 +5,7 @@ import NotificationsBell from '../components/NotificationsBell';
 import { useStore } from '../store';
 import { selectCompany } from '../store/selectors';
 import { IS_DEMO } from '../demo/isDemo';
+import DemoTopBar from '../demo/components/DemoTopBar';
 import PlacementCTAs from '../demo/components/PlacementCTAs';
 import InfoPinLayer from '../demo/tour/InfoPinLayer';
 
@@ -14,6 +15,10 @@ export default function AppLayout() {
 
   return (
     <>
+      {/* Demo-only: persistent top bar (back to modules + cart/checkout). It folds
+          in the notifications bell, so the bell-floater + mobile-header bell below
+          are suppressed in the demo. */}
+      {IS_DEMO && <DemoTopBar />}
       <div className="mobile-header">
         <button
           className={`hamburger ${mobileOpen ? 'open' : ''}`}
@@ -23,7 +28,7 @@ export default function AppLayout() {
           <span />
         </button>
         <div className="mobile-brand">{company.name}</div>
-        <NotificationsBell />
+        {!IS_DEMO && <NotificationsBell />}
       </div>
       <div
         className={`sidebar-overlay ${mobileOpen ? 'visible' : ''}`}
@@ -34,9 +39,11 @@ export default function AppLayout() {
         onCloseMobile={() => setMobileOpen(false)}
       />
       <main className="main">
-        <div className="bell-floater">
-          <NotificationsBell />
-        </div>
+        {!IS_DEMO && (
+          <div className="bell-floater">
+            <NotificationsBell />
+          </div>
+        )}
         <Outlet />
         {/* Demo-only: in-content "i" info pins — gentle pings beside each section's header. */}
         {IS_DEMO && <InfoPinLayer />}

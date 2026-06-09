@@ -41,7 +41,6 @@ import SettingsConnectedInboxes from './pages/settings/ConnectedInboxes';
 // any of this.
 import { IS_DEMO } from './demo/isDemo';
 import { CartProvider } from './demo/cart/CartContext';
-import DemoChrome from './demo/components/DemoChrome';
 import DemoLanding from './demo/pages/DemoLanding';
 import CheckoutPage from './demo/pages/CheckoutPage';
 import CheckoutSuccess from './demo/pages/CheckoutSuccess';
@@ -119,9 +118,6 @@ function AppRoutes() {
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
-
-      {/* App-wide floating cart + drawer (demo build only). */}
-      {IS_DEMO && <DemoChrome />}
     </BrowserRouter>
   );
 }
