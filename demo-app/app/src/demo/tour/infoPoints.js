@@ -15,13 +15,17 @@
 // Note: Messaging uses a custom header (no .page-head) and is intentionally not
 // listed yet — it needs its own title selector before it gets a pin.
 
+import { IS_DEMO } from '../isDemo';
+
 const TITLE = '.page-head-title, .page-head h1';
 
 export const INFO_POINTS = [
   {
-    key: 'dashboard', path: '/', match: 'exact', selector: TITLE, side: 'bottom',
+    // In the demo the dashboard lives at '/demo' (the marketing landing owns '/');
+    // per-client product builds keep it at the index '/'.
+    key: 'dashboard', path: IS_DEMO ? '/demo' : '/', match: 'exact', selector: TITLE, side: 'bottom',
     title: 'Your dashboard',
-    body: 'Your command center. We configure which cards surface here — revenue, today’s schedule, follow-ups — around what matters most to your business.',
+    body: 'Your command center — and it’s fully customizable. We tailor exactly which cards surface here (revenue, today’s schedule, follow-ups, and more) to what you want featured for your business.',
   },
   {
     key: 'schedule', path: '/schedule', match: 'prefix', selector: TITLE, side: 'bottom',
