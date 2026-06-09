@@ -283,6 +283,11 @@ body.pp-has-appbar .main { padding-top: calc(var(--space-12) + var(--space-8)); 
 .pp-demo-topbar-actions { display: inline-flex; align-items: center; gap: var(--space-3); }
 .pp-demo-cartbtn { position: relative; }
 .pp-demo-cartbtn .pp-cart-fab-count { position: absolute; top: calc(-1 * var(--space-2)); right: calc(-1 * var(--space-2)); background: var(--primary); color: var(--color-text-on-primary); }
+/* In-app bar, the cart is a filled/primary CTA — flip the corner count badge to a
+   light chip with a primary number so it stays readable on the primary fill.
+   (Must follow .pp-demo-cartbtn .pp-cart-fab-count to win the equal-specificity
+   cascade, since the button carries both classes.) */
+.pp-appbar-cartbtn .pp-cart-fab-count { background: var(--color-text-on-primary); color: var(--primary); }
 .pp-link-muted { background: none; border: none; color: var(--text-muted); font-family: var(--font); font-size: var(--font-size-sm); cursor: pointer; text-decoration: none; }
 .pp-link-muted:hover { color: var(--text-primary); }
 

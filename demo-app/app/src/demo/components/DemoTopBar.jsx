@@ -14,9 +14,10 @@ import '../demo.css';
 // "Enter live demo." Mounted in AppLayout behind IS_DEMO (so it only rides the
 // in-app routes, never the standalone landing/checkout).
 //
-// The cart icon is the single commerce entry point: it opens the cart drawer,
-// which carries the order total + the "Review & checkout" button. (No separate
-// top-level Checkout button — you check out from the cart, the standard pattern.)
+// The cart is the single commerce entry point and is styled as the bar's primary
+// CTA (filled) so it reads as the clear next step. It opens the cart drawer, which
+// carries the order total + the "Review & checkout" button — so there's no
+// separate Checkout button; you check out from the cart, the standard pattern.
 //
 // It toggles `body.pp-has-appbar` while mounted; that class shifts the app chrome
 // (sidebar, mobile header, main padding) down to clear this fixed bar and hides
@@ -57,7 +58,7 @@ export default function DemoTopBar() {
         <div className="pp-demo-appbar-actions">
           <button
             type="button"
-            className="btn btn-outline btn-sm pp-demo-cartbtn"
+            className="btn btn-primary btn-sm pp-demo-cartbtn pp-appbar-cartbtn"
             onClick={() => setCartOpen(true)}
             aria-label="Open your cart"
           >
