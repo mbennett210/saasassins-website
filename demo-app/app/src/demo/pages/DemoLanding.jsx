@@ -51,28 +51,6 @@ export default function DemoLanding() {
           </div>
         </section>
 
-        <section className="pp-demo-section" id="modules">
-          <div className="pp-section-head">
-            <div className="pp-section-head-text">
-              <h2>Featured add-on modules</h2>
-              <p>The {formatPrice(CORE.price)} Core platform covers everything below. These power-ups extend it — add any to your cart here or from inside the app.</p>
-            </div>
-            <InfoButton title="How modules work" glowKey="section:modules" label="How modules work">
-              <p className="pp-info-lead">
-                Every {company.name} plan starts with the Core platform ({formatPrice(CORE.price)}, one-time) and
-                includes all of its features. Add-on modules are one-time purchases that unlock extra
-                capability, tailored and integrated for your business. Add them here or from the relevant
-                area inside the app, then confirm everything at checkout.
-              </p>
-            </InfoButton>
-          </div>
-          <div className="pp-module-grid">
-            {modules.map((m) => (
-              <ModuleCTA key={m.id} moduleId={m.id} variant="card" />
-            ))}
-          </div>
-        </section>
-
         <section className="pp-demo-section">
           <div className="pp-section-head">
             <div className="pp-section-head-text">
@@ -86,6 +64,32 @@ export default function DemoLanding() {
                 <li key={f}>{f}</li>
               ))}
             </ul>
+          </div>
+        </section>
+
+        <section className="pp-demo-section" id="modules">
+          <div className="pp-section-head">
+            <div className="pp-section-head-text">
+              <h2>Featured add-on modules</h2>
+              <p>The {formatPrice(CORE.price)} Core platform above covers your operations. These power-ups extend it — add any to your cart here or from inside the app.</p>
+            </div>
+            <InfoButton title="How modules work" glowKey="section:modules" label="How modules work">
+              <p className="pp-info-lead">
+                Every {company.name} plan starts with the Core platform ({formatPrice(CORE.price)}, one-time) and
+                includes all of its features. Add-on modules are one-time purchases that unlock extra
+                capability, tailored and integrated for your business. Add them here or from the relevant
+                area inside the app, then confirm everything at checkout.
+              </p>
+              <p className="pp-info-lead">
+                Prices are one-time build fees. Where a module connects to a third-party service — Twilio,
+                Stripe, Gusto, QuickBooks — it uses your own account with that provider, which bills separately.
+              </p>
+            </InfoButton>
+          </div>
+          <div className="pp-module-grid">
+            {modules.map((m) => (
+              <ModuleCTA key={m.id} moduleId={m.id} variant="card" />
+            ))}
           </div>
         </section>
       </div>

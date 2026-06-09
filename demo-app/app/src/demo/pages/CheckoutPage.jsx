@@ -200,6 +200,10 @@ export default function CheckoutPage() {
             <p className="pp-checkout-note">
               Secure one-time payment via Stripe. You’ll be redirected to complete your purchase.
             </p>
+            <p className="pp-checkout-note">
+              This is a one-time build fee. Integrations connect to your own Twilio, Stripe, Gusto,
+              and QuickBooks accounts, which bill separately.
+            </p>
           </aside>
         </div>
       </div>
