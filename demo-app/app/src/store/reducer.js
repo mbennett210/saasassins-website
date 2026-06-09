@@ -34,6 +34,13 @@ export const ACTIONS = {
   UPDATE_USER: 'UPDATE_USER',
   DELETE_USER: 'DELETE_USER',
   UPDATE_NOTIFICATION_PREFS: 'UPDATE_NOTIFICATION_PREFS',
+  UPDATE_SIGNATURE_PREFS: 'UPDATE_SIGNATURE_PREFS',
+
+  // Operations — Complaints log + Reviews / reputation
+  ADD_COMPLAINT: 'ADD_COMPLAINT',
+  UPDATE_COMPLAINT: 'UPDATE_COMPLAINT',
+  DELETE_COMPLAINT: 'DELETE_COMPLAINT',
+  SET_REVIEWS: 'SET_REVIEWS',
 
   // Notifications inbox (persistent in-app, surfaced via the bell)
   ADD_NOTIFICATION: 'ADD_NOTIFICATION',
@@ -290,6 +297,42 @@ export function reducer(state, action) {
         ),
       };
     }
+    // Per-user email signature {enabled, text, imageDataUrl}. Appended to
+    // outbound Messaging emails via lib/signature.js. SMS/internal never get it.
+    case ACTIONS.UPDATE_SIGNATURE_PREFS: {
+      const { userId, patch } = action;
+      return {
+        ...state,
+        users: state.users.map((u) =>
+          u.id === userId
+            ? { ...u, signaturePrefs: { ...(u.signaturePrefs || {}), ...patch } }
+            : u
+        ),
+      };
+    }
+
+    // ---------- Operations: Complaints log ----------
+    case ACTIONS.ADD_COMPLAINT: {
+      const now = nowIso();
+      const complaint = {
+        id: newId('cmp'), status: 'open', clientName: '', clientId: null,
+        subject: '', detail: '', resolvedAt: null,
+        ...action.complaint, createdAt: now, updatedAt: now, createdBy: state.currentUserId,
+      };
+      return { ...state, complaints: [...(state.complaints || []), complaint] };
+    }
+    case ACTIONS.UPDATE_COMPLAINT:
+      return {
+        ...state,
+        complaints: (state.complaints || []).map((c) => (c.id === action.id
+          ? { ...c, ...action.patch, updatedAt: nowIso(), resolvedAt: action.patch?.status === 'resolved' ? nowIso() : (action.patch?.status ? null : c.resolvedAt) }
+          : c)),
+      };
+    case ACTIONS.DELETE_COMPLAINT:
+      return { ...state, complaints: (state.complaints || []).filter((c) => c.id !== action.id) };
+    // ---------- Operations: Reviews / reputation ----------
+    case ACTIONS.SET_REVIEWS:
+      return { ...state, reviews: { ...(state.reviews || {}), ...action.patch } };
 
     // ---------- Notifications inbox ----------
     case ACTIONS.ADD_NOTIFICATION: {

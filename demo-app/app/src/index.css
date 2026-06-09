@@ -1753,6 +1753,14 @@ select.input.input-ghost:focus {
 }
 .user-menu button:hover { background: var(--inset-bg); }
 .user-menu button.active { background: var(--primary-bg); color: var(--primary-deep); }
+/* Identity header — caption that labels the menu, with a hairline divider. */
+.user-menu-header { padding: 8px 10px 6px; min-width: 0; }
+.user-menu-caption {
+  display: block;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.user-menu-divider { height: 1px; margin: 2px 6px 4px; background: var(--card-border); }
 
 /* Toast */
 .toast-stack {
@@ -3362,6 +3370,70 @@ tr.clickable:hover { background: var(--inset-bg); }
   font-size: 11px; color: var(--text-muted); text-align: center;
   padding: 3px 0 1px; opacity: 0.7;
 }
+/* Reply / Reply All / Forward selector in the modal header — top-right, beside
+   Close. Selected option = blue (primary); the others = outline. */
+.email-modal-mode-toggle {
+  display: flex; gap: 6px; flex-shrink: 0;
+}
+/* Shown in place of the compose form until the user picks an action. */
+.email-modal-pick {
+  border-top: 1px solid var(--border-light);
+  padding: 14px 16px;
+  font-size: 13px; line-height: 1.5;
+  color: var(--text-muted);
+  background: var(--inset-bg, #f8f9fa);
+  text-align: center;
+}
+.email-modal-pick strong { color: var(--text-primary); }
+/* To / Cc / Bcc rows in the reply + forward compose form. */
+.email-recip-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.email-recip-label {
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  min-width: 36px; flex-shrink: 0;
+}
+.email-recip-input {
+  flex: 1; padding: 4px 8px; font-size: 13px;
+}
+.email-recip-toggles {
+  display: flex; gap: 6px; font-size: 12px; flex-shrink: 0;
+}
+.email-recip-hide { flex-shrink: 0; }
+.email-recip-hint {
+  font-size: 11px; line-height: 1.5; color: var(--text-muted);
+  background: var(--color-surface-raised, #fff);
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-sm, 4px);
+  padding: 6px 8px;
+}
+.email-recip-hint code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  background: var(--inset-bg, #f4f5f7);
+  padding: 1px 4px; border-radius: 3px;
+}
+.email-recip-hint strong { color: var(--text-body); }
+/* Failed-send indicator + inline retry under an outbound message bubble.
+   Light-red chip so it stays readable on the blue outgoing bubble and on the
+   lighter email-preview bubble alike. */
+.msg-failed {
+  margin-top: 6px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 11px; font-weight: 600;
+}
+.msg-failed-label {
+  background: var(--danger-bg, #fee2e2);
+  color: var(--danger, #dc2626);
+  border-radius: 6px; padding: 2px 8px;
+}
+.msg-retry-btn {
+  background: var(--danger-bg, #fee2e2);
+  color: var(--danger, #dc2626);
+  border: none; border-radius: 6px; padding: 2px 10px;
+  font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.msg-retry-btn:hover { filter: brightness(0.96); text-decoration: underline; }
 
 /* Internal comment — distinct purple block interleaved in the timeline */
 .internal-bubble {
@@ -4213,13 +4285,21 @@ tr.clickable:hover { background: var(--inset-bg); }
 .msg-back-btn:hover { background: var(--bg-hover); }
 @media (max-width: 768px) {
   .messaging-wrap { min-height: auto; }
-  .messaging-fullpage { height: 100vh; margin-top: -64px; margin-bottom: -60px; }
+  /* Pull the message surface flush to the viewport edges while keeping the top
+     header clear of the fixed .mobile-header (the desktop -64px top margin
+     dragged it up underneath). dvh (not vh) so iOS Safari's URL bar can't
+     overshoot the height. */
+  .messaging-fullpage { height: calc(100dvh - 64px); margin: 0 -16px -60px; }
   .msg-3pane { grid-template-columns: minmax(0, 1fr); }
   .msg-pane-handle { display: none; }
   /* Single-pane mobile: list when no active thread, message panel when active */
   .msg-3pane:not(.has-active) .message-pane { display: none; }
   .msg-3pane.has-active .thread-list-pane { display: none; }
   .msg-back-btn { display: inline-flex; }
+  /* In thread view, drop the inbox toggle + actions row — the message-pane
+     head (with its own back button) becomes the top bar, native-app style,
+     handing the freed vertical space to the conversation. */
+  .messaging-fullpage:has(.msg-3pane.has-active) .messaging-header { display: none; }
 }
 
 /* Sub-640px tier: mandatory iPhone-class layout (zero horizontal scroll). */

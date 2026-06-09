@@ -22,6 +22,8 @@ import Invoices from './pages/Invoices';
 import InvoiceDetail from './pages/InvoiceDetail';
 import Messaging from './pages/Messaging';
 import Marketing from './pages/Marketing';
+import Complaints from './pages/Complaints';
+import Reviews from './pages/Reviews';
 
 import SettingsLayout from './pages/settings/SettingsLayout';
 import SettingsCompany from './pages/settings/Company';
@@ -96,6 +98,9 @@ function AppRoutes() {
           <Route path="messaging/:conversationId" element={<RequirePerm perm="messaging.use"><Messaging /></RequirePerm>} />
 
           <Route path="marketing" element={<RequirePerm perm="marketing.view"><Marketing /></RequirePerm>} />
+
+          <Route path="complaints" element={<RequirePerm perm="complaints.view"><Complaints /></RequirePerm>} />
+          <Route path="reviews" element={<RequirePerm perm="reviews.view"><Reviews /></RequirePerm>} />
 
           <Route path="settings" element={<SettingsLayout />}>
             <Route index element={<Navigate to="account" replace />} />

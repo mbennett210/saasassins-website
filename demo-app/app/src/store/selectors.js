@@ -55,6 +55,23 @@ export const selectSiteById   = (s, id) => s.sites.find((x) => x.id === id) || n
 export const selectServiceById = (s, id) => s.services.find((x) => x.id === id) || null;
 export const selectUserById    = (s, id) => s.users.find((x) => x.id === id) || null;
 
+// Per-user email signature {enabled, text, imageDataUrl}. Defaults gracefully
+// (enabled on, empty) when the field is absent so the messaging + account
+// surfaces can read it unconditionally; an empty signature appends nothing.
+export const selectSignaturePrefs = (s, userId) => {
+  const sp = (s.users || []).find((x) => x.id === userId)?.signaturePrefs;
+  return {
+    enabled: sp?.enabled ?? true,
+    text: sp?.text || '',
+    imageDataUrl: sp?.imageDataUrl || '',
+  };
+};
+
+// ---------- Operations: Complaints + Reviews ----------
+export const selectComplaints = (s) => (s.complaints || []).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+export const selectOpenComplaintsCount = (s) => (s.complaints || []).filter((c) => c.status !== 'resolved').length;
+export const selectReviews = (s) => s.reviews || {};
+
 // ---------- Notification preferences ----------
 // Per-user toggles + mobilePushEnabled live on user.notificationPrefs.
 // All event toggles default true; mobilePushEnabled defaults false.

@@ -63,6 +63,10 @@ export const PERMISSIONS = {
   'marketing.view':          { label: 'View Marketing',              defaultRoles: ['owner', 'admin'] },
   'marketing.manage':        { label: 'Manage marketing sequences',  defaultRoles: ['owner', 'admin'] },
   'marketing.connectInbox':  { label: 'Connect marketing inboxes',   defaultRoles: ['owner', 'admin'] },
+  // ---------- Operations: Complaints + Reviews ----------
+  'complaints.view':         { label: 'View complaints',             defaultRoles: ['owner', 'admin', 'crew'] },
+  'complaints.manage':       { label: 'Log / update complaints',     defaultRoles: ['owner', 'admin', 'crew'] },
+  'reviews.view':            { label: 'View reviews / reputation',   defaultRoles: ['owner', 'admin'] },
   // ---------- Settings ----------
   'settings.company':        { label: 'Edit company settings',    defaultRoles: ['owner', 'admin'] },
   'settings.services':       { label: 'Edit services / frequencies', defaultRoles: ['owner'] },

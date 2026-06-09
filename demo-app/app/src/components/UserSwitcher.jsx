@@ -6,6 +6,8 @@ import { ROLE_LABELS } from '../lib/roles';
 import Avatar from './Avatar';
 
 // Prototype-only chip for demoing role behavior. Lets you hop across users.
+// The demo has no real auth, so this always renders the user-switcher; the
+// formatted header/divider mirrors the live app's signed-in menu styling.
 export default function UserSwitcher() {
   const { currentUser, setCurrentUser } = useAuth();
   const users = useStore() ? selectUsers(useStore()) : [];
@@ -27,7 +29,7 @@ export default function UserSwitcher() {
         type="button"
         className="user-chip"
         onClick={() => setOpen((v) => !v)}
-        aria-haspopup="listbox"
+        aria-haspopup="menu"
         aria-expanded={open}
       >
         <Avatar initials={currentUser.initials} variant={currentUser.avatar} size="sm" />
@@ -38,13 +40,17 @@ export default function UserSwitcher() {
         <span className="user-chip-caret" aria-hidden>▾</span>
       </button>
       {open && (
-        <div className="user-menu" role="listbox">
-          <div className="user-menu-label">Switch user (demo)</div>
+        <div className="user-menu" role="menu">
+          <div className="user-menu-header">
+            <span className="user-menu-caption">Switch user (demo)</span>
+          </div>
+          <div className="user-menu-divider" role="separator" />
           {users.filter((u) => u.status !== 'disabled').map((u) => (
             <button
               key={u.id}
               type="button"
               className={`user-menu-item ${u.id === currentUser.id ? 'active' : ''}`}
+              role="menuitem"
               onClick={() => { setCurrentUser(u.id); setOpen(false); }}
             >
               <Avatar initials={u.initials} variant={u.avatar} size="sm" />

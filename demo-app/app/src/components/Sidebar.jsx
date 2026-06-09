@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useStore } from '../store';
 import { selectCompany } from '../store/selectors';
 import { usePermissionChecker } from '../hooks/usePermission';
+import { useIsMobile } from '../hooks/useIsMobile';
 import Icon from './Icon';
 import UserSwitcher from './UserSwitcher';
 import { IS_DEMO } from '../demo/isDemo';
@@ -31,17 +32,30 @@ const NAV = [
   { to: '/marketing', label: 'Marketing',  icon: 'mail',      perm: 'marketing.view', demoAddon: true },
   { to: '/contacts',  label: 'Contacts',   icon: 'clients',   perm: 'contacts.view'  },
   { to: '/clients',   label: 'Clients',    icon: 'clients',   perm: 'clients.view', hideWhen: 'contacts.view' },
-  { to: '/pipeline',  label: 'Pipeline',   icon: 'chart',     perm: 'pipeline.view'  },
+  // The Pipeline kanban board is desktop-first — too wide to be usable on a
+  // phone-class rail, so it's hidden from the mobile nav (still reachable on
+  // desktop and by direct URL).
+  { to: '/pipeline',  label: 'Pipeline',   icon: 'chart',     perm: 'pipeline.view', desktopOnly: true },
   { to: '/invoices',  label: 'Invoices',   icon: 'invoices',  perm: 'invoices.view'  },
+];
+
+// Operations group — lighter ops surfaces grouped under their own heading.
+const OPS_NAV = [
+  { to: '/complaints', label: 'Complaints', icon: 'warning', perm: 'complaints.view' },
+  { to: '/reviews',    label: 'Reviews',    icon: 'star',    perm: 'reviews.view'  },
 ];
 
 export default function Sidebar({ mobileOpen, onCloseMobile }) {
   const company = selectCompany(useStore());
   const check = usePermissionChecker();
+  const isMobile = useIsMobile();
 
-  const visible = NAV.filter((n) => check(n.perm) && (!n.hideWhen || !check(n.hideWhen)));
+  // Hide desktop-only items (e.g. the Pipeline board) from the mobile rail.
+  const passesDevice = (n) => !(isMobile && n.desktopOnly);
+  const visible = NAV.filter((n) => check(n.perm) && (!n.hideWhen || !check(n.hideWhen)) && passesDevice(n));
   // In the demo, Marketing is repackaged as an add-on, so it drops out of Core.
   const coreItems = visible.filter((n) => !(IS_DEMO && n.demoAddon));
+  const opsItems = OPS_NAV.filter((n) => check(n.perm) && passesDevice(n));
   // Add-on modules surfaced in the nav (demo only); the catalog drives the list.
   const addonModules = IS_DEMO ? featuredModules() : [];
 
@@ -79,6 +93,13 @@ export default function Sidebar({ mobileOpen, onCloseMobile }) {
           {IS_DEMO && <p className="nav-group-label">Core platform</p>}
           {coreItems.map(renderLink)}
         </div>
+
+        {opsItems.length > 0 && (
+          <div className="nav-group" data-tour="operations">
+            {IS_DEMO && <p className="nav-group-label">Operations</p>}
+            {opsItems.map(renderLink)}
+          </div>
+        )}
 
         {IS_DEMO && addonModules.length > 0 && (
           <div className="nav-group" data-tour="addons">

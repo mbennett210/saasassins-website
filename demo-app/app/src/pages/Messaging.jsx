@@ -347,6 +347,20 @@ export default function Messaging() {
       emailHeaders = { messageId, inReplyTo, references };
     }
 
+    // Recipients + attachments from the compose / reply-forward modal. Reply &
+    // Forward pass an explicit `to`; inline compose falls back to the linked
+    // contact. Cc/Bcc are optional. Attachment File objects are kept only as
+    // {name,size} metadata on the stored message (the demo never uploads blobs).
+    const parseAddrs = (raw) => String(raw || '').split(',').map((a) => a.trim()).filter(Boolean);
+    const toList = isEmail
+      ? (opts?.to ? parseAddrs(opts.to) : (activeContact?.email ? [activeContact.email] : []))
+      : [];
+    const ccList = parseAddrs(opts?.cc);
+    const bccList = parseAddrs(opts?.bcc);
+    const attachmentsMeta = Array.isArray(opts?.attachments)
+      ? opts.attachments.map((a) => ({ name: a.name, size: a.size }))
+      : [];
+
     // Optimistically insert the outbound message so the UI updates immediately.
     // For SMS we'll also kick off the Twilio adapter and patch deliveryStatus as it cycles.
     // For Email we kick off the per-user-inbox send and patch the same way.
@@ -362,13 +376,19 @@ export default function Messaging() {
         snippetId: opts?.snippetId || null,
         // SMS-only: track delivery state.
         ...(isSMS ? { deliveryStatus: 'queued' } : {}),
-        // Email-only: subject + threading + which inbox sent it.
+        // Email-only: subject + threading + which inbox sent it + recipients
+        // (toEmails/ccEmails drive the modal's To: display + Reply-All) and
+        // any attachment metadata (drives the attachment chips/count).
         ...(isEmail
           ? {
               deliveryStatus: 'queued',
               emailSubject,
               emailFromInboxId,
               emailHeaders,
+              toEmail: toList[0] || null,
+              toEmails: toList,
+              ccEmails: ccList,
+              ...(attachmentsMeta.length ? { attachments: attachmentsMeta } : {}),
             }
           : {}),
       },
@@ -388,8 +408,7 @@ export default function Messaging() {
         toast.error(`Email not sent: ${reasons}`);
         return;
       }
-      const toEmail = activeContact?.email || null;
-      if (!toEmail) {
+      if (!toList.length) {
         dispatch({
           type: ACTIONS.SET_MESSAGE_DELIVERY,
           id: messageId,
@@ -408,10 +427,15 @@ export default function Messaging() {
         ? `reply+${activeConversation.id}@inbound.app.local`
         : (emailDefaultReplyTo || undefined);
       sendViaInbox(emailFromInboxId, {
-        to: toEmail,
+        to: toList.join(', '),
+        cc: ccList.length ? ccList.join(', ') : undefined,
+        bcc: bccList.length ? bccList.join(', ') : undefined,
         from: fromAddress,
         subject: emailSubject || '(no subject)',
-        body: text,
+        // Prefer the HTML sendBody (image signatures); falls back to plain text.
+        body: opts?.sendBody || text,
+        inlineImages: (opts?.inlineImages && opts.inlineImages.length) ? opts.inlineImages : undefined,
+        attachments: attachmentsMeta.length ? attachmentsMeta : undefined,
         replyTo,
         headers: emailHeaders ? {
           'Message-ID': emailHeaders.messageId,

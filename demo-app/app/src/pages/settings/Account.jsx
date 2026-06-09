@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { useDispatch, useStore } from '../../store';
 import { ACTIONS } from '../../store/reducer';
@@ -7,7 +7,7 @@ import FormField from '../../components/FormField';
 import Avatar from '../../components/Avatar';
 import Toggle from '../../components/Toggle';
 import { ROLE_LABELS, ROLE_DESCRIPTIONS } from '../../lib/roles';
-import { selectVisibleNotificationGroups, selectNotificationPrefs } from '../../store/selectors';
+import { selectVisibleNotificationGroups, selectNotificationPrefs, selectSignaturePrefs } from '../../store/selectors';
 import {
   enableMobilePush,
   disableMobilePush,
@@ -215,6 +215,113 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
   );
 }
 
+// Per-user email signature — text + optional image, auto-appended to outbound
+// Messaging emails (replies/forwards included). The send path is plain-text, so
+// the image shows in-app/preview now and will deliver once HTML sending lands.
+function SignatureCard({ user, dispatch, toast }) {
+  const state = useStore();
+  const prefs = selectSignaturePrefs(state, user.id);
+  const fileRef = useRef(null);
+
+  const update = (patch) => dispatch({ type: ACTIONS.UPDATE_SIGNATURE_PREFS, userId: user.id, patch });
+
+  const onPickImage = (e) => {
+    const file = (e.target.files || [])[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!/^image\/(png|jpe?g|gif)$/.test(file.type)) {
+      toast.error('Please choose a PNG, JPG, or GIF image.');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      toast.error('Signature image must be under 1 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => update({ imageDataUrl: String(ev.target?.result || '') });
+    reader.onerror = () => toast.error('Could not read that image.');
+    reader.readAsDataURL(file);
+  };
+
+  const hasContent = Boolean((prefs.text || '').trim() || prefs.imageDataUrl);
+  const labelStyle = { fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 };
+
+  return (
+    <div className="card detail-card">
+      <div className="push-card-head">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="pref-row-label">Email signature</div>
+          <div className="pref-row-desc">
+            {prefs.enabled
+              ? 'Added automatically to new emails, replies, and forwards you send from Messaging. (Marketing sequences don’t use it.)'
+              : 'Off — your signature is not added to outgoing emails.'}
+          </div>
+        </div>
+        <Toggle on={prefs.enabled} onChange={(next) => update({ enabled: next })} />
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <div style={labelStyle}>Signature text</div>
+        <textarea
+          className="form-input"
+          style={{ width: '100%', minHeight: 96, resize: 'vertical', fontFamily: 'inherit', fontSize: 13, padding: '10px 12px', lineHeight: 1.5 }}
+          placeholder={`${user.name || 'Your name'}\nPolishPoint\n(555) 555-0100`}
+          value={prefs.text || ''}
+          onChange={(e) => update({ text: e.target.value })}
+        />
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <div style={labelStyle}>Signature image (optional)</div>
+        {prefs.imageDataUrl ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img
+              src={prefs.imageDataUrl}
+              alt="Signature"
+              style={{ maxHeight: 64, maxWidth: 240, borderRadius: 6, border: '1px solid var(--border-light)' }}
+            />
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => update({ imageDataUrl: null })}>
+              Remove image
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => fileRef.current?.click()}>
+            Add image
+          </button>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif"
+          hidden
+          onChange={onPickImage}
+        />
+        <div className="text-xs text-muted" style={{ marginTop: 6 }}>
+          PNG, JPG, or GIF, up to 1 MB. Shows up in your signature on every email you send.
+        </div>
+      </div>
+
+      {hasContent && (
+        <div style={{ marginTop: 14 }}>
+          <div style={labelStyle}>Preview</div>
+          <div className="card" style={{ padding: 12, background: 'var(--inset-bg, #f8f9fa)' }}>
+            {(prefs.text || '').trim() && (
+              <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: 'var(--text-body)' }}>{prefs.text}</div>
+            )}
+            {prefs.imageDataUrl && (
+              <img
+                src={prefs.imageDataUrl}
+                alt="Signature"
+                style={{ maxHeight: 64, maxWidth: 240, marginTop: (prefs.text || '').trim() ? 8 : 0 }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsAccount() {
   const { currentUser } = useAuth();
   const state = useStore();
@@ -278,6 +385,8 @@ export default function SettingsAccount() {
           </form>
 
           <MobilePushCard user={currentUser} prefs={prefs} dispatch={dispatch} toast={toast} />
+
+          <SignatureCard user={currentUser} dispatch={dispatch} toast={toast} />
         </div>
 
         <div className="card detail-card">

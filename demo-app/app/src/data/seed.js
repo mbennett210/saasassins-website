@@ -127,7 +127,7 @@ export const DEFAULT_NOTIFICATION_PREFS = {
 // one runs scheduling), four crew. Names are fictional placeholders — per-client
 // onboarding replaces them via Settings → Team → Add Member.
 const users = [
-  { id: seedId('u', 'owner1'), name: 'Alex Morgan',     email: 'alex@polishpoint.app',    phone: '(555) 555-0101', role: 'owner', status: 'active', avatar: 1, initials: 'AM', createdAt: daysAgo(720) },
+  { id: seedId('u', 'owner1'), name: 'Alex Morgan',     email: 'alex@polishpoint.app',    phone: '(555) 555-0101', role: 'owner', status: 'active', avatar: 1, initials: 'AM', createdAt: daysAgo(720), signaturePrefs: { enabled: true, text: 'Alex Morgan\nPolishPoint · Owner\n(555) 555-0101', imageDataUrl: null } },
   { id: seedId('u', 'owner2'), name: 'Jordan Reyes',    email: 'jordan@polishpoint.app',  phone: '(555) 555-0102', role: 'owner', status: 'active', avatar: 2, initials: 'JR', createdAt: daysAgo(720) },
   { id: seedId('u', 'admin1'), name: 'Sam Patel',       email: 'sam@polishpoint.app',     phone: '(555) 555-0103', role: 'admin', status: 'active', avatar: 3, initials: 'SP', createdAt: daysAgo(540) },
   { id: seedId('u', 'admin2'), name: 'Taylor Kim',      email: 'taylor@polishpoint.app',  phone: '(555) 555-0104', role: 'admin', status: 'active', avatar: 4, initials: 'TK', createdAt: daysAgo(420) },
@@ -576,7 +576,7 @@ const marketingSettings = {
 };
 
 export const INITIAL_STATE = {
-  version: 38,
+  version: 40,
   company,
   currentUserId,
   users,
@@ -605,10 +605,39 @@ export const INITIAL_STATE = {
   // (Phase 3 of the email build). Each row pairs a userId with a provider
   // (google / microsoft / smtp). Tokens + SMTP passwords NEVER live here —
   // backend holds them encrypted at rest. Frontend tracks status + metadata
-  // only. New users start with zero connections; the email channel in
-  // Messaging is gated on having at least one active connection.
-  connectedInboxes: [],
+  // only. The demo seeds one active Gmail connection for the current user
+  // (Alex Morgan) so the email channel + redesigned reply/forward modal are
+  // exercisable out of the box; real OAuth/SMTP connect stays dead-ended.
+  connectedInboxes: [
+    {
+      id: 'ci_seed_owner1_gmail',
+      userId: currentUserId,
+      provider: 'google',
+      email: 'alex@polishpoint.app',
+      displayName: 'Alex Morgan',
+      status: 'active',
+      connectedAt: daysAgo(120),
+      lastSyncAt: null,
+      lastError: null,
+      isDefault: true,
+      smtpHost: null,
+      smtpPort: null,
+      smtpSecurity: null,
+      imapHost: null,
+      imapPort: null,
+      imapSecurity: null,
+      inboundCapability: 'pubsub',
+      inboundEnabled: false,
+    },
+  ],
   notifications,
+  // Operations — Complaints log + Reviews / reputation (demo seed data).
+  complaints: [
+    { id: 'cmp_seed_1', status: 'open', clientName: 'Northgate Auto Group', clientId: null, subject: 'Missed Tuesday lobby clean', detail: 'Crew skipped the showroom entry mats; client noticed at open.', createdBy: currentUserId, createdAt: daysAgo(2), updatedAt: daysAgo(2), resolvedAt: null },
+    { id: 'cmp_seed_2', status: 'ongoing', clientName: 'Lakeside Dental', clientId: null, subject: 'Restroom supplies running low midday', detail: 'Paper towels out by midday on high-traffic days — adjust restock cadence.', createdBy: currentUserId, createdAt: daysAgo(6), updatedAt: daysAgo(4), resolvedAt: null },
+    { id: 'cmp_seed_3', status: 'resolved', clientName: 'Cascade Property Mgmt', clientId: null, subject: 'Wrong gate code on file', detail: 'Updated the gate code; confirmed with the site contact.', createdBy: currentUserId, createdAt: daysAgo(14), updatedAt: daysAgo(12), resolvedAt: daysAgo(12) },
+  ],
+  reviews: { indeedActual: 18 },
   // Marketing (cold-email sequences) — v38
   marketingInboxes,
   marketingSequences,
