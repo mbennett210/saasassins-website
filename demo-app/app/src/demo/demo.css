@@ -253,10 +253,10 @@
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
 .pp-demo-appbar-back:hover { background: var(--inset-bg); color: var(--text-primary); }
-.pp-demo-appbar-arrow { font-size: var(--font-size-lg); line-height: 1; }
+/* Thick blue back-arrow (no "Modules" label — just arrow + logo). */
+.pp-demo-appbar-arrow { font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); line-height: 1; color: var(--primary); }
 .pp-demo-appbar-logo { height: var(--space-7); width: auto; display: block; }
 .pp-demo-appbar-name { font-weight: var(--font-weight-bold); font-size: var(--font-size-md); color: var(--text-primary); }
-.pp-demo-appbar-label { font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold); }
 .pp-demo-appbar-actions { display: inline-flex; align-items: center; gap: var(--space-2); }
 /* Extra breathing room between the cart CTA and the notifications bell. */
 .pp-appbar-cartbtn { margin-right: 5px; }
@@ -547,9 +547,8 @@ body.pp-has-appbar .main { padding-top: calc(var(--space-12) + var(--space-8)); 
   /* Tighten the gap on small screens; the phone-under-desktop stacking itself is
      handled by flex-wrap on the stage (the desktop shrinks, the phone wraps below). */
   .pp-preview-stage { gap: var(--space-4); }
-  /* App bar: drop the "Modules" word + "Cart" word to icons so the bar never
-     crowds at phone widths; main clears the app bar + the 56px mobile header. */
-  .pp-demo-appbar-label { display: none; }
+  /* App bar: drop the "Cart" word to its icon so the bar never crowds at phone
+     widths; main clears the app bar + the 56px mobile header. */
   .pp-demo-appbar-cartword { display: none; }
   body.pp-has-appbar .main { padding-top: calc(var(--space-12) + 64px); }
 }

@@ -15,10 +15,13 @@ import '../demo.css';
 // "Enter live demo." Mounted in AppLayout behind IS_DEMO (so it only rides the
 // in-app routes, never the standalone landing/checkout).
 //
+// Top-left = a back affordance to the modules landing: a thick blue arrow + the
+// brand logo (no text label). Top-right = the cart CTA + notifications bell.
+//
 // Two cart entry points, both opening the same drawer (→ Review & checkout):
 //   1. the app-bar cart — the bar's primary CTA (filled), top-right; and
-//   2. a floating FAB bottom-right — a white circle with the brand-blue cart icon
-//      that gives a gentle left/right tilt every ~4s to draw the eye.
+//   2. a floating FAB bottom-right — a white circle (blue ring) with the brand-blue
+//      cart icon that gives a gentle left/right tilt every ~4s to draw the eye.
 // There's no separate Checkout button; you check out from the cart drawer.
 //
 // It toggles `body.pp-has-appbar` while mounted; that class shifts the app chrome
@@ -54,7 +57,6 @@ export default function DemoTopBar() {
           ) : (
             <span className="pp-demo-appbar-name">{company.name}</span>
           )}
-          <span className="pp-demo-appbar-label">Modules</span>
         </button>
 
         <div className="pp-demo-appbar-actions">
@@ -72,8 +74,8 @@ export default function DemoTopBar() {
         </div>
       </header>
 
-      {/* Always-in-thumb-reach cart, bottom-right — white circle, brand-blue cart
-          icon, gentle tilt every ~4s. Opens the same drawer as the app-bar cart. */}
+      {/* Always-in-thumb-reach cart, bottom-right — white circle with a blue ring,
+          brand-blue cart icon, gentle tilt every ~4s. Opens the same drawer. */}
       <button
         type="button"
         className="pp-demo-cartfab"
