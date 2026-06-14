@@ -10,11 +10,18 @@
 // they back the saved `deployTheme`, the MiniApp scope classes (.ppd-<key> /
 // .ppm-<key>), and the swatchboard filenames. The `label` is just the display
 // name and can change freely without touching any of that (e.g. blue → "Cobalt").
+//
+// PAIRED themes (currently just Midnight) ship in BOTH a light and a dark
+// variant. The picker shows ONE tile for the brand plus a light/dark toggle; the
+// chosen mode resolves to the themeEngine base via resolveThemeKey() — dark uses
+// the brand key as-is, light uses `<key>-light` (e.g. 'midnight' → 'midnight-light',
+// which exists in themeEngine.BASE + DEFAULT_PRIMARY). The mode is persisted
+// alongside deployTheme as `midnightMode`.
 
 export const PALETTES = {
   blue:     { label: 'Cobalt',   swatch: '#1E8FE8', grad: 'linear-gradient(135deg,#47A5ED,#1878C8)' },
   forge:    { label: 'Forge',    swatch: '#F97316', grad: 'linear-gradient(135deg,#FB923C,#EA580C)' },
-  midnight: { label: 'Midnight', swatch: '#C9A84C', grad: 'linear-gradient(135deg,#D4B96A,#B8962E)' },
+  midnight: { label: 'Midnight', swatch: '#C9A84C', grad: 'linear-gradient(135deg,#D4B96A,#B8962E)', paired: true },
   pink:     { label: 'Orchid',   swatch: '#EC4899', grad: 'linear-gradient(135deg,#f472b6,#be185d)' },
 };
 
@@ -23,6 +30,14 @@ export const PALETTE_KEYS = ['blue', 'forge', 'midnight', 'pink'];
 // Display label for the brand toggle + order summary. Cobalt is the pre-selected
 // default (see CheckoutPage's initial deployTheme).
 export const themeLabel = (key) => (PALETTES[key] || PALETTES.blue).label;
+
+// Does this brand offer a light + dark variant (and thus the picker's mode toggle)?
+export const isPaired = (key) => !!(PALETTES[key] && PALETTES[key].paired);
+
+// Resolve a (brand key, light/dark mode) pair to the actual themeEngine base
+// key. Only paired brands have a light twin ('<key>-light'); unpaired brands
+// ignore the mode and return their key unchanged.
+export const resolveThemeKey = (key, mode) => (isPaired(key) && mode === 'light' ? `${key}-light` : key);
 
 const KEY = 'pp.demo.brand.v1';
 

@@ -90,6 +90,16 @@ export const BASE = {
     text: { primary: '#E8E6E1', body: '#B8B5AE', muted: '#7A7872', faint: '#4A4842' },
     radii: { card: 20, btn: 10, input: 10 }, sidebarStyle: 'solid-dark', heroCardSurface: 'raised',
   },
+  // Daylight Gilt — the LIGHT twin of Midnight (GLD's paired light theme). Same
+  // gold brand on an offwhite warm-ink surface; the picker's light/dark toggle
+  // resolves Midnight to this base when Light is chosen (see brandTheme.js
+  // resolveThemeKey). Surfaces/text mirror GLD's Daylight Gilt swatchboard.
+  'midnight-light': {
+    kind: 'light', font: "'Plus Jakarta Sans', sans-serif",
+    surface: { page: '#F6F2E8', card: '#FFFDF8', cardBorder: '#E6DFCC', inset: '#F0EADA' },
+    text: { primary: '#2B2518', body: '#57503E', muted: '#8A8270', faint: '#C9C1AD' },
+    radii: { card: 20, btn: 10, input: 10 }, sidebarStyle: 'gradient', heroCardSurface: 'tinted',
+  },
   pink: {
     kind: 'light', font: "'Poppins', sans-serif",
     surface: { page: '#fdf2f8', card: '#ffffff', cardBorder: '#fce7f3', inset: '#fef7ff' },
@@ -98,13 +108,16 @@ export const BASE = {
   },
 };
 
-export const DEFAULT_PRIMARY = { blue: '#1E8FE8', forge: '#F97316', midnight: '#C9A84C', pink: '#EC4899' };
+export const DEFAULT_PRIMARY = { blue: '#1E8FE8', forge: '#F97316', midnight: '#C9A84C', 'midnight-light': '#C9A84C', pink: '#EC4899' };
 
 // ---------- Computation ----------
 export function computeTokens(baseName, overrides = {}) {
   const base = BASE[baseName] || BASE.blue;
   const kind = base.kind;
   const primary = overrides.primary || DEFAULT_PRIMARY[baseName];
+  // Gold (Midnight) family — its dark + light bases get the GLD "raised
+  // selection tile" + "gold container edge" treatments (see miniAppGold.css).
+  const isGold = baseName === 'midnight' || baseName === 'midnight-light';
   const font = overrides.font || base.font;
   const sidebarStyle = overrides.sidebarStyle || base.sidebarStyle;
 
@@ -162,10 +175,14 @@ export function computeTokens(baseName, overrides = {}) {
   let heroBg, heroBorder, heroAccent;
   if (base.heroCardSurface === 'tinted') {
     heroBg = `linear-gradient(135deg, ${primaryBg} 0%, ${primarySoft} 50%, ${s.card} 100%)`;
-    heroBorder = withAlpha(primary, 0.20); heroAccent = primaryDeep;
+    // Gold themes deepen the hero border so it reads as a full gold edge on the
+    // pale Daylight surface (a faint 0.20 primary vanished on offwhite).
+    heroBorder = isGold ? withAlpha(primaryDeep, 0.55) : withAlpha(primary, 0.20);
+    heroAccent = primaryDeep;
   } else {
     heroBg = `linear-gradient(135deg, ${s.card} 0%, ${s.inset} 50%, ${s.card} 100%)`;
-    heroBorder = withAlpha(primary, 0.25); heroAccent = primaryLight;
+    heroBorder = isGold ? withAlpha(primaryDeep, 0.5) : withAlpha(primary, 0.25);
+    heroAccent = primaryLight;
   }
 
   const tableHeadBg = kind === 'light' ? `linear-gradient(180deg, ${primarySoft}, ${primaryBg})` : s.inset;
@@ -183,6 +200,27 @@ export function computeTokens(baseName, overrides = {}) {
   const badgeRed = 'linear-gradient(135deg,#ef4444,#b91c1c)';
   const badgeSlate = kind === 'dark' ? `linear-gradient(135deg, #4a4e58, ${s.cardBorder})` : 'linear-gradient(135deg,#64748b,#475569)';
 
+  // ---- GLD-canonized recipes (gold family only; see docs/SWATCHBOARD.md in the
+  // GLD repo + this repo's swatchboard/). Non-gold themes resolve --card-edge to
+  // their own card surface + a 0px ring, so they render exactly as before. ----
+  // Raised selection tiles (the schedule rows) — GLD's --tile-depth: a solid
+  // tile lifted by a drop-shadow stack, no hairline border. Dark = black depth;
+  // light = warm gold-tinted depth (each light brand tints its own lift).
+  const tileBg = kind === 'dark' ? adjustLightness(s.card, -0.006) : '#FFFEFB';
+  const tileRaise = kind === 'dark'
+    ? '0 2px 5px rgba(0,0,0,0.5), 0 5px 14px rgba(0,0,0,0.45)'
+    : `0 1px 2px ${withAlpha(primaryDeep, 0.12)}, 0 2px 8px ${withAlpha(primaryDeep, 0.10)}`;
+  // Gold gradient EDGE on outer containers (radius-safe via the inset-::before
+  // trick in miniAppGold.css). cardEdgeShadow is DROP-ONLY (no inset highlight)
+  // so nothing paints over the ring's top edge — matches GLD .m-card.
+  const cardEdge = isGold
+    ? 'linear-gradient(135deg, #D4B96A 0%, #6B5118 22%, #C9A84C 50%, #6B5118 78%, #D4B96A 100%)'
+    : s.card;
+  const cardEdgeW = isGold ? '1.25px' : '0px';
+  const cardEdgeShadow = isGold
+    ? (kind === 'dark' ? '6px 6px 16px rgba(0,0,0,0.45)' : `4px 4px 12px ${withAlpha(primaryDeep, 0.18)}`)
+    : cardShadow;
+
   return {
     font,
     primary, primaryLight, primaryHover, primaryDeep, primarySoft, primaryBg,
@@ -199,6 +237,7 @@ export function computeTokens(baseName, overrides = {}) {
     tableHeadBg, tableHeadBorder, tableStripe, tableHover,
     bubbleThemBg, bubbleThemColor, bubbleMeGrad,
     badgeGreen, badgeAmber, badgeRed, badgeBlue, badgeSlate,
+    tileBg, tileRaise, cardEdge, cardEdgeW, cardEdgeShadow,
     _base: baseName, _kind: kind,
   };
 }
@@ -250,6 +289,11 @@ export function toCss(tokens, scope) {
     '--badge-red': tokens.badgeRed,
     '--badge-blue': tokens.badgeBlue,
     '--badge-slate': tokens.badgeSlate,
+    '--tile-bg': tokens.tileBg,
+    '--tile-raise': tokens.tileRaise,
+    '--card-edge': tokens.cardEdge,
+    '--card-edge-w': tokens.cardEdgeW,
+    '--card-edge-shadow': tokens.cardEdgeShadow,
   };
   const lines = Object.entries(pairs).map(([k, v]) => `${k}: ${v};`).join(' ');
   return `${scope} { ${lines} }`;

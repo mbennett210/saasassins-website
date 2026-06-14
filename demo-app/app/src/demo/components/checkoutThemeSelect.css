@@ -1,0 +1,64 @@
+/* checkoutThemeSelect.css — the light/dark mode toggle shown for PAIRED brands
+   (Midnight) in the checkout brand-style picker, plus the "Light + Dark" badge
+   on a paired brand's tile. The picker tiles + layout live in demo.css
+   (.pp-deploy-*); this file only adds the paired-brand affordances.
+
+   The toggle is checkout CHROME (the checkout always renders clean PolishPoint),
+   so its active segment uses the shell's own --btn-primary-grad — matching the
+   selected tile's blue ring — while the PREVIEW below shows the gold theme. All
+   values reference shell tokens; no literals. */
+
+/* "Light + Dark" badge on the paired brand tile. */
+.pp-deploy-tile-pair {
+  margin-left: auto;
+  font-size: var(--font-size-2xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+/* Mode toggle row. */
+.pp-mode-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.pp-mode-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+
+/* Segmented Dark/Light control. */
+.pp-mode-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--inset-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-full);
+}
+.pp-mode-seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.pp-mode-seg button:hover { color: var(--text-body); }
+.pp-mode-seg button.is-on {
+  background: var(--btn-primary-grad);
+  color: var(--color-text-on-primary, #fff);
+  box-shadow: var(--shadow-sm);
+}

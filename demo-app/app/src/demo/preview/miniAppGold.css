@@ -1,0 +1,55 @@
+/* miniAppGold.css — Midnight (gold) theme treatments for the checkout MiniApp
+   preview. Brings the two GLD-canonized looks the swatchboard defined (see the
+   GLD repo docs/SWATCHBOARD.md + this repo's swatchboard/midnight-light-dark-
+   mockup.html) into the live picker preview:
+
+     1. Raised SELECTION TILES — the schedule rows lift off the card like GLD's
+        Today daily-habit tiles (solid tile body + drop-shadow, no hairline).
+     2. Gold gradient EDGE on the outer cards — the signature gold ring, present
+        in BOTH modes (dark = Midnight Luxe, light = Daylight Gilt).
+
+   Scoped to .mini-app[class*="midnight"] so it hits ONLY the gold theme's
+   preview scopes — .ppd-midnight / .ppm-midnight (dark) and .ppd-midnight-light
+   / .ppm-midnight-light (light). The other brands (Cobalt / Forge / Orchid) are
+   untouched. The attribute selector also out-specifies the base .mini-app .ma-*
+   rules (0,3,0 vs 0,2,0) so it wins regardless of stylesheet import order.
+
+   All values come from CSS vars emitted by themeEngine.toCss:
+     --card-edge / --card-edge-w / --card-edge-shadow  (gold ring + drop-only lift)
+     --tile-bg / --tile-raise                          (raised selection tile)
+   The hero's gold edge is the deepened --hero-border token (themeEngine), so it
+   needs no rule here. The checkout preview renders the dashboard screen only, so
+   the table card (.ma-card-flat, Clients/Invoices screens) is intentionally not
+   styled here — its rounded-corner fix needs the .ma-flat-inner wrapper. */
+
+/* ── Gold gradient edge on the dashboard cards (radius-safe inset-::before) ──
+   The card's background IS the gold gradient; a ::before inset by the ring width
+   carries the surface, leaving a concentric 1.25px gold ring. The drop-only
+   --card-edge-shadow (no inset highlight) keeps the ring visible on all four
+   sides — a white inset top-highlight was previously erasing the ring's top. */
+.mini-app[class*="midnight"] .ma-card {
+  position: relative;
+  isolation: isolate;
+  background: var(--card-edge);
+  box-shadow: var(--card-edge-shadow);
+}
+.mini-app[class*="midnight"] .ma-card::before {
+  content: '';
+  position: absolute;
+  inset: var(--card-edge-w);
+  border-radius: calc(var(--card-radius) - var(--card-edge-w));
+  background: var(--card-bg);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* ── Raised selection tiles (the schedule rows) — GLD --tile-depth ──
+   Solid tile body lifted by the drop-shadow stack; the hairline border is
+   dropped (the lift is the affordance) and the gold left-rail stays as the
+   status accent. */
+.mini-app[class*="midnight"] .ma-sched {
+  border: none;
+  border-left: 3px solid var(--primary);
+  background: var(--tile-bg);
+  box-shadow: var(--tile-raise);
+}
