@@ -144,11 +144,21 @@
 .mini-app .ma-btn { display:inline-flex; align-items:center; gap:6px; padding: 8px 16px; border-radius: var(--btn-radius); font-size: 12px; font-weight: 600; }
 .mini-app .ma-btn.primary { background: var(--btn-primary-grad); color:#fff; box-shadow: var(--btn-primary-glow); }
 
-/* ── Table ── */
+/* ── Table ──
+   IMPORTANT: the real app's global table styling (index.css `table th/td`,
+   `table tbody tr:nth-child(...)`, `table tr:hover`) also matches this <table>
+   (it IS a <table>). That global row striping/hover lives on the <tr> and pulls
+   --table-row-* tokens that the themeEngine never emits — so inside a themed
+   mini-app scope they fall back to the app's global (light blue) palette and the
+   rows render light even on the dark themes (Midnight / Forge). We therefore own
+   the <tr> background here (not just the <td>) and clear the global header inset
+   highlight, so every table surface stays on the mini-app's own theme tokens. */
 .mini-app .ma-table { width:100%; border-collapse: collapse; }
-.mini-app .ma-table th { text-align:left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); padding: 12px 16px; background: var(--table-head-bg); border-bottom: 1px solid var(--table-head-border); }
+.mini-app .ma-table th { text-align:left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); padding: 12px 16px; background: var(--table-head-bg); border-bottom: 1px solid var(--table-head-border); box-shadow: none; }
 .mini-app .ma-table td { padding: 12px 16px; font-size: 13px; color: var(--text-body); border-bottom: 1px solid var(--card-border); }
-.mini-app .ma-table tr:nth-child(odd) td { background: var(--table-stripe); }
+.mini-app .ma-table tbody tr:nth-child(odd) { background: var(--table-stripe); }
+.mini-app .ma-table tbody tr:nth-child(even) { background: transparent; }
+.mini-app .ma-table tbody tr:hover { background: var(--table-hover); }
 .mini-app .ma-table tr:last-child td { border-bottom: none; }
 .mini-app .ma-table td.ma-name { font-weight: 600; color: var(--text-primary); display:flex; align-items:center; gap: 10px; }
 .mini-app .ma-table .r { text-align:right; }
