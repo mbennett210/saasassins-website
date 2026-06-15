@@ -53,3 +53,17 @@
   background: var(--tile-bg);
   box-shadow: var(--tile-raise);
 }
+
+/* Table card takes the same gold edge as the other cards (Midnight). The 1.25px
+   gold ring is the card's padding; an inner surface carries card-bg and clips
+   the <table> to the rounded corners (a <table> can't be corner-clipped). */
+.mini-app[class*="midnight"] .ma-card-flat {
+  background: var(--card-edge);
+  padding: var(--card-edge-w);
+  box-shadow: var(--card-edge-shadow);
+}
+.mini-app[class*="midnight"] .ma-flat-inner {
+  background: var(--card-bg);
+  border-radius: calc(var(--card-radius) - var(--card-edge-w));
+  overflow: hidden;
+}

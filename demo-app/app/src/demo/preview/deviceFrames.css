@@ -1,0 +1,62 @@
+/* deviceFrames.css — real device frames (devices.css) for the checkout dashboard
+   preview. Applies to ALL brand themes (the MiniApp inside is themed per brand;
+   the frames are neutral chrome). See DashboardPreview.jsx for the structure. */
+
+/* The two devices sit on a common baseline (demo.css .pp-preview-stage already
+   sets flex / align-items:flex-end / center / wrap). Columns are flex 3:1 and
+   carry each device's aspect ratio, so the MacBook (618×418) and iPhone
+   (428×868) render at MATCHED overall height (3·418/618 = 2.03 ≈ 1·868/428).
+   ScaledPreview fits each fixed-size device into its column → fluid/responsive. */
+.pp-dev { min-width: 0; }
+/* The framebox carries the device's OVERALL aspect ratio (devices.css macbook-pro
+   is 740×434 — the base is wider than the 618 screen frame — and iphone-14-pro is
+   428×868), giving ScaledPreview the right box so the frame fits without clipping.
+   Flex widths are the inverse of each aspect ratio (mac 740/434, phone 428/868)
+   so both devices render at a MATCHED overall height: 3.46·434/740 ≈ 1·868/428. */
+.pp-dev-mac { flex: 3.46 1 0; max-width: 560px; }
+.pp-dev-phone { flex: 1 1 0; max-width: 165px; }
+.pp-framebox { width: 100%; }
+.pp-dev-mac .pp-framebox { aspect-ratio: 740 / 434; }
+.pp-dev-phone .pp-framebox { aspect-ratio: 428 / 868; }
+.pp-dev .pp-scaled { width: 100%; height: 100%; }
+
+/* The MiniApp renders at native size inside the screen and is fixed-scaled to the
+   screen window; keep it pinned top-left so the scale lands cleanly. */
+.pp-screenfit { position: absolute; top: 0; left: 0; transform-origin: top left; }
+
+/* devices.css ships .device-screen as overflow:visible (it expects a flat <img>
+   whose own pixels round). Our live app is a <div>, so force the screen to clip
+   its content to its own border-radius — otherwise the square app corners jut
+   past the rounded bezel. */
+.device-screen { overflow: hidden; }
+
+/* devices.css ships a hard `display:block` reset on `.device, .device *` (it
+   expects a flat <img> screen). That clobbers the displays that only tie on
+   specificity: `.mini-app` (0,1,0) loses to `.device *` by source order, so the
+   desktop flex row collapses to stacked blocks (mobile survived because
+   `.mini-app.ma-mobile` is 0,2,0); and the injected `<style>` becomes a visible
+   block of CSS text. miniApp.css's `.mini-app .ma-*` rules (0,2,0) already win,
+   so we only restore the two losers, scoped to .device-screen (0,2,0 > 0,1,0). */
+.device-screen style { display: none; }
+.device-screen .mini-app { display: flex; }
+/* The clients table loses its UA table display to the .device * reset — restore it. */
+.device-screen .ma-table { display: table; }
+.device-screen .ma-table thead { display: table-header-group; }
+.device-screen .ma-table tbody { display: table-row-group; }
+.device-screen .ma-table tr { display: table-row; }
+.device-screen .ma-table th,
+.device-screen .ma-table td { display: table-cell; }
+
+/* Brand-colour the clients-table avatars (all themes) so the table reads as
+   themed per brand instead of the fixed multi-colour avatar palette — matches
+   the sidebar avatar/logo, which already use the brand gradient. Status badges
+   stay semantic (green/red) on purpose. */
+.mini-app .pp-dash-table .ma-av { background: var(--btn-primary-grad); }
+
+/* iPhone 14 Pro: clear the Dynamic Island so the app's top bar isn't under it. */
+.device-iphone-14-pro .ma-mobile .ma-topbar { padding-top: 40px; }
+
+/* Mobile shows the above-the-fold view: hide the revenue chart (2nd card in the
+   cols row) and the clients table so the schedule + tab bar stay in frame. */
+.ma-mobile .ma-cols .ma-card:nth-child(2),
+.ma-mobile .pp-dash-table { display: none; }

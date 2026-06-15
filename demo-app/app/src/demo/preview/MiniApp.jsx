@@ -148,6 +148,29 @@ function Dashboard() {
           </div>
         </div>
       </div>
+      {/* Clients table. Brand-coloured avatars (var(--btn-primary-grad), set in
+          deviceFrames.css) so the table themes per brand; the card takes each
+          theme's style (gold edge in Midnight, miniAppGold.css). Status badges
+          stay semantic (green/red), matching the schedule rows. Hidden on mobile
+          (deviceFrames.css) so the phone keeps the above-the-fold view. */}
+      <div className="ma-card-flat pp-dash-table">
+        <div className="ma-flat-inner">
+          <table className="ma-table">
+            <thead><tr><th>Client</th><th>Contact</th><th>Freq</th><th>Status</th><th className="r">Revenue</th></tr></thead>
+            <tbody>
+              {CLIENTS.slice(0, 3).map((c, i) => (
+                <tr key={i}>
+                  <td className="ma-name"><Avatar variant={c.av} initials={c.initials} />{c.name}</td>
+                  <td>{c.contact}</td>
+                  <td>{c.freq}</td>
+                  <td><Badge variant={statusVariant(c.status)}>{c.status}</Badge></td>
+                  <td className="r money">{money(c.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </>
   );
 }
