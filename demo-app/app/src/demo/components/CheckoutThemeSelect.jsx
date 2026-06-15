@@ -49,7 +49,6 @@ export default function CheckoutThemeSelect({ value, onChange }) {
             >
               <span className="pp-deploy-tile-swatch" style={{ background: p.grad }} aria-hidden="true" />
               <span className="pp-deploy-tile-label">{themeLabel(key)}</span>
-              {isPaired(key) && <span className="pp-deploy-tile-pair">Light + Dark</span>}
             </button>
           );
         })}
