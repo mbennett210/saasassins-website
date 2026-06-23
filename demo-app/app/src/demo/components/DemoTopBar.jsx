@@ -8,6 +8,7 @@ import Icon from '../../components/Icon';
 import NotificationsBell from '../../components/NotificationsBell';
 import CartDrawer from './CartDrawer';
 import '../demo.css';
+import '../demoChromeFixes.css';
 
 // Persistent demo app bar — a slim bar across the very top of the live app so a
 // prospect always has a way BACK to the modules landing and into their cart.
@@ -28,6 +29,8 @@ import '../demo.css';
 // (sidebar, mobile header, main padding) down to clear this fixed bar and hides
 // the now-duplicate sidebar brand. The notifications bell folds into the bar (the
 // bell-floater + mobile-header bell are hidden in the demo — see AppLayout).
+// demoChromeFixes.css carries the layout compensations that ride on that body
+// class (e.g. the fixed Messaging view subtracting the bar height).
 //
 // (This is also the natural mount point if the prospect-facing concierge widget,
 // currently parked, is re-added later.)

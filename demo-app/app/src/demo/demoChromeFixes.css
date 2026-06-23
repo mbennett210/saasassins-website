@@ -1,0 +1,18 @@
+/* Demo-chrome layout fixes — rules that compensate for the demo-only fixed app
+   bar (DemoTopBar, which toggles body.pp-has-appbar). Everything here is scoped
+   to body.pp-has-appbar so it is completely inert in per-client product builds
+   (which never mount the app bar). Loaded by DemoTopBar. */
+
+/* Messaging is a FIXED full-height view (3 panes, each scrolling internally) —
+   NOT a scrolling page. The fixed .pp-demo-appbar (var(--space-12) tall) sits
+   above .main and bumps its top padding to clear itself, but .messaging-fullpage
+   still claimed a full 100vh / 100dvh-64px height — overshooting the viewport by
+   the bar's height, so the whole page scrolled. Subtract the bar height so the
+   wrap fits exactly and only the panes scroll. (margin-top already positions the
+   wrap just below the bar.) */
+@media (min-width: 769px) {
+  body.pp-has-appbar .messaging-fullpage { height: calc(100vh - var(--space-12)); }
+}
+@media (max-width: 768px) {
+  body.pp-has-appbar .messaging-fullpage { height: calc(100dvh - 64px - var(--space-12)); }
+}
