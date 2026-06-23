@@ -1,15 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useFromHere } from '../hooks/useFromHere';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
 import {
-  selectContactById, selectClientById, selectUserById, selectClients,
+  selectContactById, selectClientById, selectUserById,
   selectInvoicesForContact, selectConversationsForContact, selectJobsForClient,
-  selectActivitiesForContact, selectTagById, selectPipelineStages,
+  selectActivitiesForContact, selectTagById,
   selectVisibleClientIdsFor,
   invoiceTotal, deriveInvoiceStatus,
 } from '../store/selectors';
+import {
+  selectEffectiveTagIdsForContact, applyClientTag, removeClientTag,
+} from '../lib/effectiveTags';
 import { usePermission } from '../hooks/usePermission';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/Toast';
@@ -52,6 +55,8 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
   const canEdit = usePermission('contacts.edit');
   const canDelete = usePermission('contacts.delete');
   const canStartConversation = usePermission('messaging.startConversation');
+  const canViewPipeline = usePermission('pipeline.view');
+  const canEditPipeline = usePermission('pipeline.edit');
 
   const rawContact = selectContactById(state, contactId);
   // Crew can only see contacts attached to clients they have a job on. Standalone
@@ -65,9 +70,18 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
       ? rawContact
       : (rawContact.companyId && visibleClientIds.has(rawContact.companyId) ? rawContact : null)
   );
-  const clients = selectClients(state);
-  const stages = selectPipelineStages(state);
-  const stageLabel = (key) => stages.find((s) => s.key === key)?.label || key;
+  // Resolve the stage label via the CONTACT's pipeline, not the
+  // currently-active pipeline (which may be different). Falls back to the
+  // raw key if the pipeline can't be resolved (orphaned data, defensive).
+  const stageLabel = (key) => {
+    if (!key) return key;
+    const pipeline = (state.pipelines || []).find((p) => p.id === rawContact?.pipelineId);
+    return (pipeline?.stages || []).find((s) => s.key === key)?.label || key;
+  };
+  // The pipeline (the board) the contact sits on — distinct from the stage
+  // (their column on that board) and from the lifecycle status. Null when the
+  // contact isn't on any pipeline.
+  const pipelineName = (state.pipelines || []).find((p) => p.id === rawContact?.pipelineId)?.label || null;
 
   const [tab, setTab] = useState('overview');
   const [activitySubTab, setActivitySubTab] = useState('service');
@@ -78,6 +92,37 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [editingNoteText, setEditingNoteText] = useState('');
   const [confirmDeleteNoteId, setConfirmDeleteNoteId] = useState(null);
+
+  // Pipeline draft — committed to the store only on Save (no autosave). The
+  // useState initializer runs once on mount; the useEffect re-syncs when the
+  // user navigates to a different contact OR a remote update lands. Unsaved
+  // edits on the current contact stay in the draft until Save.
+  const [pipelineDraft, setPipelineDraft] = useState(() => ({
+    pipelineId: rawContact?.pipelineId || '',
+    stage: rawContact?.stage || '',
+    dealValue: rawContact?.dealValue ?? '',
+    expectedCloseDate: rawContact?.expectedCloseDate ? rawContact.expectedCloseDate.slice(0, 10) : '',
+  }));
+  useEffect(() => {
+    if (!rawContact) return;
+    setPipelineDraft({
+      pipelineId: rawContact.pipelineId || '',
+      stage: rawContact.stage || '',
+      dealValue: rawContact.dealValue ?? '',
+      expectedCloseDate: rawContact.expectedCloseDate ? rawContact.expectedCloseDate.slice(0, 10) : '',
+    });
+    // Only re-sync on contact-id change (different contact loaded) — re-running
+    // on every field change would clobber unsaved drafts as the user types.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawContact?.id]);
+
+  // Derived data — these hooks must run unconditionally (before the not-found
+  // early return below), so each guards against a null contact.
+  const invoices = useMemo(() => (contact ? selectInvoicesForContact(state, contact.id) : []), [state, contact]);
+  const conversations = useMemo(() => (contact ? selectConversationsForContact(state, contact.id) : []), [state, contact]);
+  const serviceHistory = useMemo(() => (contact?.companyId ? selectJobsForClient(state, contact.companyId) : []), [state, contact]);
+  const activities = useMemo(() => (contact ? selectActivitiesForContact(state, contact.id) : []), [state, contact]);
+  const noteActivities = useMemo(() => activities.filter((a) => a.kind === 'note'), [activities]);
 
   if (!contact) {
     return (
@@ -91,14 +136,59 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
   const company = contact.companyId ? selectClientById(state, contact.companyId) : null;
   const companyLabel = company?.name || contact.customFields?.company || '—';
 
-  const invoices = useMemo(() => selectInvoicesForContact(state, contact.id), [state, contact.id]);
-  const conversations = useMemo(() => selectConversationsForContact(state, contact.id), [state, contact.id]);
-  const serviceHistory = useMemo(() => (contact.companyId ? selectJobsForClient(state, contact.companyId) : []), [state, contact.companyId]);
-  const activities = useMemo(() => selectActivitiesForContact(state, contact.id), [state, contact.id]);
-  const noteActivities = useMemo(() => activities.filter((a) => a.kind === 'note'), [activities]);
-
-  const updateField = (patch) => {
-    dispatch({ type: ACTIONS.UPDATE_CONTACT, id: contact.id, patch });
+  // Pipeline card — non-master pipelines are the assignable ones. Master is
+  // a roll-up board; contacts don't live in it as a primary pipeline. Stages
+  // come from the DRAFT's pipeline, not the active pipeline, so the dropdown
+  // always matches what the user picked.
+  const assignablePipelines = (state.pipelines || []).filter((p) => !p.isMaster);
+  const draftPipeline = assignablePipelines.find((p) => p.id === pipelineDraft.pipelineId) || null;
+  const draftStages = draftPipeline ? (draftPipeline.stages || []) : [];
+  const pipelineDirty = (
+    pipelineDraft.pipelineId !== (contact.pipelineId || '')
+    || pipelineDraft.stage !== (contact.stage || '')
+    || String(pipelineDraft.dealValue ?? '') !== String(contact.dealValue ?? '')
+    || pipelineDraft.expectedCloseDate !== (contact.expectedCloseDate ? contact.expectedCloseDate.slice(0, 10) : '')
+  );
+  const setPipelineField = (key, value) => {
+    setPipelineDraft((d) => {
+      const next = { ...d, [key]: value };
+      // Switching pipelines invalidates the old stage key — clear it.
+      if (key === 'pipelineId' && value !== d.pipelineId) next.stage = '';
+      return next;
+    });
+  };
+  const savePipeline = () => {
+    if (!canEditPipeline || !pipelineDirty) return;
+    const stageChanged = pipelineDraft.stage !== (contact.stage || '');
+    const pipelineChanged = pipelineDraft.pipelineId !== (contact.pipelineId || '');
+    if (stageChanged || pipelineChanged) {
+      // SET_CONTACT_STAGE logs a stage_change activity AND lifts the contact
+      // to lifecycle='client' if the picked stage is the special 'won' key.
+      dispatch({
+        type: ACTIONS.SET_CONTACT_STAGE,
+        id: contact.id,
+        stage: pipelineDraft.stage || null,
+        pipelineId: pipelineDraft.pipelineId || null,
+        authorUserId: currentUser?.id,
+      });
+    }
+    const valChanged = String(pipelineDraft.dealValue ?? '') !== String(contact.dealValue ?? '');
+    const closeChanged = pipelineDraft.expectedCloseDate !== (contact.expectedCloseDate ? contact.expectedCloseDate.slice(0, 10) : '');
+    if (valChanged || closeChanged) {
+      dispatch({
+        type: ACTIONS.UPDATE_CONTACT,
+        id: contact.id,
+        patch: {
+          dealValue: pipelineDraft.dealValue === '' || pipelineDraft.dealValue === null
+            ? null
+            : (Number(pipelineDraft.dealValue) || null),
+          expectedCloseDate: pipelineDraft.expectedCloseDate
+            ? new Date(pipelineDraft.expectedCloseDate).toISOString()
+            : null,
+        },
+      });
+    }
+    toast.success('Pipeline saved');
   };
 
   const appendNote = () => {
@@ -132,16 +222,21 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
     toast.success('Note deleted');
   };
 
-  const removeTag = (tag) => {
-    dispatch({ type: ACTIONS.UNTAG_CONTACT, id: contact.id, tagId: tag.id });
-  };
+  // Tags are company-level: when this person belongs to a company we edit the
+  // COMPANY's tags (shared by everyone there) via a read-modify-write on the
+  // client; a company-less contact edits its own via TAG_CONTACT/UNTAG_CONTACT.
+  // Diff against the effective set so grants/revokes target the right entity.
+  const effTagIds = selectEffectiveTagIdsForContact(state, contact);
   const setTagIds = (ids) => {
-    const prev = new Set(contact.tagIds || []);
     const next = new Set(ids);
-    // grants
-    ids.forEach((id) => { if (!prev.has(id)) dispatch({ type: ACTIONS.TAG_CONTACT, id: contact.id, tagId: id }); });
-    // revokes
-    (contact.tagIds || []).forEach((id) => { if (!next.has(id)) dispatch({ type: ACTIONS.UNTAG_CONTACT, id: contact.id, tagId: id }); });
+    const prev = new Set(effTagIds);
+    if (contact.companyId) {
+      ids.forEach((id) => { if (!prev.has(id)) applyClientTag(dispatch, ACTIONS, company, id); });
+      effTagIds.forEach((id) => { if (!next.has(id)) removeClientTag(dispatch, ACTIONS, company, id); });
+    } else {
+      ids.forEach((id) => { if (!prev.has(id)) dispatch({ type: ACTIONS.TAG_CONTACT, id: contact.id, tagId: id }); });
+      effTagIds.forEach((id) => { if (!next.has(id)) dispatch({ type: ACTIONS.UNTAG_CONTACT, id: contact.id, tagId: id }); });
+    }
   };
 
   const del = () => {
@@ -155,7 +250,11 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
       <Badge variant={LIFECYCLE_VARIANTS[contact.lifecycle] || 'slate'}>
         {contact.lifecycle.charAt(0).toUpperCase() + contact.lifecycle.slice(1)}
       </Badge>
-      {contact.stage && <Badge variant="blue">{stageLabel(contact.stage)}</Badge>}
+      {contact.stage && (
+        <Badge variant="blue">
+          {pipelineName ? `${pipelineName} · ${stageLabel(contact.stage)}` : stageLabel(contact.stage)}
+        </Badge>
+      )}
     </div>
   );
   // Always jump straight to the messaging surface. If a thread exists, open the most recently-active one;
@@ -231,7 +330,8 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
               <div><dt>Status</dt><dd>{contact.lifecycle.charAt(0).toUpperCase() + contact.lifecycle.slice(1)}</dd></div>
               {contact.stage && (
                 <>
-                  <div><dt>Pipeline stage</dt><dd>{stageLabel(contact.stage)}</dd></div>
+                  <div><dt>Pipeline</dt><dd>{pipelineName || '—'}</dd></div>
+                  <div><dt>Stage</dt><dd>{stageLabel(contact.stage)}</dd></div>
                   <div><dt>Deal value</dt><dd>{contact.dealValue ? money(contact.dealValue) : '—'}</dd></div>
                   <div><dt>Expected close</dt><dd>{contact.expectedCloseDate ? fmtDate(contact.expectedCloseDate) : '—'}</dd></div>
                 </>
@@ -244,37 +344,81 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
           <div>
             <div className="card detail-card">
               <h3>Tags</h3>
+              {contact.companyId && (
+                <p className="text-xs text-muted" style={{ marginTop: -4, marginBottom: 8 }}>
+                  Applied to {companyLabel} — shared by everyone at this company.
+                </p>
+              )}
               {canEditThis ? (
-                <TagPicker value={contact.tagIds || []} onChange={setTagIds} />
+                <TagPicker value={effTagIds} onChange={setTagIds} />
               ) : (
                 <div className="flex-row" style={{ gap: 4 }}>
-                  {(contact.tagIds || []).map((tid) => {
+                  {effTagIds.map((tid) => {
                     const t = selectTagById(state, tid);
                     return t ? <TagChip key={tid} tag={t} /> : null;
                   })}
-                  {(contact.tagIds || []).length === 0 && <span className="text-muted text-sm">No tags</span>}
+                  {effTagIds.length === 0 && <span className="text-muted text-sm">No tags</span>}
                 </div>
               )}
             </div>
 
 
-            {contact.lifecycle === 'lead' || contact.lifecycle === 'prospect' ? (
+            {canViewPipeline && ['lead', 'prospect', 'client'].includes(contact.lifecycle) ? (
               <div className="card detail-card">
                 <h3>Pipeline</h3>
                 <FormField
-                  label="Stage"
+                  label="Pipeline"
                   as="select"
-                  value={contact.stage || ''}
-                  onChange={(e) => dispatch({ type: ACTIONS.SET_CONTACT_STAGE, id: contact.id, stage: e.target.value })}
-                  disabled={!canEditThis}
+                  value={pipelineDraft.pipelineId}
+                  onChange={(e) => setPipelineField('pipelineId', e.target.value)}
+                  disabled={!canEditPipeline}
                   options={[
                     { value: '', label: '— None —' },
-                    ...stages.map((s) => ({ value: s.key, label: s.label })),
+                    ...assignablePipelines.map((p) => ({ value: p.id, label: p.label })),
+                  ]}
+                />
+                <FormField
+                  label="Stage"
+                  as="select"
+                  value={pipelineDraft.stage}
+                  onChange={(e) => setPipelineField('stage', e.target.value)}
+                  disabled={!canEditPipeline || !draftPipeline}
+                  placeholder={draftPipeline ? undefined : 'Pick a pipeline first'}
+                  options={[
+                    { value: '', label: '— None —' },
+                    ...draftStages.map((s) => ({ value: s.key, label: s.label })),
                   ]}
                 />
                 <div className="form-row">
-                  <FormField label="Deal value" type="number" value={contact.dealValue || ''} onChange={(e) => updateField({ dealValue: Number(e.target.value) || null })} disabled={!canEditThis} />
-                  <FormField label="Expected close" type="date" value={contact.expectedCloseDate ? contact.expectedCloseDate.slice(0, 10) : ''} onChange={(e) => updateField({ expectedCloseDate: e.target.value ? new Date(e.target.value).toISOString() : null })} disabled={!canEditThis} />
+                  <FormField
+                    label="Deal value"
+                    type="number"
+                    value={pipelineDraft.dealValue === null ? '' : pipelineDraft.dealValue}
+                    onChange={(e) => setPipelineField('dealValue', e.target.value)}
+                    disabled={!canEditPipeline}
+                  />
+                  <FormField
+                    label="Expected close"
+                    type="date"
+                    value={pipelineDraft.expectedCloseDate}
+                    onChange={(e) => setPipelineField('expectedCloseDate', e.target.value)}
+                    disabled={!canEditPipeline}
+                  />
+                </div>
+                <div className="contact-pipeline-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={savePipeline}
+                    disabled={!canEditPipeline || !pipelineDirty}
+                    title={
+                      !canEditPipeline
+                        ? 'You don’t have permission to move deals in pipelines.'
+                        : (!pipelineDirty ? 'No changes to save' : undefined)
+                    }
+                  >
+                    Save
+                  </button>
                 </div>
               </div>
             ) : null}
@@ -307,7 +451,7 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
 
           {activitySubTab === 'service' && (
             serviceHistory.length === 0 ? (
-              <EmptyState icon={<Icon name="schedule" size={28} />} title="No service history" message={contact.companyId ? 'Jobs linked to this client will appear here.' : 'This contact is not attached to a client yet.'} />
+              <EmptyState icon={<Icon name="schedule" size={28} />} title="No service history" message={contact.companyId ? 'Jobs linked to this company will appear here.' : 'This contact is not attached to a company yet.'} />
             ) : (
               <div className="activity-card-grid">
                 {serviceHistory.map((j) => {
@@ -456,4 +600,3 @@ export default function ContactDetail({ contactId: propContactId, embedded = fal
     </div>
   );
 }
-

@@ -6,10 +6,11 @@ import { ACTIONS } from '../store/reducer';
 import {
   selectClientById, selectSitesForClient, selectJobsForClient, selectInvoicesForClient,
   selectServiceById, selectFrequencies, selectServices, selectContactsForClient, selectContactById,
-  selectActivitiesForClient, selectUserById, selectConversationsForContact,
-  selectVisibleClientIdsFor,
+  selectActivitiesForClient, selectUserById, selectConversationsForContact, selectActiveUsers,
+  selectVisibleClientIdsFor, selectTagById,
   invoiceTotal, invoiceBalance, deriveInvoiceStatus,
 } from '../store/selectors';
+import { applyClientTag, removeClientTag } from '../lib/effectiveTags';
 import { usePermission } from '../hooks/usePermission';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../hooks/useAuth';
@@ -26,16 +27,18 @@ import ContactPicker from '../components/ContactPicker';
 import Select from '../components/Select';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
+import TagChip from '../components/TagChip';
+import TagPicker from '../components/TagPicker';
+import OperationsTab from '../components/OperationsTab';
 import { fmtDate, fmtTimeRange, fmtRelative, money } from '../lib/dates';
 import { ATTACHMENT_MAX_BYTES, formatBytes } from '../lib/attachments';
 
-const TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'contacts', label: 'Contacts' },
-  { key: 'sites',    label: 'Sites' },
-  { key: 'activity', label: 'Activity' },
-  { key: 'notes',    label: 'Notes' },
-];
+// Inline status label/variant — the demo Badge has no clientStatusLabel export.
+// Three states: active (green) / prospect (amber) / inactive (slate).
+const clientStatusLabel = (status) =>
+  status === 'active' ? 'Active' : status === 'prospect' ? 'Prospect' : 'Inactive';
+const clientStatusVariant = (status) =>
+  status === 'active' ? 'green' : status === 'prospect' ? 'amber' : 'slate';
 
 export default function ClientDetail() {
   const { clientId } = useParams();
@@ -54,6 +57,8 @@ export default function ClientDetail() {
   // card to upload photos without giving them full site-edit power.
   const canOpenSite = canEditSites || canAttachToSites;
   const canEditContacts = usePermission('contacts.edit');
+  const canViewOps = usePermission('ops.view');
+  const canEditOps = usePermission('ops.edit');
   const { currentUser } = useAuth();
 
   const rawClient = selectClientById(state, clientId);
@@ -72,6 +77,18 @@ export default function ClientDetail() {
   const services = selectServices(state);
   const frequencies = selectFrequencies(state);
   const primaryContact = client?.primaryContactId ? selectContactById(state, client.primaryContactId) : null;
+
+  // The Operations tab only exists when the user can view ops config. Built
+  // once and reused for both the tab strip and the body gate so they stay in
+  // sync.
+  const TABS = useMemo(() => [
+    { key: 'overview', label: 'Overview' },
+    { key: 'contacts', label: 'Contacts' },
+    { key: 'sites',    label: 'Sites' },
+    ...(canViewOps ? [{ key: 'operations', label: 'Operations' }] : []),
+    { key: 'activity', label: 'Activity' },
+    { key: 'notes',    label: 'Notes' },
+  ], [canViewOps]);
 
   const [tab, setTab] = useState('overview');
   const [activitySubTab, setActivitySubTab] = useState('service');
@@ -112,6 +129,11 @@ export default function ClientDetail() {
     if (client) setForm(client);
   }, [client?.id, client?.updatedAt]);
 
+  // If the active tab disappears (e.g. ops.view revoked), fall back to overview.
+  useEffect(() => {
+    if (!TABS.some((t) => t.key === tab)) setTab('overview');
+  }, [TABS, tab]);
+
   const dirty = useMemo(() => {
     if (!form || !client) return false;
     const fields = ['name', 'primaryContactId', 'email', 'phone', 'serviceId', 'frequencyId', 'status'];
@@ -121,7 +143,7 @@ export default function ClientDetail() {
   if (!client) {
     return (
       <div style={{ padding: 32 }}>
-        <DetailHeader backTo="/clients?tab=clients" backLabel="Clients" title="Client not found" />
+        <DetailHeader backTo="/clients?tab=clients" backLabel="Clients" title="Company not found" />
       </div>
     );
   }
@@ -132,10 +154,21 @@ export default function ClientDetail() {
       serviceId: form.serviceId, frequencyId: form.frequencyId, status: form.status,
       primaryContactId: form.primaryContactId || null,
     }});
-    toast.success('Client updated');
+    toast.success('Company updated');
   };
 
   const cancel = () => setForm(client);
+
+  // Company tags are the canonical home — every contact at this company inherits
+  // them. Diff against the client's own tagIds to grant/revoke via the shared
+  // effectiveTags helpers (read-modify-write over UPDATE_CLIENT — the demo has
+  // no TAG_CLIENT / UNTAG_CLIENT actions).
+  const setClientTagIds = (ids) => {
+    const prev = new Set(client.tagIds || []);
+    const next = new Set(ids);
+    ids.forEach((id) => { if (!prev.has(id)) applyClientTag(dispatch, ACTIONS, client, id); });
+    (client.tagIds || []).forEach((id) => { if (!next.has(id)) removeClientTag(dispatch, ACTIONS, client, id); });
+  };
 
   const setPrimary = (contactId) => {
     dispatch({ type: ACTIONS.UPDATE_CLIENT, id: client.id, patch: { primaryContactId: contactId } });
@@ -143,7 +176,7 @@ export default function ClientDetail() {
 
   const deleteClient = () => {
     dispatch({ type: ACTIONS.DELETE_CLIENT, id: client.id });
-    toast.success('Client deleted');
+    toast.success('Company deleted');
     navigate('/clients?tab=clients');
   };
 
@@ -209,8 +242,8 @@ export default function ClientDetail() {
         backLabel="Clients"
         title={client.name}
         subtitle={client.primaryContact || ''}
-        badge={<Badge variant={statusBadgeVariant(client.status === 'active' ? 'Active' : 'Inactive')}>
-          {client.status === 'active' ? 'Active' : 'Inactive'}
+        badge={<Badge variant={clientStatusVariant(client.status)}>
+          {clientStatusLabel(client.status)}
         </Badge>}
         actions={
           <div className="flex-row" style={{ gap: 8 }}>
@@ -325,6 +358,7 @@ export default function ClientDetail() {
                 disabled={!canEdit}
                 options={[
                   { value: 'active', label: 'Active' },
+                  { value: 'prospect', label: 'Prospect' },
                   { value: 'inactive', label: 'Inactive' },
                 ]}
               />
@@ -342,6 +376,20 @@ export default function ClientDetail() {
         </div>
 
         <div>
+          <div className="card detail-card">
+            <h3>Tags</h3>
+            {canEdit ? (
+              <TagPicker value={client.tagIds || []} onChange={setClientTagIds} />
+            ) : (
+              <div className="flex-row" style={{ gap: 4 }}>
+                {(client.tagIds || []).map((tid) => {
+                  const t = selectTagById(state, tid);
+                  return t ? <TagChip key={tid} tag={t} /> : null;
+                })}
+                {(client.tagIds || []).length === 0 && <span className="text-muted text-sm">No tags</span>}
+              </div>
+            )}
+          </div>
           <div className="card detail-card">
             <h3>Lifetime revenue</h3>
             <div className="stat-card-value">{money(client.revenue || 0)}</div>
@@ -384,7 +432,7 @@ export default function ClientDetail() {
             <EmptyState
               icon={<Icon name="user" size={28} />}
               title="No contacts yet"
-              message="Add the people you work with at this client."
+              message="Add the people you work with at this company."
               action={canEditContacts && <button className="btn btn-primary" onClick={() => setAddContactOpen(true)}>Add a contact</button>}
             />
           ) : (
@@ -431,7 +479,7 @@ export default function ClientDetail() {
             <div>
               <h3 className="section-title">Sites ({sites.length})</h3>
               <p className="text-muted text-sm">
-                Every location you service for this client.
+                Every location you service for this company.
                 {sites.length === 0 && canEditSites && ' Click the dashed card below to add your first site.'}
               </p>
             </div>
@@ -440,7 +488,7 @@ export default function ClientDetail() {
             <EmptyState
               icon={<Icon name="building" size={28} />}
               title="No sites yet"
-              message="Sites for this client will appear here once they're added."
+              message="Sites for this company will appear here once they're added."
             />
           ) : (
             <div className="site-grid">
@@ -464,8 +512,8 @@ export default function ClientDetail() {
                         <Icon name="trash" size={14} />
                       </button>
                     )}
-                    <h4>{s.name}</h4>
-                    <p className="text-sm text-body">{s.address}</p>
+                    <h4 className="truncate" title={s.name}>{s.name}</h4>
+                    <p className="text-sm text-body truncate-2" title={s.address}>{s.address}</p>
                     <div className="text-sm" style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Icon name="user" size={14} />
                       <span className="text-muted">Contact:</span>
@@ -482,7 +530,7 @@ export default function ClientDetail() {
                         <span className="text-muted">—</span>
                       )}
                     </div>
-                    {s.accessNotes && <p className="text-muted text-sm" style={{ marginTop: 6 }}>Access: {s.accessNotes}</p>}
+                    {s.accessNotes && <p className="text-muted text-sm truncate-2" style={{ marginTop: 6 }} title={s.accessNotes}>Access: {s.accessNotes}</p>}
                     {attachmentCount > 0 && (
                       <div className="site-card-attachments text-xs text-muted">
                         <Icon name="paperclip" size={11} />
@@ -505,6 +553,10 @@ export default function ClientDetail() {
             </div>
           )}
         </div>
+      )}
+
+      {tab === 'operations' && canViewOps && (
+        <OperationsTab client={client} users={selectActiveUsers(state)} canEdit={canEditOps} />
       )}
 
       {tab === 'activity' && (
@@ -532,7 +584,7 @@ export default function ClientDetail() {
 
           {activitySubTab === 'service' && (
             jobs.length === 0 ? (
-              <EmptyState icon={<Icon name="schedule" size={28} />} title="No service history" message="Jobs scheduled for this client will appear here." />
+              <EmptyState icon={<Icon name="schedule" size={28} />} title="No service history" message="Jobs scheduled for this company will appear here." />
             ) : (
               <div className="activity-card-grid">
                 {jobs.map((j) => {
@@ -578,7 +630,7 @@ export default function ClientDetail() {
                 <EmptyState
                   icon={<Icon name="invoices" size={28} />}
                   title="No payment history"
-                  message="Invoices and payments logged for this client will appear here."
+                  message="Invoices and payments logged for this company will appear here."
                   action={canRecordPayment && <button className="btn btn-primary" onClick={() => setLogPaymentOpen(true)}>Record Payment</button>}
                 />
               ) : (
@@ -768,7 +820,7 @@ export default function ClientDetail() {
       <ConfirmDialog
         open={confirmDelete}
         title={`Delete ${client.name}?`}
-        message="This permanently removes the client, its contacts, sites, jobs, and invoices. Conversations linked to those contacts will be unlinked but preserved. This cannot be undone."
+        message="This permanently removes the company, its contacts, sites, jobs, and invoices. Conversations linked to those contacts will be unlinked but preserved. This cannot be undone."
         confirmLabel="Delete"
         variant="danger"
         onConfirm={deleteClient}
