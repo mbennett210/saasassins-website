@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './mobileParity.css'
+import './portedParity.css'
 import App from './App.jsx'
 
 // Register the PWA service worker once on boot. Gated on browser support so
