@@ -5,16 +5,26 @@ import { selectPermissions } from '../../store/selectors';
 import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, PERMISSIONS } from '../../lib/roles';
 
 // Permissions grouped by surface area for scannability. Order = display order.
+// Headings track the demo's actual permission catalog (lib/roles.js) — every key
+// here exists, so nothing falls into the "Other" bucket. (Quotes/Keys/Forms/Time
+// groups from Rainier are intentionally omitted: those modules + keys aren't in
+// the demo.)
 const PERM_GROUPS = [
-  { id: 'schedule',     label: 'Schedule & Jobs',      keys: ['dashboard.view', 'schedule.view', 'schedule.edit', 'schedule.statusTransition'] },
-  { id: 'clients',      label: 'Clients & Sites',      keys: ['clients.view', 'clients.edit', 'clients.delete', 'sites.edit'] },
-  { id: 'contacts',     label: 'Contacts & Pipeline',  keys: ['contacts.view', 'contacts.edit', 'contacts.delete', 'tags.manage', 'pipeline.view', 'pipeline.edit'] },
-  { id: 'invoices',     label: 'Invoices & Reminders', keys: ['invoices.view', 'invoices.edit', 'invoices.recordPayment', 'reminders.view', 'reminders.edit'] },
-  { id: 'messaging',    label: 'Messaging',            keys: ['messaging.use', 'messaging.startConversation', 'messaging.startInternalThread', 'messaging.internalComment', 'messaging.manageSnippets', 'messaging.bulkActions'] },
-  { id: 'marketing',    label: 'Marketing',            keys: ['marketing.view', 'marketing.manage', 'marketing.connectInbox'] },
-  { id: 'settings',     label: 'Settings',             keys: ['settings.company', 'settings.services', 'settings.team.view', 'settings.team.edit', 'settings.roles.edit', 'settings.account'] },
-  { id: 'integrations', label: 'Integrations',         keys: ['integrations.view', 'integrations.manage'] },
-  { id: 'super',        label: 'Super Admin Only',     keys: ['staff.assignRoles', 'staff.editOverrides'] },
+  { id: 'dashboard',    label: 'Dashboard',             keys: ['dashboard.view'] },
+  { id: 'schedule',     label: 'Schedule & Jobs',       keys: ['schedule.view', 'schedule.edit', 'schedule.statusTransition'] },
+  { id: 'clients',      label: 'Clients & Sites',       keys: ['clients.view', 'clients.edit', 'clients.delete', 'sites.edit', 'sites.attachments'] },
+  { id: 'contacts',     label: 'Contacts & Pipeline',   keys: ['contacts.view', 'contacts.edit', 'contacts.delete', 'tags.manage', 'pipeline.view', 'pipeline.edit'] },
+  { id: 'invoices',     label: 'Invoices & Reminders',  keys: ['invoices.view', 'invoices.edit', 'invoices.recordPayment', 'reminders.view', 'reminders.edit'] },
+  { id: 'messaging',    label: 'Messaging',             keys: ['messaging.use', 'messaging.startConversation', 'messaging.startInternalThread', 'messaging.internalComment', 'messaging.manageSnippets', 'messaging.bulkActions'] },
+  { id: 'marketing',    label: 'Marketing',             keys: ['marketing.view', 'marketing.manage', 'marketing.connectInbox'] },
+  { id: 'complaints',   label: 'Complaints',            keys: ['complaints.view', 'complaints.manage'] },
+  { id: 'reviews',      label: 'Reviews',               keys: ['reviews.view'] },
+  { id: 'qc',           label: 'Quality (Inspections)', keys: ['qc.view', 'qc.inspect', 'qc.templates.edit', 'qc.share', 'problems.manage'] },
+  { id: 'variance',     label: 'Variance Report',       keys: ['variance.view', 'variance.actions', 'variance.export'] },
+  { id: 'ops',          label: 'Operations',            keys: ['ops.view', 'ops.edit'] },
+  { id: 'settings',     label: 'Settings',              keys: ['settings.company', 'settings.services', 'settings.team.view', 'settings.team.edit', 'settings.roles.edit', 'settings.account'] },
+  { id: 'integrations', label: 'Integrations',          keys: ['integrations.view', 'integrations.manage'] },
+  { id: 'super',        label: 'Super Admin Only',      keys: ['staff.assignRoles', 'staff.editOverrides'] },
 ];
 
 // Permissions where flipping ON for a non-owner role is high-impact / hard to undo.

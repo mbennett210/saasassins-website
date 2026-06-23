@@ -129,10 +129,10 @@ export default function SettingsTeam() {
                             The row-level onClick handles the broader hit area. */}
                         <Link to={`/settings/team/${u.id}`} state={nav} className="flex-row table-name-link" style={{ gap: 8, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
                           <Avatar initials={u.initials} variant={u.avatar} size="sm" />
-                          <span className="name">{u.name}</span>
+                          <span className="name truncate" title={u.name}>{u.name}</span>
                         </Link>
                       </td>
-                      <td>{u.email || '—'}</td>
+                      <td><span className="truncate" title={u.email || ''}>{u.email || '—'}</span></td>
                       <td>{ROLE_LABELS[u.role]}</td>
                       <td>
                         <Badge variant={hasOverride(u.id) ? 'amber' : 'slate'}>

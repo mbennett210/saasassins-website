@@ -325,6 +325,7 @@ function SignatureCard({ user, dispatch, toast }) {
 export default function SettingsAccount() {
   const { currentUser } = useAuth();
   const state = useStore();
+  const company = state.company;
   const dispatch = useDispatch();
   const toast = useToast();
   const [form, setForm] = useState(currentUser);
@@ -375,6 +376,18 @@ export default function SettingsAccount() {
               <FormField label="Full name" required value={form.name || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               <FormField label="Initials" value={form.initials || ''} onChange={(e) => setForm({ ...form, initials: e.target.value.toUpperCase().slice(0, 3) })} help="2–3 characters used in the avatar" />
             </div>
+            {/* Account email vs. connected mailboxes — heads off the common confusion
+                between the login/notification address and the mailboxes you send AS. */}
+            <div className="info-banner" role="note" style={{ marginBottom: 14 }}>
+              <div>
+                <strong>Account email vs. connected mailboxes.</strong>{' '}
+                Your account email is what we use to sign you in and send you app notifications.
+                Mailboxes you connect under <strong>Settings → Connected Inboxes</strong> are
+                different — those are the addresses you send and receive <em>as</em> inside
+                Messaging. The two can be the same, but they’re stored separately and{' '}
+                {company?.name || 'this app'} never assumes one matches the other.
+              </div>
+            </div>
             <div className="form-row">
               <FormField label="Email" type="email" value={form.email || ''} onChange={(e) => setForm({ ...form, email: e.target.value })} />
               <FormField label="Phone" value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
@@ -386,7 +399,10 @@ export default function SettingsAccount() {
 
           <MobilePushCard user={currentUser} prefs={prefs} dispatch={dispatch} toast={toast} />
 
-          <SignatureCard user={currentUser} dispatch={dispatch} toast={toast} />
+          {/* Crew don't send outbound emails, so no signature for them. */}
+          {currentUser.role !== 'crew' && (
+            <SignatureCard user={currentUser} dispatch={dispatch} toast={toast} />
+          )}
         </div>
 
         <div className="card detail-card">

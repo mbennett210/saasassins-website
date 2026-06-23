@@ -1,0 +1,42 @@
+/* Styles ported from the Rainier client app for CRM / Settings parity — utility
+   and component classes the demo's index.css lacked. Loaded globally (main.jsx).
+   NOT mobile-specific (see mobileParity.css for media-scoped rules). Token-based,
+   so they pick up the active theme. Only classes ABSENT from index.css are added
+   here — existing select-shell/trigger/menu/option styling is left untouched. */
+
+/* Truncation utility — Settings → Team name/email cells, CRM chips, etc. */
+.truncate { display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.truncate-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Inline text link (CRM: clickable company name in the Contacts list). */
+.link { color: var(--primary, #1E8FE8); cursor: pointer; }
+.link:hover { text-decoration: underline; }
+
+/* FilterSelect search menu — extends the existing .select-menu with a
+   type-to-filter input + scrollable result list (classes absent in index.css). */
+.select-search { width: 100%; box-sizing: border-box; padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--card-border, #e5e7eb); border-radius: 8px; font-size: 13px; font-family: inherit; color: var(--text-primary); background: var(--card-bg, #fff); }
+.select-search:focus { outline: none; border-color: var(--primary, #1E8FE8); }
+.select-search-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; }
+.select-search-empty { padding: 10px 12px; font-size: 13px; color: var(--text-muted, #6b7280); }
+
+/* URL-backed list pagination (CRM Contacts list, 25/page). */
+.list-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.list-pager-info { font-size: 13px; color: var(--text-muted, #6b7280); }
+.list-pager-controls { display: flex; align-items: center; gap: 10px; }
+.list-pager-page { font-size: 13px; color: var(--text-muted, #6b7280); }
+.list-pager-btn { padding: 6px 12px; border: 1px solid var(--card-border, #e5e7eb); background: var(--card-bg, #fff); border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary, #0f172a); }
+.list-pager-btn:disabled { opacity: .5; cursor: default; }
+
+/* Settings → Tags & Variables: read-only Variables merge-field reference. */
+.var-group { margin-top: 24px; }
+.var-group:first-of-type { margin-top: 16px; }
+.var-group-desc { font-size: 13px; color: var(--text-muted); margin: 2px 0 10px; }
+.var-list { display: flex; flex-direction: column; }
+.var-row { display: grid; grid-template-columns: 144px minmax(0, 1fr); align-items: baseline; column-gap: 14px; padding: 11px 2px; border-bottom: 1px solid var(--border-light); }
+.var-row:last-child { border-bottom: none; }
+.var-token { justify-self: start; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--primary-hover); background: var(--primary-bg); border: 1px solid var(--primary-soft); border-radius: var(--btn-radius); padding: 2px 7px; white-space: nowrap; }
+.var-row-body { flex: 1 1 auto; min-width: 0; }
+.var-row-label { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+.var-row-from { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
+.var-row-value { font-weight: 600; color: var(--text-primary); }
+@media (max-width: 420px) { .var-row { grid-template-columns: 1fr; row-gap: 3px; } }
