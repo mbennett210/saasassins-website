@@ -1,14 +1,17 @@
 /* ============================================================
-   DEMO CONCIERGE WIDGET  (marketing demo only)
+   DEMO CHAT WIDGETS  (marketing demo only)
    ------------------------------------------------------------
-   Prospect-facing chat launcher + panel. Mounted by DemoChrome
-   behind IS_DEMO, so none of this ships in a per-client build.
-   Sits bottom-LEFT to stay clear of the bottom-right cart FAB.
+   Shared styling for the prospect-facing chat launcher + panel.
+   Two consumers, both behind IS_DEMO so none of this ships in a
+   per-client build:
+     • ConciergeWidget (parked) — bottom-LEFT, product tour.
+     • ProspectBot (active)     — bottom-RIGHT via the `--right`
+       modifier, sitting one slot to the LEFT of the cart FAB.
    Token discipline: every value resolves to a var(--token) from
    theme.css (see src/STYLING.md).
    ============================================================ */
 
-/* ── Launcher FAB (mirrors the cart FAB, opposite corner) ── */
+/* ── Launcher FAB (mirrors the cart FAB) ── */
 .pp-concierge-fab {
   position: fixed; left: var(--space-5); bottom: var(--space-5);
   z-index: var(--z-sticky);
@@ -25,6 +28,14 @@
 .pp-concierge-fab:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .pp-concierge-fab-icon { font-size: var(--font-size-lg); line-height: 1; }
 
+/* Right-anchored variant — bottom-RIGHT, one slot to the LEFT of the cart FAB
+   (cart FAB is right:var(--space-5), width:var(--space-12)). Used by ProspectBot. */
+.pp-concierge-fab--right {
+  left: auto;
+  right: calc(var(--space-5) + var(--space-12) + var(--space-3));
+  bottom: var(--space-5);
+}
+
 /* ── Panel ── */
 @keyframes pp-concierge-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
 .pp-concierge-panel {
@@ -39,6 +50,15 @@
   animation: pp-concierge-in var(--duration-base) var(--ease-out);
 }
 @media (prefers-reduced-motion: reduce) { .pp-concierge-panel { animation: none; } }
+
+/* Right-anchored panel — aligns its right edge with the cart FAB/edge and opens
+   ABOVE the FAB row so the cart FAB stays reachable on the live demo. */
+.pp-concierge-panel--right {
+  left: auto;
+  right: var(--space-5);
+  bottom: calc(var(--space-5) + var(--space-12) + var(--space-3));
+  height: min(560px, calc(100dvh - var(--space-5) - var(--space-5) - var(--space-12) - var(--space-3)));
+}
 
 .pp-concierge-head {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
@@ -68,8 +88,11 @@
   line-height: var(--line-height-normal); white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .pp-msg strong { font-weight: var(--font-weight-bold); }
+.pp-msg a { text-decoration: underline; text-underline-offset: 2px; }
 .pp-msg-assistant { align-self: flex-start; background: var(--inset-bg); color: var(--text-body); border-bottom-left-radius: var(--space-1); }
+.pp-msg-assistant a { color: var(--primary); }
 .pp-msg-user { align-self: flex-end; background: var(--primary); color: var(--color-text-on-primary); border-bottom-right-radius: var(--space-1); }
+.pp-msg-user a { color: var(--color-text-on-primary); }
 .pp-msg-caret { opacity: 0.6; }
 
 /* ── Suggested-prompt chips ── */
@@ -119,5 +142,19 @@
   .pp-concierge-panel {
     left: var(--space-3); right: var(--space-3); bottom: var(--space-3);
     width: auto; height: min(72dvh, calc(100dvh - 2 * var(--space-3)));
+  }
+
+  /* Right-anchored variant stays beside the cart FAB (which keeps its
+     right/bottom:var(--space-5) on mobile); the panel fills the width and opens
+     above the FAB row. Placed after the base mobile rules so it wins. */
+  .pp-concierge-fab--right {
+    left: auto;
+    right: calc(var(--space-5) + var(--space-12) + var(--space-3));
+    bottom: var(--space-5);
+  }
+  .pp-concierge-panel--right {
+    left: var(--space-3); right: var(--space-3); width: auto;
+    bottom: calc(var(--space-5) + var(--space-12) + var(--space-3));
+    height: min(72dvh, calc(100dvh - var(--space-5) - var(--space-5) - var(--space-12) - var(--space-3)));
   }
 }
