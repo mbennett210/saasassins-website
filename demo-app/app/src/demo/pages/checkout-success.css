@@ -1,0 +1,58 @@
+/* ============================================================
+   CHECKOUT SUCCESS — onboarding intake form
+   ------------------------------------------------------------
+   Styles for the post-purchase intake form on CheckoutSuccess.
+   Lives beside demo.css's .pp-success block. Token discipline:
+   every value resolves to a var(--token) from theme.css.
+   ============================================================ */
+
+.pp-intake {
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-light);
+  text-align: left;
+}
+.pp-intake-title { margin: 0; font-size: var(--font-size-lg); color: var(--text-primary); }
+.pp-intake-sub {
+  margin: var(--space-2) 0 var(--space-5);
+  font-size: var(--font-size-sm); color: var(--text-muted); line-height: var(--line-height-normal);
+}
+
+.pp-intake-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+.pp-intake-full { grid-column: 1 / -1; }
+
+.pp-intake-field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.pp-intake-field > span {
+  font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-body);
+}
+.pp-intake-field > span em { color: var(--primary); font-style: normal; margin-left: 2px; }
+
+.pp-intake-field input,
+.pp-intake-field textarea {
+  width: 100%; box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--card-border); border-radius: var(--input-radius);
+  background: var(--color-surface-raised); color: var(--text-primary);
+  font-family: var(--font); font-size: var(--font-size-sm);
+}
+.pp-intake-field textarea { resize: vertical; line-height: var(--line-height-normal); }
+.pp-intake-field input:focus-visible,
+.pp-intake-field textarea:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.pp-intake-field input[type="file"] { padding: var(--space-2) 0; border: none; background: transparent; }
+.pp-intake-hint { font-size: var(--font-size-xs); color: var(--text-muted); }
+
+.pp-intake-error { margin: var(--space-3) 0 0; font-size: var(--font-size-sm); color: var(--danger); }
+.pp-intake .btn { margin-top: var(--space-5); }
+
+.pp-intake-done {
+  margin-top: var(--space-8); padding-top: var(--space-6);
+  border-top: 1px solid var(--border-light);
+}
+.pp-intake-done-mark { font-size: var(--font-size-3xl); }
+.pp-intake-done h2 { margin: var(--space-2) 0 0; font-size: var(--font-size-lg); color: var(--text-primary); }
+.pp-intake-done p { margin: var(--space-2) 0 0; color: var(--text-muted); font-size: var(--font-size-sm); line-height: var(--line-height-normal); }
+.pp-intake-done a { color: var(--primary); }
+
+@media (max-width: 640px) {
+  .pp-intake-grid { grid-template-columns: 1fr; }
+}
