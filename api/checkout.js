@@ -1,9 +1,10 @@
 // POST /api/checkout  { moduleIds: string[], brandTheme?: string }  ->  { url }
-// GET  /api/checkout?session_id=cs_...  ->  { paymentStatus, amountTotal, currency, email, brandTheme, items[] }
+// GET  /api/checkout?session_id=cs_...  ->  { paymentStatus, amountTotal, currency, email, brandTheme, items[], company, name, phone, address }
 //
 // Creates a one-time Stripe Checkout Session from SERVER-SIDE prices (see
 // _modules.js) and returns the hosted-checkout URL for the browser to redirect to.
-// GET retrieves a completed session so the success page can render a real receipt.
+// GET retrieves a completed session so the success page can render a real receipt
+// AND pre-fill the onboarding intake form (company/name/phone/address).
 // Same-origin call (saasassinsdev.com/polishpoint -> /api/checkout), so no CORS.
 //
 // Env: STRIPE_SECRET_KEY. Use a TEST-mode key (sk_test_...) to verify end-to-end
@@ -19,17 +20,33 @@ function getStripe() {
   return key ? new Stripe(key) : null;
 }
 
-// GET — retrieve a completed Checkout Session for the success page's receipt.
+// Flatten a Stripe address object into one line for pre-filling the intake form.
+function formatAddress(addr) {
+  if (!addr) return null;
+  const parts = [
+    addr.line1,
+    addr.line2,
+    addr.city,
+    [addr.state, addr.postal_code].filter(Boolean).join(' '),
+    addr.country,
+  ].filter(Boolean);
+  return parts.length ? parts.join(', ') : null;
+}
+
+// GET — retrieve a completed Checkout Session for the success page's receipt
+// + intake-form pre-fill.
 async function handleRetrieve(stripe, req, res) {
   const sessionId = req.query && req.query.session_id;
   if (!sessionId) return res.status(400).json({ error: 'Missing session_id.' });
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['line_items'] });
+    const details = session.customer_details || {};
+    const companyField = (session.custom_fields || []).find((f) => f.key === 'company');
     return res.status(200).json({
       paymentStatus: session.payment_status, // 'paid' | 'unpaid' | 'no_payment_required'
       amountTotal: session.amount_total,
       currency: session.currency,
-      email: (session.customer_details && session.customer_details.email) || null,
+      email: details.email || null,
       brandTheme: (session.metadata && session.metadata.brandTheme) || null,
       brandThemeKey: (session.metadata && session.metadata.brandThemeKey) || null,
       items: ((session.line_items && session.line_items.data) || []).map((li) => ({
@@ -37,6 +54,11 @@ async function handleRetrieve(stripe, req, res) {
         amount: li.amount_total,
         quantity: li.quantity,
       })),
+      // Intake-form pre-fill (what the buyer already gave Stripe).
+      company: (companyField && companyField.text && companyField.text.value) || null,
+      name: details.name || null,
+      phone: details.phone || null,
+      address: formatAddress(details.address),
     });
   } catch {
     return res.status(404).json({ error: 'Order not found.' });
@@ -86,7 +108,9 @@ module.exports = async function handler(req, res) {
   // BOTH the Checkout Session AND the PaymentIntent, so the chosen modules +
   // brand theme show up directly on the payment in the Dashboard — the Payments
   // view reads PaymentIntent metadata, which the session's does NOT propagate to.
-  const orderMetadata = { moduleIds: ids.join(','), brandTheme, brandThemeKey };
+  // `origin` rides along so the webhook can build the receipt's intake link for
+  // the right environment (prod / preview / localhost) without a hardcoded host.
+  const orderMetadata = { moduleIds: ids.join(','), brandTheme, brandThemeKey, origin };
 
   try {
     const session = await stripe.checkout.sessions.create({
