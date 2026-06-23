@@ -67,6 +67,21 @@ export const PERMISSIONS = {
   'complaints.view':         { label: 'View complaints',             defaultRoles: ['owner', 'admin', 'crew'] },
   'complaints.manage':       { label: 'Log / update complaints',     defaultRoles: ['owner', 'admin', 'crew'] },
   'reviews.view':            { label: 'View reviews / reputation',   defaultRoles: ['owner', 'admin'] },
+  // ---------- Quality Control / Inspections (Swept replacement) ----------
+  // Scored site inspections, the cross-account problems / punch-list queue, and
+  // versioned inspection templates. New keys take effect via can()'s schema
+  // fallback, so no store version bump is needed to light these up.
+  'qc.view':                 { label: 'View Quality / inspections',           defaultRoles: ['owner', 'admin', 'crew'] },
+  'qc.inspect':              { label: 'Perform inspections',                  defaultRoles: ['owner', 'admin'] },
+  'qc.templates.edit':       { label: 'Build / publish inspection templates', defaultRoles: ['owner', 'admin'] },
+  'qc.share':                { label: 'Share client-facing quality reports',  defaultRoles: ['owner', 'admin'] },
+  'problems.manage':         { label: 'Manage the problems / punch-list queue', defaultRoles: ['owner', 'admin', 'crew'] },
+  // ---------- Labor Variance / Time accountability ----------
+  'variance.view':           { label: 'View labor variance',                  defaultRoles: ['owner', 'admin'] },
+  'variance.actions':        { label: 'Approve / correct time entries',       defaultRoles: ['owner', 'admin'] },
+  'variance.export':         { label: 'Export variance reports',              defaultRoles: ['owner', 'admin'] },
+  'ops.view':                { label: 'View account operations config',       defaultRoles: ['owner', 'admin'] },
+  'ops.edit':                { label: 'Edit account operations config',       defaultRoles: ['owner', 'admin'] },
   // ---------- Settings ----------
   'settings.company':        { label: 'Edit company settings',    defaultRoles: ['owner', 'admin'] },
   'settings.services':       { label: 'Edit services / frequencies', defaultRoles: ['owner'] },

@@ -24,6 +24,8 @@ import Messaging from './pages/Messaging';
 import Marketing from './pages/Marketing';
 import Complaints from './pages/Complaints';
 import Reviews from './pages/Reviews';
+import QualityHub from './pages/quality/QualityHub';
+import PublicInspectionReport from './pages/PublicInspectionReport';
 
 import SettingsLayout from './pages/settings/SettingsLayout';
 import SettingsCompany from './pages/settings/Company';
@@ -44,6 +46,7 @@ import { CartProvider } from './demo/cart/CartContext';
 import DemoLanding from './demo/pages/DemoLanding';
 import CheckoutPage from './demo/pages/CheckoutPage';
 import CheckoutSuccess from './demo/pages/CheckoutSuccess';
+import ProspectBot from './demo/assistant/ProspectBot';
 
 // Router mount point follows the Vite base: '' (root) for per-client product
 // builds, '/polishpoint' for the marketing demo. BASE_URL is '/' or
@@ -68,6 +71,11 @@ function AppRoutes() {
         {IS_DEMO && <Route index element={<DemoLanding />} />}
         {IS_DEMO && <Route path="checkout" element={<CheckoutPage />} />}
         {IS_DEMO && <Route path="checkout/success" element={<CheckoutSuccess />} />}
+
+        {/* Client-facing inspection report — shell-less, no auth, token-gated.
+            A real product surface in both builds (the "your building scored 94%"
+            artifact a prospect would send their customer). */}
+        <Route path="inspect/:token" element={<PublicInspectionReport />} />
 
         <Route element={<AppLayout />}>
           {/* Demo: the live app home sits at '/demo' (the landing owns '/').
@@ -98,6 +106,11 @@ function AppRoutes() {
 
           <Route path="marketing" element={<RequirePerm perm="marketing.view"><Marketing /></RequirePerm>} />
 
+          {/* Quality Control (Swept replacement) — scored inspections + the labor
+              variance morning-scan. One hub, tabbed; /variance deep-links the tab. */}
+          <Route path="inspections" element={<RequirePerm perm="qc.view"><QualityHub /></RequirePerm>} />
+          <Route path="variance" element={<RequirePerm perm="variance.view"><QualityHub defaultTab="variance" /></RequirePerm>} />
+
           <Route path="complaints" element={<RequirePerm perm="complaints.view"><Complaints /></RequirePerm>} />
           <Route path="reviews" element={<RequirePerm perm="reviews.view"><Reviews /></RequirePerm>} />
 
@@ -118,6 +131,11 @@ function AppRoutes() {
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
+
+      {/* Prospect Q&A bot — a single persistent instance mounted above <Routes>,
+          so the conversation survives navigation across the landing, live demo,
+          and checkout. Demo build only; sits bottom-right, left of the cart FAB. */}
+      {IS_DEMO && <ProspectBot />}
     </BrowserRouter>
   );
 }

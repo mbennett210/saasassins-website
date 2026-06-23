@@ -6,8 +6,9 @@
 // a tampered client can never set its own price — keep the two in sync.
 //
 //   tier        'core' (the always-included base) vs 'addon' (à la carte).
-//   route       set when the module has a live page in the app (Marketing); the
-//               nav links straight to it. Page-less add-ons open an info dialog.
+//   route       set when the module has a live page in the app (Marketing,
+//               Quality); the nav links straight to it. Page-less add-ons open
+//               an info dialog.
 //   navLabel    short label for the sidebar (the full `name` is too long there).
 //   placements  where a module's in-context "Add to cart" CTA appears inside the
 //               live app (consumed by components/PlacementCTAs on the feature
@@ -74,6 +75,29 @@ export const MODULE_CATALOG = [
       'Automated review requests',
       'Review monitoring & response',
       'Reputation dashboard',
+    ],
+    placements: [],
+    featured: true,
+  },
+  {
+    id: 'qc',
+    name: 'Quality Control & Inspections',
+    navLabel: 'Quality',
+    icon: '🔍',
+    category: 'Quality',
+    tier: 'addon',
+    price: 1000,
+    route: '/inspections', // has a live page in the app — nav links straight to it
+    blurb: 'Score every clean. Area-by-area inspections, a cross-account problems queue, branded client reports, and labor variance that catches what Swept misses.',
+    longDescription:
+      'The janitorial quality layer a Swept user switches to get — built natively in. Build versioned inspection templates, walk a site scoring each area pass/fail or 1–5 with per-item photos, and instantly get a cleaning score. Open issues roll into a cross-account problems / punch-list queue, and you can send the client a branded report proving their building scored 94%. Pairs with Labor Variance: actual clocked labor vs each account’s expected time, multi-cleaner-attributed (the case Swept gets wrong) and flagged over / under.',
+    features: [
+      'Scored site inspections (area-level cleaning scores)',
+      'Drag-to-build, versioned inspection templates',
+      'In-field scoring with per-item photos',
+      'Cross-account problems / punch-list queue',
+      'Client-facing shareable quality report',
+      'Labor variance — clocked time vs expected (multi-cleaner-accurate)',
     ],
     placements: [],
     featured: true,
