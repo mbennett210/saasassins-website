@@ -134,8 +134,18 @@ module.exports = async function handler(req, res) {
     .filter((def) => fields[def.key])
     .map((def) => row(def.label, esc(fields[def.key])))
     .join('');
+  // SMS opt-in (A2P/CTIA) consent record from the intake form + the Terms
+  // acceptance carried on the Stripe session metadata — both surfaced for the team.
+  const sms = (body && typeof body.smsConsent === 'object' && body.smsConsent) || {};
+  const smsNote = sms.optIn
+    ? `YES — ${str(sms.phone, 60) || 'phone in form'} · v${str(sms.version, 40)} · ${str(sms.at, 40)}`
+    : 'No';
+  const tosNote = md.tosAccepted ? `${md.tosAccepted} · v${md.tosVersion || ''} · ${md.tosAt || ''}` : '';
+
   const metaHtml =
-    row('Logo', esc(logoNote))
+    row('SMS opt-in', esc(smsNote))
+    + (tosNote ? row('Terms accepted', esc(tosNote)) : '')
+    + row('Logo', esc(logoNote))
     + (md.moduleIds ? row('Order (module ids)', esc(md.moduleIds)) : '')
     + (customerEmail ? row('Stripe email', esc(customerEmail)) : '');
 
@@ -153,7 +163,9 @@ module.exports = async function handler(req, res) {
 
   const textLines = [`New onboarding intake — ${headline}`, ''];
   for (const def of FIELD_DEFS) if (fields[def.key]) textLines.push(`${def.label}: ${fields[def.key]}`);
-  textLines.push('', `Logo: ${logoNote}`);
+  textLines.push('', `SMS opt-in: ${smsNote}`);
+  if (tosNote) textLines.push(`Terms accepted: ${tosNote}`);
+  textLines.push(`Logo: ${logoNote}`);
   if (md.moduleIds) textLines.push(`Order (module ids): ${md.moduleIds}`);
   if (customerEmail) textLines.push(`Stripe email: ${customerEmail}`);
 

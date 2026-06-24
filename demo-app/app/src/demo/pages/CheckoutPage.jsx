@@ -26,6 +26,14 @@ import '../demo.css';
 // In LOCAL DEV only (import.meta.env.DEV) — where there's no /api server — the
 // flow falls back to a simulated success so the UX stays testable without a
 // backend. In production a failure surfaces a real error; it never fakes a sale.
+//
+// LEGAL GATE: the buyer must accept the Terms & Conditions (custom clickwrap)
+// before "Pay" is enabled. The acceptance (a flag + the T&C version + timestamp)
+// is sent to /api/checkout and stamped onto the Stripe order metadata, so the
+// paid session itself is the durable record that they agreed at that version.
+
+// Bump when the Terms & Conditions change so each order records the version agreed.
+const TOS_VERSION = '2026-06-23';
 
 export default function CheckoutPage() {
   const company = selectCompany(useStore());
@@ -34,6 +42,7 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [deployTheme, setDeployTheme] = useState(loadBrand().deployTheme || 'blue');
+  const [agreeTos, setAgreeTos] = useState(false);
 
   const chooseTheme = (key) => {
     setDeployTheme(key);
@@ -44,10 +53,16 @@ export default function CheckoutPage() {
   const total = CORE.price + cart.subtotal;
 
   const pay = async () => {
+    // Clickwrap gate — must accept the Terms & Conditions before paying.
+    if (!agreeTos) {
+      setError('Please agree to the Terms & Conditions to continue.');
+      return;
+    }
     setSubmitting(true);
     setError('');
 
     const brandTheme = themeLabel(deployTheme);
+    const tosAt = new Date().toISOString();
     // Local-dev-only fallback: vite has no /api server, so complete to a simulated
     // success page to keep the checkout UX testable without a backend.
     const simulate = () => {
@@ -64,10 +79,19 @@ export default function CheckoutPage() {
 
     try {
       // Only add-on ids go up; the server always adds the Core base line item.
+      // tosAccepted/tosVersion/tosAt are stamped onto the Stripe order so the paid
+      // session is the durable proof of agreement.
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ moduleIds: cart.ids, brandTheme, brandThemeKey: deployTheme }),
+        body: JSON.stringify({
+          moduleIds: cart.ids,
+          brandTheme,
+          brandThemeKey: deployTheme,
+          tosAccepted: true,
+          tosVersion: TOS_VERSION,
+          tosAt,
+        }),
       });
 
       if (res.ok) {
@@ -194,10 +218,26 @@ export default function CheckoutPage() {
               <span>Brand theme</span>
               <span>{themeLabel(deployTheme)}</span>
             </div>
+
+            {/* Custom clickwrap — required before payment. */}
+            <label className="pp-checkout-tos">
+              <input
+                type="checkbox"
+                checked={agreeTos}
+                onChange={(e) => { setAgreeTos(e.target.checked); if (e.target.checked) setError(''); }}
+              />
+              <span>
+                I agree to the SaaSassins{' '}
+                <a href="/terms" target="_blank" rel="noopener noreferrer">Terms &amp; Conditions</a>
+                {' '}and{' '}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+              </span>
+            </label>
+
             {error && <div className="pp-checkout-error">{error}</div>}
             <button
               className="btn btn-primary btn-lg pp-pay-btn"
-              disabled={submitting}
+              disabled={submitting || !agreeTos}
               onClick={pay}
             >
               {submitting ? 'Starting checkout…' : `Pay ${formatPrice(total)}`}

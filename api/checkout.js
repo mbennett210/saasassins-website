@@ -104,13 +104,19 @@ module.exports = async function handler(req, res) {
   // display label ('Cobalt') is later renamed. The browser sends both.
   const brandThemeKey = typeof body.brandThemeKey === 'string' ? body.brandThemeKey.slice(0, 40) : '';
 
+  // Clickwrap Terms acceptance from the checkout page — recorded on the order so
+  // the paid session is the durable proof the buyer agreed (at this T&C version).
+  const tosAccepted = body.tosAccepted === true || body.tosAccepted === 'true';
+  const tosVersion = typeof body.tosVersion === 'string' ? body.tosVersion.slice(0, 40) : '';
+  const tosAt = typeof body.tosAt === 'string' ? body.tosAt.slice(0, 40) : '';
+
   // One metadata blob describing the order's fulfillment selections. Stamped on
   // BOTH the Checkout Session AND the PaymentIntent, so the chosen modules +
   // brand theme show up directly on the payment in the Dashboard — the Payments
   // view reads PaymentIntent metadata, which the session's does NOT propagate to.
   // `origin` rides along so the webhook can build the receipt's intake link for
   // the right environment (prod / preview / localhost) without a hardcoded host.
-  const orderMetadata = { moduleIds: ids.join(','), brandTheme, brandThemeKey, origin };
+  const orderMetadata = { moduleIds: ids.join(','), brandTheme, brandThemeKey, origin, tosAccepted: tosAccepted ? 'true' : 'false', tosVersion, tosAt };
 
   try {
     const session = await stripe.checkout.sessions.create({

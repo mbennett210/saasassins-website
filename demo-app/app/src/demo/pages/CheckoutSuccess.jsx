@@ -6,6 +6,7 @@ import { useCart } from '../cart/CartContext';
 import { formatPrice } from '../modules.catalog';
 import '../demo.css';
 import './checkout-success.css';
+import './checkout-legal.css';
 
 // /polishpoint/checkout/success — landing after checkout completes. Clears the
 // cart once. Two arrival paths:
@@ -15,11 +16,22 @@ import './checkout-success.css';
 //     recap with a "no payment processed" note.
 //
 // Below the receipt, the buyer completes an ONBOARDING INTAKE (brand, business,
-// team, services + logo). It POSTs to /api/intake, which emails the team via
-// Resend. The same form is reachable from the receipt email's link. A localStorage
-// flag per session means a repeat visit shows a "received" state, not the form.
+// team, services + logo) AND can opt in to SMS. It POSTs to /api/intake, which
+// emails the team via Resend. The same form is reachable from the receipt email's
+// link. A localStorage flag per session means a repeat visit shows a "received"
+// state, not the form.
+//
+// A2P/SMS: the opt-in is a SEPARATE, unchecked checkbox with CTIA-compliant
+// language (sender, message types, "not a condition of purchase", frequency,
+// rates, STOP/HELP, links). The consent (phone + version + timestamp + exact
+// language) is sent to /api/intake so there's a retained record for A2P review.
 
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+
+// Bump when the SMS opt-in language changes (each consent records the version).
+const SMS_OPT_IN_VERSION = '2026-06-23';
+const SMS_OPT_IN_TEXT =
+  'I agree to receive recurring automated text messages from SaaSassins at the phone number provided (onboarding updates, account notifications, and support). Consent is not a condition of purchase. Message frequency varies. Message & data rates may apply. Reply STOP to opt out, HELP for help.';
 
 const EMPTY_FORM = {
   businessName: '', contactName: '', supportEmail: '', supportPhone: '',
@@ -44,6 +56,7 @@ export default function CheckoutSuccess() {
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [logo, setLogo] = useState(null);
+  const [smsOptIn, setSmsOptIn] = useState(false);
   const [intakeSubmitting, setIntakeSubmitting] = useState(false);
   const [intakeError, setIntakeError] = useState('');
   const [intakeDone, setIntakeDone] = useState(() => {
@@ -118,6 +131,11 @@ export default function CheckoutSuccess() {
   const submitIntake = async (e) => {
     e.preventDefault();
     if (intakeSubmitting) return;
+    // If they ticked SMS opt-in, a phone number is required to honor it.
+    if (smsOptIn && !form.supportPhone.trim()) {
+      setIntakeError('Add a phone number to receive text messages, or uncheck SMS updates.');
+      return;
+    }
     setIntakeSubmitting(true);
     setIntakeError('');
 
@@ -126,12 +144,17 @@ export default function CheckoutSuccess() {
       setIntakeDone(true);
     };
 
+    // CTIA/A2P consent record — captured whether or not they opted in.
+    const smsConsent = smsOptIn
+      ? { optIn: true, phone: form.supportPhone.trim(), version: SMS_OPT_IN_VERSION, language: SMS_OPT_IN_TEXT, at: new Date().toISOString() }
+      : { optIn: false, version: SMS_OPT_IN_VERSION, at: new Date().toISOString() };
+
     try {
       if (!sessionId) throw new Error('no-session'); // simulated / local-dev path
       const res = await fetch('/api/intake', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, ...form, logo: logo || undefined }),
+        body: JSON.stringify({ sessionId, ...form, smsConsent, logo: logo || undefined }),
       });
       if (!res.ok) {
         const b = await res.json().catch(() => ({}));
@@ -254,11 +277,28 @@ export default function CheckoutSuccess() {
               </label>
             </div>
 
+            {/* A2P / CTIA-compliant SMS opt-in — separate, unchecked by default. */}
+            <label className="pp-intake-consent">
+              <input type="checkbox" checked={smsOptIn} onChange={(e) => setSmsOptIn(e.target.checked)} />
+              <span>
+                Text me updates: I agree to receive recurring automated text messages from SaaSassins at
+                the phone number above (onboarding updates, account notifications, and support).
+                <span className="pp-intake-consent-fine">
+                  Consent is not a condition of purchase. Message frequency varies. Msg &amp; data rates may
+                  apply. Reply STOP to opt out, HELP for help. See our{' '}
+                  <a href="/sms-terms" target="_blank" rel="noopener noreferrer">SMS Terms</a> and{' '}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+                </span>
+              </span>
+            </label>
+
             {intakeError && <p className="pp-intake-error">{intakeError}</p>}
 
-            <button className="btn btn-primary" type="submit" disabled={intakeSubmitting}>
-              {intakeSubmitting ? 'Sending…' : 'Send setup details'}
-            </button>
+            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+              <button className="btn btn-primary" type="submit" disabled={intakeSubmitting}>
+                {intakeSubmitting ? 'Sending…' : 'Send setup details'}
+              </button>
+            </div>
           </form>
         )}
 
