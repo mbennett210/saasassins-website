@@ -1174,6 +1174,19 @@ button:focus-visible {
   color: var(--red-500);
   letter-spacing: .04em;
 }
+.footer-legal {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.footer-legal a {
+  font-size: .78rem;
+  color: var(--text-muted);
+  letter-spacing: .02em;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.footer-legal a:hover { color: var(--red-400); }
 @media (max-width: 900px) {
   .footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
 }

@@ -1,0 +1,125 @@
+/* ═══════════════════════════════════════════════════════════
+   SaaSassins — Legal pages (Terms / Privacy / SMS Terms)
+   Long-form, readable body copy on the dark brand theme.
+   Loaded only by terms.html, privacy.html, sms-terms.html
+   (on top of tokens.css + style.css). Footer/legal-link styles
+   live in style.css since every page's footer uses them.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Hero ── */
+.legal-hero {
+  padding: 140px 0 40px;
+  position: relative;
+}
+.legal-hero .hero-badge { margin-bottom: 18px; }
+.legal-hero h1 {
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.1;
+  margin: 0 0 16px;
+}
+.legal-intro,
+.legal-intro p {
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  line-height: 1.8;
+  max-width: 72ch;
+}
+.legal-intro { margin: 0 0 18px; }
+.legal-intro p { margin: 0 0 12px; }
+.legal-intro p:last-child { margin-bottom: 0; }
+.legal-meta {
+  font-family: var(--font-mono);
+  font-size: .8rem;
+  color: var(--text-muted);
+  letter-spacing: .03em;
+}
+
+/* ── Layout: sticky TOC + content ── */
+.legal-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 56px;
+  align-items: start;
+  padding-bottom: 100px;
+}
+
+.legal-toc {
+  position: sticky;
+  top: 96px;
+  border: 1px solid var(--dark-600);
+  border-radius: var(--radius-lg);
+  background: var(--gradient-card);
+  padding: 20px;
+}
+.legal-toc h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+.legal-toc ol { list-style: none; margin: 0; padding: 0; }
+.legal-toc li { margin: 0; }
+.legal-toc a {
+  display: block;
+  font-size: .85rem;
+  color: var(--text-secondary);
+  padding: 5px 0;
+  line-height: 1.4;
+  border: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.legal-toc a:hover { color: var(--red-400); }
+
+/* ── Body copy ── */
+.legal-content { max-width: 760px; }
+.legal-content > section {
+  margin-bottom: 40px;
+  scroll-margin-top: 96px;
+}
+.legal-content h2 {
+  font-size: 1.35rem;
+  margin: 0 0 14px;
+  color: var(--text-primary);
+}
+.legal-content h3 {
+  font-size: 1.05rem;
+  margin: 22px 0 10px;
+  color: var(--text-primary);
+}
+.legal-content p,
+.legal-content ul,
+.legal-content ol {
+  color: var(--text-secondary);
+  font-size: .98rem;
+  line-height: 1.8;
+  margin: 0 0 14px;
+}
+.legal-content p { max-width: 72ch; }
+.legal-content ul,
+.legal-content ol { padding-left: 22px; }
+.legal-content li { margin-bottom: 8px; }
+.legal-content strong { color: var(--text-primary); }
+.legal-content a {
+  color: var(--red-400);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal-content a:hover { color: var(--red-300); }
+
+/* Emphasis box for the carrier-mandated SMS/mobile clause (wrapper-applied) */
+.legal-content section.legal-highlight {
+  border: 1px solid rgba(220, 38, 38, .3);
+  background: var(--gradient-glow);
+  border-radius: var(--radius-lg);
+  padding: 24px 26px;
+}
+
+@media (max-width: 860px) {
+  .legal-layout { grid-template-columns: 1fr; gap: 28px; }
+  .legal-toc { position: static; top: auto; }
+}
+@media (max-width: 600px) {
+  .legal-hero { padding: 112px 0 28px; }
+  .legal-content section.legal-highlight { padding: 18px 18px; }
+}
