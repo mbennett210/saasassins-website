@@ -26,7 +26,7 @@
 //
 // Env: STRIPE_SECRET_KEY (resolve the order) + RESEND_API_KEY (send the emails).
 //   • ORDER_NOTIFY_TO   — team recipient(s), comma-separated. Default hello@saasassins.com.
-//   • ORDER_NOTIFY_FROM — sender for both emails. Default 'PolishPoint Orders <orders@saasassins.com>'.
+//   • ORDER_NOTIFY_FROM — sender for both emails. Default 'PolishPoint Orders <orders@mail.saasassinsdev.com>'.
 //     The sender DOMAIN must be verified in Resend or the send is rejected.
 
 const Stripe = require('stripe');
@@ -285,7 +285,7 @@ module.exports = async function handler(req, res) {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const from = process.env.ORDER_NOTIFY_FROM || 'PolishPoint Orders <orders@saasassins.com>';
+  const from = process.env.ORDER_NOTIFY_FROM || 'PolishPoint Orders <orders@mail.saasassinsdev.com>';
   const supportEmail = teamTo[0] || 'hello@saasassins.com';
 
   // ── 1) Team notice — the RETRY ANCHOR (sent before the receipt) ──

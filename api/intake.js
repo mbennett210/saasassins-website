@@ -173,7 +173,7 @@ module.exports = async function handler(req, res) {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const from = process.env.ORDER_NOTIFY_FROM || 'PolishPoint Orders <orders@saasassins.com>';
+  const from = process.env.ORDER_NOTIFY_FROM || 'PolishPoint Orders <orders@mail.saasassinsdev.com>';
 
   const payload = {
     from,
