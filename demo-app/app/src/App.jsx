@@ -46,7 +46,9 @@ import { CartProvider } from './demo/cart/CartContext';
 import DemoLanding from './demo/pages/DemoLanding';
 import CheckoutPage from './demo/pages/CheckoutPage';
 import CheckoutSuccess from './demo/pages/CheckoutSuccess';
-import ProspectBot from './demo/assistant/ProspectBot';
+// Prospect Q&A chat widget — TEMPORARILY DISABLED. To restore, uncomment this
+// import and the <ProspectBot /> mount below.
+// import ProspectBot from './demo/assistant/ProspectBot';
 
 // Router mount point follows the Vite base: '' (root) for per-client product
 // builds, '/polishpoint' for the marketing demo. BASE_URL is '/' or
@@ -134,8 +136,9 @@ function AppRoutes() {
 
       {/* Prospect Q&A bot — a single persistent instance mounted above <Routes>,
           so the conversation survives navigation across the landing, live demo,
-          and checkout. Demo build only; sits bottom-right, left of the cart FAB. */}
-      {IS_DEMO && <ProspectBot />}
+          and checkout. Demo build only; sits bottom-right, left of the cart FAB.
+          TEMPORARILY DISABLED — uncomment the line below (and the import above) to restore. */}
+      {/* {IS_DEMO && <ProspectBot />} */}
     </BrowserRouter>
   );
 }
