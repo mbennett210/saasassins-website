@@ -1,9 +1,9 @@
 /* ═══════════════════════════════════════════════════════════
-   Features page — "Radar" systems orbit.
+   Features page: "Radar" systems orbit.
    Desktop (≥1000px): the CRM core at center with 22 systems on two
    orbit rings, six family headers in-orbit, colored arc bands, radar
    sweep + animated spokes. Mobile: collapses to grouped flip cards.
-   Click any card (or the core) to flip it — backs list the software
+   Click any card (or the core) to flip it. Backs list the software
    each system replaces.
    All markup is generated here from the data below; the only anchor
    in the HTML is <div id="sysOrbit">.
@@ -12,14 +12,14 @@
   const cv = document.getElementById('sysOrbit');
   if (!cv) return;
 
-  /* ── Data — the 23 systems ── */
+  /* ── Data: the 23 systems ── */
   const F = [
-    { n: 1, ic: '📇', name: 'CRM — Contacts & Accounts' },
+    { n: 1, ic: '📇', name: 'CRM' },
     { n: 2, ic: '📊', name: 'Sales Pipeline' },
     { n: 3, ic: '🔁', name: 'Sales Automation' },
     { n: 4, ic: '💬', name: 'Messaging & SMS' },
     { n: 5, ic: '📅', name: 'Scheduling & Dispatch' },
-    { n: 6, ic: '📱', name: 'Field Ops — Crew App' },
+    { n: 6, ic: '📱', name: 'Field Ops' },
     { n: 7, ic: '🛠️', name: 'Work Orders & Assets' },
     { n: 8, ic: '📦', name: 'Inventory & Key Tracking' },
     { n: 9, ic: '🚚', name: 'Purchasing & Supplier Automation' },
@@ -39,7 +39,7 @@
     { n: 23, ic: '🔌', name: 'Integrations & Data Migration' }
   ];
 
-  /* Cross-industry replaced software (common + pricey) — flip-side lists */
+  /* Cross-industry replaced software (common + pricey): flip-side lists */
   const REPS = {
     1: ['HubSpot', 'Salesforce', 'GoHighLevel', 'Zoho CRM'],
     2: ['Pipedrive', 'Salesforce', 'monday.com'],
@@ -78,9 +78,9 @@
   const DESC = {
     sell:    'Pipeline, automation & messaging close what the CRM captures.',
     grow:    'Outreach, reviews, SEO/AIO & AI leads keep the core full.',
-    operate: 'Scheduling to close-out — crews, assets, supplies & POs.',
-    paid:    'Quotes, e-sign, payments & books — cash without the chase.',
-    team:    'HR, quality & compliance — your people, on the record.',
+    operate: 'Scheduling to close-out: crews, assets, supplies & POs.',
+    paid:    'Quotes, e-sign, payments & books. Cash without the chase.',
+    team:    'HR, quality & compliance. Your people, on the record.',
     cx:      'Portals, dashboards & AI working your real records.'
   };
 
@@ -93,19 +93,19 @@
     <div class="hub-core-f">
       <span class="ttl">CRM</span>
       <span class="sub">Contacts · Accounts · Every Interaction</span>
-      <span class="tagc">THE CORE — EVERY SYSTEM PLUGS INTO IT</span>
+      <span class="tagc">THE CORE · EVERY SYSTEM PLUGS INTO IT</span>
     </div>
     <div class="hub-core-b">
-      <span class="nm">CRM — The Core</span>
+      <span class="nm">The CRM Core</span>
       <span class="lbl">REPLACES</span>
       <span class="lst">${esc(REPS[1].join(', '))}, and more</span>
-      <span class="tg">One database for every person, company, and interaction — the heart of every build.</span>
+      <span class="tg">One database for every person, company, and interaction. The heart of every build.</span>
     </div>
   </div></div>`;
   const card = (n, g) => { const f = F[n - 1];
     return `<div class="hub-card" data-n="${n}" style="--gc:${g.color}"><div class="hub-in">
-      <div class="hub-f"><span class="ic">${f.ic}</span><b>${esc(f.name.split(' — ')[0])}</b><span class="fl">CLICK TO FLIP ⟲</span></div>
-      <div class="hub-b"><span class="lbl">REPLACES</span><span class="lst">${esc(REPS[n].join(', '))}</span><span class="nm">${esc(f.name.split(' — ')[0])}</span></div>
+      <div class="hub-f"><span class="ic">${f.ic}</span><b>${esc(f.name)}</b><span class="fl">CLICK TO FLIP ⟲</span></div>
+      <div class="hub-b"><span class="lbl">REPLACES</span><span class="lst">${esc(REPS[n].join(', '))}</span><span class="nm">${esc(f.name)}</span></div>
     </div></div>`; };
 
   cv.innerHTML = `<svg></svg>` + CORE + VG.map(g =>
