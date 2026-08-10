@@ -38,17 +38,14 @@ import SettingsAccount from './pages/settings/Account';
 import SettingsIntegrations from './pages/settings/Integrations';
 import SettingsConnectedInboxes from './pages/settings/ConnectedInboxes';
 
-// Demo/commerce layer — only mounted when VITE_DEMO_MODE is on (the marketing
-// demo build). Per-client product builds leave IS_DEMO false and never render
-// any of this.
+// Demo layer — only mounted when VITE_DEMO_MODE is on (the marketing demo build).
+// Per-client product builds leave IS_DEMO false and never render any of this.
+// NOTE: the prospect-facing commerce layer (cart / checkout / pricing) has been
+// removed — the demo now points prospects to "Book a call" instead of selling
+// modules directly. The old cart + checkout files remain on disk but are no
+// longer imported, so they tree-shake out of the bundle.
 import { IS_DEMO } from './demo/isDemo';
-import { CartProvider } from './demo/cart/CartContext';
 import DemoLanding from './demo/pages/DemoLanding';
-import CheckoutPage from './demo/pages/CheckoutPage';
-import CheckoutSuccess from './demo/pages/CheckoutSuccess';
-// Prospect Q&A chat widget — TEMPORARILY DISABLED. To restore, uncomment this
-// import and the <ProspectBot /> mount below.
-// import ProspectBot from './demo/assistant/ProspectBot';
 
 // Router mount point follows the Vite base: '' (root) for per-client product
 // builds, '/polishpoint' for the marketing demo. BASE_URL is '/' or
@@ -65,14 +62,11 @@ function AppRoutes() {
   return (
     <BrowserRouter basename={BASENAME}>
       <Routes>
-        {/* Standalone demo/commerce surfaces (no app sidebar), demo build only.
-            In the demo the marketing LANDING is the entry at '/', and the live
-            app moves under '/demo' (see the AppLayout block below). Per-client
-            product builds leave IS_DEMO false, keep '/' as the Dashboard, and
-            mount none of this. */}
+        {/* Standalone demo landing (no app sidebar), demo build only. In the demo
+            the marketing LANDING is the entry at '/', and the live app moves under
+            '/demo' (see the AppLayout block below). Per-client product builds leave
+            IS_DEMO false, keep '/' as the Dashboard, and mount none of this. */}
         {IS_DEMO && <Route index element={<DemoLanding />} />}
-        {IS_DEMO && <Route path="checkout" element={<CheckoutPage />} />}
-        {IS_DEMO && <Route path="checkout/success" element={<CheckoutSuccess />} />}
 
         {/* Client-facing inspection report — shell-less, no auth, token-gated.
             A real product surface in both builds (the "your building scored 94%"
@@ -133,31 +127,21 @@ function AppRoutes() {
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
-
-      {/* Prospect Q&A bot — a single persistent instance mounted above <Routes>,
-          so the conversation survives navigation across the landing, live demo,
-          and checkout. Demo build only; sits bottom-right, left of the cart FAB.
-          TEMPORARILY DISABLED — uncomment the line below (and the import above) to restore. */}
-      {/* {IS_DEMO && <ProspectBot />} */}
     </BrowserRouter>
   );
 }
 
 export default function App() {
-  const tree = (
-    <ToastProvider>
-      <TwilioInboundListener />
-      <ReminderScheduler />
-      <NotificationListener />
-      <MarketingScheduler />
-      <MarketingInboundListener />
-      <AppRoutes />
-    </ToastProvider>
-  );
-
   return (
     <StoreProvider>
-      {IS_DEMO ? <CartProvider>{tree}</CartProvider> : tree}
+      <ToastProvider>
+        <TwilioInboundListener />
+        <ReminderScheduler />
+        <NotificationListener />
+        <MarketingScheduler />
+        <MarketingInboundListener />
+        <AppRoutes />
+      </ToastProvider>
     </StoreProvider>
   );
 }

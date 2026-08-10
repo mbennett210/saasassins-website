@@ -7,17 +7,12 @@ import ModuleCTA from './ModuleCTA';
 import InfoButton from './InfoButton';
 import '../placement.css';
 
-// Route-aware in-context upsell. Mounted once at the bottom of <main> (AppLayout)
-// behind IS_DEMO; picks the add-on(s) relevant to the current feature page and
-// renders their add-to-cart CTAs plus a glowing info button. Returns null when
-// the route has no mapped module, so it only appears "in the relevant section".
-// Driven off each module's `placements` in the catalog — add a module there and
-// it shows up here automatically.
-//
-// Placement keys ↔ routes. The demo dashboard lives at '/demo' (the landing owns
-// '/'); per-client product builds keep the dashboard at '/'. Contacts + pipeline
-// are mapped so Forms + the AI Lead Scraper surface where a prospect expects them
-// (capture leads on the CRM, constant lead flow into the pipeline).
+// Route-aware in-context surface. Mounted once at the bottom of <main> (AppLayout)
+// behind IS_DEMO; picks the module(s) relevant to the current feature page and
+// renders their CTAs plus a glowing info button. Returns null when the route has
+// no mapped module, so it only appears "in the relevant section". Driven off each
+// module's `placements` in the catalog — add a module there and it shows up here
+// automatically. No pricing, no cart: each CTA points to a Strike Call.
 
 const ROUTE_PLACEMENT = [
   { match: (p) => p === '/' || p === '/demo', key: 'dashboard' },
@@ -40,14 +35,14 @@ export default function PlacementCTAs() {
   if (mods.length === 0) return null;
 
   return (
-    <section className="pp-placement" aria-label="Recommended add-ons for this area">
+    <section className="pp-placement" aria-label="Related modules for this area">
       <div className="pp-placement-head">
-        <h3>Recommended add-on{mods.length > 1 ? 's' : ''} for this area</h3>
-        <InfoButton title="About add-on modules" glowKey="placement:about" label="About add-on modules">
+        <h3>Also available for this area</h3>
+        <InfoButton title="About modules" glowKey="placement:about" label="About modules">
           <p className="pp-info-lead">
-            Your {company.name} platform includes every core feature shown here. Add-on modules are
-            optional one-time purchases that extend it — tailored and integrated for your business.
-            Add any to your cart, keep exploring, and confirm everything at checkout.
+            Your {company.name} platform includes every core feature shown here. These modules
+            extend it — each one custom-built and integrated for your business. Book a call and
+            we'll scope exactly what you need.
           </p>
         </InfoButton>
       </div>
