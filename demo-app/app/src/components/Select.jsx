@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import PopMenu from './PopMenu';
 
 // Themed dropdown that replaces native <select>. Trigger and menu share the
 // same gradient border; when open the seam disappears so they read as one box
@@ -16,22 +17,6 @@ export default function Select({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const selected = options.find((o) => o.value === value);
-
-  useEffect(() => {
-    if (!open) return;
-    const onMouseDown = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
 
   const cls = [
     'select-shell',
@@ -57,25 +42,30 @@ export default function Select({
         </span>
         <span className="select-trigger-caret" aria-hidden>▾</span>
       </button>
-      {open && (
-        <div className="select-menu" role="listbox">
-          {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              className={`select-option ${o.value === value ? 'on' : ''}`}
-              onClick={() => {
-                onChange(o.value);
-                setOpen(false);
-              }}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <PopMenu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={wrapRef}
+        className="select-menu"
+        role="listbox"
+        sheetTitle={ariaLabel || placeholder}
+      >
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="option"
+            aria-selected={o.value === value}
+            className={`menu-option ${o.value === value ? 'on' : ''}`}
+            onClick={() => {
+              onChange(o.value);
+              setOpen(false);
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </PopMenu>
     </div>
   );
 }

@@ -1,0 +1,33 @@
+<!-- @dsCard group="Forms" height=240 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Select</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6); display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); align-items: start; }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+var FREQ = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'biweekly', label: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'once', label: 'One-time' }
+];
+function Demo(p) {
+  var s = React.useState(p.initial), v = s[0], setV = s[1];
+  return h('div', { id: p.id }, h(CS.Select, { value: v, onChange: setV, options: FREQ, placeholder: 'Choose a frequency…', ariaLabel: 'Frequency' }));
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(React.Fragment, null,
+  h(Demo, { id: 'closed', initial: '' }),
+  h(Demo, { id: 'open', initial: 'weekly' })
+));
+setTimeout(function () { var t = document.querySelector('#open .select-trigger'); if (t) t.click(); }, 60);
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<!-- @dsCard group="Status" height=96 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Avatar</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-5) var(--space-6); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('pv')).render(h(React.Fragment, null,
+  h(CS.Avatar, { initials: 'MR', size: 'xs' }),
+  h(CS.Avatar, { initials: 'AK', size: 'sm' }),
+  h(CS.Avatar, { initials: 'JS', size: 'md' }),
+  h(CS.Avatar, { initials: 'LT', size: 'lg' })
+));
+</script>
+</body>
+</html>

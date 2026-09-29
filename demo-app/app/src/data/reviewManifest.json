@@ -1,0 +1,973 @@
+{
+  "about": "FROZEN catalog manifest (CS-402, UI_RULES 130). Every PUBLISHED build-decision question (id -> type + option ids) and every published draft id. test-review-additive.mjs fails if the catalog drops a manifest id, changes a type or option ids, loses an option, or adds an id NOT listed here. Publishing a new question or draft means appending it here in the SAME change (like buildDecisionIds.js). Never edit an entry to match a renumbered id or option. Answers in state.clientReview are keyed by these ids.",
+  "questions": {
+    "HUB-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "HUB-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "HUB-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "HUB-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "HUB-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "HUB-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "HUB-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "HUB-8": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "HUB-9": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "HUB-10": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "HUB-11": {
+      "type": "multi",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "HUB-12": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "HUB-13": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "HUB-14": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "QR-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "QR-2": {
+      "type": "multi",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "QR-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "QR-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "QR-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "QR-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "WO-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "WO-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "WO-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "WO-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "WO-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "WO-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "WO-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "WO-8": {
+      "type": "multi",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "WO-9": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "WO-10": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "WO-11": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "WO-12": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "WO-13": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "WO-14": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "WO-15": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "SUP-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "SUP-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "SUP-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "SUP-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "SUP-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "SUP-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "SUP-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "SUP-8": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "ALR-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "ALR-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "ALR-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "ALR-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "ALR-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "ALR-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "ALR-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "ALR-8": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "ALR-9": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "NTF-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "NTF-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "NTF-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LOG-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LOG-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LOG-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LOG-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "LOG-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "LOG-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "LOG-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LOG-8": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "CON-1": {
+      "type": "multi",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i"
+      ]
+    },
+    "CON-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "CON-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "CON-4": {
+      "type": "multi",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "CON-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "CON-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "CON-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "CON-8": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "CON-9": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "CON-10": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "CON-11": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "CON-12": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "CON-13": {
+      "type": "text",
+      "options": []
+    },
+    "QB-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "QB-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e"
+      ]
+    },
+    "QB-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    },
+    "QB-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "QB-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "QB-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "QB-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "QB-8": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "QB-9": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "QB-10": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "QB-11": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "QB-12": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LANG-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "LANG-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LANG-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "LANG-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LANG-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "LANG-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "LANG-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LANG-8": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "LANG-9": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "PAY-1": {
+      "type": "text",
+      "options": []
+    },
+    "PAY-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "PAY-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "PAY-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "PAY-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "PAY-6": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "PAY-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "PAY-8": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "PAY-9": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "PAY-10": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "PAY-11": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "PAY-12": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "PAY-13": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "PAY-14": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "GO-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "GO-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "GO-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "GO-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "GO-5": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "GO-6": {
+      "type": "text",
+      "options": []
+    },
+    "GO-7": {
+      "type": "single",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "GO-8": {
+      "type": "multi",
+      "options": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "MISC-1": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "MISC-2": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "MISC-3": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    },
+    "MISC-4": {
+      "type": "single",
+      "options": [
+        "a",
+        "b"
+      ]
+    }
+  },
+  "drafts": [
+    "lead-ack",
+    "walkthrough-confirm",
+    "quote-doc",
+    "quote-email",
+    "sign-request",
+    "quote-signed-copy",
+    "quote-nudge",
+    "reminder-welcome",
+    "service-setup",
+    "reminder-booking",
+    "sms-24h",
+    "sms-day-of",
+    "on-the-way",
+    "reschedule",
+    "cancellation",
+    "visit-summary",
+    "missed-visit",
+    "invoice-sent",
+    "upcoming-due",
+    "payment-receipt",
+    "past-due",
+    "payment-reminder-sms",
+    "failed-payment",
+    "statement",
+    "inspection-report",
+    "reminder-post-service",
+    "review-request",
+    "review-request-sms",
+    "complaint-ack",
+    "complaint-resolution",
+    "satisfaction-survey",
+    "renewal-notice",
+    "renewal-offer",
+    "upsell",
+    "service-change",
+    "price-increase",
+    "win-back",
+    "offboarding",
+    "team-invite"
+  ]
+}

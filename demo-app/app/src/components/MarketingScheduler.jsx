@@ -33,16 +33,17 @@ import {
   getStaleEnrollments,
 } from '../lib/marketingScheduler';
 import { sendViaInbox } from '../lib/connectedInboxes';
-import { loadMarketingAttachment } from '../lib/attachments';
+import { loadMarketingAttachment, backfillMarketingAttachmentsToStorage } from '../lib/attachments';
 import { nowIso } from '../lib/dates';
+import { inFlight } from '../lib/marketingInFlight';
+import { isAuthConfigured } from '../lib/supabaseClient';
 
 const TICK_MS = 60 * 1000;
 
-// Module-level in-flight guard. Survives React.StrictMode's dev-only
-// double-mount cycle (a useRef would be reset on remount, briefly allowing
-// a duplicate fire before the first dispatch lands in state). Never deleted
-// — state-based hasSent() covers refires after a reload.
-const inFlight = new Set();
+// Module-level in-flight guard (keyed enrollmentId::stepId) now lives in
+// lib/marketingInFlight so the Diagnostics "Retry" can clear a key and let this
+// scheduler re-fire. Survives StrictMode's double-mount; state-based hasSent()
+// covers refires after a reload.
 
 // Read a Blob as base64 (no data-URL prefix) for JSON transport to the send
 // backend.
@@ -82,6 +83,11 @@ export default function MarketingScheduler() {
 
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // In deployed (authed) mode the api/marketing/run cron is the SOLE owner of
+  // enroll / unenroll / send — so it runs with no tab open and there's no
+  // multi-tab double-send. This component only drives sends in local-only mode.
+  const authed = isAuthConfigured();
 
   function autoEnroll() {
     const buckets = getDueEnrollments(stateRef.current);
@@ -143,15 +149,30 @@ export default function MarketingScheduler() {
 
     // 3. Load attachment blobs from IndexedDB, then fire through the adapter.
     loadAttachmentsForSend(due.attachments)
-      .then((attachments) => sendViaInbox(due.inboxId, {
-        to: due.toEmail,
-        fromName: due.fromName,
-        subject: due.subject,
-        body: due.body,
-        headers: due.headers,
-        tags: due.tags,
-        attachments,
-      }))
+      .then((attachments) => {
+        // Server-side CAN-SPAM footer config (the link itself is signed server-
+        // side). Resolves the address + base-URL overrides from Marketing Settings.
+        const co = stateRef.current.company || {};
+        const u = stateRef.current.marketingSettings?.unsubscribe || {};
+        return sendViaInbox(due.inboxId, {
+          to: due.toEmail,
+          fromName: due.fromName,
+          subject: due.subject,
+          body: due.body,
+          headers: due.headers,
+          tags: due.tags,
+          attachments,
+          senderCompanyName: co.name || '',
+          unsubscribe: {
+            enabled: u.enabled !== false,
+            message: u.message || '',
+            linkText: u.linkText || '',
+            includeAddress: u.includeAddress !== false,
+            address: (u.address && u.address.trim()) ? u.address.trim() : (co.address || ''),
+            baseUrl: u.baseUrl || '',
+          },
+        });
+      })
       .then((res) => {
         dispatch({
           type: ACTIONS.UPDATE_MARKETING_SEND,
@@ -177,19 +198,23 @@ export default function MarketingScheduler() {
             failureReason: err?.message || 'Send error',
           },
         });
-        // Do NOT advance the enrollment on failure — currentStepIndex stays
-        // where it was so the next tick retries this same (enrollment, step).
+        // Clear the in-flight guard so the retry-aware getDueSends can re-fire
+        // this (enrollment, step) after the backoff (AUTO-02). currentStepIndex
+        // stays put; state-based dedup prevents a duplicate within an attempt.
+        inFlight.delete(key);
       });
   }
 
-  // State-change reactor.
+  // State-change reactor — local-only mode (deployed mode runs the cron instead).
   useEffect(() => {
+    if (authed) return;
     autoEnroll();
     autoUnenroll();
     const due = getDueSends(stateRef.current, new Date());
     due.forEach(fireOne);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    authed,
     state.marketingSequences,
     state.marketingEnrollments,
     state.marketingSends,
@@ -197,8 +222,9 @@ export default function MarketingScheduler() {
     state.contacts,
   ]);
 
-  // 60-second tick — covers time-window gates when state is idle.
+  // 60-second tick — local-only mode only.
   useEffect(() => {
+    if (authed) return undefined;
     const id = setInterval(() => {
       autoEnroll();
       autoUnenroll();
@@ -207,7 +233,19 @@ export default function MarketingScheduler() {
     }, TICK_MS);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authed]);
+
+  // Deployed mode: one-time-per-device backfill of marketing attachment blobs to
+  // Supabase Storage, so the send cron can attach files added before the Storage
+  // mirror existed. Gated by a localStorage flag so it runs once.
+  useEffect(() => {
+    if (!authed) return;
+    const FLAG = 'rfs.marketingAttachmentsBackfilled.v1';
+    try { if (localStorage.getItem(FLAG)) return; } catch { return; }
+    backfillMarketingAttachmentsToStorage()
+      .then(() => { try { localStorage.setItem(FLAG, '1'); } catch { /* ignore */ } })
+      .catch(() => { /* retry on next load */ });
+  }, [authed]);
 
   return null;
 }

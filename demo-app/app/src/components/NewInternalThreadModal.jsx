@@ -5,7 +5,7 @@ import FormField from './FormField';
 import Avatar from './Avatar';
 import Icon from './Icon';
 import { useDispatch, useStore } from '../store';
-import { ACTIONS } from '../store/reducer';
+import { ACTIONS, THREAD_TITLE_MAX } from '../store/reducer';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from './Toast';
 import { newId } from '../lib/ids';
@@ -86,17 +86,17 @@ export default function NewInternalThreadModal({ open, onClose }) {
       participantUserIds: Array.from(pickedIds),
     });
     onClose();
-    toast.success(`Thread "${trimmedTitle}" created`);
+    toast.success(`Channel "${trimmedTitle}" created`);
     navigate(`/messaging/${id}?inbox=internal`);
   };
 
   if (!currentUser) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="New team thread">
+    <Modal open={open} onClose={onClose} title="New channel">
       <form onSubmit={handleSubmit}>
         <div className="text-xs text-muted" style={{ marginBottom: 12 }}>
-          Pick the teammates who should see this thread, or select everyone in the org. You're
+          Pick the teammates who should see this channel, or select everyone in the org. You're
           included automatically.
         </div>
 
@@ -107,7 +107,7 @@ export default function NewInternalThreadModal({ open, onClose }) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Holiday schedule planning"
-            maxLength={120}
+            maxLength={THREAD_TITLE_MAX}
           />
         </FormField>
 
@@ -125,7 +125,7 @@ export default function NewInternalThreadModal({ open, onClose }) {
               </div>
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
+                className="btn btn-primary"
                 onClick={handleSelectAll}
                 disabled={allOtherUsers.length === 0}
                 title={allOthersSelected ? 'Clear member selection' : 'Select everyone in the org'}
@@ -177,7 +177,7 @@ export default function NewInternalThreadModal({ open, onClose }) {
         <div className="modal-actions">
           <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={!canCreate}>
-            Create thread
+            Create channel
           </button>
         </div>
       </form>

@@ -1,0 +1,29 @@
+<!-- @dsCard group="Containers" height=368 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EmptyState</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6); }
+  .pv .card { margin: 0; }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('pv')).render(
+  h('div', { className: 'card' },
+    h(CS.EmptyState, {
+      icon: h(CS.Icon, { name: 'clients', size: 28 }),
+      title: 'No customers yet',
+      message: 'Add your first customer, or Import CSV to bring in your whole book.',
+      action: h('button', { className: 'btn btn-primary' }, 'Add Customer')
+    })
+  )
+);
+</script>
+</body>
+</html>

@@ -1,6 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import Icon from './Icon';
 
 const ToastCtx = createContext(null);
+
+// Hard ceiling on simultaneously-visible toasts. A backstop so no source (a
+// notification resync, a bulk action) can stack an unbounded wall of toasts —
+// oldest are dropped once the cap is exceeded.
+const MAX_VISIBLE_TOASTS = 5;
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
@@ -9,7 +15,7 @@ export function ToastProvider({ children }) {
   const push = useCallback((message, opts = {}) => {
     const id = nextId.current++;
     const toast = { id, message, variant: opts.variant || 'success', duration: opts.duration ?? 3000 };
-    setToasts((t) => [...t, toast]);
+    setToasts((t) => [...t, toast].slice(-MAX_VISIBLE_TOASTS));
     if (toast.duration > 0) {
       window.setTimeout(() => {
         setToasts((t) => t.filter((x) => x.id !== id));
@@ -36,7 +42,7 @@ export function ToastProvider({ children }) {
         {toasts.map((t) => (
           <div key={t.id} className={`toast toast-${t.variant}`}>
             <span className="toast-msg">{t.message}</span>
-            <button type="button" className="toast-close" onClick={() => dismiss(t.id)} aria-label="Dismiss">×</button>
+            <button type="button" className="btn-icon btn-icon-ghost" onClick={() => dismiss(t.id)} aria-label="Dismiss"><Icon name="x" size={14} /></button>
           </div>
         ))}
       </div>

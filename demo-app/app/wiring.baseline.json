@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "accepted": {
+    "R1:components/NewJobModal.jsx:jobs.update:crewExcludedIds": {
+      "note": "crewExcludedIds is a per-OCCURRENCE exception, never series-wide: a permanent removal is done by editing the account's assigned cleaners (the source of truth). The pre-fill/removal UI is gated to seriesScope!=='future', so a this-and-all-future edit uses the plain crewIds field and cannot write crewExcludedIds — no silent drop is reachable.",
+      "acceptedAt": "2026-08-05T02:03:51.363Z",
+      "contractHash": "1d6df6069a1e"
+    },
+    "R1:pages/JobDetail.jsx:jobs.update:coverFor": {
+      "note": "BY DESIGN (R8, 2026-09-27): coverFor describes ONE visit's swap, so a this-and-all-future edit must never carry it — reducer UPDATE_JOB_SERIES deletes it from the uniform patch, or the whole series would point at one cleaner's checklist. Nothing is silently dropped for the user: JobDetail renders the Covering for control only on the single-visit scope (editScope !== future).",
+      "acceptedAt": "2026-09-28T02:04:57.173Z",
+      "contractHash": "1d6df6069a1e"
+    }
+  }
+}

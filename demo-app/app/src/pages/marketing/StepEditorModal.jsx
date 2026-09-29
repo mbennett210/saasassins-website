@@ -1,5 +1,8 @@
 // Step editor — add or edit a single sequence step.
-// Fields: daysAfterPrevious, sendHourStart/End, subject, body, attachments.
+// Fields: delay (amount + unit → delayMinutes), sendHourStart/End, subject,
+// body, attachments. Step 0 may be 0 (fires on enrollment). Follow-ups wait at
+// least 1 minute — TEMPORARY: the Minutes unit + 1-min floor are smoke-test
+// scaffolding; restore the 1-hour floor and drop Minutes afterward.
 // Dispatches ADD_MARKETING_STEP (when `step` is null) or UPDATE_MARKETING_STEP.
 //
 // The variable picker inserts a {placeholder} at the caret of whichever
@@ -15,7 +18,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useDispatch } from '../../store';
 import { ACTIONS } from '../../store/reducer';
-import { MARKETING_VARIABLES } from '../../lib/marketingScheduler';
+import { MARKETING_VARIABLES, stepDelayMinutes } from '../../lib/marketingScheduler';
 import { newId } from '../../lib/ids';
 import {
   saveMarketingAttachment,
@@ -27,16 +30,39 @@ import {
 import Modal from '../../components/Modal';
 import FormField from '../../components/FormField';
 import Select from '../../components/Select';
+import Icon from '../../components/Icon';
 
 const HOURS = Array.from({ length: 24 }, (_, h) => ({
   value: String(h),
   label: `${((h % 12) || 12)}:00 ${h < 12 ? 'AM' : 'PM'}`,
 }));
 
+// Delay unit options. The canonical store value is minutes; the editor lets the
+// operator pick a friendly unit — Hours for a same-day cadence, Days for a
+// slower drip.
+// ⚠️ 'minutes' is TEMPORARY smoke-test scaffolding (added 2026-06-02) so a
+// 2-minute cadence can be set; remove it (and restore the 1-hour floor in
+// handleSubmit) once live testing is done.
+const DELAY_UNITS = [
+  { value: 'minutes', label: 'Minutes' },
+  { value: 'hours', label: 'Hours' },
+  { value: 'days', label: 'Days' },
+];
+
+// Split a minutes value into the friendliest {value, unit} for the editor:
+// whole-day multiples show as days, everything else as hours. 0 → "0 days".
+function splitDelay(mins) {
+  const m = Math.max(0, Number(mins) || 0);
+  if (m > 0 && m % 1440 === 0) return { value: String(m / 1440), unit: 'days' };
+  if (m > 0 && m % 60 === 0) return { value: String(m / 60), unit: 'hours' };
+  if (m > 0) return { value: String(m), unit: 'minutes' };
+  return { value: '0', unit: 'days' };
+}
+
 // Dropdown options for the variable picker — friendly name + the literal token.
 const VARIABLE_OPTIONS = MARKETING_VARIABLES.map((v) => ({
   value: v.key,
-  label: `${v.label} — {${v.key}}`,
+  label: `${v.label}. {${v.key}}`,
 }));
 
 const VARIABLE_HINT = 'Pick a variable from the dropdown, or type one in. Add a fallback for blanks: {firstName|there} renders "there" when a contact has no first name.';
@@ -51,7 +77,8 @@ export default function StepEditorModal({ open, onClose, sequenceId, step, stepI
   const sw = defaultWindow || { start: 9, end: 17 };
 
   const [form, setForm] = useState({
-    daysAfterPrevious: '0',
+    delayValue: '0',
+    delayUnit: 'days',
     sendHourStart: String(sw.start),
     sendHourEnd: String(sw.end),
     subject: '',
@@ -74,8 +101,10 @@ export default function StepEditorModal({ open, onClose, sequenceId, step, stepI
   useEffect(() => {
     if (!open) return;
     if (step) {
+      const d = splitDelay(stepDelayMinutes(step));
       setForm({
-        daysAfterPrevious: String(step.daysAfterPrevious ?? 0),
+        delayValue: d.value,
+        delayUnit: d.unit,
         sendHourStart: String(step.sendHourStart ?? sw.start),
         sendHourEnd: String(step.sendHourEnd ?? sw.end),
         subject: step.subject || '',
@@ -84,7 +113,9 @@ export default function StepEditorModal({ open, onClose, sequenceId, step, stepI
       setAttachments(Array.isArray(step.attachments) ? step.attachments : []);
     } else {
       setForm({
-        daysAfterPrevious: stepIndex === 0 ? '0' : '3',
+        // Step 0 sends on enrollment (0); a new follow-up defaults to 3 days.
+        delayValue: stepIndex === 0 ? '0' : '3',
+        delayUnit: 'days',
         sendHourStart: String(sw.start),
         sendHourEnd: String(sw.end),
         subject: '',
@@ -181,11 +212,20 @@ export default function StepEditorModal({ open, onClose, sequenceId, step, stepI
   async function handleSubmit(e) {
     e.preventDefault();
     if (saving) return;
-    const days = Number(form.daysAfterPrevious);
+    const amount = Number(form.delayValue);
     const start = Number(form.sendHourStart);
     const end = Number(form.sendHourEnd);
-    if (Number.isNaN(days) || days < 0) {
-      setError('Days between sends must be 0 or more.');
+    if (Number.isNaN(amount) || amount < 0) {
+      setError('Wait time must be 0 or more.');
+      return;
+    }
+    const unitMult = form.delayUnit === 'days' ? 1440 : form.delayUnit === 'hours' ? 60 : 1;
+    const delayMinutes = Math.round(amount * unitMult);
+    // ⚠️ TEMPORARY: follow-up minimum lowered to 1 minute so a 2-minute test
+    // cadence can be set via the Minutes unit. Restore to 60 (1 hour) when the
+    // Minutes unit is removed after live testing.
+    if (stepIndex > 0 && delayMinutes < 1) {
+      setError('A follow-up step must wait at least 1 minute after the previous one.');
       return;
     }
     if (end <= start) {
@@ -218,7 +258,11 @@ export default function StepEditorModal({ open, onClose, sequenceId, step, stepI
         if (!keptIds.has(prev.id)) await deleteMarketingAttachment(prev.id);
       }
       const payload = {
-        daysAfterPrevious: days,
+        delayMinutes,
+        // Coarse day mirror for any client still on the pre-hourly build (see
+        // reducer ADD_MARKETING_STEP). New code reads delayMinutes; old code
+        // reads this and waits the rounded-up day count instead of firing now.
+        daysAfterPrevious: Math.ceil(delayMinutes / 1440),
         sendHourStart: start,
         sendHourEnd: end,
         subject: form.subject.trim(),
@@ -242,20 +286,30 @@ export default function StepEditorModal({ open, onClose, sequenceId, step, stepI
   return (
     <Modal open={open} onClose={onClose} title={title} size="md">
       <form onSubmit={handleSubmit}>
-        <FormField
-          label={stepIndex === 0 ? 'Days after enrollment' : 'Days after the previous step'}
-          name="step-days"
-          type="number"
-          value={form.daysAfterPrevious}
-          onChange={(e) => set('daysAfterPrevious', e.target.value)}
-          min={0}
-          help={stepIndex === 0
-            ? 'Step 1 normally fires the day a contact is enrolled (0).'
-            : 'How long to wait after the previous step was sent.'}
-        />
         <div className="form-row">
           <FormField
-            label="Send window — from"
+            label={stepIndex === 0 ? 'Wait after enrollment' : 'Wait after previous step'}
+            name="step-delay-value"
+            type="number"
+            value={form.delayValue}
+            onChange={(e) => set('delayValue', e.target.value)}
+            min={stepIndex === 0 ? 0 : 1}
+            help={stepIndex === 0
+              ? 'How long to hold the first email after a contact is enrolled. 0 sends immediately.'
+              : 'Use minutes for quick testing, hours or days for a real drip.'}
+          />
+          <FormField
+            label="Unit"
+            name="step-delay-unit"
+            as="select"
+            value={form.delayUnit}
+            onChange={(e) => set('delayUnit', e.target.value)}
+            options={DELAY_UNITS}
+          />
+        </div>
+        <div className="form-row">
+          <FormField
+            label="Send window (from)"
             name="step-start"
             as="select"
             value={form.sendHourStart}
@@ -263,7 +317,7 @@ export default function StepEditorModal({ open, onClose, sequenceId, step, stepI
             options={HOURS}
           />
           <FormField
-            label="Send window — to"
+            label="Send window (to)"
             name="step-end"
             as="select"
             value={form.sendHourEnd}
@@ -323,11 +377,11 @@ export default function StepEditorModal({ open, onClose, sequenceId, step, stepI
                   <span className="marketing-step-attach-size">{formatBytes(att.sizeBytes)}</span>
                   <button
                     type="button"
-                    className="marketing-step-attach-remove"
+                    className="btn-icon btn-icon-danger"
                     aria-label={`Remove ${att.name}`}
                     onClick={() => removeAttachment(att.id)}
                   >
-                    ×
+                    <Icon name="trash" size={14} />
                   </button>
                 </li>
               ))}

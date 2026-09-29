@@ -110,16 +110,24 @@
   /* ── Radius ── */
   --radius-none:     0;
   --radius-sm:       4px;
-  --radius-md:       8px;
-  --radius-lg:       12px;
+  /* md / lg are this build's 10 / 20 (the kit ships 8 / 12). Structure is the same in every build: a client
+     theme sets colours only (UI_RULES §121; owner decision 2026-09-24, register CS-346). */
+  --radius-md:       10px;
+  --radius-lg:       20px;
   --radius-xl:       16px;
   --radius-full:     9999px;
 
   /* ── Shadow (primitives — stacks live in RECIPES) ── */
-  --shadow-sm:       0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md:       0 4px 12px rgba(0, 0, 0, 0.08);
-  --shadow-lg:       0 12px 28px rgba(0, 0, 0, 0.12);
-  --shadow-inset:    inset 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-sm:       0 1px 2px rgba(var(--color-black-rgb), 0.04);
+  --shadow-md:       0 4px 12px rgba(var(--color-black-rgb), 0.08);
+  --shadow-lg:       0 12px 28px rgba(var(--color-black-rgb), 0.12);
+  --shadow-inset:    inset 0 2px 4px rgba(var(--color-black-rgb), 0.04);
+
+  /* ── Focus ring (STRUCTURE.md §1 — structural, identical in every theme).
+     theme-flat.css's --input-focus-shadow reads the width; --focus-ring-color
+     is an ALIAS below that a theme may re-tint. ── */
+  --focus-ring-width:  2px;
+  --focus-ring-offset: 2px;
 
   /* ── Spacing (4px grid) ── */
   --space-0:         0;
@@ -141,6 +149,7 @@
 
   --font-size-2xs:           10px;
   --font-size-xs:            11px;
+  --font-size-xs2:           12px;     /* STRUCTURE.md §1: small buttons, small copy, the back pill */
   --font-size-sm:            13px;
   --font-size-md:            14px;
   --font-size-lg:            16px;
@@ -185,6 +194,21 @@
   --breakpoint-sm:   640px;
   --breakpoint-md:   1024px;
 
+  /* ── Structure (STRUCTURE.md §1) — colour-independent, identical in every theme ──
+     Control heights are the single source a control's height derives from. This build's
+     standard action button is the sm tier (32px, UI_RULES §115) and its dense size the
+     xs tier (28px); md grows to a 40px tap height on phones (block at the end of this file). */
+  --control-height-xs:   28px;
+  --control-height-sm:   32px;
+  --control-height-md:   36px;
+  --control-height-lg:   44px;
+
+  /* Border widths: the 1px hairline carries hierarchy (flat doctrine); 2px for fields and
+     emphasis; 3px for left-accent rails only. */
+  --border-width-sm:     1px;
+  --border-width-md:     2px;
+  --border-width-lg:     3px;
+
   /* ==========================================================
      2. ALIASES
      Shell-wide role pointers. All aliases resolve to a
@@ -202,19 +226,11 @@
   --border-light:    var(--color-border-subtle);
   --border-mid:      var(--color-border-default);
 
-  /* Compatibility aliases for backported components that reference the
-     --color-* surface namespace directly (e.g. the Marketing module's inline
-     banners + the Gmail-connect instructions). They complete the existing
-     --color-* family so those surfaces resolve to the active theme instead of
-     falling back to the hardcoded generic hex baked into the inline styles. */
-  --color-border:    var(--color-border-default);
-  --color-info-bg:   var(--color-brand-primary-50);
-  --color-warning-bg: var(--color-semantic-warning-50);
-
   --text-primary:    var(--color-text-primary);
   --text-body:       var(--color-text-body);
   --text-muted:      var(--color-text-muted);
   --text-faint:      var(--color-text-faint);
+  --table-header-fg: var(--color-text-muted);   /* table <th> label; themed light on dark header bands */
 
   --primary:         var(--color-brand-primary-500);
   --primary-light:   var(--color-brand-primary-400);
@@ -226,6 +242,19 @@
   --success:         var(--color-semantic-success-500);
   --warning:         var(--color-semantic-warning-500);
   --danger:          var(--color-semantic-error-500);
+
+  /* Review-rating stars: amber in every brand (the convention on Google and everywhere else), so they
+     read the constant semantic amber, never the brand accent. */
+  --rating-star:       var(--color-semantic-warning-400);
+  --rating-star-empty: var(--color-neutral-200);
+
+  /* Focus-ring colour: the shell default is the neutral ink (17.9:1 on the
+     unthemed white, 3.8:1 against the brand-500 border it wraps, so it reads as
+     a ring and not a thicker border; the brand 500 step itself was that border's
+     colour, 1:1). A theme may re-tint it in its RECIPES section, but it must keep
+     ≥3:1 against every surface a field sits on AND against its focused border
+     (UI_RULES §119, pinned by scripts/test-focus-ring-contrast.mjs). */
+  --focus-ring-color: var(--color-neutral-900);
 
   --card-radius:     var(--radius-lg);
   --btn-radius:      var(--radius-md);
@@ -248,6 +277,23 @@
   --avatar-4:        var(--color-avatar-4);
   --avatar-5:        var(--color-avatar-5);
 
+  /* Structural roles (STRUCTURE.md §1). A control or container reads these, never a px. */
+  --btn-height:      var(--control-height-sm);   /* the one action-button height (UI_RULES §115) */
+  --btn-height-sm:   var(--control-height-xs);   /* dense: data-table rows and named clusters */
+  --gap-inline:      var(--space-2);   /* chips, icon + label, button clusters */
+  --gap-control:     var(--space-3);   /* between controls in a toolbar or form row */
+  --gap-card:        var(--space-4);   /* stacked cards, form groups */
+  --gap-section:     var(--space-6);   /* between page sections */
+  --card-pad-sm:     var(--space-4);   /* dense cards and nested blocks */
+  --card-pad:        var(--space-5);   /* the default .card */
+  --card-pad-lg:     var(--space-6);   /* modals and roomy cards */
+  --shadow-overlay:  var(--shadow-lg); /* the one shadow tier: modals, menus, toasts, sheets */
+  --font-input-size: var(--font-size-md); /* fields; 16px on phones (below) so iOS never zooms */
+
+  /* --icon-select-chevron (the select chevron) is not defined here. An icon drawn in a data URI
+     cannot read a colour token, so brand:js draws it in the client theme's --color-neutral-400 and
+     writes it into that theme's GENERATED block (scripts/brand-js.mjs; UI_RULES §121). */
+
   /* ==========================================================
      3. RECIPES
      Theme-specific compositions (gradients, stacked shadows,
@@ -255,4 +301,14 @@
      feel is flat. Themed files (e.g. theme-polishpoint-blue.css)
      override tokens and add their own RECIPES section.
      ========================================================== */
+}
+
+/* Phones (the app's ≤640px breakpoint, the same one useIsMobile reads): the md control
+   grows to a 40px tap height and fields render at 16px so iOS never zooms on focus
+   (STRUCTURE.md §1, §7). Structure only: no colour lives here. */
+@media (max-width: 640px) {
+  :root {
+    --control-height-md: 40px;
+    --font-input-size:   var(--font-size-lg);
+  }
 }

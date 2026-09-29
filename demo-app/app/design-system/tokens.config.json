@@ -1,0 +1,1354 @@
+{
+  "$comment": "Which theme variables the design system publishes as tokens, in what order, with what usage note. VALUES ARE NEVER WRITTEN HERE: app/scripts/design-system.mjs reads them from the live cascade (theme.css > theme-cleanspace.css > theme-flat.css > index.css :root). Every :root variable must appear exactly once: as a token below, or in `recipes` (kept in bundle.css). test-design-system.mjs fails on an unclassified or missing variable.",
+  "name": "Clean Space",
+  "meta": {
+    "source": "github",
+    "repo": "Clean-space-admin/cleanspace",
+    "package": "app",
+    "paths": {
+      "tokens": [
+        "app/src/theme.css",
+        "app/src/theme-cleanspace.css",
+        "app/src/theme-flat.css",
+        "app/src/index.css"
+      ],
+      "fonts": [
+        "app/src/index.css (Poppins, Google Fonts)",
+        "app/index.html (signature faces, Google Fonts)",
+        "app/src/components/SignatureCapture.jsx"
+      ],
+      "assets": [
+        "app/public",
+        "brands/cleanspace",
+        "app/src/components/Icon.jsx"
+      ],
+      "docs": [
+        "app/src/STYLING.md",
+        "app/src/STRUCTURE.md",
+        "app/src/THEME_CLEANSPACE.md",
+        "UI_RULES.md"
+      ]
+    },
+    "components": "app/src/components"
+  },
+  "color": {
+    "note": "One theme: the app ships light only. Values are the final cascade: theme.css defaults, CleanSpace colour overrides, then the flat treatment.",
+    "themes": [
+      {
+        "id": "light",
+        "name": "Light"
+      }
+    ],
+    "tokens": [
+      {
+        "name": "color-brand-primary-50",
+        "usage": "Lightest ink tint. Section-tab count pills and a few pay/HR chips; as primary-bg it is the hover wash of outline buttons, menu options and crew chips."
+      },
+      {
+        "name": "color-brand-primary-100",
+        "usage": "Light ink tint; as primary-soft it marks the selected option in a select menu and the hover of the back pill."
+      },
+      {
+        "name": "color-brand-primary-400",
+        "usage": "Medium ink (primary-light). Kept for the legacy gradient recipes; not painted directly by CleanSpace components."
+      },
+      {
+        "name": "color-brand-primary-500",
+        "usage": "The brand black. Primary buttons, table header bands, avatars, ink on gold CTAs. Text on it is color-text-on-primary (17.7:1)."
+      },
+      {
+        "name": "color-brand-primary-600",
+        "usage": "Hover/pressed black (primary-hover) for .btn-primary."
+      },
+      {
+        "name": "color-brand-primary-700",
+        "usage": "Deepest ink (primary-deep): the desktop sidebar rail, the login backdrop, and the label on the gold active nav pill (14:1)."
+      },
+      {
+        "name": "color-brand-secondary-50",
+        "usage": "Gold wash for gentle highlights (starred rows, pay hints); same family as the upcoming-clean row tint."
+      },
+      {
+        "name": "color-brand-secondary-100",
+        "usage": "Stronger gold wash: drop targets and client-authored message bubbles."
+      },
+      {
+        "name": "color-brand-secondary-400",
+        "usage": "Light gold for accents on dark (pay-rail totals, the \"now\" card)."
+      },
+      {
+        "name": "color-brand-secondary-500",
+        "usage": "CleanSpace gold. Affirmative CTAs (.btn-gold / .btn-success), the active nav pill, the section-tab underline, the upcoming status. Gold is light: text on it is always ink (color-brand-primary-500, 12.5:1), never white. On white it separates by only 1.4:1, so it never carries meaning alone."
+      },
+      {
+        "name": "color-brand-secondary-600",
+        "usage": "Gold hover for CTAs; ink on it holds 9.2:1."
+      },
+      {
+        "name": "color-brand-secondary-700",
+        "usage": "Dark gold for small marks on gold washes (tips, the current-step dot)."
+      },
+      {
+        "name": "color-neutral-50",
+        "usage": "Near-white ink on the black rail: nav hover labels and the brand title (19:1 on color-brand-primary-700)."
+      },
+      {
+        "name": "color-neutral-100",
+        "usage": "Sidebar body text; cancelled timeline card fill; the value behind color-border-subtle."
+      },
+      {
+        "name": "color-neutral-200",
+        "usage": "Sidebar nav labels on the black rail (16:1); the value behind color-border-default."
+      },
+      {
+        "name": "color-neutral-300",
+        "usage": "Scrollbar thumb, the off-state toggle track, secondary-button hover border; the value behind color-border-strong. As a track on white it separates by 1.5:1 only (source value)."
+      },
+      {
+        "name": "color-neutral-400",
+        "usage": "Placeholder text on every field, cancelled markers, sidebar section labels on the rail (7.8:1). As a placeholder on field-bg it measures 2.3:1: deliberately faint, a hint that must never read like a value."
+      },
+      {
+        "name": "color-neutral-500",
+        "usage": "Slate: the neutral status fill (.badge.slate, white text 4.8:1) and the mixed-state toggle knob."
+      },
+      {
+        "name": "color-neutral-600",
+        "usage": "Faint text (color-text-faint): timestamps, kbd hints. 7.6:1 on white, 7.0:1 on the page ground."
+      },
+      {
+        "name": "color-neutral-700",
+        "usage": "Count pills on the black rail."
+      },
+      {
+        "name": "color-neutral-800",
+        "usage": "Body and muted text (color-text-body / color-text-muted): 14.6:1 on white, 13.4:1 on the page ground, 12.2:1 on a well."
+      },
+      {
+        "name": "color-neutral-900",
+        "usage": "Headings, names and values (color-text-primary): 17.9:1 on white, 16.4:1 on the page ground."
+      },
+      {
+        "name": "color-surface-offwhite",
+        "usage": "L1 page ground, the cool light gray the whole app sits on."
+      },
+      {
+        "name": "color-surface-base",
+        "usage": "The app background (page-bg). Points at color-surface-offwhite."
+      },
+      {
+        "name": "color-surface-raised",
+        "usage": "L2: cards, tables, modals and row-cards. White, one step above the ground."
+      },
+      {
+        "name": "color-surface-sunken",
+        "usage": "L0: wells inside a card and containers that hold row-cards (inset-bg). One step below the ground."
+      },
+      {
+        "name": "color-surface-overlay",
+        "usage": "Modals and bottom sheets: crisp white."
+      },
+      {
+        "name": "color-text-primary",
+        "usage": "Headings, names, values. Legible on surface-raised, surface-base and surface-sunken (16:1 and up)."
+      },
+      {
+        "name": "color-text-body",
+        "usage": "Body copy and table cells, on any surface (12:1 and up)."
+      },
+      {
+        "name": "color-text-muted",
+        "usage": "Labels and secondary text. In CleanSpace muted equals body (neutral-800): de-emphasis comes from size, weight and case, never from a pale gray."
+      },
+      {
+        "name": "color-text-faint",
+        "usage": "Tertiary text: timestamps, captions, kbd hints (7.6:1 on white). Placeholders use color-neutral-400 instead."
+      },
+      {
+        "name": "color-text-on-primary",
+        "usage": "Text and icons on ink and on the status fills: primary buttons, header bands, badges."
+      },
+      {
+        "name": "color-border-subtle",
+        "usage": "Faint dividers inside cards (border-light): table cell rules, list separators."
+      },
+      {
+        "name": "color-border-default",
+        "usage": "Default divider (border-mid): the timeline line, connectors, checkbox edges."
+      },
+      {
+        "name": "color-border-strong",
+        "usage": "Emphasised dividers: the bottom-sheet grip, dashed add slots."
+      },
+      {
+        "name": "card-border",
+        "usage": "The hairline on every card, table, field and button edge (CleanSpace value). It separates by elevation, not contrast (1.2:1 on white): never delete it; if an edge vanishes, bump it a step."
+      },
+      {
+        "name": "color-link",
+        "usage": "Brand navy from cleanspaceonline.com: tappable names and links (.linklike), 9.3:1 on white and 8.6:1 on the ground. Links read by colour at normal weight."
+      },
+      {
+        "name": "field-bg",
+        "usage": "Cool-gray fill of .input, .select, .select-trigger and the search fields; a focused field turns white."
+      },
+      {
+        "name": "table-header-bg",
+        "usage": "The black header band on every data table and the month-calendar head (R2). The band is the frame; it needs no heavy border under it."
+      },
+      {
+        "name": "table-header-fg",
+        "usage": "Uppercase 11px labels on the black band (17.7:1)."
+      },
+      {
+        "name": "table-row-odd",
+        "usage": "Zebra tint for odd table rows."
+      },
+      {
+        "name": "table-row-even",
+        "usage": "Even table rows: white."
+      },
+      {
+        "name": "table-row-hover",
+        "usage": "Gold row hover: brand gold at 18% over the row. Body text keeps 13.7:1 on it."
+      },
+      {
+        "name": "sched-card-done-bg",
+        "usage": "Schedule row-card fill for a done clean (R7), paired with a success-500 rail."
+      },
+      {
+        "name": "sched-card-done-bd",
+        "usage": "Hairline of a done row-card."
+      },
+      {
+        "name": "sched-card-prog-bg",
+        "usage": "Row-card fill for a clean in progress, paired with a warning-500 rail."
+      },
+      {
+        "name": "sched-card-prog-bd",
+        "usage": "Hairline of an in-progress row-card."
+      },
+      {
+        "name": "sched-card-miss-bg",
+        "usage": "Row-card fill for a missed clean, paired with an error-500 rail."
+      },
+      {
+        "name": "sched-card-miss-bd",
+        "usage": "Hairline of a missed row-card."
+      },
+      {
+        "name": "sched-card-upcoming-bg",
+        "usage": "Row-card fill for an upcoming clean, paired with a gold rail."
+      },
+      {
+        "name": "sched-card-upcoming-bd",
+        "usage": "Hairline of an upcoming row-card."
+      },
+      {
+        "name": "color-semantic-success-50",
+        "usage": "Success wash: the success toast, done chips."
+      },
+      {
+        "name": "color-semantic-success-200",
+        "usage": "Success hairlines and approve pills."
+      },
+      {
+        "name": "color-semantic-success-400",
+        "usage": "Bright green, kept in the scale; no CleanSpace component paints it."
+      },
+      {
+        "name": "color-semantic-success-500",
+        "usage": "Status green: done dots and rails, the green badge, positive trends. STATUS ONLY, never a button or any interactive fill. White on it and it as text on white both measure 3.8:1, below AA for small text (source value): always pair it with a word."
+      },
+      {
+        "name": "color-semantic-success-600",
+        "usage": "Positive amounts and approved labels."
+      },
+      {
+        "name": "color-semantic-success-700",
+        "usage": "Text on success washes (5.2:1 on success-50). Same value as 600 here."
+      },
+      {
+        "name": "color-semantic-warning-50",
+        "usage": "Warning wash: in-progress chips, conflict notes."
+      },
+      {
+        "name": "color-semantic-warning-200",
+        "usage": "Warning hairlines and callout borders."
+      },
+      {
+        "name": "color-semantic-warning-400",
+        "usage": "Bright amber for conflict and overtime strips."
+      },
+      {
+        "name": "color-semantic-warning-500",
+        "usage": "Status amber: in-progress rails and dots, the amber badge (white 5.0:1), warning text (5.0:1 on white)."
+      },
+      {
+        "name": "color-semantic-warning-600",
+        "usage": "Amber for warning icons and chips (same value as 500 here)."
+      },
+      {
+        "name": "color-semantic-warning-700",
+        "usage": "Text on warning washes (6.8:1 on warning-50)."
+      },
+      {
+        "name": "color-semantic-error-50",
+        "usage": "Error wash: the error toast, missed chips, unassigned groups."
+      },
+      {
+        "name": "color-semantic-error-200",
+        "usage": "Error hairlines and reject pills."
+      },
+      {
+        "name": "color-semantic-error-400",
+        "usage": "Bright red, kept in the scale; no CleanSpace component paints it."
+      },
+      {
+        "name": "color-semantic-error-500",
+        "usage": "Destructive and missed: the .btn-danger fill (white 6.5:1), the red badge, error text (6.5:1 on white), missed rails."
+      },
+      {
+        "name": "color-semantic-error-600",
+        "usage": "Danger chips (same value as 500 here)."
+      },
+      {
+        "name": "color-semantic-error-700",
+        "usage": "Text on error washes (7.6:1 on error-50)."
+      },
+      {
+        "name": "color-accent-purple-50",
+        "usage": "Purple wash for special pay lines."
+      },
+      {
+        "name": "color-accent-purple-200",
+        "usage": "Purple hairline, kept in the scale."
+      },
+      {
+        "name": "color-accent-purple-400",
+        "usage": "Light purple, kept in the scale."
+      },
+      {
+        "name": "color-accent-purple-500",
+        "usage": "The purple badge (Internal channel; white text 5.7:1) and purple tag dots."
+      },
+      {
+        "name": "color-accent-purple-600",
+        "usage": "Purple text on its wash."
+      },
+      {
+        "name": "color-accent-orange-50",
+        "usage": "Orange wash. Carried in the palette; no CleanSpace component paints the orange accent."
+      },
+      {
+        "name": "color-accent-orange-200",
+        "usage": "Orange hairline, unused."
+      },
+      {
+        "name": "color-accent-orange-400",
+        "usage": "Light orange, unused."
+      },
+      {
+        "name": "color-accent-orange-500",
+        "usage": "Orange, unused (CleanSpace retunes it to #c2410c; the old #ff6300 orange is never the brand)."
+      },
+      {
+        "name": "color-accent-orange-600",
+        "usage": "Dark orange, unused."
+      },
+      {
+        "name": "color-accent-teal-50",
+        "usage": "Teal wash of the Visit pay-type chip."
+      },
+      {
+        "name": "color-accent-teal-200",
+        "usage": "Teal hairline of the Visit chip."
+      },
+      {
+        "name": "color-accent-teal-400",
+        "usage": "Light teal, kept in the scale."
+      },
+      {
+        "name": "color-accent-teal-500",
+        "usage": "Teal, kept in the scale."
+      },
+      {
+        "name": "color-accent-teal-600",
+        "usage": "Teal text of the Visit chip."
+      },
+      {
+        "name": "color-accent-yellow-400",
+        "usage": "Light true yellow, kept in the scale."
+      },
+      {
+        "name": "color-accent-yellow-500",
+        "usage": "True yellow fill of the Keys \"Unknown\" badge, kept apart from amber \"Out\"."
+      },
+      {
+        "name": "color-accent-yellow-700",
+        "usage": "Ink of the yellow badge: 3.6:1 on yellow-500, below AA (source value)."
+      },
+      {
+        "name": "page-bg",
+        "usage": "Alias of color-surface-base: the body background."
+      },
+      {
+        "name": "card-bg",
+        "usage": "Alias of color-surface-raised: card, table, modal and button fills. The most-read surface token."
+      },
+      {
+        "name": "inset-bg",
+        "usage": "Alias of color-surface-sunken: wells, the back pill, the modal close button, secondary-button hover."
+      },
+      {
+        "name": "border-light",
+        "usage": "Alias of color-border-subtle: table cell rules and in-card dividers."
+      },
+      {
+        "name": "border-mid",
+        "usage": "Alias of color-border-default: the timeline line, connectors, checkbox border."
+      },
+      {
+        "name": "text-primary",
+        "usage": "Alias of color-text-primary."
+      },
+      {
+        "name": "text-body",
+        "usage": "Alias of color-text-body (the body text colour)."
+      },
+      {
+        "name": "text-muted",
+        "usage": "Alias of color-text-muted."
+      },
+      {
+        "name": "text-faint",
+        "usage": "Alias of color-text-faint."
+      },
+      {
+        "name": "primary",
+        "usage": "Alias of color-brand-primary-500: the brand-primary role, black in CleanSpace."
+      },
+      {
+        "name": "primary-light",
+        "usage": "Alias of color-brand-primary-400."
+      },
+      {
+        "name": "primary-hover",
+        "usage": "Alias of color-brand-primary-600: black-button hover, info-banner text."
+      },
+      {
+        "name": "primary-deep",
+        "usage": "Alias of color-brand-primary-700: nav hover label, tier badges, hero stat values."
+      },
+      {
+        "name": "primary-soft",
+        "usage": "Alias of color-brand-primary-100: selected option, back-pill hover."
+      },
+      {
+        "name": "primary-bg",
+        "usage": "Alias of color-brand-primary-50: hover washes behind ink text."
+      },
+      {
+        "name": "success",
+        "usage": "Alias of color-semantic-success-500 (status only)."
+      },
+      {
+        "name": "warning",
+        "usage": "Alias of color-semantic-warning-500."
+      },
+      {
+        "name": "danger",
+        "usage": "Alias of color-semantic-error-500."
+      },
+      {
+        "name": "rating-star",
+        "usage": "Filled review-rating stars (Reviews, the Dashboard review tile). Semantic amber in every brand, never the brand accent: stars are a convention, like status colours."
+      },
+      {
+        "name": "rating-star-empty",
+        "usage": "The unfilled stars of a rating (neutral-200)."
+      },
+      {
+        "name": "focus-ring-color",
+        "usage": "The one text-field focus ring, composed by the input-focus-shadow recipe. CleanSpace tints it brand ink at 60%: at least 4.37:1 on every surface a field sits on and 3.82:1 against the ink border it wraps (UI_RULES §119)."
+      },
+      {
+        "name": "sidebar-bg",
+        "usage": "Shell alias of color-neutral-900. CleanSpace paints its rail with color-brand-primary-700 instead, so nothing reads this."
+      },
+      {
+        "name": "sidebar-border",
+        "usage": "Shell alias of color-neutral-800; unused in CleanSpace."
+      },
+      {
+        "name": "color-avatar-1",
+        "usage": "Avatar fill 1. All five point at the brand black: every avatar is a black disc with gold initials."
+      },
+      {
+        "name": "color-avatar-2",
+        "usage": "Avatar fill 2. All five point at the brand black: every avatar is a black disc with gold initials."
+      },
+      {
+        "name": "color-avatar-3",
+        "usage": "Avatar fill 3. All five point at the brand black: every avatar is a black disc with gold initials."
+      },
+      {
+        "name": "color-avatar-4",
+        "usage": "Avatar fill 4. All five point at the brand black: every avatar is a black disc with gold initials."
+      },
+      {
+        "name": "color-avatar-5",
+        "usage": "Avatar fill 5. All five point at the brand black: every avatar is a black disc with gold initials."
+      },
+      {
+        "name": "avatar-1",
+        "usage": "Legacy alias read by .avatar-1; points at color-avatar-1."
+      },
+      {
+        "name": "avatar-2",
+        "usage": "Legacy alias read by .avatar-2; points at color-avatar-2."
+      },
+      {
+        "name": "avatar-3",
+        "usage": "Legacy alias read by .avatar-3; points at color-avatar-3."
+      },
+      {
+        "name": "avatar-4",
+        "usage": "Legacy alias read by .avatar-4; points at color-avatar-4."
+      },
+      {
+        "name": "avatar-5",
+        "usage": "Legacy alias read by .avatar-5; points at color-avatar-5."
+      }
+    ]
+  },
+  "families": {
+    "spacing": {
+      "note": "Strict 4px grid, then the role aliases (STRUCTURE.md §1) that components read instead of a step: the gap ladder and the container paddings.",
+      "tokens": [
+        {
+          "name": "space-0",
+          "usage": "Zero."
+        },
+        {
+          "name": "space-1",
+          "usage": "Hairline nudges and tight chip padding."
+        },
+        {
+          "name": "space-2",
+          "usage": "Inline gap: chips, icon + label, button clusters."
+        },
+        {
+          "name": "space-3",
+          "usage": "Gap between controls in a toolbar or form row; horizontal padding inside fields."
+        },
+        {
+          "name": "space-4",
+          "usage": "Horizontal padding of a button; gap between stacked cards."
+        },
+        {
+          "name": "space-5",
+          "usage": "Sheet side padding; detail-tab spacing."
+        },
+        {
+          "name": "space-6",
+          "usage": "Gap between page sections; main top padding."
+        },
+        {
+          "name": "space-7",
+          "usage": "28px step: the New Job column gap, the embedded detail-tab gap and the message pane's icon buttons. The dense control height is control-height-xs."
+        },
+        {
+          "name": "space-8",
+          "usage": "32px step: launchpad tile icons, the sheet grip, the New Job icon slot, the messenger's icon buttons and roomy empty-state padding. The action-button height is btn-height."
+        },
+        {
+          "name": "space-10",
+          "usage": "Main side padding; 40px tap targets for icon buttons on phones."
+        },
+        {
+          "name": "space-12",
+          "usage": "Large vertical breathing room (empty states, the mobile search inset)."
+        },
+        {
+          "name": "space-16",
+          "usage": "The base of the main bottom padding (64 + 16)."
+        },
+        {
+          "name": "gap-inline",
+          "usage": "Role alias of space-2 (8px): chips, icon + label, button clusters. Read by the page and detail head actions, modal actions, table controls and the toast stack."
+        },
+        {
+          "name": "gap-control",
+          "usage": "Role alias of space-3 (12px): between controls in a toolbar or form row. Read by the filter bar, the list pager and the sheet footer."
+        },
+        {
+          "name": "gap-card",
+          "usage": "Role alias of space-4 (16px): stacked cards and form groups. Read by the sheet body."
+        },
+        {
+          "name": "gap-section",
+          "usage": "Role alias of space-6 (24px): between page sections. Defined for the contract; no rule reads it yet."
+        },
+        {
+          "name": "card-pad-sm",
+          "usage": "Role alias of space-4 (16px): dense cards, stat tiles and nested blocks. Defined for the contract; no rule reads it yet."
+        },
+        {
+          "name": "card-pad",
+          "usage": "Role alias of space-5 (20px): the default .card padding."
+        },
+        {
+          "name": "card-pad-lg",
+          "usage": "Role alias of space-6 (24px): the modal card and roomy cards."
+        }
+      ]
+    },
+    "radius": {
+      "note": "CleanSpace rounds harder than the shell: 10px controls, 20px cards, pills for anything status-like.",
+      "tokens": [
+        {
+          "name": "radius-none",
+          "usage": "Square."
+        },
+        {
+          "name": "radius-sm",
+          "usage": "Small marks: kbd hints, the search highlight, detail sub-chips."
+        },
+        {
+          "name": "radius-md",
+          "usage": "CleanSpace override (the shell default is 8px): buttons and inputs via btn-radius and input-radius."
+        },
+        {
+          "name": "radius-lg",
+          "usage": "CleanSpace override (shell 12px): cards, table frames, modals, filter bars via card-radius."
+        },
+        {
+          "name": "radius-xl",
+          "usage": "Top corners of the bottom sheet. Smaller than radius-lg here, because the lg override jumped past it."
+        },
+        {
+          "name": "radius-full",
+          "usage": "Pills and discs: badges, tag chips, segmented tracks, the back pill, avatars, toggles."
+        },
+        {
+          "name": "card-radius",
+          "usage": "Alias of radius-lg: cards, table frames, modals, toasts, filter bars."
+        },
+        {
+          "name": "btn-radius",
+          "usage": "Alias of radius-md: buttons, row menus, callouts, menu options."
+        },
+        {
+          "name": "input-radius",
+          "usage": "Alias of radius-md: inputs, select triggers and their menus, search fields."
+        },
+        {
+          "name": "badge-radius",
+          "usage": "Alias of radius-full: badges, avatars, toggles, count pills."
+        }
+      ]
+    },
+    "shadow": {
+      "note": "Flat: hairlines carry hierarchy. One overlay shadow (shadow-overlay) is the target for anything floating, though the picker menus still use shadow-md; plus two decorative rings that are never a focus indicator.",
+      "tokens": [
+        {
+          "name": "shadow-sm",
+          "usage": "Subtle lift, a shell primitive. Flat CleanSpace surfaces carry a hairline instead; only the messenger's active segment uses it."
+        },
+        {
+          "name": "shadow-md",
+          "usage": "The crew, tag and contact picker menus: a second overlay tier beside shadow-overlay, where STRUCTURE §5 allows one."
+        },
+        {
+          "name": "shadow-lg",
+          "usage": "The overlay step. The kit reads it through shadow-overlay; feature panels and popovers still name it directly (user menu, bell panel, filter and assign popovers, the email modal, the messenger)."
+        },
+        {
+          "name": "shadow-overlay",
+          "usage": "Role alias of shadow-lg: the one overlay shadow (STRUCTURE.md §5). Read by the modal card, toasts, the mobile sheet, the select menu and the search and message menus."
+        },
+        {
+          "name": "shadow-inset",
+          "usage": "Recessed feel, kept in the scale; unused by CleanSpace components."
+        },
+        {
+          "name": "ring-inset",
+          "usage": "Inset 1px ink outline on selected tiles and cells."
+        }
+      ]
+    },
+    "controlHeight": {
+      "note": "Control heights (STRUCTURE.md §1): the tiers a control's height should come from. Today only .btn, .btn-sm (through btn-height / btn-height-sm) and .btn-icon read them. This build's action button is the sm tier (32px, UI_RULES §115) and its dense size the xs tier (28px). md grows to 40px on phones (640px and below).",
+      "tokens": [
+        {
+          "name": "control-height-xs",
+          "usage": "Dense tier, 28px: .btn-sm (through btn-height-sm) and the icon button (.btn-icon)."
+        },
+        {
+          "name": "control-height-sm",
+          "usage": "Compact tier, 32px: this build's action button (through btn-height)."
+        },
+        {
+          "name": "control-height-md",
+          "usage": "The contract's default tier: 36px, 40px on phones. Defined for the contract; no rule reads it yet (fields are about 43px from their padding)."
+        },
+        {
+          "name": "control-height-lg",
+          "usage": "Large CTA and the 44px tap-target floor. Defined for the contract; no rule reads it yet."
+        },
+        {
+          "name": "btn-height",
+          "usage": "Role alias of control-height-sm: the one action-button height (.btn, 32px). Re-point it to move every standard-size .btn; .btn-sm reads btn-height-sm, and the clock control, the phone Messaging header and the message-pane actions set their own heights."
+        },
+        {
+          "name": "btn-height-sm",
+          "usage": "Role alias of control-height-xs: .btn-sm (28px), for data-table rows and named dense clusters only."
+        }
+      ]
+    },
+    "borderWidth": {
+      "note": "Line widths (STRUCTURE.md §1): the 1px hairline carries hierarchy (the flat doctrine), 2px marks fields and emphasis, 3px is for left-accent rails only. The focus ring is 2px wide.",
+      "tokens": [
+        {
+          "name": "border-width-sm",
+          "usage": "The hairline: cards, table wraps, the filter bar, the sheet footer, toasts, menus, icon buttons and tag chips."
+        },
+        {
+          "name": "border-width-md",
+          "usage": "Fields, the select trigger and the select menu: the 2px transparent border the input-border gradient paints."
+        },
+        {
+          "name": "border-width-lg",
+          "usage": "Left-accent rails only. Defined for the contract; no rule reads it yet."
+        },
+        {
+          "name": "focus-ring-width",
+          "usage": "2px: the spread of the input-focus-shadow ring (UI_RULES §119)."
+        },
+        {
+          "name": "focus-ring-offset",
+          "usage": "2px gap before an outline-style :focus-visible ring. Defined for the contract; no rule reads it yet."
+        }
+      ]
+    },
+    "rgbChannels": {
+      "note": "R, G, B triplets for alpha compositing, as in rgba(var(--color-brand-secondary-rgb), 0.18). Never paint a triplet on its own.",
+      "tokens": [
+        {
+          "name": "color-white-rgb",
+          "usage": "White channels, for white tints (hairlines on the black rail at 10–12%)."
+        },
+        {
+          "name": "color-black-rgb",
+          "usage": "Black channels: the modal scrim (40%) and neutral hover tints."
+        },
+        {
+          "name": "color-neutral-rgb",
+          "usage": "Slate-900 channels (CleanSpace points this at 900, not 500): the bottom-sheet backdrop and overlay at 50%."
+        },
+        {
+          "name": "color-brand-primary-rgb",
+          "usage": "Ink channels: hover washes (8%), tab tracks, hairline tints, the focus ring (35%)."
+        },
+        {
+          "name": "color-brand-primary-400-rgb",
+          "usage": "Medium-ink channels for the legacy tier-badge border."
+        },
+        {
+          "name": "color-brand-primary-600-rgb",
+          "usage": "Pressed-ink channels, kept for recipes."
+        },
+        {
+          "name": "color-brand-secondary-rgb",
+          "usage": "Gold channels: table row hover (18%), nav hover (16%), search highlight (45%)."
+        },
+        {
+          "name": "color-semantic-success-rgb",
+          "usage": "Green channels for success washes."
+        },
+        {
+          "name": "color-semantic-warning-rgb",
+          "usage": "Amber channels: warning callouts (8%), the follow-up lead icon (15%)."
+        },
+        {
+          "name": "color-semantic-error-rgb",
+          "usage": "Red channels: danger callouts (8%)."
+        },
+        {
+          "name": "color-accent-purple-rgb",
+          "usage": "Purple channels, kept for recipes."
+        },
+        {
+          "name": "color-accent-yellow-rgb",
+          "usage": "Yellow channels, kept for recipes."
+        }
+      ]
+    },
+    "fontSize": {
+      "note": "The type scale, plus font-size-xs2 (12px, the structural small-copy step) and font-input-size (the field role, 16px on phones).",
+      "tokens": [
+        {
+          "name": "font-size-2xs",
+          "usage": "Micro labels: KPI eyebrows, search group caps."
+        },
+        {
+          "name": "font-size-xs",
+          "usage": "Badges, table headers, form labels, stat labels, help text."
+        },
+        {
+          "name": "font-size-xs2",
+          "usage": "12px (STRUCTURE.md §1): .btn-sm labels, tag chips, the back pill and empty-state copy."
+        },
+        {
+          "name": "font-size-sm",
+          "usage": "Button labels, table cells, section heads, toasts."
+        },
+        {
+          "name": "font-size-md",
+          "usage": "Body default: inputs, detail values, menu options."
+        },
+        {
+          "name": "font-input-size",
+          "usage": "Role alias for text fields (.input, .select, textarea.input): font-size-md (14px) on desktop, font-size-lg (16px) on phones so iOS never zooms on focus (STRUCTURE.md §7)."
+        },
+        {
+          "name": "font-size-lg",
+          "usage": "Sheet and standalone-table titles (.sheet-title, .table-head-title), the large clock buttons, and fields on phones (through font-input-size). Modal titles are also 16px, but as a literal (.modal-header h2)."
+        },
+        {
+          "name": "font-size-xl",
+          "usage": "Page titles."
+        },
+        {
+          "name": "font-size-2xl",
+          "usage": "Display step, unused by CleanSpace CSS."
+        },
+        {
+          "name": "font-size-3xl",
+          "usage": "Display step, unused."
+        },
+        {
+          "name": "font-size-4xl",
+          "usage": "Display step, unused."
+        }
+      ]
+    },
+    "fontWeight": {
+      "tokens": [
+        {
+          "name": "font-weight-regular",
+          "usage": "Body copy."
+        },
+        {
+          "name": "font-weight-medium",
+          "usage": "Nav labels, tab labels, detail-list terms."
+        },
+        {
+          "name": "font-weight-semibold",
+          "usage": "Buttons, badges, labels, section heads."
+        },
+        {
+          "name": "font-weight-bold",
+          "usage": "Titles, gold CTAs, stat values."
+        }
+      ]
+    },
+    "lineHeight": {
+      "note": "The body sets no line height (the font's normal); these are opt-in.",
+      "tokens": [
+        {
+          "name": "line-height-tight",
+          "usage": "Stat values and detail titles."
+        },
+        {
+          "name": "line-height-normal",
+          "usage": "Paragraph copy (confirm messages)."
+        },
+        {
+          "name": "line-height-relaxed",
+          "usage": "Long-form reading, rarely used."
+        }
+      ]
+    },
+    "letterSpacing": {
+      "tokens": [
+        {
+          "name": "letter-spacing-tight",
+          "usage": "Large numerals and titles pull in slightly."
+        },
+        {
+          "name": "letter-spacing-normal",
+          "usage": "Everything else."
+        },
+        {
+          "name": "letter-spacing-wide",
+          "usage": "Uppercase labels: table headers, form labels."
+        },
+        {
+          "name": "letter-spacing-wider",
+          "usage": "Micro caps: sidebar section labels, search group caps."
+        }
+      ]
+    },
+    "duration": {
+      "note": "Components mostly transition in a literal 0.15s.",
+      "tokens": [
+        {
+          "name": "duration-fast",
+          "usage": "Quick state changes."
+        },
+        {
+          "name": "duration-base",
+          "usage": "The bottom-sheet slide-up."
+        },
+        {
+          "name": "duration-slow",
+          "usage": "Longer reveals, rarely used."
+        }
+      ]
+    },
+    "easing": {
+      "tokens": [
+        {
+          "name": "ease-in",
+          "usage": "Exits."
+        },
+        {
+          "name": "ease-out",
+          "usage": "Entrances: the bottom-sheet slide-up."
+        },
+        {
+          "name": "ease-in-out",
+          "usage": "Moves between two resting states."
+        },
+        {
+          "name": "ease-spring",
+          "usage": "A small overshoot, used sparingly."
+        }
+      ]
+    },
+    "zIndex": {
+      "tokens": [
+        {
+          "name": "z-base",
+          "usage": "Page content."
+        },
+        {
+          "name": "z-dropdown",
+          "usage": "Anchored menus and the search panel."
+        },
+        {
+          "name": "z-sticky",
+          "usage": "Sticky bars."
+        },
+        {
+          "name": "z-overlay",
+          "usage": "Overlays."
+        },
+        {
+          "name": "z-modal",
+          "usage": "The bottom-sheet backdrop (the modal overlay itself uses a literal 100)."
+        },
+        {
+          "name": "z-toast",
+          "usage": "Toasts (the toast stack itself uses a literal 1000)."
+        }
+      ]
+    },
+    "breakpoint": {
+      "note": "Reference values; @media queries inline the px.",
+      "tokens": [
+        {
+          "name": "breakpoint-sm",
+          "usage": "Mobile at 640px and below: tables become card lists, filter bars become a sheet, pickers open as bottom sheets. @media rules inline the px."
+        },
+        {
+          "name": "breakpoint-md",
+          "usage": "Tablet to desktop."
+        }
+      ]
+    },
+    "layout": {
+      "note": "App-shell geometry. The main bottom padding is calc(space-16 + space-4) = 80px and lives in bundle.css.",
+      "tokens": [
+        {
+          "name": "topbar-h",
+          "usage": "Height of the fixed desktop search bar above the content."
+        },
+        {
+          "name": "sidebar-w",
+          "usage": "Width of the black desktop sidebar rail."
+        },
+        {
+          "name": "main-pad-top",
+          "usage": "Top padding of the content area (below the top bar)."
+        },
+        {
+          "name": "main-pad-x",
+          "usage": "Side padding of the content area on desktop."
+        }
+      ]
+    }
+  },
+  "type": {
+    "families": {
+      "family-sans": {
+        "var": "font-family-sans"
+      },
+      "family-mono": {
+        "var": "font-family-mono"
+      },
+      "signature-allura": {
+        "signature": "Allura"
+      },
+      "signature-alex-brush": {
+        "signature": "Alex Brush"
+      },
+      "signature-yellowtail": {
+        "signature": "Yellowtail"
+      },
+      "signature-satisfy": {
+        "signature": "Satisfy"
+      },
+      "signature-dancing-script": {
+        "signature": "Dancing Script"
+      },
+      "signature-mr-dafoe": {
+        "signature": "Mr Dafoe"
+      },
+      "signature-herr-von-muellerhoff": {
+        "signature": "Herr Von Muellerhoff"
+      },
+      "signature-rouge-script": {
+        "signature": "Rouge Script"
+      }
+    },
+    "groups": [
+      {
+        "name": "Titles",
+        "family": "family-sans",
+        "note": "Poppins at 700 for every title. The app sets no line height on most text, so it runs at Poppins' normal (1.5); styles state 1.5 unless the CSS sets another.",
+        "styles": [
+          {
+            "name": "type-stat-value",
+            "selector": ".stat-val",
+            "sample": "$3,080.00",
+            "usage": "StatCard values (.stat-val), with tabular figures."
+          },
+          {
+            "name": "type-detail-title",
+            "selector": ".detail-head-title",
+            "sample": "Harbor View Offices",
+            "usage": "Detail-page title (.detail-head-title)."
+          },
+          {
+            "name": "type-page-title",
+            "selector": ".page-head-title",
+            "sample": "Schedule",
+            "usage": "Page titles (.page-head-title)."
+          },
+          {
+            "name": "type-modal-title",
+            "selector": ".modal-header h2",
+            "sample": "Add Customer",
+            "usage": "Modal titles (.modal-header h2) and standalone table titles (.table-head-title)."
+          },
+          {
+            "name": "type-section-head",
+            "selector": ".section-head h3",
+            "sample": "Contacts",
+            "usage": "Section heads and card headers (.section-head h3, .detail-card h3)."
+          }
+        ]
+      },
+      {
+        "name": "Body",
+        "family": "family-sans",
+        "styles": [
+          {
+            "name": "type-body",
+            "selector": ".detail-dl",
+            "sample": "Crew arrives at 6:00 PM; alarm code on the Access tab.",
+            "usage": "Default body: inputs, detail values, menu options, empty-state titles at 600."
+          },
+          {
+            "name": "type-table-cell",
+            "selector": "table td",
+            "sample": "Tue, Sep 23 · 6:00 PM – 9:00 PM",
+            "usage": "Table cells, toasts, info banners, confirm messages."
+          },
+          {
+            "name": "type-small",
+            "selector": ".empty-state p",
+            "sample": "Try clearing filters or changing search.",
+            "usage": "Empty-state messages, the back pill, sub-lines."
+          },
+          {
+            "name": "type-help",
+            "selector": ".form-help",
+            "sample": "Shown to the crew on every clean.",
+            "usage": "Help and error lines under a field (.form-help, .form-error), stat labels."
+          }
+        ]
+      },
+      {
+        "name": "Labels",
+        "family": "family-sans",
+        "note": "Uppercase is for labels only, never for sentences.",
+        "styles": [
+          {
+            "name": "type-label-caps",
+            "selector": ".form-label",
+            "sample": "EXPECTED TIME",
+            "usage": "Form labels, in-card sub-heads, table header bands."
+          },
+          {
+            "name": "type-badge",
+            "selector": ".badge",
+            "sample": "In Progress",
+            "usage": "Badges (white on the status fills; ink on yellow)."
+          },
+          {
+            "name": "type-eyebrow",
+            "selector": ".dash-card-title",
+            "sample": "OPERATIONAL PERFORMANCE",
+            "usage": "KPI-cluster eyebrows (.dash-card-title, .dash-section-title at 11px)."
+          },
+          {
+            "name": "type-rail-caps",
+            "selector": ".sidebar-section",
+            "sample": "OPERATIONS",
+            "usage": "Group labels on the black sidebar rail (.sidebar-section)."
+          }
+        ]
+      },
+      {
+        "name": "Controls",
+        "family": "family-sans",
+        "styles": [
+          {
+            "name": "type-button",
+            "selector": ".btn",
+            "sample": "Save Changes",
+            "usage": "Every .btn label; gold CTAs step up to 700."
+          },
+          {
+            "name": "type-button-sm",
+            "selector": ".btn-sm",
+            "inherit": ".btn",
+            "sample": "Reschedule",
+            "usage": ".btn-sm in table rows and dense clusters."
+          },
+          {
+            "name": "type-nav",
+            "selector": ".nav-btn",
+            "sample": "Schedule",
+            "usage": "Sidebar nav rows (600 when active)."
+          },
+          {
+            "name": "type-tab",
+            "selector": ".tab-btn",
+            "sample": "Week",
+            "usage": "Segmented tab buttons (.tab-btn), active or not."
+          },
+          {
+            "name": "type-section-tab",
+            "selector": ".section-tab",
+            "sample": "Overview",
+            "usage": "Underline section tabs on detail pages."
+          }
+        ]
+      },
+      {
+        "name": "Code",
+        "family": "family-mono",
+        "styles": [
+          {
+            "name": "type-code",
+            "selector": ".msg-failed-code",
+            "sample": "30007",
+            "usage": "Delivery-failure code chips in messaging."
+          }
+        ]
+      },
+      {
+        "name": "Signature",
+        "note": "The type-to-sign faces (Google Fonts). A typed signature renders at 52px, shrinking to fit the pad; the chooser shows each at 16px.",
+        "styles": [
+          {
+            "name": "type-sig-allura",
+            "family": "signature-allura",
+            "literal": {
+              "fontSize": "52px",
+              "lineHeight": 1.5,
+              "fontWeight": 400
+            },
+            "sample": "Alex Morgan",
+            "usage": "Signature face: Allura."
+          },
+          {
+            "name": "type-sig-alex-brush",
+            "family": "signature-alex-brush",
+            "literal": {
+              "fontSize": "52px",
+              "lineHeight": 1.5,
+              "fontWeight": 400
+            },
+            "sample": "Alex Morgan",
+            "usage": "Signature face: Alex Brush."
+          },
+          {
+            "name": "type-sig-yellowtail",
+            "family": "signature-yellowtail",
+            "literal": {
+              "fontSize": "52px",
+              "lineHeight": 1.5,
+              "fontWeight": 400
+            },
+            "sample": "Alex Morgan",
+            "usage": "Signature face: Yellowtail."
+          },
+          {
+            "name": "type-sig-satisfy",
+            "family": "signature-satisfy",
+            "literal": {
+              "fontSize": "52px",
+              "lineHeight": 1.5,
+              "fontWeight": 400
+            },
+            "sample": "Alex Morgan",
+            "usage": "Signature face: Satisfy."
+          },
+          {
+            "name": "type-sig-dancing-script",
+            "family": "signature-dancing-script",
+            "literal": {
+              "fontSize": "52px",
+              "lineHeight": 1.5,
+              "fontWeight": 600
+            },
+            "sample": "Alex Morgan",
+            "usage": "Signature face: Dancing Script (loaded at 600)."
+          },
+          {
+            "name": "type-sig-mr-dafoe",
+            "family": "signature-mr-dafoe",
+            "literal": {
+              "fontSize": "52px",
+              "lineHeight": 1.5,
+              "fontWeight": 400
+            },
+            "sample": "Alex Morgan",
+            "usage": "Signature face: Mr Dafoe."
+          },
+          {
+            "name": "type-sig-von-muellerhoff",
+            "family": "signature-herr-von-muellerhoff",
+            "literal": {
+              "fontSize": "52px",
+              "lineHeight": 1.5,
+              "fontWeight": 400
+            },
+            "sample": "Alex Morgan",
+            "usage": "Signature face: Herr Von Muellerhoff (\"Von Muellerhoff\" in the chooser)."
+          },
+          {
+            "name": "type-sig-rouge-script",
+            "family": "signature-rouge-script",
+            "literal": {
+              "fontSize": "52px",
+              "lineHeight": 1.5,
+              "fontWeight": 400
+            },
+            "sample": "Alex Morgan",
+            "usage": "Signature face: Rouge Script."
+          }
+        ]
+      }
+    ]
+  },
+  "recipes": [
+    "font",
+    "cs-glass-bg",
+    "cs-glass-border",
+    "cs-glass-spec",
+    "cs-glass-shadow",
+    "cs-nav-frost",
+    "cs-nav-fg",
+    "cs-nav-item-shadow",
+    "cs-nav-item-glow",
+    "sidebar-edge",
+    "neu-shadow",
+    "neu-shadow-hover",
+    "neu-shadow-heavy",
+    "card-shadow",
+    "card-shadow-hover",
+    "stat-card-shadow",
+    "btn-primary-grad",
+    "btn-primary-grad-hover",
+    "btn-primary-glow",
+    "btn-primary-glow-hover",
+    "btn-secondary-shadow",
+    "nav-hover-bg",
+    "nav-active-bg",
+    "nav-active-shadow",
+    "nav-active-filter",
+    "page-bg-layers",
+    "page-aurora",
+    "dash-hero-bg",
+    "dash-hero-border",
+    "dash-hero-shadow",
+    "dash-hero-orb",
+    "login-bg",
+    "login-orb-1",
+    "login-orb-2",
+    "login-card-shadow",
+    "dash-sw-shadow",
+    "input-border-grad",
+    "input-border-grad-focus",
+    "input-focus-shadow",
+    "table-header-border",
+    "tab-active-shadow",
+    "tl-card-bg",
+    "tl-card-border",
+    "tl-card-shadow",
+    "drip-node-bg",
+    "drip-node-border",
+    "drip-node-shadow",
+    "sched-block-shadow",
+    "msg-item-hover",
+    "msg-active-border",
+    "bubble-incoming-bg",
+    "metric-cell-1-bg",
+    "metric-cell-2-bg",
+    "metric-cell-3-bg",
+    "metric-top-bar",
+    "tier-core-border",
+    "badge-green-grad",
+    "badge-amber-grad",
+    "badge-yellow-grad",
+    "badge-red-grad",
+    "badge-blue-grad",
+    "badge-purple-grad",
+    "badge-slate-grad",
+    "scrollbar-thumb",
+    "scrollbar-thumb-hover",
+    "mobile-header-bg",
+    "mobile-header-grad",
+    "mobile-header-border",
+    "mobile-header-shadow",
+    "mobile-sub-color",
+    "hamburger-color",
+    "overlay-bg",
+    "badge-green-shadow",
+    "badge-amber-shadow",
+    "badge-yellow-shadow",
+    "badge-red-shadow",
+    "badge-blue-shadow",
+    "badge-purple-shadow",
+    "badge-slate-shadow",
+    "main-pad-bottom",
+    "icon-select-chevron"
+  ]
+}

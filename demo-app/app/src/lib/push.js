@@ -2,29 +2,34 @@
 // Web Push adapter — frontend interface for subscribing/unsubscribing the
 // current device, retrieving the per-user device list, and firing a test push.
 //
-// Mirrors the lib/twilio.js / lib/email.js pattern: stub mode runs locally
-// when VITE_PUSH_BACKEND_URL is unset (returns realistic-shaped responses
-// instantly, fires a local Notification for the test-push path); hosted mode
-// hits the deployment companion repo's /api/push/* endpoints.
+// Mirrors the lib/timeApi.js pattern: a localStorage/in-memory STUB runs in
+// local/demo mode (no Supabase) — returns realistic-shaped responses instantly
+// and fires a local Notification for the test-push path; HOSTED mode hits the
+// co-located, auth-gated push routes under app/api/push/*. The backend base is
+// same-origin `/api` by default (override with VITE_PUSH_BACKEND_URL only if the
+// push routes ever move to a separate deployment).
 //
-// Backend contract (deployment companion):
-//   POST   /api/push/subscribe   { userId, subscription, deviceLabel } → { ok, subscriptionId }
-//   DELETE /api/push/subscribe   { userId, endpoint }                  → { ok }
-//   GET    /api/push/devices?userId=...                                → [{ subscriptionId, deviceLabel, endpointMasked, lastSeenAt }]
-//   POST   /api/push/test        { userId }                            → { delivered, failed, expired }
+// Backend contract (app/api/push/*):
+//   POST   /api/push/subscribe   { subscription, deviceLabel } → { ok }
+//   DELETE /api/push/subscribe   { endpoint }                  → { ok }
+//   GET    /api/push/devices                                   → [{ subscriptionId, deviceLabel, endpoint, endpointMasked, lastSeenAt }]
+//   POST   /api/push/test                                      → { ok, delivered, failed, expired }
+// (The caller's user id is resolved server-side from the auth session, so it is
+// never trusted from the request body.)
 //
 // VAPID public key is exposed via VITE_VAPID_PUBLIC_KEY at build time. The
 // matching private key never leaves the backend.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { BRAND } from '../brand.config.js';
-import { IS_DEMO } from '../demo/isDemo';
+import { authHeaders } from './authHeader';
+import { isAuthConfigured } from './supabaseClient';
+import { IDENTITY } from '../brand/identity.generated.js';
 
-// The demo build hard-pins this to stub mode regardless of any env var, so the
-// sales demo can never reach a real push backend.
-const BACKEND = IS_DEMO
-  ? null
-  : ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_PUSH_BACKEND_URL) || null);
+const EXPLICIT_BACKEND =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PUSH_BACKEND_URL) || null;
+// Hosted when Supabase auth is configured (real deployment): default to the
+// same-origin `/api`. Stub (null) in local/demo so the UI flow stays exercisable.
+const BACKEND = EXPLICIT_BACKEND || (isAuthConfigured() ? '/api' : null);
 const VAPID_PUBLIC_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_VAPID_PUBLIC_KEY) || null;
 
@@ -33,6 +38,21 @@ export const PUSH_BACKEND_URL = BACKEND;
 // Stub state — only used when BACKEND is unset. Cleared on reload.
 let stubSubscription = null;     // { endpoint, keys, deviceLabel, subscribedAt }
 const stubDevices = new Map();   // userId → [stubSubscription, ...]
+
+// Authed fetch against the push backend. Attaches the Supabase bearer (the
+// routes are requireAuth-gated) and parses { error } bodies into thrown Errors.
+async function pushApi(path, { method = 'GET', body } = {}) {
+  const auth = await authHeaders();
+  const res = await fetch(`${BACKEND}${path}`, {
+    method,
+    headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...auth },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let json = null;
+  try { json = await res.json(); } catch { /* non-JSON / empty */ }
+  if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`);
+  return json;
+}
 
 // ───────────────────────── Feature detection ─────────────────────────
 
@@ -155,16 +175,10 @@ export async function enableMobilePush({ userId, deviceLabel } = {}) {
     });
   }
 
-  const res = await fetch(`${BACKEND}/push/subscribe`, {
+  await pushApi('/push/subscribe', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      userId,
-      subscription: subscription.toJSON(),
-      deviceLabel: label,
-    }),
+    body: { userId, subscription: subscription.toJSON(), deviceLabel: label },
   });
-  if (!res.ok) throw new Error(`Push subscribe failed (${res.status}).`);
   return { ok: true, stub: false, subscription };
 }
 
@@ -181,17 +195,34 @@ export async function disableMobilePush({ userId } = {}) {
   const sub = await getCurrentSubscription();
   if (sub) {
     try {
-      await fetch(`${BACKEND}/push/subscribe`, {
-        method: 'DELETE',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ userId, endpoint: sub.endpoint }),
-      });
+      await pushApi('/push/subscribe', { method: 'DELETE', body: { userId, endpoint: sub.endpoint } });
     } catch {
       /* best-effort — continue with local unsubscribe even if backend errors */
     }
     try { await sub.unsubscribe(); } catch { /* ignore */ }
   }
   return { ok: true, stub: false };
+}
+
+// Tear down THIS device's subscription on sign-out — no userId required. The
+// backend resolves the owner from the (still-valid) auth session, so we only
+// need the endpoint; the local unsubscribe is device-scoped. Best-effort and
+// idempotent so it can never block logout. Without this, the browser keeps its
+// PushSubscription and the backend keeps the row, so the NEXT user on this
+// device receives the signed-out user's OS pushes (title + 90-char preview).
+export async function unsubscribeCurrentDevice() {
+  try {
+    if (!BACKEND) { stubSubscription = null; return { ok: true, stub: true }; }
+    const sub = await getCurrentSubscription();
+    if (!sub) return { ok: true };
+    try {
+      await pushApi('/push/subscribe', { method: 'DELETE', body: { endpoint: sub.endpoint } });
+    } catch { /* best-effort — still unsubscribe locally below */ }
+    try { await sub.unsubscribe(); } catch { /* ignore */ }
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
 }
 
 // Remove a specific device by endpoint (used by the per-device list "Remove"
@@ -206,12 +237,7 @@ export async function removeDevice({ userId, endpoint } = {}) {
     if (stubSubscription?.endpoint === endpoint) stubSubscription = null;
     return { ok: true, stub: true };
   }
-  const res = await fetch(`${BACKEND}/push/subscribe`, {
-    method: 'DELETE',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ userId, endpoint }),
-  });
-  if (!res.ok) throw new Error(`Push device removal failed (${res.status}).`);
+  await pushApi('/push/subscribe', { method: 'DELETE', body: { userId, endpoint } });
   return { ok: true, stub: false };
 }
 
@@ -228,9 +254,22 @@ export async function getDevices({ userId } = {}) {
       lastSeenAt: d.subscribedAt,
     }));
   }
-  const res = await fetch(`${BACKEND}/push/devices?userId=${encodeURIComponent(userId)}`);
-  if (!res.ok) throw new Error(`Failed to load devices (${res.status}).`);
-  return res.json();
+  return (await pushApi('/push/devices')) || [];
+}
+
+// Per-user push status for the Team view (admin only): map of userId ->
+// { deviceCount, lastSeenAt }, from actual push_subscriptions rows. Stub derives
+// it from the in-memory stub subscriptions so the demo Team view still reflects a
+// device subscribed this session.
+export async function getTeamPushStatus() {
+  if (!BACKEND) {
+    const out = {};
+    for (const [uid, list] of stubDevices) {
+      if (list && list.length) out[uid] = { deviceCount: list.length, lastSeenAt: list[list.length - 1]?.subscribedAt || null };
+    }
+    return out;
+  }
+  try { return (await pushApi('/push/status')) || {}; } catch { return {}; }
 }
 
 // Send a canned test push to all of the user's subscribed devices. In stub mode
@@ -241,7 +280,7 @@ export async function sendTestPush({ userId } = {}) {
   if (!BACKEND) {
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
-        new Notification(`${BRAND.name} — test push`, {
+        new Notification(`${IDENTITY.name}: Test push`, {
           body: 'If you can read this, mobile push is wired correctly on this device.',
           icon: '/icon-192.png',
         });
@@ -251,11 +290,21 @@ export async function sendTestPush({ userId } = {}) {
     }
     return { ok: true, stub: true, delivered: 1, failed: 0, expired: 0 };
   }
-  const res = await fetch(`${BACKEND}/push/test`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ userId }),
-  });
-  if (!res.ok) throw new Error(`Test push failed (${res.status}).`);
-  return res.json();
+  return pushApi('/push/test', { method: 'POST', body: { userId } });
+}
+
+// Fire an IMMEDIATE server dispatch of any unpushed notification rows, so a freshly
+// created message (DM / thread / SMS / email) reaches subscribed phones in ~1s
+// instead of waiting for the every-minute /api/push/dispatch cron. Debounced +
+// fire-and-forget; the cron stays as the fallback, and the server core is idempotent
+// (CAS reserve-then-send) so a flush and a cron tick never double-send. No-op in
+// stub/demo (no backend).
+let flushTimer = null;
+export function flushPush() {
+  if (!BACKEND) return;
+  if (flushTimer) return; // coalesce a burst of sends into one flush
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    pushApi('/push/flush', { method: 'POST' }).catch(() => { /* the dispatch cron is the fallback */ });
+  }, 500);
 }

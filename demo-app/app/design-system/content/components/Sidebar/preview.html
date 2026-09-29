@@ -1,0 +1,52 @@
+<!-- @dsCard group="Navigation" height=560 width=720 page subtitle="The black rail with the gold active pill" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sidebar</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+</head>
+<body>
+<div id="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Leaf(p) {
+  return h('a', { className: 'nav-btn' + (p.sub ? ' nav-sub' : '') + (p.active ? ' active' : ''), href: '#', onClick: function (e) { e.preventDefault(); } },
+    h(CS.Icon, { name: p.icon }), h('span', { className: 'nav-btn-label' }, p.label),
+    p.badge ? h('span', { className: 'nav-review nav-review-new' }, p.badge) : null);
+}
+function Group(p) {
+  var s = React.useState(!!p.open), open = s[0], setOpen = s[1];
+  return h('div', { className: 'nav-section-group' + (open ? ' open' : '') },
+    h('button', { type: 'button', className: 'nav-btn nav-section-toggle', onClick: function () { setOpen(!open); } },
+      h(CS.Icon, { name: p.icon }), h('span', { className: 'nav-btn-label' }, p.label),
+      h('span', { className: 'nav-chevron' }, h(CS.Icon, { name: 'chevronDown' }))),
+    h('div', { className: 'nav-section-items' }, p.children));
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(
+  h('aside', { className: 'sidebar' },
+    h('div', { className: 'sidebar-brand sidebar-brand-image' },
+      h('img', { className: 'sidebar-brand-img', src: '/_blob/bb94a86ce508f494c3f0ec6e8f23137f', alt: 'Clean Space' })),
+    h('nav', { className: 'sidebar-nav' },
+      h('div', { className: 'nav-group' },
+        h(Leaf, { icon: 'dashboard', label: 'Dashboard' }),
+        h(Leaf, { icon: 'schedule', label: 'Schedule', active: true }),
+        h(Leaf, { icon: 'messaging', label: 'Messaging' }),
+        h(Leaf, { icon: 'clients', label: 'Customers' }),
+        h(Group, { icon: 'building', label: 'Operations', open: true },
+          h(Leaf, { icon: 'schedule', label: 'Time Clock', sub: true }),
+          h(Leaf, { icon: 'chart', label: 'Variance', sub: true }),
+          h(Leaf, { icon: 'invoices', label: 'Payroll', sub: true, badge: 'NEW' })),
+        h(Group, { icon: 'invoices', label: 'Finances' },
+          h(Leaf, { icon: 'tag', label: 'Quotes', sub: true }),
+          h(Leaf, { icon: 'invoices', label: 'Invoices', sub: true }))),
+      h('div', { className: 'nav-group' },
+        h('a', { className: 'nav-btn nav-btn-solo', href: '#', onClick: function (e) { e.preventDefault(); } },
+          h(CS.Icon, { name: 'settings' }), h('span', { className: 'nav-btn-label' }, 'Settings')))),
+    h('div', { className: 'sidebar-footer' },
+      h('button', { type: 'button', className: 'sidebar-footer-btn sidebar-report-btn' }, h(CS.Icon, { name: 'warning', size: 14 }), ' Report an issue'))
+  )
+);
+</script>
+</body>
+</html>

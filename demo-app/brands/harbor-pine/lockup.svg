@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="200" viewBox="0 0 1400 200">
+  <!-- The Harbor & Pine test brand's horizontal logo: dark on a light ground (the shape logos.lockup takes). -->
+  <rect width="1400" height="200" fill="white"/>
+  <g fill="black">
+    <rect x="30" y="40" width="23" height="120"/>
+    <rect x="94" y="40" width="23" height="120"/>
+    <rect x="30" y="88" width="87" height="24"/>
+    <rect x="132" y="40" width="23" height="120"/>
+    <rect x="155" y="40" width="32" height="22"/>
+    <rect x="176" y="40" width="22" height="70"/>
+    <rect x="155" y="88" width="32" height="22"/>
+    <text x="240" y="138" font-family="Arial, Helvetica, sans-serif" font-size="104" font-weight="700">Harbor &amp; Pine</text>
+  </g>
+</svg>

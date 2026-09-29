@@ -1,0 +1,28 @@
+<!-- @dsCard group="Overlays" height=480 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Modal</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+</head>
+<body>
+<div id="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Demo() {
+  var a = React.useState(''), b = React.useState(''), c = React.useState('');
+  return h(CS.Modal, { open: true, title: 'Add Customer', size: 'md', onClose: function () {} },
+    h('form', { onSubmit: function (e) { e.preventDefault(); } },
+      h(CS.FormField, { label: 'Company name', name: 'company', required: true, placeholder: 'Harbor View Offices', value: a[0], onChange: function (e) { a[1](e.target.value); } }),
+      h('div', { className: 'form-row' },
+        h(CS.FormField, { label: 'Email', name: 'email', type: 'email', value: b[0], onChange: function (e) { b[1](e.target.value); } }),
+        h(CS.FormField, { label: 'Phone', name: 'phone', type: 'tel', value: c[0], onChange: function (e) { c[1](e.target.value); } })),
+      h('div', { className: 'modal-actions' },
+        h('button', { type: 'button', className: 'btn btn-outline' }, 'Cancel'),
+        h('button', { type: 'submit', className: 'btn btn-primary' }, 'Add Customer'))));
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(Demo));
+</script>
+</body>
+</html>

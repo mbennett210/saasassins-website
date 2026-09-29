@@ -1,0 +1,27 @@
+<!-- @dsCard group="Navigation" height=140 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TabContainer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-4); }
+  .pv .tab-container-line { margin-bottom: 0; }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Demo(p) {
+  var s = React.useState(p.tabs[0]), active = s[0], setActive = s[1];
+  return h(CS.TabContainer, { tabs: p.tabs, active: active, onChange: setActive, className: p.className });
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(React.Fragment, null,
+  h(Demo, { tabs: ['Day', 'Week', 'Month', 'Cleaner'] }),
+  h(Demo, { tabs: ['Today', 'Yesterday'] })
+));
+</script>
+</body>
+</html>

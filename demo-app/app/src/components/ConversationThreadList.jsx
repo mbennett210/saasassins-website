@@ -1,4 +1,5 @@
-import { useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Avatar from './Avatar';
 import EmptyState from './EmptyState';
 import Icon from './Icon';
@@ -7,7 +8,7 @@ import { useStore } from '../store';
 import { useAuth } from '../hooks/useAuth';
 import {
   selectContactById, selectMessagesForConversation, selectUnreadForConversation,
-  selectEffectiveStatus, selectOtherParticipant,
+  selectOtherParticipant,
 } from '../store/selectors';
 import { fmtRelative } from '../lib/dates';
 
@@ -23,36 +24,149 @@ function initialsFromContact(contact) {
   return `${first}${last}`.toUpperCase() || 'C';
 }
 
-// "Snoozed" label: show "Snoozed · in Xh" if waking within a day, else "until <date>".
-function snoozeLabel(untilIso) {
-  if (!untilIso) return 'Snoozed';
-  const diffMs = new Date(untilIso).getTime() - Date.now();
-  if (diffMs <= 0) return 'Snoozed';
-  const hours = Math.round(diffMs / 3600000);
-  if (hours < 24) return `Snoozed · in ${Math.max(1, hours)}h`;
-  const d = new Date(untilIso);
-  return `Snoozed · until ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+// Per-row ⋯ action menu — the default (non-bulk) state of the left control slot.
+// Opening it reveals Mark read / Mark unread / Delete for that single thread.
+// The popover is position:fixed, anchored to the button's rect, and PORTALED to
+// document.body: the row list is an overflow-y:auto scroll container, AND
+// `.thread-row:active` applies a transform (a transformed ancestor re-hosts a
+// fixed child, which mispositioned the menu + spawned a scrollbar on press).
+// Rendering at body level keeps it viewport-anchored. Closes on outside-click,
+// Escape, scroll, or resize.
+function ThreadRowMenu({ label, unread, canDelete, onStartSelect, onMarkRead, onMarkUnread, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const wrapRef = useRef(null);
+  const btnRef = useRef(null);
+  const popRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    // Dismiss on an outside tap — and SWALLOW that tap so it only closes the menu
+    // instead of ALSO activating whatever was under it (opening a thread, hitting
+    // the nav, etc.). A capture-phase click runs before the target's own handler,
+    // so preventDefault + stopImmediatePropagation stop the click from ever
+    // reaching it. The popover is portaled out of wrapRef, so spare BOTH the
+    // trigger (it toggles itself) and the popover (its items run their action).
+    // Hardening rule — see UI_RULES §100: a dismiss layer must eat the dismiss tap.
+    const onOutsideClick = (e) => {
+      if (wrapRef.current?.contains(e.target)) return;
+      if (popRef.current?.contains(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+      setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
+    document.addEventListener('click', onOutsideClick, true);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('click', onOutsideClick, true);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  const toggle = () => {
+    if (open) { setOpen(false); return; }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      const MENU_W = 190;
+      const MENU_H = 180;
+      let top = r.bottom + 4;
+      let left = r.left;
+      if (top + MENU_H > window.innerHeight - 8) top = Math.max(8, r.top - MENU_H - 4);
+      if (left + MENU_W > window.innerWidth - 8) left = Math.max(8, window.innerWidth - 8 - MENU_W);
+      setPos({ top, left });
+    }
+    setOpen(true);
+  };
+
+  // Fire the action, then close. stopPropagation keeps the row's own open-thread
+  // click from firing underneath the menu.
+  const choose = (fn) => (e) => { e.stopPropagation(); fn(); setOpen(false); };
+
+  return (
+    <div className="thread-row-menu" ref={wrapRef} onClick={(e) => e.stopPropagation()}>
+      <button
+        ref={btnRef}
+        type="button"
+        className="btn-icon btn-icon-ghost"
+        aria-label={`Actions for ${label}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Actions"
+        onClick={(e) => { e.stopPropagation(); toggle(); }}
+      >
+        <Icon name="dots" size={16} />
+      </button>
+      {open && pos && createPortal(
+        <div
+          ref={popRef}
+          className="thread-row-menu-popover"
+          role="menu"
+          style={{ top: pos.top, left: pos.left }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-option"
+            onClick={choose(onStartSelect)}
+          >
+            Select
+          </button>
+          <div className="thread-row-menu-sep" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-option"
+            onClick={choose(onMarkRead)}
+            disabled={unread === 0}
+          >
+            Mark as read
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-option"
+            onClick={choose(onMarkUnread)}
+            disabled={unread > 0}
+          >
+            Mark as unread
+          </button>
+          <div className="thread-row-menu-sep" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-option menu-option-danger"
+            onClick={choose(onDelete)}
+            disabled={!canDelete}
+            title={canDelete ? undefined : "Only the thread's creator or a Super Admin can delete it"}
+          >
+            Delete
+          </button>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
 }
 
-function StatusChip({ status, snoozedUntil }) {
-  if (status === 'open') return null;
-  if (status === 'snoozed') {
-    return <span className="status-chip status-chip-amber"><Icon name="moon" size={10} />{snoozeLabel(snoozedUntil)}</span>;
-  }
-  if (status === 'closed') {
-    return <span className="status-chip status-chip-slate"><Icon name="check" size={10} />Closed</span>;
-  }
-  return null;
-}
-
-function ThreadRow({ conversation, active, selected, onSelect, onToggleSelect, onToggleStar, hideCheckbox = false, isOwnedByMe = false }) {
+function ThreadRow({
+  conversation, active, selected, onSelect, onToggleSelect, onToggleStar,
+  hideCheckbox = false, isOwnedByMe = false, bulkMode = false,
+  onStartSelect, onRowMarkRead, onRowMarkUnread, onRowDelete,
+}) {
   const state = useStore();
   const { currentUser } = useAuth();
   const contact = conversation.contactId ? selectContactById(state, conversation.contactId) : null;
   const msgs = selectMessagesForConversation(state, conversation.id);
   const last = msgs[msgs.length - 1];
   const unread = selectUnreadForConversation(state, conversation.id);
-  const effectiveStatus = selectEffectiveStatus(conversation);
   const isMuted = !!(currentUser && (conversation.mutedByUserIds || []).includes(currentUser.id));
   const isStarred = !!(currentUser && (conversation.starredByUserIds || []).includes(currentUser.id));
   const rowRef = useRef(null);
@@ -91,20 +205,32 @@ function ThreadRow({ conversation, active, selected, onSelect, onToggleSelect, o
   return (
     <div
       ref={rowRef}
-      className={`thread-row ${active ? 'active' : ''} ${selected ? 'selected' : ''} ${effectiveStatus !== 'open' ? 'status-' + effectiveStatus : ''} ${isOwnedByMe ? 'is-owner' : ''} ${isMuted ? 'is-muted' : ''}`}
+      className={`thread-row ${active ? 'active' : ''} ${selected ? 'selected' : ''} ${isOwnedByMe ? 'is-owner' : ''} ${isMuted ? 'is-muted' : ''}`}
       onClick={handleClick}
       role="button"
       tabIndex={0}
     >
       {!hideCheckbox && (
-        <label className="thread-row-check" onClick={(e) => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={() => onToggleSelect(conversation.id)}
-            aria-label={`Select ${displayName}`}
+        bulkMode ? (
+          <label className="thread-row-check" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggleSelect(conversation.id)}
+              aria-label={`Select ${displayName}`}
+            />
+          </label>
+        ) : (
+          <ThreadRowMenu
+            label={displayName}
+            unread={unread}
+            canDelete={isOwnedByMe || currentUser?.role === 'owner'}
+            onStartSelect={onStartSelect}
+            onMarkRead={() => onRowMarkRead(conversation.id)}
+            onMarkUnread={() => onRowMarkUnread(conversation.id)}
+            onDelete={() => onRowDelete(conversation.id)}
           />
-        </label>
+        )
       )}
       <Avatar initials={initials} variant={avatarVariant} size="sm" />
       <div className="thread-row-body">
@@ -134,20 +260,20 @@ function ThreadRow({ conversation, active, selected, onSelect, onToggleSelect, o
       <div className="thread-row-right">
         <div className="thread-row-top">
           {unread > 0 && <span className="thread-unread" aria-label={`${unread} unread`}>{unread}</span>}
-          <button
-            type="button"
-            className={`thread-star-btn ${isStarred ? 'starred' : ''}`}
-            onClick={(e) => { e.stopPropagation(); onToggleStar(conversation.id); }}
-            aria-label={isStarred ? 'Unpin' : 'Pin'}
-            title={isStarred ? 'Unpin' : 'Pin'}
-          >
-            <Icon name="star" size={14} />
-          </button>
+          {/* Pin/star omitted for a crew (non-office) viewer — the crew write merge drops it (CS-002). */}
+          {onToggleStar && (
+            <button
+              type="button"
+              className={`btn-icon btn-icon-ghost ${isStarred ? 'starred' : ''}`}
+              onClick={(e) => { e.stopPropagation(); onToggleStar(conversation.id); }}
+              aria-label={isStarred ? 'Unpin' : 'Pin'}
+              title={isStarred ? 'Unpin' : 'Pin'}
+            >
+              <Icon name="star" size={14} />
+            </button>
+          )}
         </div>
         <span className="thread-row-time">{last ? fmtRelative(last.sentAt) : fmtRelative(conversation.createdAt)}</span>
-        <div className="thread-row-meta">
-          <StatusChip status={effectiveStatus} snoozedUntil={conversation.snoozedUntil} />
-        </div>
       </div>
     </div>
   );
@@ -170,12 +296,17 @@ export default function ConversationThreadList({
   onBulkDelete,
   canBulk,
   selectedInbox,
+  bulkMode = false,
+  onEnterBulk,
+  onExitBulk,
+  onRowMarkRead,
+  onRowMarkUnread,
+  onRowDelete,
 }) {
   const { currentUser } = useAuth();
   const isDmInbox = selectedInbox === 'dm';
   const isInternalInbox = selectedInbox === 'internal';
   const selectedCount = selectedIds?.size || 0;
-
   // Owned-by-current-user is surfaced as a small star next to the name (see
   // ThreadRow). Bulk multi-select INCLUDES owned threads — the bulk-delete
   // handler in Messaging.jsx (handleBulkDeleteRequest) enforces per-thread
@@ -185,6 +316,17 @@ export default function ConversationThreadList({
   const selectableConversations = conversations;
   const allSelected = selectedCount > 0 && selectableConversations.length > 0
     && selectableConversations.every((c) => selectedIds.has(c.id));
+
+  const countText = conversations.length === totalBeforeFilter
+    ? `${conversations.length} thread${conversations.length === 1 ? '' : 's'}`
+    : `${conversations.length} of ${totalBeforeFilter}`;
+
+  // Select-all / deselect-all for the bulk toolbar. Entering bulk mode now happens
+  // from a row's ⋯ menu ("Select"), so this no longer double-duties as an enter toggle.
+  const onToggleAll = () => {
+    if (allSelected) onClearSelection();
+    else onSelectAll(selectableConversations.map((c) => c.id));
+  };
 
   return (
     <section className="thread-list-pane">
@@ -199,34 +341,19 @@ export default function ConversationThreadList({
           />
         </div>
         <div className="thread-list-subhead">
-          {isDmInbox ? (
-            <span className="text-xs text-muted">
-              {conversations.length === totalBeforeFilter
-                ? `${conversations.length} thread${conversations.length === 1 ? '' : 's'}`
-                : `${conversations.length} of ${totalBeforeFilter}`}
-            </span>
-          ) : (
-            <label className="thread-list-selectall" title="Select all visible threads">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                disabled={selectableConversations.length === 0}
-                onChange={() => (allSelected ? onClearSelection() : onSelectAll(selectableConversations.map((c) => c.id)))}
-                aria-label="Select all visible"
-              />
-              <span className="text-xs text-muted">
-                {conversations.length === totalBeforeFilter
-                  ? `${conversations.length} thread${conversations.length === 1 ? '' : 's'}`
-                  : `${conversations.length} of ${totalBeforeFilter}`}
-              </span>
-            </label>
+          <span className="text-xs text-muted">{countText}</span>
+          {!isDmInbox && bulkMode && (
+            <button type="button" className="linklike text-xs thread-bulk-done" onClick={onExitBulk}>
+              Done
+            </button>
           )}
         </div>
       </div>
-      {!isDmInbox && selectedCount > 0 && (
+      {!isDmInbox && bulkMode && (
         <BulkActionBar
           selectedCount={selectedCount}
-          onClear={onClearSelection}
+          allSelected={allSelected}
+          onToggleAll={onToggleAll}
           onMarkRead={onBulkMarkRead}
           onMarkUnread={onBulkMarkUnread}
           onBulkDelete={onBulkDelete}
@@ -252,10 +379,15 @@ export default function ConversationThreadList({
               onToggleStar={onToggleStar}
               hideCheckbox={isDmInbox}
               isOwnedByMe={isOwned(c)}
+              bulkMode={bulkMode}
+              onStartSelect={onEnterBulk}
+              onRowMarkRead={onRowMarkRead}
+              onRowMarkUnread={onRowMarkUnread}
+              onRowDelete={onRowDelete}
             />
           );
 
-          // Threads inbox: split into "Your threads" (created by current user) on top + the rest below.
+          // Channels inbox: split into "Your channels" (created by current user) on top + the rest below.
           if (isInternalInbox && currentUser) {
             const isPinnedByMe = (c) => (c.starredByUserIds || []).includes(currentUser.id);
             const owned = conversations.filter((c) => isOwned(c));
@@ -273,7 +405,7 @@ export default function ConversationThreadList({
                   <>
                     <div className="thread-section-header">
                       <Icon name="star" size={12} />
-                      <span>Your threads</span>
+                      <span>Your channels</span>
                       <span className="thread-section-count">{owned.length}</span>
                     </div>
                     {ownedSplit.pinned.map(renderRow)}
@@ -283,7 +415,7 @@ export default function ConversationThreadList({
                 {others.length > 0 && (
                   <>
                     <div className="thread-section-header thread-section-header-muted">
-                      <span>Team threads</span>
+                      <span>Team channels</span>
                       <span className="thread-section-count">{others.length}</span>
                     </div>
                     {othersSplit.pinned.map(renderRow)}

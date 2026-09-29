@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useFromHere } from '../hooks/useFromHere';
 import Avatar from './Avatar';
 import Badge, { statusBadgeVariant } from './Badge';
 import ContactPicker from './ContactPicker';
-import ContactFocusModal from './ContactFocusModal';
-import Select from './Select';
 import EmptyState from './EmptyState';
-import Icon from './Icon';
 import TagChip from './TagChip';
 import { useToast } from './Toast';
 import { useDispatch, useStore } from '../store';
@@ -17,7 +14,7 @@ import { useAuth } from '../hooks/useAuth';
 import {
   selectClientById, selectInvoicesForContact, selectJobsForClient,
   selectSynthesizedActivityForContact, selectTagById, selectUserById,
-  selectPipelineStages, selectOtherParticipant,
+  selectOtherParticipant,
   invoiceTotal, deriveInvoiceStatus,
 } from '../store/selectors';
 import { ROLE_LABELS } from '../lib/roles';
@@ -49,25 +46,21 @@ function buildForm(contact) {
     phone: contact.phone || '',
     title: contact.title || '',
     department: contact.customFields?.department || '',
-    address: contact.address || contact.customFields?.address || '',
-    stage: contact.stage || '',
-    dealValue: contact.dealValue ? String(contact.dealValue) : '',
-    expectedCloseDate: contact.expectedCloseDate ? contact.expectedCloseDate.slice(0, 10) : '',
   };
 }
 
-// Details card with inline-editable fields. Every field edits in place — no breakout.
-// A Save bar only appears when a field has actually changed from the stored contact.
-// Conversation-scoped actions (Change contact / Unlink) live in an overflow menu in the
-// context-panel HEAD — not here — so this card stays focused on the contact record itself.
-function ContactLinkCard({ contact, company, onLinkContact, picking, onCancelPicking, nav }) {
+// Details card. Read-first: an "Edit" button flips the fields into inputs, then
+// Save/Cancel commit (the shared convention — UI_RULES §101). Conversation-scoped
+// actions (Change contact / Unlink) live in an overflow menu in the context-panel
+// HEAD — not here — so this card stays focused on the contact record itself.
+function ContactLinkCard({ contact, company, onLinkContact, nav }) {
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
-  const stages = selectPipelineStages(state);
 
   const canEdit = usePermission('contacts.edit');
 
+  const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(() => buildForm(contact));
   // Note: we don't reset `form` inside an effect — callers mount this component
   // with key={contact.id} so switching threads remounts it with a fresh form.
@@ -91,26 +84,6 @@ function ContactLinkCard({ contact, company, onLinkContact, picking, onCancelPic
     );
   }
 
-  if (picking) {
-    // Swap-linked-contact mode. Triggered from the overflow menu in the context head.
-    return (
-      <div className="context-card">
-        <div className="context-card-title-row">
-          <div className="context-card-title">Change linked contact</div>
-          <button type="button" className="linklike text-xs" onClick={() => onCancelPicking?.()}>
-            Cancel
-          </button>
-        </div>
-        <ContactPicker
-          value={contact.id}
-          onChange={(id) => { onLinkContact?.(id || null); onCancelPicking?.(); }}
-          companyId={company?.id || null}
-          placeholder="Pick a different contact…"
-        />
-      </div>
-    );
-  }
-
   const original = buildForm(contact);
   const isDirty = Object.keys(form).some((k) => form[k] !== original[k]);
 
@@ -121,15 +94,6 @@ function ContactLinkCard({ contact, company, onLinkContact, picking, onCancelPic
     if (form.email !== original.email) patch.email = form.email.trim();
     if (form.phone !== original.phone) patch.phone = form.phone.trim();
     if (form.title !== original.title) patch.title = form.title.trim();
-    if (form.address !== original.address) patch.address = form.address.trim();
-    if (form.dealValue !== original.dealValue) {
-      patch.dealValue = form.dealValue === '' ? null : Number(form.dealValue) || null;
-    }
-    if (form.expectedCloseDate !== original.expectedCloseDate) {
-      patch.expectedCloseDate = form.expectedCloseDate
-        ? new Date(form.expectedCloseDate + 'T12:00:00').toISOString()
-        : null;
-    }
     if (form.department !== original.department) {
       patch.customFields = { ...(contact.customFields || {}), department: form.department.trim() };
     }
@@ -150,101 +114,58 @@ function ContactLinkCard({ contact, company, onLinkContact, picking, onCancelPic
     if (Object.keys(patch).length > 0) {
       dispatch({ type: ACTIONS.UPDATE_CONTACT, id: contact.id, patch });
     }
-    if (form.stage !== original.stage) {
-      // SET_CONTACT_STAGE also logs activity — only dispatch when stage actually changed.
-      dispatch({ type: ACTIONS.SET_CONTACT_STAGE, id: contact.id, stage: form.stage });
-    }
     toast.success('Contact updated');
+    setEditing(false);
   };
 
-  const handleDiscard = () => setForm(buildForm(contact));
-
-  const showPipelineFields = contact.lifecycle === 'lead' || contact.lifecycle === 'prospect' || Boolean(contact.stage);
+  const handleDiscard = () => { setForm(buildForm(contact)); setEditing(false); };
 
   return (
     <div className="context-card">
       <div className="context-card-title-row">
         <div className="context-card-title">Details</div>
+        {canEdit && !editing && (
+          <button type="button" className="btn btn-outline" onClick={() => setEditing(true)}>Edit</button>
+        )}
       </div>
 
-      <dl className="context-dl context-dl-editable">
+      <dl className={`context-dl${editing ? ' context-dl-editable' : ''}`}>
         <div>
           <dt>Email</dt>
-          <dd>
-            <input className="inline-input" type="email" value={form.email} onChange={up('email')} disabled={!canEdit} />
-          </dd>
+          <dd>{editing
+            ? <input className="inline-input" type="email" value={form.email} onChange={up('email')} disabled={!canEdit} />
+            : (contact.email || <span className="text-muted">—</span>)}</dd>
         </div>
         <div>
           <dt>Phone</dt>
-          <dd>
-            <input className="inline-input" type="tel" value={form.phone} onChange={up('phone')} disabled={!canEdit} placeholder="—" />
-          </dd>
+          <dd>{editing
+            ? <input className="inline-input" type="tel" value={form.phone} onChange={up('phone')} disabled={!canEdit} placeholder="—" />
+            : (contact.phone || <span className="text-muted">—</span>)}</dd>
         </div>
         <div>
           <dt>Title</dt>
-          <dd>
-            <input className="inline-input" value={form.title} onChange={up('title')} disabled={!canEdit} placeholder="—" />
-          </dd>
+          <dd>{editing
+            ? <input className="inline-input" value={form.title} onChange={up('title')} disabled={!canEdit} placeholder="—" />
+            : (contact.title || <span className="text-muted">—</span>)}</dd>
         </div>
         <div>
           <dt>Dept.</dt>
-          <dd>
-            <input className="inline-input" value={form.department} onChange={up('department')} disabled={!canEdit} placeholder="—" />
-          </dd>
+          <dd>{editing
+            ? <input className="inline-input" value={form.department} onChange={up('department')} disabled={!canEdit} placeholder="—" />
+            : (contact.customFields?.department || <span className="text-muted">—</span>)}</dd>
         </div>
         <div>
           <dt>Company</dt>
           <dd>{company ? <Link to={`/clients/${company.id}`} state={nav}>{company.name}</Link> : <span className="text-muted">—</span>}</dd>
         </div>
-        <div>
-          <dt>Address</dt>
-          <dd>
-            <input className="inline-input" value={form.address} onChange={up('address')} disabled={!canEdit} placeholder="—" />
-          </dd>
-        </div>
-        {showPipelineFields && (
-          <>
-            <div>
-              <dt>Stage</dt>
-              <dd>
-                <Select
-                  ariaLabel="Stage"
-                  value={form.stage || ''}
-                  onChange={(v) => up('stage')({ target: { value: v } })}
-                  disabled={!canEdit}
-                  options={[{ value: '', label: '—' }, ...stages.map((s) => ({ value: s.key, label: s.label }))]}
-                />
-              </dd>
-            </div>
-            <div>
-              <dt>Deal value</dt>
-              <dd>
-                <input
-                  className="inline-input" type="number" min="0" step="0.01"
-                  value={form.dealValue} onChange={up('dealValue')} disabled={!canEdit}
-                  placeholder="—"
-                />
-              </dd>
-            </div>
-            <div>
-              <dt>Close date</dt>
-              <dd>
-                <input
-                  className="inline-input" type="date"
-                  value={form.expectedCloseDate} onChange={up('expectedCloseDate')} disabled={!canEdit}
-                />
-              </dd>
-            </div>
-          </>
-        )}
         <div><dt>Last activity</dt><dd><span className="text-muted">{fmtRelative(contact.updatedAt || contact.createdAt)}</span></dd></div>
         <div><dt>Created</dt><dd><span className="text-muted">{fmtDate(contact.createdAt)}</span></dd></div>
       </dl>
 
-      {isDirty && (
+      {editing && (
         <div className="context-card-save-row">
-          <button type="button" className="btn btn-outline btn-sm" onClick={handleDiscard}>Discard</button>
-          <button type="button" className="btn btn-primary btn-sm" onClick={handleSave}>Save</button>
+          <button type="button" className="btn btn-outline" onClick={handleDiscard}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={handleSave} disabled={!isDirty}>Save</button>
         </div>
       )}
     </div>
@@ -333,7 +254,7 @@ function InternalContextPanel({ conversation }) {
     <aside className="context-pane">
       <div className="context-head">
         <h3 className="context-title">{conversation.title || 'Team discussion'}</h3>
-        <div className="text-xs text-muted">Internal-only thread — not visible to clients.</div>
+        <div className="text-xs text-muted">Internal-only channel. Not visible to clients.</div>
       </div>
       <div className="context-body">
         <div className="context-card">
@@ -354,7 +275,7 @@ function InternalContextPanel({ conversation }) {
           {adding ? (
             <div className="participant-add-picker">
               {eligible.length === 0 ? (
-                <div className="text-xs text-muted">Everyone is already in this thread.</div>
+                <div className="text-xs text-muted">Everyone is already in this channel.</div>
               ) : (
                 <ul className="participant-add-list">
                   {eligible.map((u) => (
@@ -376,7 +297,7 @@ function InternalContextPanel({ conversation }) {
               )}
               <button
                 type="button"
-                className="btn-link participant-add-cancel"
+                className="btn btn-link participant-add-cancel"
                 onClick={() => setAdding(false)}
               >
                 Cancel
@@ -385,14 +306,14 @@ function InternalContextPanel({ conversation }) {
           ) : eligible.length > 0 ? (
             <button
               type="button"
-              className="btn btn-outline btn-sm participant-add-trigger"
+              className="btn btn-outline participant-add-trigger"
               onClick={() => setAdding(true)}
             >
               Add participant
             </button>
           ) : (
             <div className="text-xs text-muted participant-add-empty">
-              Everyone is already in this thread.
+              Everyone is already in this channel.
             </div>
           )}
         </div>
@@ -405,23 +326,6 @@ export default function ConversationContextPanel({ conversation, contact, onLink
   const state = useStore();
   const nav = useFromHere();
   const [tab, setTab] = useState('contact');
-  const [focusOpen, setFocusOpen] = useState(false);
-  // Conversation-scoped actions live on the panel HEAD, not inside the details card.
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [pickingContact, setPickingContact] = useState(false);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onClick = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false); };
-    const onKey = (e) => { if (e.key === 'Escape') setMenuOpen(false); };
-    window.addEventListener('mousedown', onClick);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onClick);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [menuOpen]);
 
   // Hooks must run on every render — compute activity/invoices/jobs up front,
   // even when we'll fall through to an early return below.
@@ -478,13 +382,13 @@ export default function ConversationContextPanel({ conversation, contact, onLink
         <div className="context-head-text">
           {contact ? (
             <>
-              <Link to={`/contacts/${contact.id}`} state={nav} className="context-head-name">
+              <span className="context-head-name">
                 {contact.firstName} {contact.lastName}
-              </Link>
+              </span>
               <div className="text-xs text-muted">{contact.title || '—'}</div>
               <div className="context-head-badges">
                 <Badge variant={LIFECYCLE_VARIANTS[contact.lifecycle] || 'slate'}>
-                  {contact.lifecycle.charAt(0).toUpperCase() + contact.lifecycle.slice(1)}
+                  {(contact.lifecycle || 'lead').charAt(0).toUpperCase() + (contact.lifecycle || 'lead').slice(1)}
                 </Badge>
               </div>
             </>
@@ -498,49 +402,6 @@ export default function ConversationContextPanel({ conversation, contact, onLink
             </>
           )}
         </div>
-        {contact && (
-          <div className="context-head-actions">
-            <div className="context-head-menu-wrap" ref={menuRef}>
-              <button
-                type="button"
-                className="context-head-icon-btn"
-                aria-label="Conversation link options"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                title="Conversation link options"
-                onClick={() => setMenuOpen((v) => !v)}
-              >
-                <Icon name="dots" size={16} />
-              </button>
-              {menuOpen && (
-                <div className="context-head-menu" role="menu">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="context-head-menu-item"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setTab('contact');
-                      setPickingContact(true);
-                    }}
-                  >
-                    <Icon name="user" size={14} />
-                    <span>Change contact</span>
-                  </button>
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              className="context-head-icon-btn"
-              aria-label="Open contact in focus view"
-              title="Open contact in focus view"
-              onClick={() => setFocusOpen(true)}
-            >
-              <Icon name="expand" size={16} />
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="tab-container tab-container-line context-tabs">
@@ -559,8 +420,6 @@ export default function ConversationContextPanel({ conversation, contact, onLink
               contact={contact}
               company={company}
               onLinkContact={onLinkContact}
-              picking={pickingContact}
-              onCancelPicking={() => setPickingContact(false)}
               nav={nav}
             />
             {contact && (
@@ -653,11 +512,6 @@ export default function ConversationContextPanel({ conversation, contact, onLink
         )}
       </div>
 
-      <ContactFocusModal
-        open={focusOpen}
-        onClose={() => setFocusOpen(false)}
-        contactId={contact?.id || null}
-      />
     </aside>
   );
 }
@@ -723,7 +577,7 @@ function NotesCard({ contact }) {
           <div className="notes-compose-actions">
             <button
               type="button"
-              className="btn btn-primary btn-sm"
+              className="btn btn-primary"
               disabled={!draft.trim()}
               onClick={append}
             >

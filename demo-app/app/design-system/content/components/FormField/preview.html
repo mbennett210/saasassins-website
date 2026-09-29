@@ -1,0 +1,30 @@
+<!-- @dsCard group="Forms" height=400 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FormField</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6); }
+  .pv .card { margin: 0; }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Demo() {
+  var a = React.useState('Harbor View Offices'), b = React.useState('305-55'), c = React.useState('Nightly clean'), d = React.useState('');
+  return h('div', { className: 'card' },
+    h('div', { className: 'form-row' },
+      h(CS.FormField, { label: 'Company name', name: 'company', required: true, value: a[0], onChange: function (e) { a[1](e.target.value); } }),
+      h(CS.FormField, { label: 'Phone', name: 'phone', type: 'tel', value: b[0], onChange: function (e) { b[1](e.target.value); }, error: 'Enter a valid phone number.' })),
+    h(CS.FormField, { label: 'Service', name: 'service', as: 'select', value: c[0], onChange: function (e) { c[1](e.target.value); }, options: ['Nightly clean', 'Deep clean', 'Day porter'] }),
+    h(CS.FormField, { label: 'Crew note', name: 'note', as: 'textarea', rows: 2, placeholder: 'Gate code, parking, alarm notes…', value: d[0], onChange: function (e) { d[1](e.target.value); }, help: 'Shown to the crew on every clean.' })
+  );
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(Demo));
+</script>
+</body>
+</html>

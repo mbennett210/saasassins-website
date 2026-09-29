@@ -1,17 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useFromHere } from '../hooks/useFromHere';
+import { useIsMobile } from '../hooks/useIsMobile';
 import Avatar from './Avatar';
 import ChannelBadge from './ChannelBadge';
+import Badge from './Badge';
 import EmptyState from './EmptyState';
 import Icon from './Icon';
-import SnippetPicker from './SnippetPicker';
+import SignaturePreview from './SignaturePreview';
+import ThreadTitleEditor from './ThreadTitleEditor';
 import { useToast } from './Toast';
 import { useStore } from '../store';
-import { selectUserById, selectOtherParticipant, selectSignaturePrefs } from '../store/selectors';
-import { fmtTime, fmtRelative } from '../lib/dates';
+import {
+  selectUserById, selectOtherParticipant, selectSignaturePrefs,
+  selectThreadCreator, selectCanRenameThread,
+} from '../store/selectors';
+import { CREATOR_STATE_SUFFIX } from '../lib/threads';
+import { fmtTime, fmtRelative, fmtDate, dayKey, addDaysKey } from '../lib/dates';
 import { ATTACHMENT_MAX_BYTES, formatBytes } from '../lib/attachments';
-import { appendSignature, signatureHasContent, buildOutboundEmail } from '../lib/signature';
+import { signatureHasContent, buildOutboundEmail } from '../lib/signature';
 
 // Filter selected files by size cap. Returns the kept files and reports the
 // rejected ones via a toast so the user knows what got dropped. Shared by
@@ -26,7 +33,7 @@ function filterBySizeCap(files, toast) {
   if (rejected.length > 0) {
     const max = formatBytes(ATTACHMENT_MAX_BYTES);
     if (rejected.length === 1) {
-      toast.error(`"${rejected[0].name}" is ${formatBytes(rejected[0].size)} — over the ${max} limit.`);
+      toast.error(`"${rejected[0].name}" is ${formatBytes(rejected[0].size)}. Over the ${max} limit.`);
     } else {
       toast.error(`${rejected.length} files exceeded the ${max} per-file limit and were skipped.`);
     }
@@ -39,16 +46,48 @@ function initialsFor(contact) {
   return `${(contact.firstName || '')[0] || ''}${(contact.lastName || '')[0] || ''}`.toUpperCase() || 'C';
 }
 
-function InternalBubble({ message }) {
+// Byline for a message, surviving the author's removal from the team. DELETE_USER
+// nulls authorUserId but demotes the name onto the message (authorName), so history
+// keeps its attribution instead of rendering as anonymous text.
+function authorNameOf(message, author) {
+  return author?.name || message?.authorName || null;
+}
+
+// Initials from a free-text display name (for DM/author avatars in the thread).
+function initialsFromName(name) {
+  if (!name) return '?';
+  const parts = String(name).trim().split(/\s+/);
+  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?';
+}
+
+// "Today" / "Yesterday" / "Mon, Sep 8" label for a thread day separator, on the
+// org calendar (dayKey) so it splits on the same midnight fmtTime renders against.
+function dayLabel(iso) {
+  const k = dayKey(iso);
+  const today = dayKey(Date.now());
+  if (k === today) return 'Today';
+  if (k === addDaysKey(today, -1)) return 'Yesterday';
+  return fmtDate(iso, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function InternalBubble({ message, currentUserId }) {
   const state = useStore();
   const author = message.authorUserId ? selectUserById(state, message.authorUserId) : null;
+  const authorName = authorNameOf(message, author);
+  const isMine = author?.id === currentUserId;
+  // Internal team channels read as a group chat (S39): my notes outgoing (right),
+  // teammates' incoming (left) with an avatar + name. "Internal" is signalled by
+  // the header + the composer's "Only your team can see this" note.
   return (
-    <div className="internal-bubble">
-      <div className="internal-bubble-head">
-        {author && <span className="internal-bubble-author">{author.name}</span>}
-        <span className="internal-bubble-time">{fmtTime(message.sentAt)} · {fmtRelative(message.sentAt)}</span>
+    <div className={`chat-row ${isMine ? 'out' : 'in'}`}>
+      {!isMine && <div className="chat-av" aria-hidden="true">{initialsFromName(authorName)}</div>}
+      <div className="chat-col">
+        <div className={`chat-bubble ${isMine ? 'outgoing' : 'incoming'}`}>
+          {!isMine && authorName && <div className="chat-bubble-author">{authorName}</div>}
+          <div>{message.text}</div>
+        </div>
+        <div className="chat-time">{fmtTime(message.sentAt)} · {fmtRelative(message.sentAt)}</div>
       </div>
-      <div className="internal-bubble-body">{message.text}</div>
     </div>
   );
 }
@@ -56,7 +95,7 @@ function InternalBubble({ message }) {
 function emailMeta(message, contact, author) {
   const isOut = message.direction === 'out';
   const fromLabel = isOut
-    ? (author?.name || 'You')
+    ? (authorNameOf(message, author) || 'You')
     : (contact ? `${contact.firstName} ${contact.lastName}` : message.fromEmail || 'Unknown');
   const fromAddr = isOut
     ? (message.toInboxEmail || author?.email || '')
@@ -215,7 +254,7 @@ function EmailModal({ message, contact, onClose, onReply }) {
               Forward
             </button>
           </div>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
+          <button type="button" className="btn-icon" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
         </div>
 
         <div className="email-modal-header">
@@ -247,6 +286,14 @@ function EmailModal({ message, contact, onClose, onReply }) {
 
         {mode && (
           <form className="email-modal-reply" onSubmit={handleSend}>
+            {/* Do-Not-Contact warning — WARN, not block (UI_RULES §47): Send
+                stays enabled so a human can still answer a customer who wrote
+                in first. */}
+            {contact?.doNotContact && (
+              <div className="callout callout-danger" style={{ marginBottom: 8 }}>
+                This contact is marked <strong>Do Not Contact</strong>. Only reply if they contacted you first.
+              </div>
+            )}
             {/* To — editable in both modes. Reply pre-fills the other party;
                 forward starts blank. Comma-separate to reach several people. */}
             <div className="email-recip-row">
@@ -261,10 +308,10 @@ function EmailModal({ message, contact, onClose, onReply }) {
               />
               <div className="email-recip-toggles">
                 {!showReplyCc && (
-                  <button type="button" className="btn-link" onClick={() => setShowReplyCc(true)}>Cc</button>
+                  <button type="button" className="linklike" onClick={() => setShowReplyCc(true)}>Cc</button>
                 )}
                 {!showReplyBcc && (
-                  <button type="button" className="btn-link" onClick={() => setShowReplyBcc(true)}>Bcc</button>
+                  <button type="button" className="linklike" onClick={() => setShowReplyBcc(true)}>Bcc</button>
                 )}
               </div>
             </div>
@@ -280,12 +327,12 @@ function EmailModal({ message, contact, onClose, onReply }) {
                 />
                 <button
                   type="button"
-                  className="btn-link email-recip-hide"
+                  className="btn-icon btn-icon-ghost email-recip-hide"
                   onClick={() => { setShowReplyCc(false); setReplyCc(''); }}
                   title="Hide Cc"
                   aria-label="Hide Cc"
                 >
-                  ×
+                  <Icon name="x" size={14} />
                 </button>
               </div>
             )}
@@ -301,21 +348,21 @@ function EmailModal({ message, contact, onClose, onReply }) {
                 />
                 <button
                   type="button"
-                  className="btn-link email-recip-hide"
+                  className="btn-icon btn-icon-ghost email-recip-hide"
                   onClick={() => { setShowReplyBcc(false); setReplyBcc(''); }}
                   title="Hide Bcc"
                   aria-label="Hide Bcc"
                 >
-                  ×
+                  <Icon name="x" size={14} />
                 </button>
               </div>
             )}
             <div className="email-recip-hint">
-              Sending to more than one person? Separate addresses with a comma — e.g. <code>alex@acme.com, sam@acme.com</code>.
+              Sending to more than one person? Separate addresses with a comma. E.g. <code>alex@acme.com, sam@acme.com</code>.
             </div>
             <textarea
               className="email-modal-reply-input"
-              placeholder={mode === 'forward' ? 'Add a note — the original is quoted below…' : 'Type your reply…'}
+              placeholder={mode === 'forward' ? 'Add a note. The original is quoted below…' : 'Type your reply…'}
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
               autoFocus={mode === 'reply' || mode === 'replyAll'}
@@ -328,8 +375,7 @@ function EmailModal({ message, contact, onClose, onReply }) {
             {signatureHasContent(sigPrefs) && (
               <div style={{ borderTop: '1px dashed var(--border-light)', paddingTop: 8 }}>
                 <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Your signature is added when you send</div>
-                {(sigPrefs.text || '').trim() && <div style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: 'var(--text-body)' }}>{sigPrefs.text}</div>}
-                {sigPrefs.imageDataUrl && <img src={sigPrefs.imageDataUrl} alt="Signature" style={{ maxHeight: 48, maxWidth: 200, marginTop: 4, display: 'block' }} />}
+                <SignaturePreview prefs={sigPrefs} />
               </div>
             )}
             {replyAttachments.length > 0 && (
@@ -339,17 +385,17 @@ function EmailModal({ message, contact, onClose, onReply }) {
                     <Icon name="paperclip" size={12} />
                     <span>{a.name}</span>
                     <span className="text-muted text-xs">({fmtSize(a.size)})</span>
-                    <button type="button" className="email-attachment-remove" onClick={() => removeAttachment(i)} aria-label="Remove">&times;</button>
+                    <button type="button" className="chip-remove" onClick={() => removeAttachment(i)} aria-label="Remove">&times;</button>
                   </div>
                 ))}
               </div>
             )}
             <div className="email-modal-reply-actions">
-              <button type="button" className="btn btn-outline btn-sm" onClick={() => fileRef.current?.click()}>
+              <button type="button" className="btn btn-outline" onClick={() => fileRef.current?.click()}>
                 <Icon name="paperclip" size={14} /> Attach
               </button>
               <input ref={fileRef} type="file" multiple hidden onChange={handleAttach} />
-              <button type="submit" className="btn btn-primary btn-sm" disabled={!replyText.trim() || !toRecipients.trim()}>{mode === 'forward' ? 'Forward' : 'Send'}</button>
+              <button type="submit" className="btn btn-primary" disabled={!replyText.trim() || !toRecipients.trim()}>{mode === 'forward' ? 'Forward' : 'Send'}</button>
             </div>
             <div className="compose-hint">Click {mode === 'forward' ? 'Forward' : 'Send'} or ⌘/Ctrl+Enter to send · Enter for new line</div>
           </form>
@@ -375,7 +421,7 @@ function EmailReviewModal({ fromName, fromAddr, to, subject, cc, bcc, body, atta
         <div className="email-modal-top">
           <Icon name="mail" size={18} />
           <span className="email-modal-title">Review &amp; send</span>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
+          <button type="button" className="btn-icon" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
         </div>
 
         <div className="email-modal-header">
@@ -402,16 +448,15 @@ function EmailReviewModal({ fromName, fromAddr, to, subject, cc, bcc, body, atta
           {body}
           {signatureHasContent(signature) && (
             <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px dashed var(--border-light)' }}>
-              {(signature.text || '').trim() && <div style={{ whiteSpace: 'pre-wrap' }}>{signature.text}</div>}
-              {signature.imageDataUrl && <img src={signature.imageDataUrl} alt="Signature" style={{ maxHeight: 64, maxWidth: 240, marginTop: 6, display: 'block' }} />}
+              <SignaturePreview prefs={signature} />
             </div>
           )}
         </div>
 
         <div className="email-modal-reply">
           <div className="email-modal-reply-actions">
-            <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>Back to edit</button>
-            <button type="button" className="btn btn-primary btn-sm" onClick={onConfirm} disabled={!canSend}>Send</button>
+            <button type="button" className="btn btn-outline" onClick={onClose}>Back to edit</button>
+            <button type="button" className="btn btn-primary" onClick={onConfirm} disabled={!canSend}>Send</button>
           </div>
         </div>
       </div>
@@ -419,7 +464,7 @@ function EmailReviewModal({ fromName, fromAddr, to, subject, cc, bcc, body, atta
   );
 }
 
-function EmailBubble({ message, contact, onReply, onRetry }) {
+function EmailBubble({ message, contact, onReply, onRetry, onExpand }) {
   const state = useStore();
   const author = message.authorUserId ? selectUserById(state, message.authorUserId) : null;
   const isOut = message.direction === 'out';
@@ -444,8 +489,8 @@ function EmailBubble({ message, contact, onReply, onRetry }) {
         )}
         <div className="email-preview-footer">
           <span className="chat-time">{fmtTime(message.sentAt)}</span>
-          <button type="button" className="email-expand-btn" onClick={() => setShowModal(true)}>
-            {isOut ? 'Expand' : 'Expand / Reply'}
+          <button type="button" className="btn btn-sm btn-gold" onClick={() => (onExpand ? onExpand() : setShowModal(true))}>
+            {isOut ? 'Open' : 'Read & Reply'}
           </button>
         </div>
         {isOut && message.deliveryStatus === 'failed' && <FailedRow message={message} onRetry={onRetry} />}
@@ -462,30 +507,85 @@ function EmailBubble({ message, contact, onReply, onRetry }) {
   );
 }
 
-// Inline "Failed to send · Retry" row shown under an outbound message whose
-// delivery failed. Retry re-fires the send for that exact message.
+// Derive a short, scannable code from a free-text failure reason — a
+// provider/HTTP-style number if one is present (e.g. Twilio 30003), else a
+// category slug — so the compact row shows something clickable without dumping
+// the full text. Returns null when nothing meaningful can be summarized.
+function deriveErrorCode(reason) {
+  const r = String(reason || '');
+  const num = r.match(/\b(\d{3,6})\b/); // Twilio (30003, 21211…) / HTTP status
+  if (num) return `Error ${num[1]}`;
+  if (/no (email|phone)/i.test(r)) return 'No recipient';
+  if (/not connected|not provisioned|a2p|no twilio number/i.test(r)) return 'Not configured';
+  if (/bounce|mailbox|undeliverable|recipient/i.test(r)) return 'Bounced';
+  if (/unauthor|invalid_grant|revoked|token|reconnect|\b40[13]\b/i.test(r)) return 'Auth expired';
+  return null;
+}
+
+// Inline "Failed to deliver" row under an outbound message whose delivery failed
+// — for both SMS and email (rendered from ChatBubble + the email preview).
+// Compact by default: shows the status + a derived error code; clicking it
+// expands the full reason + provider reference so staff can see exactly why.
+// Retry re-fires the send for that exact message.
 function FailedRow({ message, onRetry }) {
-  const reason = (message.failureReason || '').slice(0, 100);
+  const [open, setOpen] = useState(false);
+  const reason = message.failureReason || '';
+  const code = deriveErrorCode(reason);
+  const ref = message.twilioMessageSid || message.emailMessageId || null;
+  const channel = (message.emailMessageId || message.emailSubject) ? 'Email' : 'SMS';
+  const hasDetail = Boolean(reason || ref);
   return (
     <div className="msg-failed">
-      <span className="msg-failed-label">Failed to send{reason ? ` · ${reason}` : ''}</span>
+      <button
+        type="button"
+        className={`linklike linklike-danger msg-failed-toggle ${open ? 'open' : ''}`}
+        onClick={() => hasDetail && setOpen((o) => !o)}
+        aria-expanded={hasDetail ? open : undefined}
+        disabled={!hasDetail}
+      >
+        <Icon name="warning" size={11} />
+        <span className="msg-failed-label">Failed to deliver</span>
+        {code && <span className="msg-failed-code">{code}</span>}
+        {hasDetail && (
+          <span className={`msg-failed-chevron ${open ? 'open' : ''}`}><Icon name="chevronDown" size={11} /></span>
+        )}
+      </button>
       {onRetry && (
-        <button type="button" className="msg-retry-btn" onClick={() => onRetry(message)}>Retry</button>
+        <button type="button" className="btn btn-sm btn-outline" onClick={() => onRetry(message)}>Retry</button>
+      )}
+      {open && hasDetail && (
+        <div className="msg-failed-detail">
+          <div><span className="msg-failed-k">Channel</span>{channel}</div>
+          {reason && <div><span className="msg-failed-k">Why</span>{reason}</div>}
+          {ref && <div><span className="msg-failed-k">Reference</span><code>{ref}</code></div>}
+        </div>
       )}
     </div>
   );
 }
 
-function ChatBubble({ message, onRetry }) {
+function ChatBubble({ message, contact, onRetry }) {
   const state = useStore();
   const author = message.authorUserId ? selectUserById(state, message.authorUserId) : null;
+  const authorName = authorNameOf(message, author);
   const isOut = message.direction === 'out';
+  // Honest delivery state only — the model tracks a status (…/delivered/failed),
+  // never a per-message "read" receipt, so we surface the real one or nothing.
+  const ds = message.deliveryStatus;
+  const status = isOut && ds && ds !== 'failed' ? ds.charAt(0).toUpperCase() + ds.slice(1) : null;
   return (
-    <div className={`chat-bubble ${isOut ? 'outgoing' : 'incoming'}`}>
-      {isOut && author && <div className="chat-bubble-author">{author.name}</div>}
-      <div>{message.text}</div>
-      <div className="chat-time">{fmtTime(message.sentAt)}</div>
-      {isOut && message.deliveryStatus === 'failed' && <FailedRow message={message} onRetry={onRetry} />}
+    <div className={`chat-row ${isOut ? 'out' : 'in'}`}>
+      {!isOut && <div className="chat-av" aria-hidden="true">{initialsFor(contact)}</div>}
+      <div className="chat-col">
+        <div className={`chat-bubble ${isOut ? 'outgoing' : 'incoming'}`}>
+          {isOut && authorName && <div className="chat-bubble-author">{authorName}</div>}
+          <div>{message.text}</div>
+        </div>
+        <div className="chat-time">
+          {fmtTime(message.sentAt)}{status && <span className="chat-status">· {status}</span>}
+        </div>
+        {isOut && ds === 'failed' && <FailedRow message={message} onRetry={onRetry} />}
+      </div>
     </div>
   );
 }
@@ -493,12 +593,18 @@ function ChatBubble({ message, onRetry }) {
 function DmBubble({ message, currentUserId }) {
   const state = useStore();
   const author = message.authorUserId ? selectUserById(state, message.authorUserId) : null;
+  const authorName = authorNameOf(message, author);
   const isMine = author?.id === currentUserId;
   return (
-    <div className={`chat-bubble ${isMine ? 'outgoing' : 'incoming'}`}>
-      {!isMine && author && <div className="chat-bubble-author">{author.name}</div>}
-      <div>{message.text}</div>
-      <div className="chat-time">{fmtTime(message.sentAt)}</div>
+    <div className={`chat-row ${isMine ? 'out' : 'in'}`}>
+      {!isMine && <div className="chat-av" aria-hidden="true">{initialsFromName(authorName)}</div>}
+      <div className="chat-col">
+        <div className={`chat-bubble ${isMine ? 'outgoing' : 'incoming'}`}>
+          {!isMine && authorName && <div className="chat-bubble-author">{authorName}</div>}
+          <div>{message.text}</div>
+        </div>
+        <div className="chat-time">{fmtTime(message.sentAt)}</div>
+      </div>
     </div>
   );
 }
@@ -511,8 +617,7 @@ export default function ConversationMessagePanel({
   isSuperAdmin,
   onSend,
   onDeleteForever,
-  onSetStatus,
-  onSnooze,
+  onRename,                      // (title) => void — internal threads only; omit to disable renaming
   onToggleStar,
   onToggleMute,
   onBack,
@@ -522,19 +627,21 @@ export default function ConversationMessagePanel({
   connectedInboxes = [],
   defaultInboxId = null,
   emailBlockers = [],            // [{ key, label }] when sending email is blocked
-  onSwitchChannel,               // (targetChannel) => void — toggles compose channel
   composeChannelOverride = null,
   onRetry,                       // (message) => void — re-send a failed message
+  initialDraft = null,           // seed the composer once (e.g. a payment reminder)
+  hideHeader = false,            // MessagesDock mini-view supplies its own chrome; drop the pane's header row
+  onEmailExpand = null,          // dock: route an email message's Open/Read & Reply to the full page (no in-dock email compose)
 }) {
   const scrollRef = useRef(null);
-  const navigate = useNavigate();
   const nav = useFromHere();
   const toast = useToast();
   const state = useStore();
+  const isMobile = useIsMobile();
 
   const composeChannel = composeChannelOverride || conversation?.channel || 'sms';
   const [draft, setDraft] = useState('');
-  const [snippetId, setSnippetId] = useState(null);
+  const [snippetId, setSnippetId] = useState(null); // no in-composer picker (S39); reset-only, kept null in the send payload
   const [subject, setSubject] = useState('');
   const [selectedInboxId, setSelectedInboxId] = useState(defaultInboxId || null);
   const [composeAttachments, setComposeAttachments] = useState([]);
@@ -549,12 +656,13 @@ export default function ConversationMessagePanel({
   // Email Review & Send preview modal — gates the actual send.
   const [reviewOpen, setReviewOpen] = useState(false);
 
-  // Whether SMS↔Email toggle should appear at all on this thread. Only on
-  // external (sms/email) channels with a linked contact who has both modes.
-  const isExternalThread = composeChannel === 'sms' || composeChannel === 'email';
-  const contactHasPhone = Boolean(contact?.phone);
-  const contactHasEmail = Boolean(contact?.email);
-  const showChannelToggle = isExternalThread && contact && contactHasPhone && contactHasEmail;
+  // Email compose placement (Daniel, S39): DESKTOP restores the full inline email
+  // composer (subject / Sending-as / body / Review & Send — all still wired below);
+  // MOBILE keeps the read-only note for now (reply there via the expand-to-read card;
+  // composing a NEW email on mobile is a separate surface, TBD). Gate on the same
+  // 640px seam the mobile messaging layout uses.
+  const isEmailThread = composeChannel === 'email';
+  const emailReadOnly = isEmailThread && isMobile;
 
   // Pre-fill subject with "Re: <prior subject>" when continuing an email
   // thread; first message in a thread starts with an empty subject.
@@ -582,46 +690,20 @@ export default function ConversationMessagePanel({
     [connectedInboxes, selectedInboxId]
   );
 
-  // Compose textarea height — controlled in JS so the drag handle can grow it
-  // *upward* from the top edge (the native textarea resize only goes down from
-  // the bottom-right corner). 96px ≈ 4 lines, comfortable default for both
-  // quick replies and longer notes.
-  const COMPOSE_MIN_H = 56;
-  const COMPOSE_MAX_H = 360;
-  const [composeHeight, setComposeHeight] = useState(96);
-  const composeDragRef = useRef(null);
-  const [isResizingCompose, setIsResizingCompose] = useState(false);
+  // Compose is a fixed-height uniform pill now (S39) — the drag-to-grow handle
+  // was removed; long text scrolls within the pill.
 
-  const onComposeResizeStart = useCallback((e) => {
-    e.preventDefault();
-    composeDragRef.current = { startY: e.clientY, startH: composeHeight };
-    setIsResizingCompose(true);
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'ns-resize';
-    const onMove = (me) => {
-      const ds = composeDragRef.current;
-      if (!ds) return;
-      // Drag UP (clientY decreases) → height grows. That makes the handle in
-      // the top-right behave like the top edge of the box: pull it up to make
-      // the textarea taller.
-      const dy = ds.startY - me.clientY;
-      const next = Math.max(COMPOSE_MIN_H, Math.min(COMPOSE_MAX_H, ds.startH + dy));
-      setComposeHeight(next);
-    };
-    const onUp = () => {
-      composeDragRef.current = null;
-      setIsResizingCompose(false);
-      document.body.style.userSelect = '';
-      document.body.style.cursor = '';
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  }, [composeHeight]);
-
+  // Reset the composer on a real conversation change, seeding it from a
+  // deep-link draft (e.g. a payment reminder) when present, else clearing it.
+  // Guarded by the last-processed conversation id so React StrictMode's dev
+  // double-invoke short-circuits the replay pass — the old reset+seed effect
+  // pair raced and the replay cleared a just-seeded draft. `initialDraft` can
+  // stay in deps because the guard blocks a same-conversation re-run from
+  // clobbering the user's edits. See UI_RULES §45.
+  const lastConvRef = useRef(null);
   useEffect(() => {
-    setDraft('');
+    if (lastConvRef.current === conversation?.id) return;
+    lastConvRef.current = conversation?.id;
     setSnippetId(null);
     setComposeAttachments([]);
     setComposeCc('');
@@ -629,7 +711,8 @@ export default function ConversationMessagePanel({
     setShowComposeCc(false);
     setShowComposeBcc(false);
     setReviewOpen(false);
-  }, [conversation?.id]);
+    setDraft(initialDraft || '');
+  }, [conversation?.id, initialDraft]);
 
   // Whether the Send button should be disabled. Email channel is gated on
   // having an active connected inbox AND a Subject (subject only required
@@ -660,6 +743,11 @@ export default function ConversationMessagePanel({
   const isInternalThread = conversation.channel === 'internal';
   const isDmThread = conversation.channel === 'dm';
   const dmOther = isDmThread ? selectOtherParticipant(state, conversation, currentUser?.id) : null;
+  const threadCreator = selectThreadCreator(state, conversation);
+  // Thread names belong to their creator. The one exception — a Super Admin
+  // renaming an ORPHANED thread, whose owner is gone and whose name would
+  // otherwise be frozen forever — lives inside the selector, not here.
+  const canRenameThread = onRename ? selectCanRenameThread(state, conversation, currentUser) : false;
   let headerName;
   let headerSub;
   let initials;
@@ -671,7 +759,12 @@ export default function ConversationMessagePanel({
     avatarVariant = dmOther?.avatar || 1;
   } else if (isInternalThread) {
     headerName = conversation.title || 'Team discussion';
-    headerSub = 'Internal team thread';
+    // Threads outlive their creators, so say who made this one — including when
+    // they're gone. Without it a departed creator reads as no creator at all,
+    // and there's no way to tell an orphan from a live thread.
+    headerSub = threadCreator.name
+      ? `Internal team channel · Created by ${threadCreator.name}${CREATOR_STATE_SUFFIX[threadCreator.state] || ''}`
+      : 'Internal team channel';
     initials = 'T';
     avatarVariant = 3;
   } else {
@@ -681,8 +774,9 @@ export default function ConversationMessagePanel({
     avatarVariant = ((contact?.id?.length || 0) % 5) + 1;
   }
 
-  // Per-user signature appended to outbound EMAIL bodies (text now; image once
-  // HTML sending lands). SMS/internal sends never get it.
+  // Per-user signature appended to outbound EMAIL bodies — text inline, plus the
+  // image rendered inline via Content-ID (buildOutboundEmail). SMS/internal
+  // sends never get it.
   const sigPrefs = selectSignaturePrefs(state, currentUser?.id || state.currentUserId);
 
   // The actual send — fires onSend with the composed payload and resets the
@@ -746,54 +840,85 @@ export default function ConversationMessagePanel({
     handleSend(e);
   };
 
-  const handleInsertSnippet = ({ id, body }) => {
-    setSnippetId(id);
-    setDraft((prev) => (prev ? `${prev}\n${body}` : body));
-  };
 
   const isMuted = currentUser && (conversation.mutedByUserIds || []).includes(currentUser.id);
   const isStarredByMe = Boolean(currentUser && (conversation.starredByUserIds || []).includes(currentUser.id));
   const canHardDelete = Boolean(isSuperAdmin || (currentUser && conversation.createdByUserId === currentUser.id));
 
+  // Build the timeline with day separators (Today / Yesterday / date) between
+  // day changes. Bubble type is still chosen per channel/shape exactly as before.
+  let _lastDayKey = null;
+  const messageEls = messages.map((m) => {
+    const dk = dayKey(m.sentAt);
+    const sep = dk !== _lastDayKey
+      ? <div className="chat-daysep" key={`sep-${m.id}`}><span>{dayLabel(m.sentAt)}</span></div>
+      : null;
+    _lastDayKey = dk;
+    let bubble;
+    if (isDmThread) {
+      bubble = <DmBubble key={m.id} message={m} currentUserId={currentUser?.id} />;
+    } else if (isInternalThread) {
+      bubble = <InternalBubble key={m.id} message={m} currentUserId={currentUser?.id} />;
+    } else if (m.emailSubject || m.fromEmail) {
+      bubble = <EmailBubble key={m.id} message={m} contact={contact} onReply={onSend} onRetry={onRetry} onExpand={onEmailExpand} />;
+    } else {
+      bubble = <ChatBubble key={m.id} message={m} contact={contact} onRetry={onRetry} />;
+    }
+    return sep ? <Fragment key={`grp-${m.id}`}>{sep}{bubble}</Fragment> : bubble;
+  });
+
   return (
     <section className="message-pane">
+      {!hideHeader && (
       <div className="message-pane-head">
         {onBack && (
-          <button type="button" className="msg-back-btn" onClick={onBack} aria-label="Back to inbox">
+          <button type="button" className="btn-icon btn-icon-ghost msg-back-btn" onClick={onBack} aria-label="Back to inbox">
             <Icon name="chevronLeft" size={20} />
           </button>
         )}
         <Avatar initials={initials} variant={avatarVariant} size="sm" />
         <div className="message-pane-titles">
           <div className="message-pane-name">
-            {isInternalThread || !contact ? (
-              headerName
+            {isInternalThread ? (
+              <ThreadTitleEditor
+                title={conversation.title}
+                canEdit={canRenameThread}
+                onRename={onRename}
+              />
             ) : (
-              <button type="button" className="linklike" onClick={() => navigate(`/contacts/${contact.id}`, { state: nav })}>
-                {headerName}
-              </button>
+              headerName
             )}
             {!isInternalThread && <ChannelBadge channel={conversation.channel} />}
+            {!isInternalThread && contact?.doNotContact && <Badge variant="red">DNC</Badge>}
           </div>
           <div className="message-pane-sub text-xs text-muted">{headerSub}</div>
         </div>
         <div className="message-pane-actions">
-          <button
-            type="button"
-            className={`icon-btn ${isStarredByMe ? 'starred' : ''}`}
-            onClick={onToggleStar}
-            title={isStarredByMe ? 'Unstar' : 'Star'}
-            aria-label={isStarredByMe ? 'Unstar' : 'Star'}
-          >
-            <Icon name="star" size={14} />
-          </button>
-          {!isDmThread && (
+          {/* onToggleStar/onToggleMute are omitted for a crew (non-office) viewer — the crew
+              write merge drops star/mute, so the toggle would be dead (CS-002). */}
+          {onToggleStar && (
             <button
               type="button"
-              className={`icon-btn ${isMuted ? 'is-muted' : ''}`}
+              className={`btn-icon ${isStarredByMe ? 'starred' : ''}`}
+              onClick={onToggleStar}
+              title={isStarredByMe ? 'Unstar' : 'Star'}
+              aria-label={isStarredByMe ? 'Unstar' : 'Star'}
+            >
+              <Icon name="star" size={14} />
+            </button>
+          )}
+          {/* Snooze = mute notifications for this thread (shown as a slashed bell).
+              Works for every thread type — the engine honors mutedByUserIds before
+              the channel branches (lib/notifications resolveMessageEvent), so DMs
+              must be snooze-able too (a chatty teammate shouldn't force the global
+              newDM toggle off). */}
+          {onToggleMute && (
+            <button
+              type="button"
+              className={`btn-icon ${isMuted ? 'is-muted' : ''}`}
               onClick={onToggleMute}
-              title={isMuted ? 'Notifications silenced — click to unmute' : 'Silence notifications for this thread'}
-              aria-label={isMuted ? 'Unmute notifications' : 'Mute notifications'}
+              title={isMuted ? 'Snoozed. Click to un-snooze notifications' : 'Snooze notifications for this thread'}
+              aria-label={isMuted ? 'Un-snooze notifications' : 'Snooze notifications'}
               aria-pressed={isMuted ? 'true' : 'false'}
             >
               <Icon name={isMuted ? 'bellOff' : 'bell'} size={14} />
@@ -802,7 +927,7 @@ export default function ConversationMessagePanel({
           {canHardDelete && (
             <button
               type="button"
-              className="btn btn-danger btn-sm"
+              className="btn btn-danger"
               onClick={onDeleteForever}
               title="Permanently delete the thread and all messages for everyone"
             >
@@ -812,55 +937,22 @@ export default function ConversationMessagePanel({
           )}
         </div>
       </div>
+      )}
 
       <div className="message-pane-scroll" ref={scrollRef}>
-        {messages.length === 0 ? (
-          <EmptyState message="No messages yet." />
-        ) : messages.map((m) => {
-          if (isDmThread) {
-            return <DmBubble key={m.id} message={m} currentUserId={currentUser?.id} />;
-          }
-          // Internal team threads: every message is direction='internal' by definition.
-          // External threads (sms/email) only carry direction='in'/'out' — the cross-channel
-          // internal-note feature was removed in v26, so a chat bubble is always correct here.
-          if (isInternalThread) {
-            return <InternalBubble key={m.id} message={m} />;
-          }
-          if (m.emailSubject || m.fromEmail) {
-            return <EmailBubble key={m.id} message={m} contact={contact} onReply={onSend} onRetry={onRetry} />;
-          }
-          return <ChatBubble key={m.id} message={m} onRetry={onRetry} />;
-        })}
+        {messages.length === 0 ? <EmptyState message="No messages yet." /> : messageEls}
       </div>
 
+      {emailReadOnly ? (
+        <div className="compose-readonly">
+          <Icon name="mail" size={16} />
+          <span>Email is read-only here for now — open a full email to reply.</span>
+        </div>
+      ) : (
       <form className="compose-bar" onSubmit={handleSend}>
-        {/* Channel toggle + email metadata strip — external threads only,
-            and only when the contact has both phone + email. Toggling
-            switches to the contact's other-channel thread (auto-creates one
-            if needed) so each channel keeps its own thread. */}
-        {showChannelToggle && (
-          <div className="compose-channel-toggle" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <span className="text-xs text-muted">Send as:</span>
-            <button
-              type="button"
-              className={`btn btn-sm ${composeChannel === 'sms' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => composeChannel !== 'sms' && onSwitchChannel?.('sms')}
-              disabled={!contactHasPhone}
-              title={contactHasPhone ? 'Switch to SMS' : 'Contact has no phone number'}
-            >
-              SMS
-            </button>
-            <button
-              type="button"
-              className={`btn btn-sm ${composeChannel === 'email' ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => composeChannel !== 'email' && onSwitchChannel?.('email')}
-              disabled={!contactHasEmail}
-              title={contactHasEmail ? 'Switch to email' : 'Contact has no email address'}
-            >
-              Email
-            </button>
-          </div>
-        )}
+        {/* Composer is SMS/DM/internal only for now — email is read-only inline
+            (reply to an email via its Open & Reply expand). The email-meta strip
+            below stays dormant (email threads render the read-only note instead). */}
 
         {/* Email-only: Subject + Sending-as picker. */}
         {composeChannel === 'email' && (
@@ -884,9 +976,9 @@ export default function ConversationMessagePanel({
                 </select>
               </div>
             ) : (
-              <div className="card" style={{ padding: '8px 10px', background: 'var(--surface-muted, #f4f4f5)', fontSize: 13 }}>
+              <div className="card" style={{ padding: '8px 10px', background: 'var(--inset-bg)', fontSize: 13 }}>
                 <strong>No connected inbox.</strong>{' '}
-                <Link to="/settings/inboxes">Connect Gmail, Outlook, or SMTP</Link>{' '}
+                <Link to="/settings/inboxes" state={nav}>Connect Gmail, Outlook, or SMTP</Link>{' '}
                 so emails come from your real address.
               </div>
             )}
@@ -900,12 +992,12 @@ export default function ConversationMessagePanel({
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
               />
-              <div style={{ display: 'flex', gap: 6, fontSize: 12 }}>
+              <div className="email-recip-toggles">
                 {!showComposeCc && (
-                  <button type="button" className="btn-link" onClick={() => setShowComposeCc(true)}>Cc</button>
+                  <button type="button" className="linklike" onClick={() => setShowComposeCc(true)}>Cc</button>
                 )}
                 {!showComposeBcc && (
-                  <button type="button" className="btn-link" onClick={() => setShowComposeBcc(true)}>Bcc</button>
+                  <button type="button" className="linklike" onClick={() => setShowComposeBcc(true)}>Bcc</button>
                 )}
               </div>
             </div>
@@ -922,12 +1014,12 @@ export default function ConversationMessagePanel({
                 />
                 <button
                   type="button"
-                  className="btn-link"
+                  className="btn-icon btn-icon-ghost email-recip-hide"
                   onClick={() => { setShowComposeCc(false); setComposeCc(''); }}
                   title="Hide Cc"
                   aria-label="Hide Cc"
                 >
-                  ×
+                  <Icon name="x" size={14} />
                 </button>
               </div>
             )}
@@ -944,12 +1036,12 @@ export default function ConversationMessagePanel({
                 />
                 <button
                   type="button"
-                  className="btn-link"
+                  className="btn-icon btn-icon-ghost email-recip-hide"
                   onClick={() => { setShowComposeBcc(false); setComposeBcc(''); }}
                   title="Hide Bcc"
                   aria-label="Hide Bcc"
                 >
-                  ×
+                  <Icon name="x" size={14} />
                 </button>
               </div>
             )}
@@ -962,37 +1054,25 @@ export default function ConversationMessagePanel({
         )}
 
         <div className="compose-row">
-          <div
-            className={`compose-input-wrap ${isResizingCompose ? 'is-resizing' : ''}`}
-            style={{ height: `${composeHeight}px` }}
-          >
+          <div className="compose-input-wrap">
             <textarea
               className="compose-input"
               placeholder={
                 isDmThread
                   ? `Message ${dmOther ? dmOther.name.split(' ')[0] : 'teammate'}…`
                   : composeChannel === 'internal'
-                  ? 'Internal note — only your team can see this.'
+                  ? 'Internal note. Only your team can see this.'
                   : `Type a ${composeChannel === 'email' ? 'message' : 'text'}…`
               }
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleKey}
             />
-            <button
-              type="button"
-              className="compose-input-resize"
-              onPointerDown={onComposeResizeStart}
-              title="Drag up to expand"
-              aria-label="Resize compose box"
-            >
-              <Icon name="resizeGrip" size={12} />
-            </button>
           </div>
           <div className="compose-row-actions">
             {composeChannel === 'email' && (
               <>
-                <button type="button" className="btn btn-outline btn-sm" onClick={() => composeFileRef.current?.click()}>
+                <button type="button" className="btn btn-outline" onClick={() => composeFileRef.current?.click()}>
                   <Icon name="paperclip" size={14} /> Attach
                 </button>
                 <input ref={composeFileRef} type="file" multiple hidden onChange={(e) => {
@@ -1004,10 +1084,7 @@ export default function ConversationMessagePanel({
                 }} />
               </>
             )}
-            {!isDmThread && (
-              <SnippetPicker channel={composeChannel} onInsert={handleInsertSnippet} />
-            )}
-            <button type="submit" className="btn btn-primary btn-sm" disabled={sendDisabled}>
+            <button type="submit" className="btn btn-sm btn-gold compose-send" disabled={sendDisabled}>
               {composeChannel === 'email' ? 'Review & Send' : 'Send'}
             </button>
           </div>
@@ -1018,7 +1095,7 @@ export default function ConversationMessagePanel({
                   <Icon name="paperclip" size={12} />
                   <span>{a.name}</span>
                   <span className="text-muted text-xs">({a.size < 1048576 ? `${(a.size / 1024).toFixed(1)} KB` : `${(a.size / 1048576).toFixed(1)} MB`})</span>
-                  <button type="button" className="email-attachment-remove" onClick={() => setComposeAttachments((prev) => prev.filter((_, j) => j !== i))} aria-label="Remove">&times;</button>
+                  <button type="button" className="chip-remove" onClick={() => setComposeAttachments((prev) => prev.filter((_, j) => j !== i))} aria-label="Remove">&times;</button>
                 </div>
               ))}
             </div>
@@ -1030,6 +1107,7 @@ export default function ConversationMessagePanel({
             : 'Enter to send · Shift+Enter for new line'}
         </div>
       </form>
+      )}
       {reviewOpen && composeChannel === 'email' && (
         <EmailReviewModal
           fromName={currentUser?.name}

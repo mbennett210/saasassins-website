@@ -1,4 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import PopMenu from './PopMenu';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
 import { selectServices } from '../store/selectors';
@@ -21,13 +23,7 @@ export default function ServicePicker({ value, onChange, placeholder = 'Pick a s
   const [query, setQuery] = useState('');
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onClick = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [open]);
+  const isMobile = useIsMobile();
 
   // Clear stale query whenever the popover closes so it doesn't leak into the
   // next open. Commit paths (selectService / createNew) clear it themselves.
@@ -87,7 +83,7 @@ export default function ServicePicker({ value, onChange, placeholder = 'Pick a s
 
   return (
     <div className="select-shell" ref={wrapRef}>
-      {!open ? (
+      {(!open || isMobile) ? (
         <button type="button" className="select-trigger" onClick={openAndFocus}>
           <span className="select-trigger-text">
             {selected ? selected.name : <span className="select-placeholder">{placeholder}</span>}
@@ -107,43 +103,58 @@ export default function ServicePicker({ value, onChange, placeholder = 'Pick a s
           <span className="select-trigger-caret" aria-hidden>▾</span>
         </div>
       )}
-      {open && (
-        <div className="select-menu">
-          {showCreate && (
-            <button
-              type="button"
-              className="select-option tag-picker-create-option"
-              onClick={createNew}
-            >
-              Create &ldquo;{query.trim()}&rdquo;
-            </button>
-          )}
-          {!showCreate && exactMatch && query.trim() && (
-            <div className="tag-picker-empty" style={{ borderBottom: '1px solid var(--border-light)', marginBottom: 6, paddingBottom: 8 }}>
-              &ldquo;{query.trim()}&rdquo; already exists &mdash; pick it below.
-            </div>
-          )}
-          {visible.length === 0 && !showCreate && (
-            <div className="tag-picker-empty">No matches</div>
-          )}
-          {visible.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={`select-option ${s.id === value ? 'on' : ''}`}
-              onClick={() => selectService(s)}
-            >
-              {s.name}
-              {s.id === value && <span className="tag-check" style={{ marginLeft: 'auto' }}>✓</span>}
-            </button>
-          ))}
-          {!query.trim() && (
-            <div className="picker-create-hint">
-              Don&rsquo;t see it? Type a name to create a new service.
-            </div>
-          )}
-        </div>
-      )}
+      <PopMenu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={wrapRef}
+        className="select-menu"
+        sheetTitle={placeholder}
+      >
+        {isMobile && (
+          <input
+            ref={inputRef}
+            className="input pop-sheet-search"
+            placeholder="Type to search or create a new service…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            autoFocus
+          />
+        )}
+        {showCreate && (
+          <button
+            type="button"
+            className="menu-option menu-option-action tag-picker-create-option"
+            onClick={createNew}
+          >
+            Create &ldquo;{query.trim()}&rdquo;
+          </button>
+        )}
+        {!showCreate && exactMatch && query.trim() && (
+          <div className="tag-picker-empty" style={{ borderBottom: '1px solid var(--border-light)', marginBottom: 6, paddingBottom: 8 }}>
+            &ldquo;{query.trim()}&rdquo; already exists. Pick it below.
+          </div>
+        )}
+        {visible.length === 0 && !showCreate && (
+          <div className="tag-picker-empty">No matches</div>
+        )}
+        {visible.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className={`menu-option ${s.id === value ? 'on' : ''}`}
+            onClick={() => selectService(s)}
+          >
+            {s.name}
+            {s.id === value && <span className="tag-check" style={{ marginLeft: 'auto' }}>✓</span>}
+          </button>
+        ))}
+        {!query.trim() && (
+          <div className="picker-create-hint">
+            Don&rsquo;t see it? Type a name to create a new service.
+          </div>
+        )}
+      </PopMenu>
     </div>
   );
 }

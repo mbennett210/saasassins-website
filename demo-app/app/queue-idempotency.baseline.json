@@ -1,0 +1,451 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-19T16:08:52.279Z",
+  "note": "Frozen enumeration of reducer cases that mint their own id without a dedupe guard (playbook II.7). Ratchets DOWN only: remove an entry by adding the guard + caller minting, never by re-running --update-baseline on a regression. Raising requires --detector-changed with a written reason, logged below.",
+  "totals": {
+    "reducerCases": 173,
+    "minting": 47,
+    "undeduped": 36,
+    "deduped": 11
+  },
+  "detectorChanges": [],
+  "guarded": [
+    "ADD_CLIENT_REVIEW_NOTE"
+  ],
+  "minting": {
+    "ADD_SERVICE": {
+      "line": 521,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "svc"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_FREQUENCY": {
+      "line": 535,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "frq"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_USER": {
+      "line": 549,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "u"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_CLIENT": {
+      "line": 696,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "cl"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "APPEND_CLIENT_NOTE": {
+      "line": 811,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "clact"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_CLIENT_ACTIVITY": {
+      "line": 837,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "clact"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_CONTACT": {
+      "line": 857,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "ct"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "APPEND_CONTACT_NOTE": {
+      "line": 1064,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "act"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_TAG": {
+      "line": 1091,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "tg"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_CONTACT_ACTIVITY": {
+      "line": 1115,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "act"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "TOP_UP_RECURRING_SERIES": {
+      "line": 1290,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "j"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "UPDATE_JOB_SERIES": {
+      "line": 1381,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "j"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_INVOICE": {
+      "line": 1774,
+      "minters": [
+        "nextInvoiceId"
+      ],
+      "mints": [],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_KEY": {
+      "line": 1923,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "key",
+        "kev"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "UPDATE_KEY": {
+      "line": 1944,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "kev"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "CHECKOUT_KEY": {
+      "line": 2005,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "kev"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "CHECKIN_KEY": {
+      "line": 2026,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "kev"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "MARK_KEY_UNKNOWN": {
+      "line": 2045,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "kev"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "MARK_KEY_LOST": {
+      "line": 2078,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "kev"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_CONVERSATION": {
+      "line": 2142,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "cv"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_DM_CONVERSATION": {
+      "line": 2154,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "cv"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_INTERNAL_CONVERSATION": {
+      "line": 2182,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "cv",
+        "m"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_MESSAGE": {
+      "line": 2298,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "m"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_SNIPPET": {
+      "line": 2398,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "sn"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_REMINDER_EVENT": {
+      "line": 2502,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "re"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "SEND_INVITATION": {
+      "line": 2556,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "inv"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_PIPELINE": {
+      "line": 2607,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "pl",
+        "ps"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_PIPELINE_STAGE": {
+      "line": 2667,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "ps"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_CONNECTED_INBOX": {
+      "line": 2986,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "ci"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_OAUTH_WORKSPACE": {
+      "line": 3094,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "ws"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "RECEIVE_SMS": {
+      "line": 3136,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "cv",
+        "m"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_MARKETING_INBOX": {
+      "line": 3353,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "mi"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_MARKETING_SEQUENCE": {
+      "line": 3414,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "mseq"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ADD_MARKETING_STEP": {
+      "line": 3478,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "mstep"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "ENROLL_CONTACTS": {
+      "line": 3575,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "menr"
+      ],
+      "callerIdSupported": false,
+      "appends": true,
+      "tier": "untriaged"
+    },
+    "RECORD_MARKETING_SEND": {
+      "line": 3653,
+      "minters": [
+        "newId"
+      ],
+      "mints": [
+        "msnd"
+      ],
+      "callerIdSupported": true,
+      "appends": true,
+      "tier": "untriaged"
+    }
+  }
+}

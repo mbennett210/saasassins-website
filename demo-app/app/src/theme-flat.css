@@ -1,0 +1,107 @@
+/* ============================================================
+   FLAT TREATMENT LAYER — from the PolishPoint Design Kit
+   (Kronelius/Styling · STRUCTURE.md §5 · contract v2.0.0)
+   ------------------------------------------------------------
+   The shell's DEFAULT treatment. Imported LAST in index.css, after
+   theme.css (structure) and the active colour theme, so it flattens the
+   recipe layer for ANY palette. Every value composes from colour tokens,
+   so flat re-skins automatically when the theme's colours change.
+
+   Flat doctrine: hairline borders carry hierarchy; gradients / glows /
+   neumorphism are gone; overlays (modal / dropdown / toast / popover) keep
+   their single clean drop-shadow via --shadow-md / --shadow-lg (untouched
+   here, and applied at the call site).
+
+   CLONE CONTRACT: a new app inherits flat for free — the per-client colour
+   theme carries COLOUR ONLY; treatment (flat) + structure (heights/spacing)
+   are constant. Removing this import opts a client back into the themed
+   (gradient/glow) look — the recipes still exist in the colour theme.
+
+   This file EXTENDS the kit's baseline theme-flat.css to also neutralise the
+   depth recipes this shell defines beyond the kit's set (nav-active fill/glow,
+   dashboard hero, table header, timeline / drip / metric surfaces, the page
+   aurora base layer, and the login / mobile-header gradients).
+   ============================================================ */
+:root {
+  /* ── Buttons — solid fills, no glow ── */
+  --btn-primary-grad:        var(--primary);
+  --btn-primary-grad-hover:  var(--primary-hover);
+  --btn-primary-glow:        none;
+  --btn-primary-glow-hover:  none;
+  --btn-secondary-shadow:    none;
+
+  /* ── Cards · tiles · blocks — hairline borders only, no shadow ── */
+  --card-shadow:          none;
+  --card-shadow-hover:    none;
+  --stat-card-shadow:     none;
+  --neu-shadow:           none;
+  --neu-shadow-hover:     none;
+  --neu-shadow-heavy:     none;
+  --sched-block-shadow:   none;
+  --tl-card-shadow:       none;
+  --drip-node-shadow:     none;
+
+  /* ── Functional rings (flat: rings ARE allowed, decorative shadows are not) —
+        the one place a shadow rgba lives, so index.css stays literal-free ── */
+  --ring-inset:  inset 0 0 0 1px rgba(var(--color-brand-primary-rgb), 0.4);
+
+  /* ── Inputs — solid hairline border (border-box trick) + clean focus ring ── */
+  --input-border-grad:        var(--card-border);
+  --input-border-grad-focus:  var(--primary);
+  --input-focus-shadow:       0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+
+  /* ── Tabs · nav · switchers — flat ── */
+  --tab-active-shadow:      none;
+  --nav-active-shadow:      none;
+  --nav-active-filter:      none;                                   /* kill the active-nav glow */
+  --nav-hover-bg:           rgba(var(--color-brand-primary-rgb), 0.08);
+  --nav-active-bg:          var(--primary);                         /* solid brand fill */
+  --dash-sw-shadow:         none;
+
+  /* ── Sidebar — the dark rail (index.css) is solid; no edge blend ── */
+  --sidebar-edge:      transparent;
+
+  /* ── Page background — flat surface, no aurora ── */
+  --page-bg-layers:    var(--color-surface-base);
+  --page-aurora:       none;
+
+  /* ── Dashboard hero — white L2 card (was a gray tint that blended into the
+     cool page); no orb / glow ── */
+  --dash-hero-bg:      var(--card-bg);
+  --dash-hero-shadow:  none;
+  --dash-hero-orb:     none;
+
+  /* ── Table header — Ink: solid black band + light label (see THEME_CLEANSPACE.md).
+     Composes from brand tokens so it re-skins per palette. ── */
+  --table-header-bg:   var(--color-brand-primary-500);
+  --table-header-fg:   var(--color-text-on-primary);
+
+  /* ── Timeline · drip · schedule surfaces — solid ── */
+  --tl-card-bg:        var(--card-bg);
+  --drip-node-bg:      var(--card-bg);
+
+  /* ── Metric strip — solid tinted cells (colour-coding kept), flat top bar ── */
+  --metric-cell-1-bg:  var(--color-brand-primary-50);
+  --metric-cell-2-bg:  var(--color-accent-purple-50);
+  --metric-cell-3-bg:  var(--color-neutral-100);
+  --metric-top-bar:    var(--primary);
+
+  /* ── Login screen — solid backdrop, no orbs, single clean card shadow ── */
+  --login-bg:            var(--primary);
+  --login-orb-1:         none;
+  --login-orb-2:         none;
+  --login-card-shadow:   var(--shadow-lg);
+
+  /* ── Mobile header — solid brand bar, no gradient / shadow ── */
+  --mobile-header-grad:    var(--color-brand-primary-500);
+  --mobile-header-shadow:  none;
+
+  /* ── Badges — solid semantic fills, no sheen, no coloured glow ── */
+  --badge-green-grad:  var(--color-semantic-success-500);  --badge-green-shadow:  none;
+  --badge-amber-grad:  var(--color-semantic-warning-500);  --badge-amber-shadow:  none;
+  --badge-red-grad:    var(--color-semantic-error-500);    --badge-red-shadow:    none;
+  --badge-blue-grad:   var(--color-brand-primary-500);     --badge-blue-shadow:   none;
+  --badge-purple-grad: var(--color-accent-purple-500);     --badge-purple-shadow: none;
+  --badge-slate-grad:  var(--color-neutral-500);           --badge-slate-shadow:  none;
+  --badge-yellow-shadow: none;  /* the yellow badge's fill is the client theme's accent; its shadow is flat like the rest */
+}

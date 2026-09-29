@@ -1,0 +1,28 @@
+<!-- @dsCard group="Status" height=72 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TagChip</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-5) var(--space-6); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Demo() {
+  var s = React.useState([{ id: 't1', label: 'Key on file' }, { id: 't2', label: 'Night crew' }, { id: 't3', label: 'Medical office' }]);
+  var tags = s[0], setTags = s[1];
+  return h(React.Fragment, null,
+    tags.map(function (t) { return h(CS.TagChip, { key: t.id, tag: t, onRemove: function (x) { setTags(tags.filter(function (y) { return y.id !== x.id; })); } }); }),
+    h(CS.TagChip, { tag: { id: 't4', label: 'VIP' } }),
+    h(CS.TagChip, { tag: { id: 't5', label: 'Weekly' }, size: 'xs' })
+  );
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(Demo));
+</script>
+</body>
+</html>

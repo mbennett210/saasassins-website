@@ -1,0 +1,73 @@
+  <!-- Cover -->
+  <div class="page cover">
+    <div style="height:26px"></div>
+    <div class="big r1">{{wordmark.1}}</div>{{#wordmark.2}}
+    <div class="big r2">{{wordmark.2}}</div>{{/wordmark.2}}
+    <div class="rule"></div>
+    <div class="serif" style="font-style:italic;font-size:18pt;color:{{doc.ink}};margin-top:8px;">Facility Care Proposal</div>
+    <p class="muted" style="margin-top:6px;">Prepared for:&nbsp; {{field.clientName|Client Name}}, {{field.companyName|Company Name}}</p>
+    <table class="badges" style="margin-top:18px;"><tr>
+      <td><div class="bt">Fully Insured</div><div>&amp; Bonded</div></td>
+      <td><div class="bt">Trained</div><div>Day Porters</div></td>
+      <td><div class="bt">Seasonal</div><div>Floor Care</div></td>
+    </tr></table>
+    <p class="muted center" style="margin-top:20px;font-size:9.5pt;">{{company.street}} |&nbsp; {{company.city}}&nbsp; |&nbsp; {{company.phone}}<br/>{{company.website}}</p>
+    <img class="logo" src="{{logo}}" alt="{{name}}" />
+  </div>
+
+  <!-- Cover letter -->
+  <div class="page pb">
+    <p>{{date}}</p>
+    <p>Dear {{field.clientName|Client Name}},</p>
+    <p>Thank you for asking {{name}} to look after {{field.companyName|Company Name}}. This proposal sets out the work we will do, when we will do it and what it costs.</p>
+    <p>Our crews work the harbor towns year round, so we plan for salt, sand and slush as much as for the daily clean. Every building we serve has a written plan, a named crew lead and a floor-care calendar that follows the seasons.</p>
+    <p>If anything falls short, call me and we will put it right on the next visit.</p>
+    <p>With thanks,</p>
+    <div class="ksig">{{signatory.name}}</div>
+    <p style="margin:0;"><strong>{{signatory.name}}</strong><br/>{{signatory.title}}<br/>{{name}}<br/><span style="font-style:italic;">{{company.phone}}&nbsp; |&nbsp; {{signatory.email}}</span></p>
+  </div>
+
+  <!-- Proposal -->
+  <div class="page pb">
+    <h1 class="title">Your Proposal</h1>
+    <p class="subtitle">One plan for your building, priced by the month.</p>
+    <div class="seclabel">Service &amp; Pricing</div>
+    <table class="pricing">
+      <tr><td>Monthly Price</td><td>${{field.amount|Amount}}/month, with salt season included</td></tr>
+      <tr><td>Visits</td><td>{{field.frequency|Frequency}}. {{field.dayOfWeek|Day(s) of Week}}</td></tr>
+      <tr><td>Invoicing</td><td>Monthly, net 15.</td></tr>
+    </table>
+    <div class="seclabel">Every Visit</div>
+    <ul class="bullets">
+      <li>Entryways and mats cleared of salt and sand</li>
+      <li>Floors vacuumed, swept and damp-mopped</li>
+      <li>Surfaces wiped and high-touch points disinfected</li>
+      <li>Restrooms ({{field.restrooms|Number of restrooms}}) cleaned, disinfected and restocked</li>
+      <li>Trash and recycling removed</li>
+    </ul>
+    <div class="callout">{{name}} carries general liability and workers' compensation coverage, and every crew member is background-checked.</div>
+  </div>
+
+  <!-- Why us -->
+  <div class="page pb">
+    <h1 class="title">Why {{name}}?</h1>
+    <p class="subtitle">A local crew with a plan for every season.</p>
+    <div class="card"><div class="ic">🧭</div><div class="ct"><div class="ch">A named crew lead</div><div>One person knows your building and answers for every visit.</div></div></div><div class="card"><div class="ic">❄️</div><div class="ct"><div class="ch">Winter floor care</div><div>Salt and slush get a scheduled scrub, not an afterthought.</div></div></div><div class="card"><div class="ic">📋</div><div class="ct"><div class="ch">A written plan</div><div>Your scope is written down, and every visit is checked against it.</div></div></div>
+    <div class="callout">"We would rather keep a building for ten years than win it for one."<br/>{{signatory.name}}, {{signatory.role}}</div>
+  </div>
+
+  <!-- Service Agreement -->
+  <div class="page pb">
+    <h1 class="title">Service Agreement</h1>
+    <p class="subtitle">Sign below to start service.</p>
+    <p class="agree-lead">I, {{agreement.name}}, for {{agreement.company}}, accept this proposal from <strong>{{name}}</strong>.</p>
+    <ul class="bullets">
+      <li>Changes to the scope are agreed in writing.</li>
+      <li>Either party may end service with 30 days' written notice.</li>
+    </ul>
+    <div class="sigtable">
+      <div>{{signature.client}}{{#client.company}}<div class="sigcap sigsub">{{client.company}}</div>{{/client.company}}</div>
+      <div>{{signature.admin}}<div class="sigcap sigsub">{{name}}</div></div>
+    </div>
+    <img class="logo" src="{{logo}}" alt="{{name}}" style="width:150px;margin:18px auto 0;display:block;" />
+  </div>

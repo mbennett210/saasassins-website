@@ -5,6 +5,7 @@ import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
 import {
   selectInvoiceById, selectClientById, selectSiteById, selectContactById,
+  selectServiceById, lineItemFromService, selectSnippets, selectConversationsForContact,
   invoiceTotal, invoicePaid, invoiceBalance, deriveInvoiceStatus,
 } from '../store/selectors';
 import { usePermission } from '../hooks/usePermission';
@@ -13,10 +14,11 @@ import DetailHeader from '../components/DetailHeader';
 import Badge, { statusBadgeVariant } from '../components/Badge';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ContactPicker from '../components/ContactPicker';
+import ServicePicker from '../components/ServicePicker';
 import FormField from '../components/FormField';
 import Icon from '../components/Icon';
 import { newId } from '../lib/ids';
-import { fmtDate, fmtDateLong, money, moneyPrecise, todayIso, splitIso } from '../lib/dates';
+import { fmtDate, fmtDateLong, money, moneyPrecise, todayKey, splitIso, composeIso } from '../lib/dates';
 import {
   saveAttachment,
   loadAttachment,
@@ -25,6 +27,12 @@ import {
   ATTACHMENT_ALLOWED_MIME,
   formatBytes,
 } from '../lib/attachments';
+import { usePagedRows } from '../hooks/usePagedRows';
+import ListPager from '../components/ListPager';
+
+// Stable empty-array identity so the pagers don't re-slice every render when an
+// invoice has no payments / line items yet.
+const NO_ROWS = [];
 
 export default function InvoiceDetail() {
   const { invoiceId } = useParams();
@@ -35,6 +43,7 @@ export default function InvoiceDetail() {
   const nav = useFromHere();
   const canEdit = usePermission('invoices.edit');
   const canPay = usePermission('invoices.recordPayment');
+  const canMessage = usePermission('messaging.startConversation');
 
   const invoice = selectInvoiceById(state, invoiceId);
   const client = invoice ? selectClientById(state, invoice.clientId) : null;
@@ -45,11 +54,19 @@ export default function InvoiceDetail() {
   const [form, setForm] = useState(invoice);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [payment, setPayment] = useState({ amount: '', method: 'ACH', note: '', date: todayIso().slice(0, 10) });
+  const [payment, setPayment] = useState({ amount: '', method: 'ACH', note: '', date: todayKey() });
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [attachmentError, setAttachmentError] = useState(null);
   const [confirmRemoveAttachment, setConfirmRemoveAttachment] = useState(false);
   const [editingPaymentId, setEditingPaymentId] = useState(null);
+  // Declared BEFORE the `if (!invoice)` early return below (hooks can't be
+  // conditional). The tfoot Total keeps reading invoiceTotal(currentForm) and
+  // paid/balance keep reading the full invoice — never the paged slice.
+  const paymentsPager = usePagedRows(invoice?.payments || NO_ROWS, { resetKey: invoiceId });
+  const lineItemsPager = usePagedRows(
+    (form && form.id === invoice?.id ? form : invoice)?.lineItems || NO_ROWS,
+    { resetKey: invoiceId },
+  );
   const [paymentDraft, setPaymentDraft] = useState(null);
   const fileInputRef = useRef(null);
   const blobUrlRef = useRef(null);
@@ -87,12 +104,23 @@ export default function InvoiceDetail() {
       ...currentForm,
       lineItems: [...currentForm.lineItems, { id: newId('li'), description: '', qty: 1, unitPrice: 0 }],
     });
+    lineItemsPager.goToLast();
   };
   const removeLineItem = (id) => {
     setForm({
       ...currentForm,
       lineItems: currentForm.lineItems.filter((li) => li.id !== id),
     });
+  };
+  // Append a catalog-pre-filled line (description + default rate) in edit mode.
+  const addLineFromService = (serviceId) => {
+    const svc = serviceId ? selectServiceById(state, serviceId) : null;
+    if (!svc) return;
+    setForm((f) => ({
+      ...(f && f.id === invoice.id ? f : invoice),
+      lineItems: [...((f && f.id === invoice.id ? f : invoice).lineItems || []), { id: newId('li'), ...lineItemFromService(svc) }],
+    }));
+    lineItemsPager.goToLast();
   };
 
   const save = () => {
@@ -119,10 +147,14 @@ export default function InvoiceDetail() {
     dispatch({
       type: ACTIONS.ADD_INVOICE_PAYMENT,
       id: invoice.id,
-      payment: { amount: amt, method: payment.method, note: payment.note, date: payment.date },
+      // id minted HERE, not in the reducer: it is the dedupe key that makes this action
+      // safe to replay after a save that committed but whose response was lost. See the
+      // note on ADD_INVOICE_PAYMENT in store/reducer.js.
+      payment: { id: newId('pay'), amount: amt, method: payment.method, note: payment.note, date: payment.date },
     });
-    setPayment({ amount: '', method: 'ACH', note: '', date: todayIso().slice(0, 10) });
+    setPayment({ amount: '', method: 'ACH', note: '', date: todayKey() });
     setShowPaymentForm(false);
+    paymentsPager.goToLast();
     toast.success('Payment recorded');
   };
 
@@ -140,7 +172,7 @@ export default function InvoiceDetail() {
       amount: outstanding > 0 ? String(outstanding.toFixed(2)) : '',
       method: 'Check',
       note: '',
-      date: todayIso().slice(0, 10),
+      date: todayKey(),
     });
     setShowPaymentForm(true);
     setTimeout(() => paymentFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
@@ -151,7 +183,7 @@ export default function InvoiceDetail() {
     setPaymentDraft({
       amount: String(p.amount ?? ''),
       method: p.method || 'ACH',
-      date: p.date ? p.date.slice(0, 10) : todayIso().slice(0, 10),
+      date: p.date ? p.date.slice(0, 10) : todayKey(),
       note: p.note || '',
     });
   };
@@ -185,6 +217,42 @@ export default function InvoiceDetail() {
     dispatch({ type: ACTIONS.SET_INVOICE_STATUS, id: invoice.id, status: 'void' });
   };
 
+  // One-click payment reminder: merge the invoice number / amount due / due date
+  // into the seeded "Past due notice" snippet and open it in Messaging with the
+  // billing contact, ready to send on the contact's channel (logging-only Core —
+  // we open a prefilled draft, we don't auto-send or process payment).
+  const sendReminder = () => {
+    if (!billingContact) {
+      toast.error('Add a billing contact to send a payment reminder.');
+      return;
+    }
+    const snippet = selectSnippets(state).find(
+      (sn) => sn.label === 'Past due notice' || String(sn.id).includes('past-due')
+    );
+    const base = snippet?.body || 'Hi. Your invoice is now past due. Could we set up a quick call to sort out payment?';
+    const draft = `${base}\n\nInvoice ${invoice.id}. Amount due ${money(balance)}, due ${fmtDate(invoice.dueDate)}.`;
+
+    const existing = selectConversationsForContact(state, billingContact.id)
+      .slice()
+      .sort((a, b) => new Date(b.lastMessageAt || b.createdAt) - new Date(a.lastMessageAt || a.createdAt));
+    let convId;
+    if (existing.length > 0) {
+      convId = existing[0].id;
+    } else {
+      convId = newId('cv');
+      dispatch({
+        type: ACTIONS.ADD_CONVERSATION,
+        conversation: {
+          id: convId,
+          contactId: billingContact.id,
+          clientId: invoice.clientId || null,
+          channel: billingContact.email ? 'email' : 'sms',
+        },
+      });
+    }
+    navigate(`/messaging/${convId}`, { state: { ...nav, reminderDraft: draft } });
+  };
+
   const del = () => {
     dispatch({ type: ACTIONS.DELETE_INVOICE, id: invoice.id });
     navigate('/invoices');
@@ -216,7 +284,7 @@ export default function InvoiceDetail() {
 
   const onViewAttachment = async () => {
     try {
-      const record = await loadAttachment(invoice.id);
+      const record = await loadAttachment(invoice.id, invoice.attachment?.storagePath);
       if (!record) {
         setAttachmentError('Attachment file is missing on this device.');
         return;
@@ -233,7 +301,7 @@ export default function InvoiceDetail() {
     setConfirmRemoveAttachment(false);
     setAttachmentBusy(true);
     try {
-      await deleteAttachment(invoice.id);
+      await deleteAttachment(invoice.id, invoice.attachment?.storagePath);
       dispatch({ type: ACTIONS.UPDATE_INVOICE, id: invoice.id, patch: { attachment: null } });
       toast.success('Attachment removed');
     } catch {
@@ -260,7 +328,7 @@ export default function InvoiceDetail() {
             {derivedStatus !== 'paid' && derivedStatus !== 'void' && (
               <button
                 type="button"
-                className="btn btn-outline btn-sm btn-suite-locked"
+                className="btn btn-outline btn-suite-locked"
                 aria-disabled="true"
                 disabled
                 title="Sending invoices via email is part of the Billing Suite add-on."
@@ -268,14 +336,17 @@ export default function InvoiceDetail() {
                 <Icon name="lock" size={12} /> Send (Billing Suite)
               </button>
             )}
+            {canMessage && derivedStatus !== 'paid' && derivedStatus !== 'void' && balance > 0 && (
+              <button className="btn btn-success" onClick={sendReminder}>Send Reminder</button>
+            )}
             {canPay && derivedStatus !== 'paid' && derivedStatus !== 'void' && balance > 0 && (
-              <button className="btn btn-primary btn-sm" onClick={markPaid}>Mark Paid</button>
+              <button className="btn btn-primary" onClick={markPaid}>Mark Paid</button>
             )}
             {canEdit && derivedStatus !== 'void' && (
-              <button className="btn btn-primary btn-sm" onClick={voidInvoice}>Void</button>
+              <button className="btn btn-primary" onClick={voidInvoice}>Void</button>
             )}
-            {canEdit && !editing && <button className="btn btn-primary btn-sm" onClick={() => { setEditing(true); setForm(invoice); }}>Edit</button>}
-            {canEdit && <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(true)}>Delete</button>}
+            {canEdit && !editing && <button className="btn btn-primary" onClick={() => { setEditing(true); setForm(invoice); }}>Edit</button>}
+            {canEdit && <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>Delete</button>}
           </div>
         }
       />
@@ -284,16 +355,14 @@ export default function InvoiceDetail() {
         <div className="card detail-card">
           <h3 className="dash-card-title">Summary</h3>
           <dl className="detail-dl">
-            <div><dt>Client</dt><dd>{client ? <Link className="link" to={`/clients/${client.id}`} state={nav}>{client.name}</Link> : '—'}</dd></div>
-            <div><dt>Site</dt><dd>{site?.name || '—'}{site?.address ? <div className="text-muted text-sm">{site.address}</div> : null}</dd></div>
+            <div><dt>Company</dt><dd>{client ? <Link className="linklike" to={`/clients/${client.id}`} state={nav}>{client.name}</Link> : '—'}</dd></div>
+            <div><dt>Location</dt><dd>{site?.address || '—'}</dd></div>
             <div>
               <dt>Billing contact</dt>
               <dd>
                 {billingContact ? (
                   <>
-                    <Link className="link" to={`/contacts/${billingContact.id}`} state={nav}>
-                      {billingContact.firstName} {billingContact.lastName}
-                    </Link>
+                    <span>{billingContact.firstName} {billingContact.lastName}</span>
                     {billingContact.email ? <div className="text-muted text-sm">{billingContact.email}</div> : null}
                   </>
                 ) : '—'}
@@ -338,11 +407,11 @@ export default function InvoiceDetail() {
                 </div>
               </div>
               <div className="attachment-card-actions">
-                <button type="button" className="btn btn-outline btn-sm" onClick={onViewAttachment}>View</button>
+                <button type="button" className="btn btn-outline" onClick={onViewAttachment}>View</button>
                 {canEdit && (
                   <>
-                    <button type="button" className="btn btn-outline btn-sm" onClick={() => fileInputRef.current?.click()} disabled={attachmentBusy}>Replace</button>
-                    <button type="button" className="btn btn-danger btn-sm" onClick={() => setConfirmRemoveAttachment(true)} disabled={attachmentBusy}>Remove</button>
+                    <button type="button" className="btn btn-outline" onClick={() => fileInputRef.current?.click()} disabled={attachmentBusy}>Replace</button>
+                    <button type="button" className="btn btn-danger" onClick={() => setConfirmRemoveAttachment(true)} disabled={attachmentBusy}>Remove</button>
                   </>
                 )}
               </div>
@@ -352,7 +421,7 @@ export default function InvoiceDetail() {
               <div className="attachment-empty">
                 <button
                   type="button"
-                  className="attachment-picker-label attachment-picker-empty"
+                  className="btn btn-outline attachment-picker-empty"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={attachmentBusy}
                 >
@@ -380,9 +449,16 @@ export default function InvoiceDetail() {
         <div>
           <div className="section-head">
             <h3 className="dash-card-title">Line Items</h3>
-            {editing && <button type="button" className="btn btn-outline btn-sm" onClick={addLineItem}>Add</button>}
+            {editing && (
+              <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
+                <div className="catalog-prefill-picker">
+                  <ServicePicker value={null} onChange={addLineFromService} placeholder="Add from catalog…" />
+                </div>
+                <button type="button" className="btn btn-outline" onClick={addLineItem}>Add</button>
+              </div>
+            )}
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap mobile-stack">
             <table>
               <thead>
                 <tr>
@@ -395,29 +471,29 @@ export default function InvoiceDetail() {
               </thead>
               <tbody>
                 {currentForm.lineItems.length === 0 ? (
-                  <tr><td colSpan={editing ? 5 : 4} style={{ textAlign: 'center', padding: 16, color: 'var(--text-muted)' }}>No line items yet.</td></tr>
-                ) : currentForm.lineItems.map((li) => {
+                  <tr className="stack-plain"><td colSpan={editing ? 5 : 4} style={{ textAlign: 'center', padding: 16, color: 'var(--text-muted)' }}>No line items yet.</td></tr>
+                ) : lineItemsPager.pageRows.map((li) => {
                   const lineTotal = (Number(li.qty) || 0) * (Number(li.unitPrice) || 0);
                   return (
                     <tr key={li.id}>
-                      <td>
+                      <td className="cell-primary">
                         {editing ? (
                           <input className="input" value={li.description} onChange={(e) => updateLineItem(li.id, { description: e.target.value })} />
-                        ) : li.description}
+                        ) : <span className="truncate" title={li.description}>{li.description}</span>}
                       </td>
-                      <td>
+                      <td data-label="Qty">
                         {editing ? (
                           <input type="number" min="0" step="0.5" className="input" value={li.qty} onChange={(e) => updateLineItem(li.id, { qty: e.target.value })} />
                         ) : li.qty}
                       </td>
-                      <td className="money">
+                      <td className="money" data-label="Unit Price">
                         {editing ? (
                           <input type="number" min="0" step="0.01" className="input" value={li.unitPrice} onChange={(e) => updateLineItem(li.id, { unitPrice: e.target.value })} />
                         ) : moneyPrecise(li.unitPrice)}
                       </td>
-                      <td className="money text-right">{moneyPrecise(lineTotal)}</td>
+                      <td className="money text-right" data-label="Line Total">{moneyPrecise(lineTotal)}</td>
                       {editing && (
-                        <td>
+                        <td className="cell-actions">
                           <button type="button" className="btn-icon btn-icon-danger" onClick={() => removeLineItem(li.id)} aria-label="Remove">
                             <Icon name="trash" size={14} />
                           </button>
@@ -436,12 +512,22 @@ export default function InvoiceDetail() {
                 </tr>
               </tfoot>
             </table>
+            <ListPager pager={lineItemsPager} noun="line items" />
           </div>
 
           {editing && (
             <div className="form-row" style={{ marginTop: 12 }}>
-              <FormField label="Issue date" type="date" value={splitIso(currentForm.issueDate).date} onChange={(e) => setForm({ ...currentForm, issueDate: new Date(e.target.value + 'T12:00:00').toISOString() })} />
-              <FormField label="Due date" type="date" value={splitIso(currentForm.dueDate).date} onChange={(e) => setForm({ ...currentForm, dueDate: new Date(e.target.value + 'T12:00:00').toISOString() })} />
+              {/* composeIso, NOT `new Date(value + 'T12:00:00')`. A bare datetime string
+                  with no offset is parsed in the DEVICE's zone, while the value is read
+                  back with splitIso in the ORG's zone. So an off-Pacific user shifted
+                  every date they touched by a day. splitIso's own doc-comment describes
+                  this exact round-trip as a bug already fixed for jobs ("opening a
+                  Manila-booked job in Seattle and pressing Save rewrote it a day
+                  earlier"); the invoice editor still had the unfixed half. Due dates
+                  drive overdue status, aging buckets and past-due notifications, so a
+                  one-day shift is not cosmetic. */}
+              <FormField label="Issue date" type="date" value={splitIso(currentForm.issueDate).date} onChange={(e) => setForm({ ...currentForm, issueDate: composeIso(e.target.value, '12:00') })} />
+              <FormField label="Due date" type="date" value={splitIso(currentForm.dueDate).date} onChange={(e) => setForm({ ...currentForm, dueDate: composeIso(e.target.value, '12:00') })} />
               <FormField label="Tax rate (%)" type="number" value={currentForm.taxRate || 0} onChange={(e) => setForm({ ...currentForm, taxRate: e.target.value })} />
             </div>
           )}
@@ -470,7 +556,7 @@ export default function InvoiceDetail() {
           <div className="section-head">
             <h3 className="dash-card-title">Payments</h3>
             {canPay && derivedStatus !== 'void' && balance > 0 && !showPaymentForm && (
-              <button type="button" className="btn btn-outline btn-sm" onClick={() => setShowPaymentForm(true)}>Record Payment</button>
+              <button type="button" className="btn btn-outline" onClick={() => setShowPaymentForm(true)}>Record Payment</button>
             )}
           </div>
           {showPaymentForm && (
@@ -492,31 +578,31 @@ export default function InvoiceDetail() {
           {(invoice.payments || []).length === 0 ? (
             <p className="text-muted text-sm">No payments recorded.</p>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap mobile-stack">
               <table>
                 <thead><tr><th>Date</th><th>Method</th><th>Note</th><th className="text-right">Amount</th>{canPay && <th style={{ width: 84 }}></th>}</tr></thead>
                 <tbody>
-                  {invoice.payments.map((p) => {
+                  {paymentsPager.pageRows.map((p) => {
                     const isEditing = editingPaymentId === p.id;
                     if (isEditing && paymentDraft) {
                       return (
                         <tr key={p.id} className="payment-row-editing">
-                          <td>
+                          <td data-label="Date">
                             <input type="date" className="input" value={paymentDraft.date} onChange={(e) => setPaymentDraft({ ...paymentDraft, date: e.target.value })} />
                           </td>
-                          <td>
+                          <td data-label="Method">
                             <select className="input" value={paymentDraft.method} onChange={(e) => setPaymentDraft({ ...paymentDraft, method: e.target.value })}>
                               {['ACH', 'Card', 'Check', 'Cash', 'Manual'].map((m) => <option key={m} value={m}>{m}</option>)}
                             </select>
                           </td>
-                          <td>
+                          <td data-label="Note">
                             <input className="input" value={paymentDraft.note} onChange={(e) => setPaymentDraft({ ...paymentDraft, note: e.target.value })} placeholder="Check #, ref, etc." />
                           </td>
-                          <td className="money text-right">
+                          <td className="money text-right" data-label="Amount">
                             <input type="number" min="0" step="0.01" className="input" value={paymentDraft.amount} onChange={(e) => setPaymentDraft({ ...paymentDraft, amount: e.target.value })} />
                           </td>
                           {canPay && (
-                            <td>
+                            <td className="cell-actions">
                               <div className="flex-row" style={{ gap: 4, justifyContent: 'flex-end' }}>
                                 <button type="button" className="btn-icon" aria-label="Save" onClick={saveEditPayment} disabled={!Number(paymentDraft.amount)} title="Save">
                                   <Icon name="check" size={14} />
@@ -532,12 +618,12 @@ export default function InvoiceDetail() {
                     }
                     return (
                       <tr key={p.id}>
-                        <td>{fmtDate(p.date)}</td>
-                        <td>{p.method || '—'}</td>
-                        <td className="text-muted text-sm">{p.note || '—'}</td>
-                        <td className="money text-right">{moneyPrecise(p.amount)}</td>
+                        <td className="cell-primary">{fmtDate(p.date)}</td>
+                        <td data-label="Method">{p.method || '—'}</td>
+                        <td className="text-muted text-sm" data-label="Note"><span className="truncate" title={p.note || ''}>{p.note || '—'}</span></td>
+                        <td className="money text-right" data-label="Amount">{moneyPrecise(p.amount)}</td>
                         {canPay && (
-                          <td>
+                          <td className="cell-actions">
                             <div className="flex-row" style={{ gap: 4, justifyContent: 'flex-end' }}>
                               <button type="button" className="btn-icon" aria-label="Edit" onClick={() => startEditPayment(p)} title="Edit">
                                 <Icon name="edit" size={14} />
@@ -553,6 +639,7 @@ export default function InvoiceDetail() {
                   })}
                 </tbody>
               </table>
+              <ListPager pager={paymentsPager} noun="payments" />
             </div>
           )}
         </div>

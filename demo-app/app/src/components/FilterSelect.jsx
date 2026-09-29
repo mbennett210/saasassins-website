@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import PopMenu from './PopMenu';
 
 // Searchable single-select for filter bars. Looks like the themed <Select>
 // (shares the select-* styles) but adds a type-to-filter input in the menu —
@@ -13,18 +14,6 @@ export default function FilterSelect({ value, onChange, options, ariaLabel }) {
   const wrapRef = useRef(null);
 
   const selected = options.find((o) => o.value === value) || options[0];
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
 
   // Abandoned typing shouldn't linger after the menu closes.
   useEffect(() => { if (!open) setQuery(''); }, [open]);
@@ -60,33 +49,38 @@ export default function FilterSelect({ value, onChange, options, ariaLabel }) {
         <span className="select-trigger-text">{selected?.label}</span>
         <span className="select-trigger-caret" aria-hidden>▾</span>
       </button>
-      {open && (
-        <div className="select-menu" role="listbox">
-          <input
-            className="input select-search"
-            placeholder="Type to filter…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onSearchKeyDown}
-            autoFocus
-          />
-          <div className="select-search-list">
-            {results.length === 0 && <div className="select-search-empty">No matches</div>}
-            {results.map((o) => (
-              <button
-                key={o.value || '__default__'}
-                type="button"
-                role="option"
-                aria-selected={o.value === value}
-                className={`select-option${o.value === value ? ' on' : ''}`}
-                onClick={() => pick(o.value)}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
+      <PopMenu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={wrapRef}
+        className="select-menu"
+        role="listbox"
+        sheetTitle={ariaLabel || 'Filter'}
+      >
+        <input
+          className="input select-search"
+          placeholder="Type to filter…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onSearchKeyDown}
+          autoFocus
+        />
+        <div className="select-search-list">
+          {results.length === 0 && <div className="select-search-empty">No matches</div>}
+          {results.map((o) => (
+            <button
+              key={o.value || '__default__'}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              className={`menu-option${o.value === value ? ' on' : ''}`}
+              onClick={() => pick(o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
         </div>
-      )}
+      </PopMenu>
     </div>
   );
 }

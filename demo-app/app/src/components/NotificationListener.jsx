@@ -1,116 +1,78 @@
-// NotificationListener — watches state for events the current viewer cares about
-// and surfaces them as (a) a transient toast and (b) a browser-tab title badge.
+// NotificationListener — the viewer-only TRANSIENT surface (toasts + browser-tab
+// title badge) that complements the durable bell inbox.
 //
-// Persistent in-app notifications (the bell inbox) are NOT written here —
-// the reducer's ADD_MESSAGE / job / invoice cases stamp those per-recipient at
-// action time so switching users surfaces the right inbox. This component is
-// a viewer-only side-effect surface.
+// It toasts off NEW bell rows for the current user rather than re-deriving events
+// from state.jobs/messages/invoices. Those durable rows are stamped by the
+// fan-out helpers (lib/notifications) at action time with the correct recipient
+// gating — prefs opt-out, role/permission visibility, thread muting, and actor
+// self-exclusion — so toasting them inherits all of it for free:
+//   - standing crew (who get bell rows) now get toasts too, not just named crew;
+//   - every event family that fans out (ops / key / marketing /
+//     problem / quote / reminder-failed / added-to-thread), not only
+//     messages+jobs+invoices, surfaces a toast;
+//   - the actor never toasts their own action (the fan-outs already skip them).
 //
-// Sources of truth:
-//   - lib/notifications.js for the catalog + the resolveMessageEvent helper.
-//   - user.notificationPrefs for the current user's per-event opt-ins.
-//   - conversation.mutedByUserIds for per-thread silence (handled inside
-//     resolveMessageEvent).
-//
-// First-render guard: the listener seeds its "seen" sets from initial state on
-// mount so we don't toast for everything that existed before the user opened
-// the page. Only items added after mount fire.
+// First-render guard: seed the "seen" set from existing rows on mount (and on a
+// user switch) so pre-existing history never toasts — only rows added after
+// mount fire.
 
 import { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useStore } from '../store';
 import { useToast } from './Toast';
 import { setUnreadCount } from '../lib/documentTitle';
-import {
-  isNotificationVisibleForUser,
-  resolveMessageEvent,
-  previewMessageBody,
-  buildMessageNotificationTitle,
-} from '../lib/notifications';
 import { selectUnreadNotificationCount } from '../store/selectors';
+
+// Above this many fresh rows in one batch (e.g. a resync after a long-hidden
+// tab), collapse into a single digest toast instead of stacking N.
+const MAX_INDIVIDUAL_TOASTS = 3;
 
 export default function NotificationListener() {
   const state = useStore();
   const toast = useToast();
-  const seedRef = useRef(null);
+  const location = useLocation();
+  const seenRef = useRef(null);
 
-  // Tab title — driven by the persistent notification-inbox unread count for
-  // the current user. Same source the bell badge uses, so they always agree.
-  const totalUnread = selectUnreadNotificationCount(state, state.currentUserId);
+  const currentUserId = state.currentUserId;
+
+  // Tab title — driven by the persistent bell unread count for the current user.
+  // Same source the bell badge uses, so they always agree.
+  const totalUnread = selectUnreadNotificationCount(state, currentUserId);
   useEffect(() => { setUnreadCount(totalUnread); }, [totalUnread]);
 
   useEffect(() => {
-    const currentUser = state.users.find((u) => u.id === state.currentUserId);
-    if (!currentUser) return;
-    const prefs = currentUser.notificationPrefs || {};
+    if (!currentUserId) return;
+    const rows = (state.notifications || []).filter((n) => n.userId === currentUserId);
 
-    // First mount — and also when the viewer changes (different currentUserId)
-    // we re-seed so we don't blast toasts for the new user's existing history.
-    if (!seedRef.current || seedRef.current.userId !== currentUser.id) {
-      seedRef.current = {
-        userId: currentUser.id,
-        msgIds: new Set(state.messages.map((m) => m.id)),
-        jobs: new Map(state.jobs.map((j) => [j.id, { startAt: j.startAt, status: j.status }])),
-        invoices: new Map(state.invoices.map((i) => [i.id, i.status])),
-      };
+    // Seed on first mount and whenever the viewer changes, so we never blast
+    // toasts for the new user's existing history.
+    if (!seenRef.current || seenRef.current.userId !== currentUserId) {
+      seenRef.current = { userId: currentUserId, ids: new Set(rows.map((n) => n.id)) };
       return;
     }
 
-    const convById = new Map(state.conversations.map((c) => [c.id, c]));
+    const seen = seenRef.current.ids;
+    const fresh = rows.filter((n) => !seen.has(n.id));
+    if (fresh.length === 0) return;
+    fresh.forEach((n) => seen.add(n.id));
 
-    const toastFor = (eventKey, { title, body }) => {
-      if (prefs[eventKey] !== true) return;
-      if (!isNotificationVisibleForUser(eventKey, currentUser, state.permissions, state.userPermissionOverrides)) return;
-      toast.info(body ? `${title}: ${body}` : title);
-    };
+    // Suppress a toast for the message thread the user is already looking at —
+    // the row still lands in the bell + tab title, it just doesn't pop a toast
+    // on top of the conversation they're reading.
+    const path = location.pathname || '';
+    const shown = fresh.filter((n) => !(
+      typeof n.url === 'string' && n.url.startsWith('/messaging/') && path.startsWith(n.url)
+    ));
+    if (shown.length === 0) return;
 
-    // ----- Messages -----
-    for (const m of state.messages) {
-      if (seedRef.current.msgIds.has(m.id)) continue;
-      seedRef.current.msgIds.add(m.id);
-      const conv = convById.get(m.conversationId);
-      const eventKey = resolveMessageEvent(m, conv, currentUser.id);
-      if (!eventKey) continue;
-      const title = buildMessageNotificationTitle(eventKey, m, conv, state.users);
-      toastFor(eventKey, { title, body: previewMessageBody(m.body || m.text) });
+    if (shown.length > MAX_INDIVIDUAL_TOASTS) {
+      toast.info(`${shown.length} new notifications`);
+      return;
     }
-
-    // ----- Jobs -----
-    const seenJobs = seedRef.current.jobs;
-    for (const j of state.jobs) {
-      const prior = seenJobs.get(j.id);
-      seenJobs.set(j.id, { startAt: j.startAt, status: j.status });
-      if (!(j.crewIds || []).includes(currentUser.id)) continue;
-
-      if (!prior) {
-        toastFor('jobCreatedOrRescheduled', {
-          title: 'New job assigned to you',
-          body: j.startAt ? new Date(j.startAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '',
-        });
-        continue;
-      }
-      if (prior.startAt !== j.startAt) {
-        toastFor('jobCreatedOrRescheduled', {
-          title: 'Job rescheduled',
-          body: `Now ${new Date(j.startAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`,
-        });
-      }
-      if (prior.status !== j.status && j.status === 'cancelled') {
-        toastFor('jobCancelled', { title: 'A job you were on was cancelled', body: '' });
-      }
+    for (const n of shown) {
+      toast.info(n.body ? `${n.title}: ${n.body}` : n.title);
     }
-
-    // ----- Invoices -----
-    const seenInv = seedRef.current.invoices;
-    for (const inv of state.invoices) {
-      const priorStatus = seenInv.get(inv.id);
-      seenInv.set(inv.id, inv.status);
-      if (priorStatus === inv.status) continue;
-      if (priorStatus === undefined) continue;
-      const label = inv.number || inv.id;
-      if (inv.status === 'paid') toastFor('invoicePaid', { title: `Invoice ${label} paid`, body: '' });
-      if (inv.status === 'overdue') toastFor('invoiceOverdue', { title: `Invoice ${label} is overdue`, body: '' });
-    }
-  }, [state, toast]);
+  }, [state.notifications, currentUserId, location.pathname, toast]);
 
   return null;
 }

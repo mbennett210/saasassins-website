@@ -1,0 +1,27 @@
+<!-- @dsCard group="Forms" height=360 width=720 subtitle="Click a facet to search it" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FilterSelect</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+var CLEANERS = [{ value: '', label: 'All cleaners' }, { value: 'mr', label: 'Maria Reyes' }, { value: 'ak', label: 'Ana Kim' }, { value: 'js', label: 'Jon Smith' }, { value: 'lt', label: 'Luis Torres' }];
+var CUSTOMERS = [{ value: '', label: 'All customers' }, { value: 'hv', label: 'Harbor View Offices' }, { value: 'bm', label: 'Brickell Medical Suites' }, { value: 'cg', label: 'Coral Gables Law Group' }, { value: 'dd', label: 'Dadeland Dental' }];
+function Demo() {
+  var a = React.useState(''), b = React.useState('mr');
+  return h('div', { className: 'filter-bar' },
+    h('div', { className: 'facet facet-single' }, h(CS.FilterSelect, { value: a[0], onChange: a[1], options: CUSTOMERS, ariaLabel: 'Customer' })),
+    h('div', { className: 'facet facet-single' }, h(CS.FilterSelect, { value: b[0], onChange: b[1], options: CLEANERS, ariaLabel: 'Cleaner' })));
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(Demo));
+</script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 // Replies tab — the marketing reply inbox. One shared list of every inbound
 // reply correlated to a sequence. Replies are NOT auto-sorted into leads vs
 // junk (no classifier) — open one to read it and decide: open the contact,
-// move their pipeline stage, unenroll them, mark the reply handled, or resume
-// a reply-halted sequence. A sent/replies stat strip sits up top.
+// unenroll them, mark the reply handled, or resume a reply-halted sequence.
+// A sent/replies stat strip sits up top.
 //
 // In stub mode (no email backend wired) the inbound listener is a no-op, so a
 // "Simulate a reply" affordance lets you exercise the whole flow in dev.
@@ -16,13 +16,12 @@ import {
   selectMarketingSequences,
   selectContacts,
   selectMarketingSends,
-  selectMarketingInboxes,
-  selectPipelines,
 } from '../../store/selectors';
 import { usePermission } from '../../hooks/usePermission';
 import { useFromHere } from '../../hooks/useFromHere';
 import { useToast } from '../../components/Toast';
-import { INBOX_BACKEND_URL, sendViaInbox } from '../../lib/connectedInboxes';
+import { INBOX_STUB_ACTIVE, INBOX_CONFIGURED, sendViaInbox } from '../../lib/connectedInboxes';
+import { classifyReply, REPLY_CATEGORY_META, REPLY_CATEGORY_ORDER } from '../../lib/replyTriage';
 import { newId } from '../../lib/ids';
 import Modal from '../../components/Modal';
 import FormField from '../../components/FormField';
@@ -52,6 +51,13 @@ function snippet(text, n = 140) {
 function contactLabel(c) {
   if (!c) return 'Unknown contact';
   return `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.email || 'Unknown contact';
+}
+
+// A reply's triage bucket. New replies are stamped with `category` at record
+// time (reducer / server ingest); older rows recorded before triage shipped
+// have no field, so fall back to a live classify — display stays consistent.
+function replyBucket(r) {
+  return r.category || classifyReply(r).category;
 }
 
 // ─── Reply composer helpers ──────────────────────────────────────────────────
@@ -122,6 +128,9 @@ export default function RepliesTab() {
 
   const [openReplyId, setOpenReplyId] = useState(null);
   const [simulateOpen, setSimulateOpen] = useState(false);
+  // Triage bucket filter. Local state (not a URL param) to match this page's
+  // existing in-page tab pattern (Marketing.jsx switches tabs via useState).
+  const [bucket, setBucket] = useState('all');
 
   const seqById = new Map(sequences.map((s) => [s.id, s]));
   const contactById = new Map(contacts.map((c) => [c.id, c]));
@@ -129,7 +138,27 @@ export default function RepliesTab() {
   const sentCount = sends.filter((sd) => sd.status === 'sent').length;
   const newCount = replies.filter((r) => r.status === 'new').length;
   const openReply = openReplyId ? replies.find((r) => r.id === openReplyId) || null : null;
-  const stubMode = !INBOX_BACKEND_URL;
+  // CS-038: the "Simulate a reply" fake-action shows ONLY in a true demo/dev stub build.
+  // INBOX_STUB_ACTIVE is a STATIC (mode-first) flag, so a production build folds it to false
+  // and the control is never rendered — unlike the old `!INBOX_BACKEND_URL`, which was true in
+  // a hosted build with the backend URL unset.
+  const stubMode = INBOX_STUB_ACTIVE;
+
+  // Bucket each reply once, then derive per-bucket counts + the filtered view.
+  const bucketed = replies.map((r) => ({ reply: r, cat: replyBucket(r) }));
+  const bucketCounts = bucketed.reduce((acc, { cat }) => {
+    acc[cat] = (acc[cat] || 0) + 1;
+    return acc;
+  }, {});
+  const visibleReplies = (bucket === 'all' ? bucketed : bucketed.filter((b) => b.cat === bucket))
+    .map((b) => b.reply);
+  // Chips: All + only the buckets that actually have replies (skip empty ones).
+  const bucketChips = [
+    { key: 'all', label: 'All', count: replies.length },
+    ...REPLY_CATEGORY_ORDER
+      .filter((k) => bucketCounts[k])
+      .map((k) => ({ key: k, label: REPLY_CATEGORY_META[k].label, count: bucketCounts[k] })),
+  ];
 
   return (
     <>
@@ -158,10 +187,27 @@ export default function RepliesTab() {
       </div>
 
       <p className="marketing-tab-intro">
-        Every reply to a marketing email lands here — out-of-office, "not
-        interested," and genuine bites all mixed together. Open one to read it
-        and decide what to do.
+        Every reply to a marketing email lands here. Out-of-office replies,
+        bounces, unsubscribe requests, and genuine bites. They're auto-sorted
+        into buckets so the real people are easy to find; open one to read it
+        and decide what to do. (Explicit unsubscribe replies are also added to
+        your suppression list automatically.)
       </p>
+
+      {replies.length > 0 && (
+        <div className="filter-chips marketing-reply-buckets">
+          {bucketChips.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              className={`chip ${bucket === c.key ? 'on' : ''}`}
+              onClick={() => setBucket(c.key)}
+            >
+              {c.label} <span className="control-count tnum">{c.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {replies.length === 0 ? (
         <EmptyState
@@ -169,10 +215,18 @@ export default function RepliesTab() {
           title="No replies yet"
           message="When a contact replies to a sequence email, it shows up here for review."
         />
+      ) : visibleReplies.length === 0 ? (
+        <EmptyState
+          icon={<Icon name="mail" size={32} />}
+          title="Nothing in this bucket"
+          message="No replies match this filter. Pick another bucket above."
+        />
       ) : (
         <div className="marketing-reply-list">
-          {replies.map((r) => {
+          {visibleReplies.map((r) => {
             const seq = seqById.get(r.sequenceId);
+            const cat = replyBucket(r);
+            const catMeta = REPLY_CATEGORY_META[cat] || REPLY_CATEGORY_META.human;
             return (
               <button
                 key={r.id}
@@ -184,9 +238,12 @@ export default function RepliesTab() {
                   <span className="marketing-reply-row-name">
                     {contactLabel(contactById.get(r.contactId))}
                   </span>
-                  <Badge variant={r.status === 'new' ? 'blue' : 'slate'}>
-                    {r.status === 'new' ? 'New' : 'Handled'}
-                  </Badge>
+                  <span className="marketing-reply-row-badges">
+                    <Badge variant={catMeta.variant}>{catMeta.label}</Badge>
+                    <Badge variant={r.status === 'new' ? 'blue' : 'slate'}>
+                      {r.status === 'new' ? 'New' : 'Handled'}
+                    </Badge>
+                  </span>
                 </div>
                 <div className="marketing-reply-row-meta">
                   {seq ? seq.name : 'Unknown sequence'} · {timeAgo(r.receivedAt)}
@@ -227,8 +284,6 @@ export default function RepliesTab() {
 // ─── Reply detail + actions ──────────────────────────────────────────────────
 function ReplyDetailModal({ reply, open, onClose, state, dispatch, toast, canManage, navigate, nav }) {
   const contact = reply ? (state.contacts || []).find((c) => c.id === reply.contactId) || null : null;
-  const [stagePipelineId, setStagePipelineId] = useState(contact?.pipelineId || '');
-  const [stageKey, setStageKey] = useState('');
 
   // Reply composer state — seeded from the inbound when the modal opens.
   // Operator can edit both fields before sending; the body opens with a
@@ -253,9 +308,6 @@ function ReplyDetailModal({ reply, open, onClose, state, dispatch, toast, canMan
   const enrollment = reply.enrollmentId
     ? (state.marketingEnrollments || []).find((e) => e.id === reply.enrollmentId) || null
     : null;
-  const pipelines = state.pipelines || [];
-  const stagePipeline = pipelines.find((p) => p.id === stagePipelineId) || null;
-  const stages = stagePipeline ? stagePipeline.stages || [] : [];
 
   // Sending-inbox lookup — same mailbox that fired the original outbound, so
   // the contact sees the reply land on the thread they already know.
@@ -263,7 +315,7 @@ function ReplyDetailModal({ reply, open, onClose, state, dispatch, toast, canMan
   const canReply = canManage
     && !!sendingInbox
     && !!reply.fromEmail
-    && Boolean(INBOX_BACKEND_URL || true); // stub-mode allowed — sendViaInbox no-ops
+    && INBOX_CONFIGURED; // CS-038: real backend OR demo stub — else the reply UI is disabled (never fakes)
 
   const responses = Array.isArray(reply.responses) ? reply.responses : [];
 
@@ -332,21 +384,6 @@ function ReplyDetailModal({ reply, open, onClose, state, dispatch, toast, canMan
     }
   }
 
-  function moveStage() {
-    if (!contact || !stagePipelineId || !stageKey) {
-      toast.error('Pick a pipeline and stage first.');
-      return;
-    }
-    dispatch({
-      type: ACTIONS.SET_CONTACT_STAGE,
-      id: contact.id,
-      stage: stageKey,
-      pipelineId: stagePipelineId,
-      authorUserId: state.currentUserId || null,
-    });
-    toast.success('Contact moved');
-  }
-
   function unenroll() {
     if (!enrollment) return;
     dispatch({ type: ACTIONS.UNENROLL_CONTACT, enrollmentId: enrollment.id });
@@ -360,8 +397,8 @@ function ReplyDetailModal({ reply, open, onClose, state, dispatch, toast, canMan
   }
 
   function openContact() {
-    if (!contact) return;
-    navigate(`/contacts/${contact.id}`, { state: nav });
+    if (!contact?.companyId) return;
+    navigate(`/clients/${contact.companyId}`, { state: nav });
   }
 
   return (
@@ -420,7 +457,7 @@ function ReplyDetailModal({ reply, open, onClose, state, dispatch, toast, canMan
               <div className="marketing-reply-compose-head-from">
                 {sendingInbox
                   ? <>Sending from <strong>{sendingInbox.senderName ? `${sendingInbox.senderName} <${sendingInbox.email}>` : sendingInbox.email}</strong></>
-                  : <em>Can&apos;t determine which inbox to reply from — open the contact and use Messaging instead.</em>}
+                  : <em>Can&apos;t determine which inbox to reply from. Open the contact and use Messaging instead.</em>}
               </div>
             </div>
             {sendingInbox && (
@@ -442,7 +479,7 @@ function ReplyDetailModal({ reply, open, onClose, state, dispatch, toast, canMan
                   disabled={sendingReply}
                   help={inboundMessageIdForThreading(reply)
                     ? 'Sends with In-Reply-To headers so it threads under the original conversation in their inbox.'
-                    : 'Threading headers unavailable for this inbound — the reply will arrive as a new thread.'}
+                    : 'Threading headers unavailable for this inbound. The reply will arrive as a new thread.'}
                 />
                 <div className="marketing-reply-compose-actions">
                   <button
@@ -459,51 +496,23 @@ function ReplyDetailModal({ reply, open, onClose, state, dispatch, toast, canMan
           </div>
         )}
 
-        {canManage && (
-          <>
-            <div className="form-row marketing-reply-move">
-              <FormField
-                label="Move to pipeline"
-                name="reply-move-pipeline"
-                as="select"
-                value={stagePipelineId}
-                onChange={(e) => { setStagePipelineId(e.target.value); setStageKey(''); }}
-                placeholder="Select a pipeline…"
-                options={pipelines.map((p) => ({ value: p.id, label: p.label }))}
-              />
-              <FormField
-                label="Stage"
-                name="reply-move-stage"
-                as="select"
-                value={stageKey}
-                onChange={(e) => setStageKey(e.target.value)}
-                placeholder={stagePipeline ? 'Select a stage…' : 'Pick a pipeline first'}
-                options={stages.map((st) => ({ value: st.key, label: st.label }))}
-                disabled={!stagePipeline}
-              />
-            </div>
-            <div className="marketing-reply-actions">
-              <button type="button" className="btn btn-outline" onClick={moveStage} disabled={!contact}>
-                Move stage
+        {canManage && enrollment && enrollment.status !== 'unenrolled' && (
+          <div className="marketing-reply-actions">
+            {enrollment.status === 'replied' && (
+              <button type="button" className="btn btn-outline" onClick={resume}>
+                Resume in sequence
               </button>
-              {enrollment && enrollment.status === 'replied' && (
-                <button type="button" className="btn btn-outline" onClick={resume}>
-                  Resume in sequence
-                </button>
-              )}
-              {enrollment && enrollment.status !== 'unenrolled' && (
-                <button type="button" className="btn btn-outline" onClick={unenroll}>
-                  Unenroll
-                </button>
-              )}
-            </div>
-          </>
+            )}
+            <button type="button" className="btn btn-outline" onClick={unenroll}>
+              Unenroll
+            </button>
+          </div>
         )}
       </div>
 
       <div className="modal-actions marketing-reply-footer">
-        <button type="button" className="btn btn-outline" onClick={openContact} disabled={!contact}>
-          Open contact
+        <button type="button" className="btn btn-outline" onClick={openContact} disabled={!contact?.companyId}>
+          Open customer
         </button>
         {reply.status === 'new' ? (
           <button type="button" className="btn btn-primary" onClick={() => markHandled('handled')}>
@@ -532,7 +541,7 @@ function SimulateReplyModal({ open, onClose, state, dispatch, toast }) {
   const options = enrollments.map((e) => {
     const c = contacts.find((x) => x.id === e.contactId);
     const s = sequences.find((x) => x.id === e.sequenceId);
-    return { value: e.id, label: `${contactLabel(c)} — ${s ? s.name : 'sequence'}` };
+    return { value: e.id, label: `${contactLabel(c)}. ${s ? s.name : 'sequence'}` };
   });
 
   function fire() {
@@ -556,13 +565,13 @@ function SimulateReplyModal({ open, onClose, state, dispatch, toast }) {
   return (
     <Modal open={open} onClose={onClose} title="Simulate a reply" size="sm">
       <p className="marketing-connect-copy">
-        Dev helper — with no email backend wired, live replies never arrive.
+        Dev helper. With no email backend wired, live replies never arrive.
         This injects a reply against a real enrollment so you can exercise the
         Replies inbox, halt-on-reply, and reply-routing.
       </p>
       {options.length === 0 ? (
         <div className="callout callout-info">
-          Enroll a contact in a sequence first — there's nothing to reply to yet.
+          Enroll a contact in a sequence first. There's nothing to reply to yet.
         </div>
       ) : (
         <>

@@ -56,7 +56,7 @@ export default function InboxSignatureModal({ open, inbox, onClose }) {
         rows={8}
         value={signatureDraft}
         onChange={(e) => setSignatureDraft(e.target.value)}
-        placeholder={'—\n{senderName}\n{senderCompany} · {senderPhone}'}
+        placeholder={'. \n{senderName}\n{senderCompany} · {senderPhone}'}
         help="Plain text or HTML. Variables like {senderName}, {senderCompany} and {senderPhone} resolve inside it too. Leave empty for no signature."
       />
       <div className="modal-actions">

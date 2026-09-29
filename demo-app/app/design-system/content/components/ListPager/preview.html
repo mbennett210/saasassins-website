@@ -1,0 +1,26 @@
+<!-- @dsCard group="Navigation" height=72 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ListPager</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-5) var(--space-6) var(--space-1); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Demo() {
+  var total = 97, per = 20;
+  var s = React.useState(2), page = s[0], setPage = s[1];
+  var totalPages = Math.ceil(total / per);
+  var pager = { page: page, totalPages: totalPages, setPage: setPage, start: (page - 1) * per + 1, end: Math.min(page * per, total), total: total };
+  return h(CS.ListPager, { pager: pager, noun: 'invoices' });
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(Demo));
+</script>
+</body>
+</html>

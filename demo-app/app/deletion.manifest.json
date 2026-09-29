@@ -1,0 +1,1059 @@
+{
+  "version": 1,
+  "note": "Deletion-ripple FK law book. Hand-classified; reconciled against a mechanical enumeration by deletion-lint.mjs. Policy vocabulary: SWEEP / NULLIFY / NULLIFY+name / REPOINT / BLOCK / BLOCK-UNSETTLED / KEEP-BY-DESIGN / EXTERNAL-NOT-FK / IDENTITY / NOT-EXERCISABLE. A cell with \"nameField\" must keep the deleted person's name in that field of the same row (NULLIFY+name always has one); the harness proves it (\"+NAME\"). Disputed cells carry \"decision\".",
+  "targets": {
+    "users": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_USER"
+      ],
+      "guards": [
+        "isLastOwner"
+      ]
+    },
+    "clients": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_CLIENT"
+      ]
+    },
+    "contacts": {
+      "idField": "id",
+      "altKeys": [
+        "email"
+      ],
+      "deletedBy": [
+        "DELETE_CONTACT"
+      ],
+      "alsoCascadedBy": [
+        "DELETE_CLIENT"
+      ]
+    },
+    "sites": {
+      "idField": "id",
+      "deletedBy": [],
+      "note": "no standalone delete; dies with its client"
+    },
+    "jobs": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_JOB",
+        "DELETE_JOB_SERIES",
+        "UPDATE_JOB_SERIES"
+      ]
+    },
+    "invoices": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_INVOICE"
+      ]
+    },
+    "tags": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_TAG"
+      ]
+    },
+    "keys": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_KEY"
+      ]
+    },
+    "services": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_SERVICE"
+      ]
+    },
+    "frequencies": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_FREQUENCY"
+      ]
+    },
+    "conversations": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_CONVERSATION",
+        "BULK_DELETE_CONVERSATIONS"
+      ]
+    },
+    "snippets": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_SNIPPET"
+      ]
+    },
+    "pipelines": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_PIPELINE"
+      ],
+      "guards": [
+        "pipelineInUse"
+      ]
+    },
+    "opportunities": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_OPPORTUNITY"
+      ]
+    },
+    "supplyItems": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_SUPPLY_ITEM"
+      ]
+    },
+    "supplyRequests": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_SUPPLY_REQUEST"
+      ]
+    },
+    "oauthWorkspaces": {
+      "idField": "id",
+      "deletedBy": [
+        "REMOVE_OAUTH_WORKSPACE"
+      ],
+      "guards": [
+        "oauthWorkspaceInUse"
+      ]
+    },
+    "marketingInboxes": {
+      "idField": "id",
+      "deletedBy": [
+        "REMOVE_MARKETING_INBOX"
+      ]
+    },
+    "marketingSequences": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_MARKETING_SEQUENCE"
+      ]
+    },
+    "checklistTemplates": {
+      "idField": "id",
+      "deletedBy": [
+        "SCRUB_CHECKLIST_TEMPLATE"
+      ],
+      "note": "Templates are relational (server inspection_templates), not a blob slice: the record itself is hard-deleted by store.deleteTemplate over /api/qc/templates/delete, and SCRUB_CHECKLIST_TEMPLATE is the reducer's anti-orphan ripple that clears the client references. Decision checklist-template-delete resolved 2026-09-24 (hard delete, no archive; history kept via inspection/checklist snapshots)."
+    },
+    "payrollLines": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_PAYROLL_LINE"
+      ],
+      "guards": [
+        "reimbursementForLine"
+      ]
+    },
+    "reimbursements": {
+      "idField": "id",
+      "deletedBy": [
+        "DELETE_REIMBURSEMENT"
+      ],
+      "note": "takes its own pay line"
+    }
+  },
+  "fields": {
+    "$.activePipelineId": {
+      "target": "pipelines",
+      "kind": "scalar-id",
+      "policy": "REPOINT",
+      "why": "DELETE_PIPELINE reassigns activePipelineId to the master pipeline"
+    },
+    "$.currentUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NOT-EXERCISABLE",
+      "why": "session pointer to the acting user; self-delete is UI-prevented and not a data cascade",
+      "decision": "self-delete"
+    },
+    "clients[].billingContactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "clients[].crewChecklists.{key}": {
+      "target": "users",
+      "kind": "map-key",
+      "policy": "SWEEP",
+      "why": "remove the per-cleaner checklist entry for a deleted user"
+    },
+    "clients[].frequencyId": {
+      "target": "frequencies",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "DELETE_FREQUENCY nulls clients.frequencyId"
+    },
+    "clients[].primaryContactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "clients[].serviceId": {
+      "target": "services",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "DELETE_SERVICE nulls clients.serviceId"
+    },
+    "clients[].supervisorId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "a dangling-but-truthy supervisorId strands the account off the \"needs a manager\" bench (DEL-01a)"
+    },
+    "clients[].tagIds": {
+      "target": "tags",
+      "kind": "id-array",
+      "policy": "SWEEP",
+      "why": "DELETE_TAG scrubs the tag id"
+    },
+    "connectedInboxes[].userId": {
+      "target": "users",
+      "policy": "SWEEP",
+      "why": "a departed user mailbox connection is swept; provider OAuth-token revoke binds at go-live"
+    },
+    "connectedInboxes[].workspaceId": {
+      "target": "oauthWorkspaces",
+      "kind": "scalar-id",
+      "policy": "BLOCK",
+      "why": "oauthWorkspaceInUse refuses removal while a connected inbox references it (LW-03)"
+    },
+    "contacts[].companyId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "DELETE_CLIENT deletes the company's contacts"
+    },
+    "contacts[].tagIds": {
+      "target": "tags",
+      "kind": "id-array",
+      "policy": "SWEEP",
+      "why": "DELETE_TAG scrubs the tag id"
+    },
+    "conversations[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "conversations[].contactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "conversations[].createdByUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY+name",
+      "nameField": "createdByName",
+      "why": "a thread outlives its creator: createdByUserId → null, name demoted to createdByName"
+    },
+    "conversations[].mutedByUserIds": {
+      "target": "users",
+      "kind": "id-array",
+      "policy": "SWEEP"
+    },
+    "conversations[].participantUserIds": {
+      "target": "users",
+      "kind": "id-array",
+      "policy": "SWEEP"
+    },
+    "conversations[].starredByUserIds": {
+      "target": "users",
+      "kind": "id-array",
+      "policy": "SWEEP"
+    },
+    "invoices[].billingContactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "invoices[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "invoices[].jobIds": {
+      "target": "jobs",
+      "kind": "id-array",
+      "policy": "SWEEP",
+      "why": "DELETE_JOB scrubs invoice.jobIds"
+    },
+    "invoices[].siteId": {
+      "target": "sites",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "invoice deleted with its client"
+    },
+    "jobs[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "jobs[].coverFor.{key}": {
+      "target": "users",
+      "kind": "map-key",
+      "policy": "SWEEP",
+      "why": "a cover (job.coverFor = { [coverId]: coveredId }, R8) names two users; DELETE_USER scrubs BOTH sides (reducer.js, lib/jobCover.removeUserFromCoverFor). The COVERED cleaner is by definition NOT on the visit, so the crewIds sweep cannot reach them (the cover side)"
+    },
+    "jobs[].coverFor.{value}": {
+      "target": "users",
+      "kind": "map-value",
+      "policy": "SWEEP",
+      "why": "a cover (job.coverFor = { [coverId]: coveredId }, R8) names two users; DELETE_USER scrubs BOTH sides (reducer.js, lib/jobCover.removeUserFromCoverFor). The COVERED cleaner is by definition NOT on the visit, so the crewIds sweep cannot reach them (the covered side)"
+    },
+    "jobs[].crewIds": {
+      "target": "users",
+      "kind": "id-array",
+      "policy": "SWEEP",
+      "why": "DELETE_USER scrubs the user from job crewIds + recurrence dayOverrides + recurrence crewOverride"
+    },
+    "jobs[].serviceId": {
+      "target": "services",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "DELETE_SERVICE nulls jobs.serviceId"
+    },
+    "jobs[].siteId": {
+      "target": "sites",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "a site dies only via its client, which also deletes the job"
+    },
+    "keyEvents[].byUserId": {
+      "target": "users",
+      "policy": "NULLIFY+name",
+      "nameField": "byName",
+      "why": "key-custody actor demoted to byName on user delete (preserves the legal trail)"
+    },
+    "keyEvents[].holderUserId": {
+      "target": "users",
+      "policy": "NULLIFY+name",
+      "nameField": "holderName",
+      "why": "key-custody holder demoted to holderName on user delete"
+    },
+    "keyEvents[].keyId": {
+      "target": "keys",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "DELETE_KEY deletes the key's events"
+    },
+    "keys[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "physical keys outlive the deleted account (custody)",
+      "decision": "OQ-01"
+    },
+    "keys[].heldByUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY+name",
+      "nameField": "heldByName",
+      "why": "a key out with a deleted user stays out; the holder link is demoted to heldByName so the office still knows who has it"
+    },
+    "keys[].siteId": {
+      "target": "sites",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "keys survive; siteId nulled with clientId",
+      "decision": "OQ-01"
+    },
+    "marketingEnrollments[].contactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "marketingEnrollments[].sequenceId": {
+      "target": "marketingSequences",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "marketingInboxes[].connectedByUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "marketingInboxes[].workspaceId": {
+      "target": "oauthWorkspaces",
+      "kind": "scalar-id",
+      "policy": "BLOCK",
+      "why": "oauthWorkspaceInUse refuses removal while a marketing inbox references it (LW-03 fix)"
+    },
+    "marketingReplies[].contactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "marketingReplies[].enrollmentId": {
+      "target": "marketingEnrollments",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "marketingReplies[].fromEmail": {
+      "target": "contacts",
+      "matchBy": "email",
+      "policy": "KEEP-BY-DESIGN",
+      "why": "reply email is provenance (like messages.fromEmail); the swept FKs are contactId/enrollmentId. An enrollment-less reply keeps fromEmail after DELETE_CONTACT"
+    },
+    "marketingReplies[].sequenceId": {
+      "target": "marketingSequences",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "marketingSends[].contactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "marketingSends[].enrollmentId": {
+      "target": "marketingEnrollments",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "marketingSends[].inboxId": {
+      "target": "marketingInboxes",
+      "kind": "scalar-id",
+      "policy": "KEEP-BY-DESIGN",
+      "why": "records the sending inbox (historical)",
+      "decision": "marketing-send-inbox-history"
+    },
+    "marketingSends[].sequenceId": {
+      "target": "marketingSequences",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "marketingSends[].stepId": {
+      "target": "marketingSequences.steps",
+      "kind": "scalar-id",
+      "policy": "KEEP-BY-DESIGN",
+      "why": "records which step sent (historical); the live concern is enrollments.currentStepIndex clamping — tracked as an implicit scenario, not an FK cell"
+    },
+    "marketingSends[].toEmail": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "send row deleted with the contact",
+      "matchBy": "email"
+    },
+    "marketingSequences[].createdByUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "marketingSequences[].notifyOnReplyUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "marketingSequences[].replyRouting.pipelineId": {
+      "target": "pipelines",
+      "policy": "NULLIFY",
+      "why": "DELETE_PIPELINE clears the routing pipelineId (owner decision)"
+    },
+    "marketingSettings.replyRouting.pipelineId": {
+      "target": "pipelines",
+      "policy": "NULLIFY",
+      "why": "DELETE_PIPELINE clears the org routing pipelineId"
+    },
+    "messages[].authorUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY+name",
+      "nameField": "authorName",
+      "why": "a departed teammate's messages keep their byline: authorUserId → null, name demoted to authorName"
+    },
+    "messages[].conversationId": {
+      "target": "conversations",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "the conversation's messages are deleted with it"
+    },
+    "messages[].fromEmail": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "KEEP-BY-DESIGN",
+      "why": "inbound-email provenance (historical address), not a live contact FK",
+      "matchBy": "email"
+    },
+    "messages[].readByUserIds": {
+      "target": "users",
+      "kind": "id-array",
+      "policy": "SWEEP"
+    },
+    "messages[].snippetId": {
+      "target": "snippets",
+      "kind": "scalar-id",
+      "policy": "KEEP-BY-DESIGN",
+      "why": "records which snippet composed the message (historical usage)",
+      "decision": "snippet-usage-history"
+    },
+    "opportunities[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "opportunities[].pipelineId": {
+      "target": "pipelines",
+      "kind": "scalar-id",
+      "policy": "BLOCK",
+      "why": "DELETE_PIPELINE refuses while opportunities sit on the pipeline"
+    },
+    "opportunities[].primaryContactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "reminderEvents[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "reminderEvents[].jobId": {
+      "target": "jobs",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "scrubbed on DELETE_JOB/SERIES; the UPDATE_JOB_SERIES day-drop path is the suspected miss"
+    },
+    "sites[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "sites[].siteContactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "supplyItems[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "LW-01 fix — lib/deleteCascade.sweepClientOrphans"
+    },
+    "supplyRequests[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "LW-01 fix"
+    },
+    "supplyRequests[].completedByUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY+name",
+      "nameField": "completedByName",
+      "why": "completer link nulled on user delete; the name is kept (completedByName). REOPEN clears it with the id so a later completion is never credited to them"
+    },
+    "supplyRequests[].lines[].itemId": {
+      "target": "supplyItems",
+      "kind": "scalar-id",
+      "policy": "KEEP-BY-DESIGN",
+      "why": "request lines snapshot name+price at request time; itemId is historical (reducer DELETE_SUPPLY_ITEM)"
+    },
+    "supplyRequests[].requestedByUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY+name",
+      "nameField": "requestedByName",
+      "why": "requester link nulled on user delete; the name is kept on the request (requestedByName) so Supplies shows who asked instead of \"—\""
+    },
+    "timeOff[].createdBy": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "timeOff[].userId": {
+      "target": "users",
+      "policy": "KEEP-BY-DESIGN",
+      "nameField": "userName",
+      "why": "a deleted user's PTO/call-out row is kept for historical Reports > Called-out (owner decision) and gains userName so it shows who, not \"—\""
+    },
+    "timeOff[].scheduledJobIds": {
+      "target": "jobs",
+      "kind": "id-array",
+      "policy": "KEEP-BY-DESIGN",
+      "why": "a call-out records the cleans it took the person off at booking (Reports > Called out lists them); the ids are history, and a clean deleted since is simply not listed, so nothing dangles on screen"
+    },
+    "clients[].crewChecklists.{value}": {
+      "target": "checklistTemplates",
+      "kind": "map-value",
+      "policy": "SWEEP",
+      "why": "SCRUB_CHECKLIST_TEMPLATE drops the per-cleaner entry whose template was hard-deleted (removeTemplateFromClients); the cleaner falls back to the account default (decision checklist-template-delete resolved 2026-09-24)"
+    },
+    "employeeDocuments[].userId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "an employee's documents go with the employee"
+    },
+    "inspectionFollowUps[].assigneeUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "inspectionFollowUps[].inspectionId": {
+      "target": "inspections",
+      "kind": "scalar-id",
+      "policy": "NOT-EXERCISABLE",
+      "why": "inspection RECORDS live server-side; no client-store delete action",
+      "decision": "server-side-inspection"
+    },
+    "inspectionFollowUps[].updatedBy": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "invitations[].invitedBy": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY"
+    },
+    "invitations[].userId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "an invitation for a deleted user is orphaned"
+    },
+    "jobs[].tagIds": {
+      "target": "tags",
+      "kind": "id-array",
+      "policy": "SWEEP",
+      "why": "DELETE_TAG scrubs jobs.tagIds"
+    },
+    "notifications[].userId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "DELETE_USER drops the departed user's bell rows"
+    },
+    "opportunities[].ownerUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "KEEP-BY-DESIGN",
+      "why": "dead field — written but 0 readers; slated for removal",
+      "decision": "dead-ownerUserId"
+    },
+    "payrollLines[].userId": {
+      "target": "users",
+      "policy": "BLOCK-UNSETTLED",
+      "nameField": "userName",
+      "why": "DELETE_USER refuses while the user may still be owed pay (a line in this or the last pay period; hasUnsettledPay). Settled history never blocks and survives the delete as a pay record carrying userName (owner: block-delete; history kept like PTO)"
+    },
+    "reimbursements[].userId": {
+      "target": "users",
+      "policy": "BLOCK-UNSETTLED",
+      "nameField": "userName",
+      "why": "DELETE_USER refuses while a reimbursement is still pending; approved ones move through their pay line; settled history survives as a record carrying userName"
+    },
+    "userPermissionOverrides[].userId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "SWEEP",
+      "why": "DELETE_USER prunes the override row"
+    },
+    "clientActivities[].authorUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY+name",
+      "nameField": "authorName",
+      "why": "author link nulled on user delete; the name is kept (authorName) so a client note still shows who wrote it, not \"Someone\""
+    },
+    "clientActivities[].clientId": {
+      "target": "clients",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "contactActivities[].authorUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY+name",
+      "nameField": "authorName",
+      "why": "author link nulled on user delete; the name is kept (authorName) — the twin of clientActivities"
+    },
+    "contactActivities[].contactId": {
+      "target": "contacts",
+      "kind": "scalar-id",
+      "policy": "SWEEP"
+    },
+    "marketingSequences[].replyTags": {
+      "target": "tags",
+      "kind": "id-array",
+      "policy": "SWEEP",
+      "why": "LW-02 fix — scrubTagFromSequences"
+    },
+    "sites[].tagIds": {
+      "target": "tags",
+      "kind": "id-array",
+      "policy": "SWEEP",
+      "why": "DELETE_TAG scrubs sites.tagIds"
+    },
+    "jobs[].shiftId": {
+      "target": "sites.shifts",
+      "kind": "scalar-id",
+      "policy": "NOT-EXERCISABLE",
+      "why": "shift scheduling is unpopulated in this build (0 jobs carry shiftId, 0 site.shifts rows)"
+    },
+    "notifications[].url": {
+      "target": "multi",
+      "kind": "path-embedded",
+      "policy": "SWEEP",
+      "why": "deep-link bell row embeds a conversation/client/job id; DELETE_JOB scrubs /schedule/ but DELETE_CONVERSATION + DELETE_CLIENT leave /messaging/ + /clients/ dead links (adversarial finding)"
+    },
+    "payrollLines[].createdBy": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "who added the line (authorship, never displayed); cleared on DELETE_USER via sweepUserOrphans"
+    },
+    "reimbursements[].decidedBy": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "who approved/rejected it (authorship, never displayed); cleared on DELETE_USER"
+    },
+    "reimbursements[].payrollLineId": {
+      "target": "payrollLines",
+      "kind": "scalar-id",
+      "policy": "BLOCK",
+      "why": "DELETE_PAYROLL_LINE refuses a line that pays out an approved reimbursement (reimbursementForLine); it is undone from HR, where DELETE_REIMBURSEMENT takes the line"
+    },
+    "reimbursements[].submittedBy": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "who submitted it (authorship, never displayed); cleared on DELETE_USER"
+    }
+  },
+  "excluded": {
+    "oauthWorkspaces[].clientId": {
+      "reason": "Google OAuth client_id string, not a clients FK"
+    },
+    "users[].hr.employeeId": {
+      "reason": "payroll / employee code, not a users FK"
+    },
+    "marketingSends[].providerMessageId": {
+      "reason": "email-provider message id (external system)"
+    },
+    "messages[].emailHeaders.messageId": {
+      "reason": "RFC822 Message-ID header (external)"
+    },
+    "userPermissionOverrides[].grants": {
+      "reason": "permission keys are a fixed vocabulary, not deletable records"
+    },
+    "jobs[].seriesId": {
+      "reason": "logical series grouping key (ser_*), not a row FK; series lifecycle is handled by recurrence re-home in DELETE_JOB/DELETE_JOB_SERIES, not a reference cascade"
+    }
+  },
+  "sourceLocals": [
+    "actorUserId",
+    "addedByUserId",
+    "addedIds",
+    "adderId",
+    "allActiveStaffIds",
+    "byId",
+    "contactIds",
+    "convId",
+    "creatorId",
+    "delClientEnrollmentIds",
+    "delClientJobIds",
+    "delContactEnrollmentIds",
+    "droppedIds",
+    "eligibleIds",
+    "enrId",
+    "existingActiveIds",
+    "insertBeforeId",
+    "mSeqId",
+    "mStepId",
+    "notifyUserId",
+    "recipientIds",
+    "removedIds",
+    "rfcMessageId",
+    "seedAuthorId",
+    "viewAsUserId",
+    "userIds",
+    "tagId",
+    "opsAlertId",
+    "paymentId",
+    "emailMessageId",
+    "messageId",
+    "addedIds",
+    "anchorId",
+    "templateId"
+  ],
+  "actions": {
+    "SCRUB_CHECKLIST_TEMPLATE": {
+      "mode": "scrub-refs",
+      "target": "checklistTemplates",
+      "case": "reducer.js:1358",
+      "note": "anti-orphan ripple after a hard template delete (store.deleteTemplate): removeTemplateFromClients drops the crewChecklists per-cleaner entry pointing at the deleted template. R3 (2026-09-27) retired the location-wide default, so that per-cleaner pick is the only binding left. No blob template row exists to remove (templates are relational); history is kept via each record's template_snapshot."
+    },
+    "SET_JOBS": {
+      "mode": "implicit-scenario",
+      "note": "whole-array sync replace",
+      "case": "reducer.js:444"
+    },
+    "PATCH_JOBS": {
+      "mode": "implicit-scenario",
+      "note": "applies remote deletes[] via jobTombstones",
+      "case": "reducer.js:457"
+    },
+    "DELETE_PAYROLL_LINE": {
+      "mode": "hard-delete",
+      "target": "payrollLines",
+      "case": "reducer.js:503",
+      "guards": [
+        "reimbursementForLine (line backs an approved reimbursement)"
+      ]
+    },
+    "DELETE_REIMBURSEMENT": {
+      "mode": "hard-delete",
+      "target": "reimbursements",
+      "case": "reducer.js:518",
+      "cascadeLib": "removeReimbursement (takes its payrollLineId line)"
+    },
+    "DELETE_EMPLOYEE_DOCUMENT": {
+      "mode": "hard-delete",
+      "target": "employeeDocuments",
+      "case": "reducer.js:526"
+    },
+    "DELETE_SERVICE": {
+      "mode": "hard-delete",
+      "target": "services",
+      "case": "reducer.js:534"
+    },
+    "DELETE_FREQUENCY": {
+      "mode": "hard-delete",
+      "target": "frequencies",
+      "case": "reducer.js:548"
+    },
+    "REMOVE_NOTIFICATION": {
+      "mode": "hard-delete",
+      "target": "notifications",
+      "note": "self-scoped",
+      "case": "reducer.js:610"
+    },
+    "CLEAR_NOTIFICATIONS": {
+      "mode": "hard-delete",
+      "target": "notifications",
+      "note": "all for a userId",
+      "case": "reducer.js:638"
+    },
+    "DELETE_USER": {
+      "mode": "hard-delete",
+      "target": "users",
+      "guards": [
+        "isLastOwner"
+      ],
+      "case": "reducer.js:645"
+    },
+    "DELETE_CLIENT": {
+      "mode": "hard-delete",
+      "target": "clients",
+      "cascadeLib": "sweepClientOrphans",
+      "case": "reducer.js:779"
+    },
+    "DELETE_CLIENT_ACTIVITY": {
+      "mode": "hard-delete",
+      "target": "clientActivities",
+      "case": "reducer.js:870"
+    },
+    "DELETE_CONTACT": {
+      "mode": "hard-delete",
+      "target": "contacts",
+      "case": "reducer.js:934"
+    },
+    "UNTAG_CONTACT": {
+      "mode": "nested-removal",
+      "cell": "contacts[].tagIds",
+      "case": "reducer.js:976"
+    },
+    "UNTAG_CLIENT": {
+      "mode": "nested-removal",
+      "cell": "clients[].tagIds",
+      "case": "reducer.js:996"
+    },
+    "DELETE_OPPORTUNITY": {
+      "mode": "hard-delete",
+      "target": "opportunities",
+      "case": "reducer.js:1029"
+    },
+    "DELETE_TAG": {
+      "mode": "hard-delete",
+      "target": "tags",
+      "cascadeLib": "scrubTagFromSequences",
+      "case": "reducer.js:1118"
+    },
+    "DELETE_CONTACT_ACTIVITY": {
+      "mode": "hard-delete",
+      "target": "contactActivities",
+      "case": "reducer.js:1151"
+    },
+    "SET_USER_PERMISSION_OVERRIDE": {
+      "mode": "special",
+      "note": "prunes an override row when grants+revokes empty",
+      "case": "reducer.js:1159"
+    },
+    "DELETE_TIME_OFF": {
+      "mode": "hard-delete",
+      "target": "timeOff",
+      "case": "reducer.js:1245"
+    },
+    "APPLY_TIME_OFF_EXCLUSIONS": {
+      "mode": "special",
+      "note": "removes a userId from future job crewIds",
+      "case": "reducer.js:1250"
+    },
+    "UPDATE_JOB_SERIES": {
+      "mode": "implicit-scenario",
+      "target": "jobs",
+      "note": "day-drop deletes jobs for removed days (suspected reminderEvents miss)",
+      "case": "reducer.js:1405"
+    },
+    "DELETE_JOB": {
+      "mode": "hard-delete",
+      "target": "jobs",
+      "case": "reducer.js:1722"
+    },
+    "DELETE_JOB_SERIES": {
+      "mode": "hard-delete",
+      "target": "jobs",
+      "note": "deletes upcoming jobs of a series",
+      "case": "reducer.js:1758"
+    },
+    "REMOVE_INVOICE_PAYMENT": {
+      "mode": "nested-removal",
+      "cell": "invoices[].payments",
+      "case": "reducer.js:1880"
+    },
+    "DELETE_INVOICE": {
+      "mode": "hard-delete",
+      "target": "invoices",
+      "case": "reducer.js:1922"
+    },
+    "DELETE_KEY": {
+      "mode": "hard-delete",
+      "target": "keys",
+      "case": "reducer.js:1986"
+    },
+    "DELETE_SUPPLY_ITEM": {
+      "mode": "hard-delete",
+      "target": "supplyItems",
+      "case": "reducer.js:2022"
+    },
+    "COMPLETE_SUPPLY_REQUEST": {
+      "mode": "implicit-scenario",
+      "note": "pruneSupplyRequests trims the completed tail",
+      "case": "reducer.js:2058"
+    },
+    "DELETE_SUPPLY_REQUEST": {
+      "mode": "hard-delete",
+      "target": "supplyRequests",
+      "case": "reducer.js:2089"
+    },
+    "SET_INSPECTION_FOLLOWUP": {
+      "mode": "special",
+      "note": "prunes a follow-up row when assignee+done clear",
+      "case": "reducer.js:2212"
+    },
+    "DELETE_CONVERSATION": {
+      "mode": "hard-delete",
+      "target": "conversations",
+      "case": "reducer.js:2486"
+    },
+    "DELETE_SNIPPET": {
+      "mode": "hard-delete",
+      "target": "snippets",
+      "case": "reducer.js:2503"
+    },
+    "BULK_DELETE_CONVERSATIONS": {
+      "mode": "hard-delete",
+      "target": "conversations",
+      "note": "victim set",
+      "case": "reducer.js:2587"
+    },
+    "REVOKE_INVITATION": {
+      "mode": "soft-delete",
+      "note": "invitation → revoked, user → inactive",
+      "case": "reducer.js:2687"
+    },
+    "DELETE_PIPELINE": {
+      "mode": "hard-delete",
+      "target": "pipelines",
+      "guards": [
+        "pipelineInUse (opportunities)"
+      ],
+      "case": "reducer.js:2748"
+    },
+    "DELETE_PIPELINE_STAGE": {
+      "mode": "nested-removal",
+      "cell": "pipelines[].stages",
+      "guards": [
+        "contactOnStage (vestigial — DEL-03/LW-04)"
+      ],
+      "case": "reducer.js:2791"
+    },
+    "DISCONNECT_TWILIO": {
+      "mode": "connection-wipe",
+      "note": "clears company.integrations.twilio",
+      "case": "reducer.js:2838"
+    },
+    "RESET_A2P": {
+      "mode": "connection-wipe",
+      "note": "clears A2P registration",
+      "case": "reducer.js:2935"
+    },
+    "DISCONNECT_EMAIL_PROVIDER": {
+      "mode": "connection-wipe",
+      "note": "clears company.integrations.email",
+      "case": "reducer.js:2998"
+    },
+    "REMOVE_CONNECTED_INBOX": {
+      "mode": "hard-delete",
+      "target": "connectedInboxes",
+      "note": "promotes a new default inbox",
+      "case": "reducer.js:3151"
+    },
+    "REMOVE_OAUTH_WORKSPACE": {
+      "mode": "hard-delete",
+      "target": "oauthWorkspaces",
+      "guards": [
+        "oauthWorkspaceInUse"
+      ],
+      "case": "reducer.js:3220"
+    },
+    "REMOVE_MARKETING_INBOX": {
+      "mode": "hard-delete",
+      "target": "marketingInboxes",
+      "case": "reducer.js:3493"
+    },
+    "DELETE_MARKETING_SEQUENCE": {
+      "mode": "hard-delete",
+      "target": "marketingSequences",
+      "case": "reducer.js:3566"
+    },
+    "DELETE_MARKETING_STEP": {
+      "mode": "nested-removal",
+      "cell": "marketingSequences[].steps",
+      "note": "also clamps enrollments.currentStepIndex",
+      "case": "reducer.js:3630"
+    },
+    "UNENROLL_CONTACT": {
+      "mode": "soft-delete",
+      "note": "enrollment → unenrolled",
+      "case": "reducer.js:3719"
+    },
+    "RETRY_MARKETING_SEND": {
+      "mode": "special",
+      "note": "delete-and-re-add retry of one send",
+      "case": "reducer.js:3778"
+    },
+    "REMOVE_MARKETING_SUPPRESSION": {
+      "mode": "hard-delete",
+      "target": "marketingSuppressions",
+      "case": "reducer.js:3971"
+    }
+  }
+}

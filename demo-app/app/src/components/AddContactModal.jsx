@@ -1,19 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDismissTap } from '../hooks/useDismissTap';
 import Modal from './Modal';
 import FormField from './FormField';
-import TagPicker from './TagPicker';
+import Toggle from './Toggle';
+import Badge from './Badge';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
-import { selectClients, selectContactByEmail } from '../store/selectors';
+import { selectClients, selectContactByEmail, selectContactById, selectMarketingSuppressionForEmail } from '../store/selectors';
+import { usePermission } from '../hooks/usePermission';
 import { useToast } from './Toast';
 import { newId } from '../lib/ids';
-
-const LIFECYCLES = [
-  { value: 'lead',     label: 'Lead' },
-  { value: 'prospect', label: 'Prospect' },
-  { value: 'client',   label: 'Client' },
-  { value: 'vendor',   label: 'Vendor' },
-];
+import { fmtDate } from '../lib/dates';
+import { normalizeCompanyName } from '../lib/csv';
 
 // ── Phone helpers ────────────────────────────────────────────────────────
 // Storage shape: "+1 XXX-XXX-XXXX". Twilio (lib/twilio.js) needs E.164 with
@@ -123,14 +121,7 @@ function CompanyPicker({
   const [createDraft, setCreateDraft] = useState('');
   const wrapRef = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
+  useDismissTap({ open, ref: wrapRef, onDismiss: () => setOpen(false) });
 
   useEffect(() => {
     if (!open) {
@@ -184,9 +175,8 @@ function CompanyPicker({
         </span>
         {(selected || newCompanyName) && !disabled && (
           <span
-            className="text-xs text-muted"
+            className="input-clear"
             onClick={(e) => { e.stopPropagation(); onClear(); }}
-            style={{ cursor: 'pointer', padding: '0 6px' }}
             title="Clear"
             role="button"
             tabIndex={-1}
@@ -211,7 +201,7 @@ function CompanyPicker({
               />
               <button
                 type="button"
-                className="select-option"
+                className="menu-option"
                 style={{
                   borderBottom: '1px solid var(--border-light)',
                   paddingBottom: 8,
@@ -233,7 +223,7 @@ function CompanyPicker({
                   <button
                     key={c.id}
                     type="button"
-                    className={`select-option ${c.id === companyId ? 'on' : ''}`}
+                    className={`menu-option ${c.id === companyId ? 'on' : ''}`}
                     onClick={() => pickExisting(c.id)}
                   >
                     {c.name}
@@ -263,14 +253,14 @@ function CompanyPicker({
               <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                 <button
                   type="button"
-                  className="btn btn-outline btn-sm"
+                  className="btn btn-outline"
                   onClick={() => setCreating(false)}
                 >
                   Back
                 </button>
                 <button
                   type="button"
-                  className="btn btn-primary btn-sm"
+                  className="btn btn-primary"
                   onClick={commitCreate}
                   disabled={!createDraft.trim()}
                 >
@@ -285,16 +275,94 @@ function CompanyPicker({
   );
 }
 
+// ── Communication preferences ───────────────────────────────────────────
+// Relocated from the retired ContactDetail page into the Edit Contact modal (a
+// person is only edited here now). Reads the LIVE contact from the store so a
+// toggle reflects immediately; each flip is a silent, immediate dispatch (there
+// is no per-toggle Save) and inert without contacts.edit. Enforcement lives in
+// the shared consent walkers (lib/contactConsent.js + the scheduler gates).
+
+const SUPPRESSION_SOURCE_LABEL = {
+  reply: 'Unsubscribed via reply',
+  unsubscribe: 'Unsubscribed via link',
+  manual: 'Suppressed manually',
+};
+
+function ContactCommPrefs({ contactId }) {
+  const state = useStore();
+  const dispatch = useDispatch();
+  const canEdit = usePermission('contacts.edit');
+  const contact = selectContactById(state, contactId);
+  if (!contact) return null;
+
+  const dnc = contact.doNotContact === true;
+  const email = (contact.email || '').trim();
+  const suppression = email ? selectMarketingSuppressionForEmail(state, email) : null;
+
+  const setDnc = (v) => { if (canEdit) dispatch({ type: ACTIONS.UPDATE_CONTACT, id: contact.id, patch: { doNotContact: v } }); };
+  // Store the opt-OUT so a sparse/absent flag means "receives" (opt-out model).
+  const setReminders = (v) => { if (canEdit) dispatch({ type: ACTIONS.UPDATE_CONTACT, id: contact.id, patch: { reminderOptOut: !v } }); };
+  const setMarketing = (v) => {
+    if (!canEdit || !email) return;
+    if (v) dispatch({ type: ACTIONS.REMOVE_MARKETING_SUPPRESSION, email });
+    else dispatch({ type: ACTIONS.ADD_MARKETING_SUPPRESSION, email, source: 'manual', reason: 'Opted out from contact edit' });
+  };
+
+  const marketingDesc = suppression
+    ? `${SUPPRESSION_SOURCE_LABEL[suppression.source] || 'Suppressed'}${suppression.createdAt ? ` · ${fmtDate(suppression.createdAt)}` : ''}`
+    : 'Promotional email campaigns and drip sequences.';
+
+  return (
+    <div style={{ marginTop: 'var(--space-4)' }}>
+      <div className="form-label">Communication preferences</div>
+      <p className="text-xs text-muted" style={{ marginTop: 'calc(var(--space-1) * -1)', marginBottom: 'var(--space-2)' }}>
+        Saved as you toggle.
+      </p>
+
+      <div className="pref-row">
+        <div className="pref-row-text">
+          <div className="pref-row-label">Do Not Contact</div>
+          <div className="pref-row-desc">Blocks all automated emails and reminders. Manual messages show a warning; quotes can&rsquo;t be sent.</div>
+        </div>
+        <Toggle on={dnc} onChange={setDnc} />
+      </div>
+
+      <div className="pref-row">
+        <div className="pref-row-text">
+          <div className="pref-row-label">Automated reminders</div>
+          <div className="pref-row-desc">Service reminders and follow-ups sent automatically.</div>
+        </div>
+        {dnc
+          ? <Badge variant="red">Blocked by DNC</Badge>
+          : <Toggle on={contact.reminderOptOut !== true} onChange={setReminders} />}
+      </div>
+
+      <div className="pref-row">
+        <div className="pref-row-text">
+          <div className="pref-row-label">Marketing emails</div>
+          <div className="pref-row-desc">{marketingDesc}</div>
+        </div>
+        {!email
+          ? <Badge variant="slate">No email on file</Badge>
+          : dnc
+          ? <Badge variant="red">Blocked by DNC</Badge>
+          : <Toggle on={!suppression} onChange={setMarketing} />}
+      </div>
+    </div>
+  );
+}
+
 // ── Modal ────────────────────────────────────────────────────────────────
 
+// A person carries only their own identity fields. Address is account/site level
+// and tags are company level (a person is never tagged), so neither lives here.
 const EMPTY = {
   email: '', firstName: '', lastName: '', title: '', phone: '',
-  companyId: '', newCompanyName: '', tagIds: [],
-  lifecycle: 'lead',
+  companyId: '', newCompanyName: '',
   notes: '',
 };
 
-export default function AddContactModal({ open, onClose, mode = 'create', initialData = null, lockCompanyId = null }) {
+export default function AddContactModal({ open, onClose, mode = 'create', initialData = null, lockCompanyId = null, prefillName = '', onCreated = null }) {
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
@@ -315,14 +383,23 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
         phone: initialData.phone || '',
         companyId: initialData.companyId || '',
         newCompanyName: '',
-        tagIds: initialData.tagIds || [],
-        lifecycle: initialData.lifecycle || 'lead',
         notes: initialData.notes || '',
       });
     } else {
-      setForm({ ...EMPTY, companyId: lockCompanyId || '' });
+      // Prefill from the picker's typed text: treat it as an email if it looks
+      // like one, otherwise split into first / last name.
+      const seed = (prefillName || '').trim();
+      const isEmail = seed.includes('@');
+      const [first, ...rest] = isEmail ? [''] : seed.split(/\s+/);
+      setForm({
+        ...EMPTY,
+        companyId: lockCompanyId || '',
+        email: isEmail ? seed.toLowerCase() : '',
+        firstName: first || '',
+        lastName: rest.join(' '),
+      });
     }
-  }, [open, initialData, mode, lockCompanyId]);
+  }, [open, initialData, mode, lockCompanyId, prefillName]);
 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -331,26 +408,47 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
     setError('');
 
     const email = form.email.trim().toLowerCase();
-    if (!email) { setError('Email is required.'); return; }
+    // Email is OPTIONAL. A contact can be identified by name (plus company) or
+    // phone alone, matching the CSV importer and the reducer. When an email IS
+    // given it must be well-formed, and it stays the unique key (deduped below).
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Enter a valid email, or leave it blank.');
+      return;
+    }
     if (!form.firstName.trim() && !form.lastName.trim()) {
       setError('Enter at least a first or last name.');
       return;
     }
 
-    // Email dedup — one contact per email, full stop.
-    const dup = selectContactByEmail(state, email);
-    if (dup && (!initialData || dup.id !== initialData.id)) {
-      setError(`Email already in use by ${dup.firstName} ${dup.lastName}.`);
+    // Every NEW contact belongs to a company (B2B) — mirrors the CSV import gate,
+    // which requires a company on create rows but never blocks an edit. The inline
+    // CompanyPicker can mint one on the fly, so this stays low-friction.
+    if (mode !== 'edit' && !form.companyId && !form.newCompanyName.trim()) {
+      setError('Company is required. Pick one or add a new company.');
       return;
     }
 
+    // Email dedup: one contact per email, full stop (only when an email is set).
+    if (email) {
+      const dup = selectContactByEmail(state, email);
+      if (dup && (!initialData || dup.id !== initialData.id)) {
+        setError(`Email already in use by ${dup.firstName} ${dup.lastName}.`);
+        return;
+      }
+    }
+
     // Company resolution: existing pick wins. For a free-text new name, dedup
-    // case-insensitively against existing clients — link to the match if any,
-    // else dispatch ADD_CLIENT and use the freshly-generated id.
+    // case-insensitively against existing clients: link to the match if any,
+    // else dispatch ADD_CLIENT and use the freshly-generated id. Customer status
+    // is derived (Lead until it has real work), so none is set here.
     let resolvedCompanyId = form.companyId || null;
+    let createdCompany = null;
     if (!resolvedCompanyId && form.newCompanyName.trim()) {
       const newName = form.newCompanyName.trim();
-      const existing = clients.find((c) => c.name.toLowerCase() === newName.toLowerCase());
+      // Match the importer's account tie: normalize legal suffixes + punctuation
+      // so "Acme LLC" links to an existing "Acme" instead of spawning a duplicate.
+      const target = normalizeCompanyName(newName);
+      const existing = clients.find((c) => normalizeCompanyName(c.name) === target);
       if (existing) {
         resolvedCompanyId = existing.id;
       } else {
@@ -360,6 +458,7 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
           client: { id: clientId, name: newName },
         });
         resolvedCompanyId = clientId;
+        createdCompany = { name: newName };
       }
     }
 
@@ -370,34 +469,32 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
       title: form.title.trim(),
       phone: form.phone.trim(),
       companyId: resolvedCompanyId,
-      tagIds: form.tagIds,
-      lifecycle: form.lifecycle,
       notes: form.notes,
     };
 
+    // The toast names the company outcome — silently creating an account
+    // record was the old behavior's biggest surprise.
+    const companyNote = createdCompany
+      ? `. Created customer "${createdCompany.name}"`
+      : '';
     if (mode === 'edit' && initialData) {
       dispatch({ type: ACTIONS.UPDATE_CONTACT, id: initialData.id, patch: payload });
-      toast.success('Contact updated');
+      toast.success(`Contact updated${companyNote}`);
     } else {
-      dispatch({ type: ACTIONS.ADD_CONTACT, contact: payload });
-      toast.success('Contact added');
+      // Mint the id here so callers (e.g. ContactPicker) can immediately select
+      // the new contact — the reducer respects a provided id (spreads it over base).
+      const contactId = newId('ct');
+      dispatch({ type: ACTIONS.ADD_CONTACT, contact: { id: contactId, ...payload } });
+      toast.success(`Contact added${companyNote}`);
+      onCreated?.(contactId);
     }
     onClose();
   };
 
   return (
     <Modal open={open} onClose={onClose} title={mode === 'edit' ? 'Edit Contact' : 'Add Contact'} size="md">
-      <form onSubmit={submit}>
-        <FormField
-          label="Email"
-          type="email"
-          required
-          value={form.email}
-          onChange={(e) => set({ email: e.target.value })}
-          placeholder="name@company.com"
-          help="Email is the contact's unique identifier — only one contact per address."
-        />
-        {error && <div className="form-error" style={{ marginTop: -8, marginBottom: 10 }}>{error}</div>}
+      <form onSubmit={submit} noValidate>
+        {error && <div className="form-error" style={{ marginBottom: 'var(--space-3)' }}>{error}</div>}
 
         <div className="form-row">
           <FormField label="First name" value={form.firstName} onChange={(e) => set({ firstName: e.target.value })} />
@@ -411,8 +508,10 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
           </FormField>
         </div>
 
-        <div className="form-row">
-          <FormField label="Company">
+        {/* The account is only asked when it isn't already fixed. On a company's own
+            page (lockCompanyId) the person is added under it, so we don't ask again. */}
+        {!lockCompanyId && (
+          <FormField label="Company" required={mode !== 'edit'}>
             <CompanyPicker
               clients={clients}
               companyId={form.companyId}
@@ -420,24 +519,22 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
               onPickExisting={(id) => set({ companyId: id, newCompanyName: '' })}
               onCreateNew={(name) => set({ companyId: '', newCompanyName: name })}
               onClear={() => set({ companyId: '', newCompanyName: '' })}
-              disabled={Boolean(lockCompanyId)}
             />
           </FormField>
-          <FormField
-            label="Status"
-            as="select"
-            value={form.lifecycle}
-            onChange={(e) => set({ lifecycle: e.target.value })}
-            options={LIFECYCLES}
-          />
-        </div>
+        )}
 
-        <div className="form-group">
-          <label className="form-label">Tags</label>
-          <TagPicker value={form.tagIds} onChange={(ids) => set({ tagIds: ids })} />
-        </div>
+        <FormField
+          label="Email"
+          type="email"
+          value={form.email}
+          onChange={(e) => set({ email: e.target.value })}
+          placeholder="name@company.com"
+          help="Optional. When set, it's the person's unique identifier and how messaging reaches them."
+        />
 
         <FormField label="Notes" as="textarea" rows={3} value={form.notes} onChange={(e) => set({ notes: e.target.value })} placeholder="Anything worth remembering…" />
+
+        {mode === 'edit' && initialData && <ContactCommPrefs contactId={initialData.id} />}
 
         <div className="modal-actions">
           <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>

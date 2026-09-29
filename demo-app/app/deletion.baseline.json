@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "note": "Accepted deletion-ripple findings (known DANGLING cells). Each is a real orphan the audit CONFIRMED; the gate stays green while they await fix (mechanical) or an owner decision. Removing an entry after a fix makes test-deletion-ripple.mjs assert the cell now PASSES — the regression proof. See DELETION_AUDIT.md.",
+  "accepted": {}
+}

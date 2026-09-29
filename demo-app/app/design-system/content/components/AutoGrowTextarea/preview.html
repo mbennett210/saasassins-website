@@ -1,0 +1,27 @@
+<!-- @dsCard group="Forms" height=200 width=720 subtitle="Type to watch it grow" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AutoGrowTextarea</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6); }
+  .pv .card { margin: 0; }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Demo() {
+  var s = React.useState('Use the service entrance on SE 12th St.\nAlarm panel is inside the door on the left.');
+  return h('div', { className: 'card' },
+    h('div', { className: 'form-group' },
+      h('label', { className: 'form-label', htmlFor: 'ff-notes' }, 'Notes'),
+      h(CS.AutoGrowTextarea, { id: 'ff-notes', rows: 2, value: s[0], onChange: function (e) { s[1](e.target.value); } })));
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(Demo));
+</script>
+</body>
+</html>

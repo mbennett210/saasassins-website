@@ -25,6 +25,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import Badge from '../../components/Badge';
 import EmptyState from '../../components/EmptyState';
 import Icon from '../../components/Icon';
+import ListPager from '../../components/ListPager';
 import SequenceEditorPanel from './SequenceEditorPanel';
 import SequenceContactsModal from './SequenceContactsModal';
 import { deleteMarketingAttachment } from '../../lib/attachments';
@@ -183,18 +184,7 @@ export default function SequencesTab({ createOpen, onOpenCreate, onCloseCreate }
                             setContactsModal({ sequenceId: seq.id, initialTab: stats.enrolledCount > 0 ? 'enrolled' : 'add' });
                           }}
                           title={stats.enrolledCount > 0 ? 'View enrolled contacts' : 'Add contacts to this sequence'}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            padding: 0,
-                            margin: 0,
-                            color: 'inherit',
-                            font: 'inherit',
-                            cursor: 'pointer',
-                            textDecoration: 'underline',
-                            textDecorationStyle: 'dotted',
-                            textUnderlineOffset: 3,
-                          }}
+                          className="linklike"
                         >
                           <strong>{stats.enrolledCount}</strong> enrolled
                         </button>
@@ -241,9 +231,10 @@ export default function SequencesTab({ createOpen, onOpenCreate, onCloseCreate }
           })}
         </div>
 
-        {totalPages > 1 && (
-          <SequencePagination page={safePage} totalPages={totalPages} onChange={setPage} />
-        )}
+        <ListPager
+          pager={{ page: safePage + 1, totalPages, setPage: (p) => setPage(p - 1), start: pageStart + 1, end: pageStart + pageSequences.length, total: sequences.length }}
+          noun="sequences"
+        />
       </div>
 
       <NewSequenceModal open={createOpen} onClose={onCloseCreate} onSubmit={handleCreate} />
@@ -267,60 +258,21 @@ export default function SequencesTab({ createOpen, onOpenCreate, onCloseCreate }
   );
 }
 
-function SequencePagination({ page, totalPages, onChange }) {
-  const pages = Array.from({ length: totalPages }, (_, i) => i);
-  return (
-    <nav className="marketing-pagination" aria-label="Sequence pages">
-      <button
-        type="button"
-        className="marketing-pagination-btn"
-        aria-label="Previous page"
-        onClick={() => onChange(page - 1)}
-        disabled={page === 0}
-      >
-        <Icon name="chevronLeft" size={15} />
-      </button>
-      {pages.map((p) => (
-        <button
-          key={p}
-          type="button"
-          className={`marketing-pagination-btn ${p === page ? 'is-active' : ''}`}
-          aria-label={`Page ${p + 1}`}
-          aria-current={p === page ? 'page' : undefined}
-          onClick={() => onChange(p)}
-        >
-          {p + 1}
-        </button>
-      ))}
-      <button
-        type="button"
-        className="marketing-pagination-btn"
-        aria-label="Next page"
-        onClick={() => onChange(page + 1)}
-        disabled={page === totalPages - 1}
-      >
-        <Icon name="chevronRight" size={15} />
-      </button>
-    </nav>
-  );
-}
-
 function NewSequenceModal({ open, onClose, onSubmit }) {
   const state = useStore();
-  const pipelines = selectPipelines(state).filter((p) => !p.isMaster);
+  // Deals live on the Master Pipeline (the one sales board); a sequence's auto
+  // audience is defined by one of its stages.
+  const masterPipeline = selectPipelines(state).find((p) => p.isMaster) || null;
+  const masterId = masterPipeline?.id || null;
+  const sourceStages = masterPipeline?.stages || [];
 
   const [name, setName] = useState('');
   const [audienceMode, setAudienceMode] = useState('auto');
-  const [sourcePipelineId, setSourcePipelineId] = useState('');
   const [sourceStageKey, setSourceStageKey] = useState('');
-
-  const sourcePipeline = pipelines.find((p) => p.id === sourcePipelineId) || null;
-  const sourceStages = sourcePipeline ? (sourcePipeline.stages || []) : [];
 
   function reset() {
     setName('');
     setAudienceMode('auto');
-    setSourcePipelineId('');
     setSourceStageKey('');
   }
 
@@ -330,7 +282,7 @@ function NewSequenceModal({ open, onClose, onSubmit }) {
     onSubmit({
       name: name.trim(),
       audienceMode,
-      sourcePipelineId: audienceMode === 'auto' ? sourcePipelineId : '',
+      sourcePipelineId: audienceMode === 'auto' ? masterId : '',
       sourceStageKey: audienceMode === 'auto' ? sourceStageKey : '',
     });
     reset();
@@ -341,10 +293,10 @@ function NewSequenceModal({ open, onClose, onSubmit }) {
     onClose?.();
   }
 
-  // Auto mode needs both pipeline AND stage before Create unlocks, so the
-  // sequence lands with a usable source. (The operator can still add more
-  // sources — or remove this one — from the editor's Leads section later.)
-  const autoIncomplete = audienceMode === 'auto' && !(sourcePipelineId && sourceStageKey);
+  // Auto mode needs a source stage before Create unlocks, so the sequence lands
+  // with a usable source. (The operator can still add more sources — or remove
+  // this one — from the editor's Leads section later.)
+  const autoIncomplete = audienceMode === 'auto' && !sourceStageKey;
 
   return (
     <Modal open={open} onClose={handleClose} title="New sequence" size="md">
@@ -354,7 +306,7 @@ function NewSequenceModal({ open, onClose, onSubmit }) {
           name="seq-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Cold outreach — Q3 leads"
+          placeholder="Cold outreach. Q3 leads"
           required
           autoFocus
         />
@@ -365,43 +317,28 @@ function NewSequenceModal({ open, onClose, onSubmit }) {
           value={audienceMode}
           onChange={(e) => {
             setAudienceMode(e.target.value);
-            // Switching to manual clears the auto-only fields so a stray
+            // Switching to manual clears the auto-only field so a stray
             // selection doesn't ride along in the submitted payload.
-            if (e.target.value === 'manual') {
-              setSourcePipelineId('');
-              setSourceStageKey('');
-            }
+            if (e.target.value === 'manual') setSourceStageKey('');
           }}
           options={[
-            { value: 'auto', label: 'Auto — pull from a pipeline stage' },
-            { value: 'manual', label: 'Manual — pick contacts yourself' },
+            { value: 'auto', label: 'Auto. Pull from a deal stage' },
+            { value: 'manual', label: 'Manual. Pick contacts yourself' },
           ]}
           help={audienceMode === 'auto'
-            ? 'Contacts at the pipeline stage you pick below auto-enroll on every scheduler tick.'
+            ? 'The primary contact of every company with an open deal at the stage you pick auto-enrolls on each scheduler tick.'
             : 'You select which contacts to enroll from the editor after you create the sequence.'}
         />
         {audienceMode === 'auto' && (
-          <div className="form-row">
-            <FormField
-              label="Source pipeline"
-              name="seq-source-pipeline"
-              as="select"
-              value={sourcePipelineId}
-              onChange={(e) => { setSourcePipelineId(e.target.value); setSourceStageKey(''); }}
-              placeholder="Select a pipeline…"
-              options={pipelines.map((p) => ({ value: p.id, label: p.label }))}
-            />
-            <FormField
-              label="Source stage"
-              name="seq-source-stage"
-              as="select"
-              value={sourceStageKey}
-              onChange={(e) => setSourceStageKey(e.target.value)}
-              placeholder={sourcePipeline ? 'Select a stage…' : 'Pick a pipeline first'}
-              options={sourceStages.map((st) => ({ value: st.key, label: st.label }))}
-              disabled={!sourcePipeline}
-            />
-          </div>
+          <FormField
+            label="Source deal stage"
+            name="seq-source-stage"
+            as="select"
+            value={sourceStageKey}
+            onChange={(e) => setSourceStageKey(e.target.value)}
+            placeholder="Select a stage…"
+            options={sourceStages.map((st) => ({ value: st.key, label: st.label }))}
+          />
         )}
         <div className="modal-actions">
           <button type="button" className="btn btn-outline" onClick={handleClose}>Cancel</button>

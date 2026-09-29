@@ -15,12 +15,15 @@
 //   7. Domain Verification — DKIM/SPF/DMARC records to add to DNS, with status.
 //   8. Test Email — send a test email through the connected provider.
 //
-// Per-user conversational email lives at Settings → My Account → Connected
-// Inboxes (Phase 3) — NOT here. This page is for deployment-level provider
+// Per-user conversational email lives at Settings → Connected Inboxes
+// (Phase 3) — NOT here. This page is for deployment-level provider
 // setup that an admin configures once.
 //
-// Permissions: integrations.view (admin+) sees the page. integrations.manage (super admin)
-// is required to connect, disconnect, submit A2P, or override A2P status.
+// Permissions: integrations.view sees the page. integrations.manage is required to connect,
+// disconnect, submit A2P, override A2P status, change a webhook, or see / copy a webhook's
+// signing secret or lead token (the server sends those only to the Super Admin, by role, and
+// to integrations.manage holders; the Copy buttons follow what it sent). Both default to
+// Super Admin + Manager (lib/roles.js).
 
 import { useMemo, useState } from 'react';
 import { useDispatch, useStore } from '../../store';
@@ -38,6 +41,8 @@ import { useToast } from '../../components/Toast';
 import { usePermission } from '../../hooks/usePermission';
 import Badge from '../../components/Badge';
 import Icon from '../../components/Icon';
+import WebhooksSection from '../../components/WebhooksSection';
+import LeadWebhooksSection from '../../components/LeadWebhooksSection';
 import FormField from '../../components/FormField';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ConnectTwilioModal from '../../components/ConnectTwilioModal';
@@ -49,8 +54,11 @@ import {
   subscribeToDelivery,
   simulateInbound,
   TWILIO_BACKEND_URL,
+  TWILIO_STUB_ACTIVE,
+  TWILIO_CONFIGURED,
 } from '../../lib/twilio';
-import { sendEmail, getEmailHealth, EMAIL_BACKEND_URL } from '../../lib/email';
+import { sendEmail, getEmailHealth } from '../../lib/email';
+import GoogleWorkspacesSection from '../../components/GoogleWorkspacesSection';
 
 const A2P_BADGE = {
   not_started: { variant: 'slate',  label: 'Not started' },
@@ -93,18 +101,18 @@ export default function SettingsIntegrations() {
 
   // Test SMS local UI state.
   const [testTo, setTestTo] = useState('');
-  const [testBody, setTestBody] = useState('Hi from the SMS test — replying confirms delivery.');
+  const [testBody, setTestBody] = useState('Hi from the SMS test. Replying confirms delivery.');
   const [testBusy, setTestBusy] = useState(false);
   const [testResult, setTestResult] = useState(null); // { sid, status, failureReason? }
 
   // Simulate inbound local UI state.
   const [simFrom, setSimFrom] = useState('');
-  const [simBody, setSimBody] = useState('Hey — thanks for the reminder, see you tomorrow.');
+  const [simBody, setSimBody] = useState('Hey. Thanks for the reminder, see you tomorrow.');
 
   // Test Email local UI state.
   const [emailTestTo, setEmailTestTo] = useState('');
   const [emailTestSubject, setEmailTestSubject] = useState('Test from your app');
-  const [emailTestBody, setEmailTestBody] = useState('This is a test email from your app — replying confirms the From + Reply-To routing works.');
+  const [emailTestBody, setEmailTestBody] = useState('This is a test email from your app. Replying confirms the From + Reply-To routing works.');
   const [emailTestBusy, setEmailTestBusy] = useState(false);
   const [emailTestResult, setEmailTestResult] = useState(null); // { id, status, failureReason? }
 
@@ -301,15 +309,10 @@ export default function SettingsIntegrations() {
     <div>
       <div className="page-head-text">
         <h1 className="page-head-title">Integrations</h1>
-        <p className="page-head-subtitle">
-          Connect external services. Twilio powers SMS; Resend powers system email
-          (invitations, reminders, billing). Per-user conversational email lives at{' '}
-          <strong>My Account → Connected Inboxes</strong>, not here.
-          {(!TWILIO_BACKEND_URL || !EMAIL_BACKEND_URL) && (
-            <> <strong>Dev mode:</strong> some network calls are simulated locally.</>
-          )}
-        </p>
       </div>
+
+      {/* ───────── Google Workspaces (multi-Workspace OAuth registry) ───────── */}
+      <GoogleWorkspacesSection canManage={canManage} />
 
       {/* ───────── Twilio Connection ───────── */}
       <div className="card detail-card" style={{ marginBottom: 16 }}>
@@ -319,7 +322,7 @@ export default function SettingsIntegrations() {
               <Icon name="phone" size={16} /> Twilio
               {twilio?.connected
                 ? <Badge variant="green" style={{ marginLeft: 8 }}>Connected</Badge>
-                : <Badge variant="slate" style={{ marginLeft: 8 }}>Not connected</Badge>}
+                : <Badge variant="slate" style={{ marginLeft: 8 }}>{TWILIO_CONFIGURED ? 'Not connected' : 'Not configured'}</Badge>}
             </h3>
             {twilio?.connected ? (
               <div className="text-sm text-muted">
@@ -327,9 +330,16 @@ export default function SettingsIntegrations() {
                 {twilio.phoneNumber && <> · Number <strong>{twilio.phoneNumberFriendlyName || twilio.phoneNumber}</strong></>}
                 {twilio.connectedAt && <> · Connected {new Date(twilio.connectedAt).toLocaleDateString()}</>}
               </div>
-            ) : (
+            ) : TWILIO_CONFIGURED ? (
               <div className="text-sm text-muted">
                 Connect a Twilio account to enable SMS for this deployment.
+              </div>
+            ) : (
+              // CS-038: a production build with no Twilio backend must NOT offer a stub
+              // "Connect" that hands out fake numbers. Show the honest not-configured state.
+              <div className="text-sm text-muted">
+                SMS is not configured for this deployment. It will be enabled once the Twilio
+                backend is provisioned.
               </div>
             )}
             {twilio?.lastError && (
@@ -339,7 +349,7 @@ export default function SettingsIntegrations() {
             )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            {!twilio?.connected && canManage && (
+            {!twilio?.connected && canManage && TWILIO_CONFIGURED && (
               <button className="btn btn-primary" onClick={() => setConnectOpen(true)}>Connect</button>
             )}
             {twilio?.connected && canManage && (
@@ -369,7 +379,7 @@ export default function SettingsIntegrations() {
                   {twilio.a2p?.useCase && (<><span className="text-muted">Use case</span><span>{USE_CASE_LABEL[twilio.a2p.useCase] || twilio.a2p.useCase}</span></>)}
                   {twilio.a2p?.submittedAt && (<><span className="text-muted">Submitted</span><span>{new Date(twilio.a2p.submittedAt).toLocaleString()}</span></>)}
                   {twilio.a2p?.approvedAt && (<><span className="text-muted">Approved</span><span>{new Date(twilio.a2p.approvedAt).toLocaleString()}</span></>)}
-                  {twilio.a2p?.rejectionReason && (<><span className="text-muted">Rejection</span><span style={{ color: 'var(--color-text-error, #b91c1c)' }}>{twilio.a2p.rejectionReason}</span></>)}
+                  {twilio.a2p?.rejectionReason && (<><span className="text-muted">Rejection</span><span className="text-danger">{twilio.a2p.rejectionReason}</span></>)}
                   {twilio.a2p?.sampleMessages?.length > 0 && (
                     <>
                       <span className="text-muted">Samples</span>
@@ -393,12 +403,12 @@ export default function SettingsIntegrations() {
               {canManage && twilio.a2p?.status === 'pending' && (
                 <>
                   <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Super-admin override:</div>
-                  <button className="btn btn-outline btn-sm" onClick={() => handleA2POverride('approved')}>Mark approved</button>
-                  <button className="btn btn-outline btn-sm" onClick={() => handleA2POverride('rejected')}>Mark rejected</button>
+                  <button className="btn btn-outline" onClick={() => handleA2POverride('approved')}>Mark approved</button>
+                  <button className="btn btn-outline" onClick={() => handleA2POverride('rejected')}>Mark rejected</button>
                 </>
               )}
               {canManage && (twilio.a2p?.status === 'approved' || twilio.a2p?.status === 'suspended') && (
-                <button className="btn btn-outline btn-sm" onClick={handleA2PReset}>Reset</button>
+                <button className="btn btn-outline" onClick={handleA2PReset}>Reset</button>
               )}
             </div>
           </div>
@@ -413,17 +423,17 @@ export default function SettingsIntegrations() {
             Configure this URL on your Twilio phone number's "Messaging" settings so inbound texts route to this app.
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <code style={{ flex: 1, padding: '8px 12px', background: 'var(--surface-muted, #f4f4f5)', borderRadius: 6, fontSize: 13, wordBreak: 'break-all' }}>
+            <code style={{ flex: 1, padding: '8px 12px', background: 'var(--inset-bg)', borderRadius: 6, fontSize: 13, wordBreak: 'break-all' }}>
               {twilio.inboundWebhookUrl}
             </code>
-            <button type="button" className="btn btn-outline btn-sm" onClick={copyWebhook}>Copy</button>
+            <button type="button" className="btn btn-outline" onClick={copyWebhook}>Copy</button>
           </div>
         </div>
       )}
 
       {/* ───────── Send-readiness blockers ───────── */}
       {twilio?.connected && !sendReady && blockers.length > 0 && (
-        <div className="card detail-card" style={{ marginBottom: 16, borderLeft: '3px solid var(--color-amber-500, #f59e0b)' }}>
+        <div className="card detail-card" style={{ marginBottom: 16, borderLeft: '3px solid var(--warning)' }}>
           <h3 className="dash-card-title">SMS sending is blocked</h3>
           <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 14 }}>
             {blockers.map((b) => (<li key={b.key}>{b.label}</li>))}
@@ -472,7 +482,7 @@ export default function SettingsIntegrations() {
                     <Badge variant={testStatusBadge.variant}>{testStatusBadge.label}</Badge>
                     {testResult?.sid && <code className="text-xs text-muted">{testResult.sid}</code>}
                     {testResult?.failureReason && (
-                      <span className="text-xs" style={{ color: 'var(--color-text-error, #b91c1c)' }}>
+                      <span className="text-xs text-danger">
                         {testResult.failureReason}
                       </span>
                     )}
@@ -487,9 +497,9 @@ export default function SettingsIntegrations() {
         </div>
       )}
 
-      {/* ───────── Simulate inbound (dev only) ───────── */}
-      {twilio?.connected && !TWILIO_BACKEND_URL && (
-        <div className="card detail-card" style={{ marginBottom: 16, borderLeft: '3px solid var(--color-blue-500, #3b82f6)' }}>
+      {/* ───────── Simulate inbound (demo/dev only — DCE'd + hidden in production) ───────── */}
+      {twilio?.connected && !TWILIO_BACKEND_URL && TWILIO_STUB_ACTIVE && (
+        <div className="card detail-card" style={{ marginBottom: 16, borderLeft: '3px solid var(--primary)' }}>
           <h3 className="dash-card-title"><Icon name="messaging" size={16} /> Simulate Inbound SMS <span className="text-xs text-muted">(dev only)</span></h3>
           <div className="text-sm text-muted" style={{ marginBottom: 10 }}>
             Routes a fake inbound text into Messaging. Matches contacts by phone number; unmatched numbers create a new unlinked thread.
@@ -591,7 +601,7 @@ export default function SettingsIntegrations() {
               {Array.isArray(email.domain?.dkimRecords) && email.domain.dkimRecords.length > 0 ? (
                 <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {email.domain.dkimRecords.map((rec, i) => (
-                    <div key={i} className="card" style={{ padding: '8px 12px', background: 'var(--surface-muted, #f4f4f5)' }}>
+                    <div key={i} className="card" style={{ padding: '8px 12px', background: 'var(--inset-bg)' }}>
                       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                         <Badge variant="slate">{rec.type || 'TXT'}</Badge>
                         <code className="text-xs" style={{ flex: 1, wordBreak: 'break-all' }}>
@@ -599,7 +609,7 @@ export default function SettingsIntegrations() {
                         </code>
                         <button
                           type="button"
-                          className="btn btn-outline btn-sm"
+                          className="btn btn-outline"
                           onClick={() => copyToClipboard(`${rec.host}\t${rec.type || 'TXT'}\t${rec.value}`)}
                         >
                           Copy row
@@ -640,7 +650,7 @@ export default function SettingsIntegrations() {
                 {email.domain?.failureReason && (
                   <>
                     <span className="text-muted">Failure</span>
-                    <span style={{ color: 'var(--color-text-error, #b91c1c)' }}>{email.domain.failureReason}</span>
+                    <span className="text-danger">{email.domain.failureReason}</span>
                   </>
                 )}
               </div>
@@ -648,7 +658,7 @@ export default function SettingsIntegrations() {
             <div style={{ display: 'flex', gap: 8, flexDirection: 'column', alignItems: 'flex-end' }}>
               {canManage && (
                 <button
-                  className="btn btn-outline btn-sm"
+                  className="btn btn-outline"
                   onClick={handleCheckDomain}
                   disabled={domainBusy}
                 >
@@ -662,7 +672,7 @@ export default function SettingsIntegrations() {
 
       {/* ───────── Email send-readiness blockers ───────── */}
       {email?.connected && !emailSendReady && emailBlockers.length > 0 && (
-        <div className="card detail-card" style={{ marginBottom: 16, borderLeft: '3px solid var(--color-amber-500, #f59e0b)' }}>
+        <div className="card detail-card" style={{ marginBottom: 16, borderLeft: '3px solid var(--warning)' }}>
           <h3 className="dash-card-title">Email sending is blocked</h3>
           <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 14 }}>
             {emailBlockers.map((b) => (<li key={b.key}>{b.label}</li>))}
@@ -677,7 +687,7 @@ export default function SettingsIntegrations() {
           <div className="text-sm text-muted" style={{ marginBottom: 10 }}>
             {emailSendReady
               ? 'Verify outbound delivery without leaving Settings.'
-              : 'You can send a test even while domain verification is pending — Resend will queue it; deliverability depends on the receiving inbox.'}
+              : 'You can send a test even while domain verification is pending. Resend will queue it; deliverability depends on the receiving inbox.'}
           </div>
           <form onSubmit={sendEmailTest}>
             <div className="form-row">
@@ -719,7 +729,7 @@ export default function SettingsIntegrations() {
                     <Badge variant={emailTestStatusBadge.variant}>{emailTestStatusBadge.label}</Badge>
                     {emailTestResult?.id && <code className="text-xs text-muted">{emailTestResult.id}</code>}
                     {emailTestResult?.failureReason && (
-                      <span className="text-xs" style={{ color: 'var(--color-text-error, #b91c1c)' }}>
+                      <span className="text-xs text-danger">
                         {emailTestResult.failureReason}
                       </span>
                     )}
@@ -733,6 +743,10 @@ export default function SettingsIntegrations() {
           </form>
         </div>
       )}
+
+      <LeadWebhooksSection />
+
+      <WebhooksSection />
 
       <ConnectTwilioModal open={connectOpen} onClose={() => setConnectOpen(false)} />
       <A2PRegistrationModal open={a2pOpen} onClose={() => setA2pOpen(false)} />

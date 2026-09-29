@@ -1,0 +1,34 @@
+<!-- @dsCard group="Forms" height=380 width=720 subtitle="Click to search" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SearchSelect</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6); display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); align-items: start; }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+var PEOPLE = [
+  { value: 'mr', label: 'Maria Reyes', sublabel: 'maria@cleanspace.example' },
+  { value: 'ak', label: 'Ana Kim', sublabel: 'ana@cleanspace.example' },
+  { value: 'js', label: 'Jon Smith', sublabel: 'jon@cleanspace.example' },
+  { value: 'lt', label: 'Luis Torres', sublabel: 'luis@cleanspace.example' }
+];
+function Field(p) {
+  var s = React.useState(p.initial || null);
+  return h('div', { className: 'form-group' },
+    h('label', { className: 'form-label' }, p.label),
+    h(CS.SearchSelect, { value: s[0], onChange: s[1], options: PEOPLE, placeholder: p.placeholder, searchPlaceholder: 'Search cleaners…', disabled: p.disabled, disabledText: p.disabledText }));
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(React.Fragment, null,
+  h(Field, { label: 'Cleaner', placeholder: 'Select a cleaner…', initial: 'mr' }),
+  h(Field, { label: 'Backup cleaner', placeholder: 'Select a cleaner…', disabled: true, disabledText: 'Pick a cleaner first' })
+));
+</script>
+</body>
+</html>

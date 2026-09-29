@@ -1,6 +1,8 @@
 # Shell Styling — Token Vocabulary & Rules
 
 > The shell is themeable. Every color, size, shadow, radius, and motion value in this app resolves to a named token — never a literal. A customer theme is just a different set of token *values*; the shell's component code never changes when we re-skin it.
+>
+> ⚠️ **This build = CleanSpace (black + gold, flat).** The example values below are the shell's **generic seed** (e.g. a blue `--color-brand-primary-500: #1E8FE8`) — illustrative, NOT what renders. The live CleanSpace theme overrides brand-primary to **black `#18181B`**, adds a gold secondary **`#FFD45A`**, and applies a **flat** treatment (no gradients / glows). For the actual rendered values see [`theme-cleanspace.css`](./theme-cleanspace.css) + [`THEME_CLEANSPACE.md`](./THEME_CLEANSPACE.md); for button / interaction rules (incl. the **no-green-buttons** law) see [`UI_RULES.md`](../../UI_RULES.md) §11.
 
 ---
 
@@ -19,7 +21,7 @@ Lowest-level raw value. Comes from the Swatchboard (or matches its spec).
 
 ```css
 --color-brand-primary-500: #1E8FE8;
---radius-md: 8px;
+--radius-md: 10px;
 --space-4: 16px;
 --font-size-md: 14px;
 ```
@@ -51,7 +53,7 @@ Gradients, layered shadows, glow stacks, multi-layer backgrounds. These are them
 ```
 
 **Rules:**
-- Every value inside a recipe is either a `var(--token)` reference or an allowed literal (transforms like `translateY(1px)`, easings like `ease-out`, display modes, `transparent`). **Never hex, px, or raw rgb tuples** except for `rgba(0, 0, 0, ...)` as the canonical black-tint primitive in shadows.
+- Every value inside a recipe is either a `var(--token)` reference or an allowed literal (transforms like `translateY(1px)`, easings like `ease-out`, display modes, `transparent`). **Never hex, px, or raw rgb tuples**, not even for shadow black: compose `rgba(var(--color-black-rgb), X)` (UI_RULES §121; `test-color-ledger.mjs` fails a colour baked into a recipe).
 - Recipes live in the `RECIPES` section of their theme file. They will migrate to `element_variants.recipe` JSONB rows in Swatchboard Phase 2.
 
 ---
@@ -150,12 +152,12 @@ RGB triplets for alpha compositing of pure white/black (highlights, shadows).
 ```
 --radius-none       0
 --radius-sm         4px
---radius-md         8px       (unthemed default: buttons, inputs)
---radius-lg         12px      (unthemed default: cards)
+--radius-md         10px      (buttons, inputs)
+--radius-lg         20px      (cards)
 --radius-xl         16px
 --radius-full       9999px    (pills, badges, avatars)
 ```
-A theme may override step values to shift the shell's overall roundedness.
+Structure is the same in every build: a client theme sets colours only (UI_RULES §121), so radii live in `theme.css` (md / lg 10 / 20 since STRUCTURE 2.1.0).
 
 ### Shadow (primitives)
 ```
@@ -164,7 +166,16 @@ A theme may override step values to shift the shell's overall roundedness.
 --shadow-lg         modal, popover elevation
 --shadow-inset      recessed feel
 ```
+The flat treatment uses one of them: component CSS reads only the alias `--shadow-overlay` (the `--shadow-lg` step) for anything floating; design-lint's `shadow-tier` fails any other `--shadow-*` read (UI_RULES §40, register CS-344).
 Complex compositions (neumorphic stacks, colored glows, inset+outer combos) are **recipes**, not tokens.
+
+### Focus ring
+```
+--focus-ring-width    2px    ring thickness (numbers owned by STRUCTURE.md §1)
+--focus-ring-offset   2px    gap before an outline-style :focus-visible ring
+--focus-ring-color           ALIAS (see below): theme-tinted, ≥3:1 on every surface a field sits on
+```
+Composed by the `--input-focus-shadow` recipe (`0 0 0 var(--focus-ring-width) var(--focus-ring-color)`), the ONE text-field focus ring (UI_RULES §119).
 
 ### Spacing (4px grid)
 ```
@@ -182,6 +193,20 @@ Complex compositions (neumorphic stacks, colored glows, inset+outer combos) are 
 --space-16    64px
 ```
 
+### Structure (numbers owned by STRUCTURE.md §1)
+```
+--control-height-xs   28px   dense tier: .btn-sm (through --btn-height-sm) and .btn-icon; the contract's
+                             table-cell controls and pagers don't read it yet
+--control-height-sm   32px   compact tier: this build's action button (UI_RULES §115)
+--control-height-md   36px   the contract default; 40px at ≤640px (theme.css's phone block)
+--control-height-lg   44px   large CTA · the tap-target floor
+
+--border-width-sm     1px    the hairline that carries hierarchy (flat doctrine)
+--border-width-md     2px    fields, emphasis
+--border-width-lg     3px    left-accent rails only
+```
+Colour-independent and identical in every theme: a client theme never overrides them. A control's height reads a control-height tier and a hairline reads `--border-width-sm`, never a literal. The role aliases that point components at these (`--btn-height`, the gap ladder, the container paddings) are listed under Aliases.
+
 ### Typography
 ```
 --font-family-sans            primary UI font
@@ -189,6 +214,7 @@ Complex compositions (neumorphic stacks, colored glows, inset+outer combos) are 
 
 --font-size-2xs               10px      (micro labels)
 --font-size-xs                11px      (caption)
+--font-size-xs2               12px      (small copy: .btn-sm, tag chips, the back pill — STRUCTURE §1)
 --font-size-sm                13px      (body-sm)
 --font-size-md                14px      (body default)
 --font-size-lg                16px      (body-lg, small heading)
@@ -268,10 +294,24 @@ These are the ONLY aliases allowed in the shell. They exist so component CSS rea
 --success                 → --color-semantic-success-500
 --warning                 → --color-semantic-warning-500
 --danger                  → --color-semantic-error-500
+--focus-ring-color        → --color-brand-primary-500  (shell default; a theme may re-tint it in its RECIPES,
+                                                        keeping ≥3:1 — CleanSpace: brand ink at 60%)
 --card-radius             → --radius-lg
 --btn-radius              → --radius-md
 --input-radius            → --radius-md
 --badge-radius            → --radius-full
+--btn-height              → --control-height-sm   (the one action-button height, UI_RULES §115;
+                                                   re-point it to move every standard-size .btn)
+--btn-height-sm           → --control-height-xs   (.btn-sm: data-table rows and named clusters)
+--gap-inline              → --space-2             (chips, icon + label, button clusters)
+--gap-control             → --space-3             (between controls: toolbars, form rows, the pager)
+--gap-card                → --space-4             (stacked cards, form groups)
+--gap-section             → --space-6             (between page sections)
+--card-pad-sm             → --space-4             (dense cards, stat tiles, nested blocks)
+--card-pad                → --space-5             (the default .card)
+--card-pad-lg             → --space-6             (modals, roomy cards)
+--shadow-overlay          → --shadow-lg           (the one overlay shadow: modals, menus, toasts, sheets)
+--font-input-size         → --font-size-md; --font-size-lg at ≤640px (fields, so iOS never zooms on focus)
 --sidebar-bg              → --color-neutral-900
 --sidebar-border          → --color-neutral-800
 --color-avatar-{1..5}     → (theme-specific color token assignment)
@@ -282,12 +322,14 @@ These are the ONLY aliases allowed in the shell. They exist so component CSS rea
 
 ## Rules (enforced)
 
-1. **No hardcoded color values anywhere.** Any `#hex`, `rgb(...)`, or `rgba(...)` in a component CSS file is a bug (except `rgba(0, 0, 0, ...)` for shadow-black). Reference a token, or compose in a recipe.
+1. **No hardcoded color values anywhere.** Any `#hex`, `rgb(...)`, `rgba(...)` or named colour outside a theme palette entry is a bug: in component CSS, JSX, the document and email templates, the server's pages and the brand-asset scripts. Reference a token, or compose in a recipe; shadow black is `rgba(var(--color-black-rgb), α)`. Code that cannot read a CSS variable reads `BRAND` / `DOC` from `src/brand/`. Enforced in CI by `scripts/test-color-ledger.mjs` (via `run-tests`), UI_RULES §121; a justified exception carries `design:allow no-raw-hex — <reason>`.
 2. **No hardcoded radii or shadows.** Use `var(--radius-*)` and `var(--shadow-*)`, never a raw px or multi-layer shadow in a component file.
 3. **No inventing token names in the shell.** New token = Swatchboard Material Change Protocol. No exceptions.
 4. **No aliases inside component files.** Aliases belong in `theme.css`. A component reads `var(--card-bg)` but never defines it.
-5. **Recipes don't contain literal color/size values.** Every recipe input is a `var(--token)` or allowed literal (transforms, easings, display modes, `transparent`, `rgba(0,0,0,X)`).
+5. **Recipes don't contain literal color/size values.** Every recipe input is a `var(--token)`, a channel composition (`rgba(var(--color-black-rgb), X)`) or an allowed literal (transforms, easings, display modes, `transparent`). A colour baked into a recipe fails `test-color-ledger.mjs`: a client theme cannot override it. A value a variable cannot reach (an icon drawn in a data URI) is generated by `brand:js` into the client theme's GENERATED block (UI_RULES §121).
 6. **`@media` query breakpoints stay in sync with `--breakpoint-*` tokens.** If you change a breakpoint, update both the token and every call site.
+7. **Buttons are never green (CleanSpace brand law).** Affirmative / CTA buttons are **gold** — `.btn-gold`, or `.btn-success` which is overridden to gold in `index.css`. Primary/utility = `.btn-primary` (black), destructive = `.btn-danger` (red), neutral = `.btn-secondary`. The `--success` / `--color-semantic-success-*` / `--badge-green-grad` greens are **status-only** (badges, "done" dots, positive amounts) — never a button or interactive fill. Full role matrix: `UI_RULES.md` §11.
+8. **Every `var(--x)` resolves to a definition.** A token/alias here, a client re-tint in its theme's RECIPES, or a runtime var set from JS. A fallback never excuses a missing name: `var(--danger-bg, #fee2e2)` renders the fallback forever and hides the typo. Point the read at the token it means instead. Enforced in CI by `scripts/test-css-vars-defined.mjs` (via `run-tests`), UI_RULES §119.
 
 ---
 
@@ -304,7 +346,7 @@ These are the ONLY aliases allowed in the shell. They exist so component CSS rea
 
 Before committing a new component's CSS:
 
-- [ ] All colors reference `var(--color-*)` tokens. Grep for `#` and `rgb` in your file to confirm.
+- [ ] All colors reference `var(--color-*)` tokens (or `BRAND` / `DOC` where a CSS variable can't be read). `npm --prefix app run colors` must report 0 leaks.
 - [ ] All radii reference `var(--radius-*)`. No raw `px` in `border-radius`.
 - [ ] All shadows reference `var(--shadow-*)` primitives — or, if composing a multi-layer shadow, define it as a recipe in `theme.css` (or the theme's `RECIPES` section).
 - [ ] Spacing uses `var(--space-*)` wherever possible. Document genuinely component-specific one-offs with a comment.
@@ -329,157 +371,26 @@ New tokens come from the Swatchboard, not the shell. Process:
 
 Values currently missing from the Swatchboard's 8 categories. Handle inline until promoted.
 
-- **Border width** — currently always 1px inline. If a theme needs a different scale, propose `--border-width-{sm, md, lg}` in the Swatchboard.
 - **Opacity scale** — currently inline (`0.5`, `0.15`). If repeated, propose `--opacity-{muted, default, strong}`.
 - **Blur / backdrop-filter** — no token. Glass-morphism effects use literal `blur(Xpx)` inside recipes for now. Consider a `--blur-{sm, md, lg}` category if patterns emerge.
 - **Accent colors** — `--color-accent-*` is a shell-side extension. Flagged for promotion to Swatchboard Layer 1.
-- **Hardcoded spacing & font-sizes in component CSS** — `app/src/index.css` still contains many raw px values (e.g. `padding: 20px 24px`, `font-size: 10px`). These will migrate to `var(--space-*)` / `var(--font-size-*)` in a follow-up pass. New components must use tokens from day one.
+- **Hardcoded spacing & font-sizes in component CSS** — `app/src/index.css` still contains many raw px values (e.g. `padding: 24px 28px`, `font-size: 10px`). These will migrate to `var(--space-*)` / `var(--font-size-*)` in a follow-up pass. The kit's own rules now read the structural tokens for their heights, hairlines, main gaps, paddings and overlay shadow, but still carry literals (e.g. `.toast` padding `12px 16px`, `.page-head` gap `10px`); feature CSS still writes numbers, and only `lint:design` reports them (in CI as a ratchet since 2026-09-24: new findings fail, the existing ones are frozen). New components must use tokens from day one.
 
 ---
 
-## Non-CSS brand surfaces
+## Semantic Badge mappings (variance flags)
 
-CSS variables can't reach a handful of surfaces that the browser/runtime reads outside the CSS pipeline. To keep re-skinning the shell to one-edit per client, these surfaces consume a shared JS config instead:
+The Variance report (Swept replacement) maps a clean's flag to a Badge color variant via `flagBadgeVariant()` in `app/src/lib/variance.js` — keep this the single source so server and UI never diverge:
 
-**`app/src/brand.config.js`** is the single source of truth for non-CSS brand constants:
-
-```js
-export const BRAND = {
-  name: 'PolishPoint',
-  shortName: 'PolishPoint',
-  description: '...',
-  titleSuffix: 'PolishPoint CRM',
-  logoFile: 'polishpoint-logo.png',
-  primaryHex: '#1E8FE8',
-  primaryRgb: { r: 0x1E, g: 0x8F, b: 0xE8, alpha: 1 },
-};
-```
-
-**Consumers:**
-
-| Surface | Mechanism | Where the brand value lands |
+| Flag | Variant | Why |
 |---|---|---|
-| `app/index.html` | `vite-plugin-brand.js` (transformIndexHtml) | `<title>`, `<meta name="theme-color">`, `<meta name="application-name">`, `<meta name="apple-mobile-web-app-title">` via `%BRAND_*%` placeholders |
-| `app/public/manifest.json` | `scripts/build-manifest.mjs` (prebuild step in package.json) | Generated from `app/manifest.template.json` on every dev / build. Output is gitignored. |
-| PWA icons (`favicon.png`, `apple-touch-icon.png`, `icon-{192,512,maskable-512}.png`) | `scripts/gen-pwa-icons.mjs` | Composite of the logo file onto a square in `BRAND.primaryRgb`. Re-run after editing `brand.config.js` or swapping the logo. |
-| `app/src/lib/documentTitle.js` | Direct ESM import of `BRAND` | Document title fallback |
-| `app/src/lib/push.js` | Direct ESM import of `BRAND` | Web Push test-notification title |
+| `over` | `red` | Labor exceeded the budget — unbudgeted cost, the thing to chase |
+| `under` | `amber` | Cleaner left early / short — quality risk, worth a look |
+| `on_target` | `green` | Within ±threshold |
+| `incomplete` | `blue` | Still on the clock — no final number yet |
+| `no_baseline` | `slate` | No expected time set — excluded from flags/averages, never coerced to 0 |
 
----
-
-## Re-skinning the shell — SOP
-
-The shell is engineered for **one-line theme swaps**. Every visual surface reads from CSS variables, so changing the active theme = changing one `@import` in `index.css`. Per-client deployment is config + assets, never a code fork.
-
-### Theme library (pre-built variants)
-
-The active baseline + its generated equivalent ship in `app/src/`:
-
-| File | Mode | Anchor | Style family |
-|---|---|---|---|
-| `theme-polishpoint.css` | light | `#1E8FE8` | Original hand-tuned (currently active baseline) |
-| `theme-polishpoint-blue.css` | light | `#1E8FE8` | Generated equivalent of the above |
-
-Only ONE is loaded at any time (the one `index.css` imports). Per-client themes are generated on demand: pick the closest swatchboard style family (Blue / Forge / Midnight / Pink — the swatchboard HTML sources are checked in under `swatchboard/unzipped/`), run the converter, and it overrides the primary scale + logo + brand config to the client's actual brand.
-
-> **Note (`polishpoint-demo` branch):** the pre-built standalone `theme-polishpoint-{forge,midnight,pink}.css` files were removed here. The sales demo themes its checkout *preview* (via the MiniApp swatchboards) rather than live-reskinning the app, so dormant theme CSS was dead weight on this branch. Regenerate any of them from its swatchboard via the converter if a live dark/pink theme is ever needed.
-
-### Where the live preview shows what
-
-```
-app/src/index.css  line 3   ← single source of truth for "which theme is active"
-@import './theme-polishpoint.css';   ← change this one line to swap themes
-```
-
-HMR re-renders within ~1 second of saving the edit. There is no in-app theme picker by design — runtime swapping isn't needed because each client deployment bakes in one theme.
-
-### The converter
-
-**Script:** `app/scripts/swatchboard-to-theme.mjs`
-**Templates:** `app/scripts/templates/recipes-{light,dark}.css`
-
-The converter ingests a legacy swatchboard HTML file (`<style>` block with `:root { --primary: #xxx; --page-bg: #yyy; ... }`), derives the full canonical token set via OKLCH math, picks the light or dark recipe template based on the swatchboard's `--page-bg` brightness, and writes a complete `theme-<slug>.css` to `app/src/`. The output adheres to the Three-Bucket Rule above — every value is a token, alias, or recipe input.
-
-What the converter handles automatically:
-- Brand-primary scale (50/100/400/500/600/700) + RGB triplets — derives missing steps via OKLCH lightness math anchored on the swatchboard's `--primary`, reduces chroma for surface-tint steps so rgba-authored swatchboard inputs render correctly
-- Neutral scale (50–900) — snaps to swatchboard's `--page-bg`, `--border-light/mid`, `--text-faint/muted/body/primary` anchors when they're solid hex; interpolates the gaps in OKLCH
-- Semantic scales (success/warning/error) — derives from the swatchboard's `--{green,amber,red}-{bg,text,border}` trios; honors solid-hex inputs, derives missing steps with low chroma for tint surfaces
-- Surface, text, border roles — direct pass-through from swatchboard aliases
-- `--color-text-on-primary` — picks white vs dark via WCAG luminance check (threshold `Y > 0.38` → dark; validated against blue / orange / pink / gold)
-- `--color-brand-secondary-*` — aliased to `--color-accent-teal-*` (required because `index.css` references `--color-brand-secondary-600` without a fallback)
-- Recipe section — concatenated from the appropriate template (light or dark), all references are token-relative so they adapt to the theme's color values automatically
-- Mobile header tokens — always brand-primary backed (works light or dark)
-
-### Re-skin SOP (per client)
-
-**Scenario A — Client has a swatchboard.** (We authored one for them, or they want a custom design family.)
-
-```bash
-# 1. Run the converter
-node app/scripts/swatchboard-to-theme.mjs \
-  <path-to-swatchboard.html> \
-  --slug <client-slug> --name "<Display Name>"
-
-# 2. Paste the printed BRAND block into app/src/brand.config.js
-
-# 3. Edit app/src/index.css line 3:
-#    @import './theme-<client-slug>.css';
-
-# 4. Drop client logo into app/public/<client-slug>-logo.png
-
-# 5. Regenerate PWA icons (uses BRAND.primaryRgb + BRAND.logoFile)
-node app/scripts/gen-pwa-icons.mjs
-
-# 6. npm --prefix app run dev → eyeball the result at mobile + desktop
-```
-
-**Scenario B — Client gave us a hex color + a logo only** (most common). Two paths:
-
-- **Pragmatic today**: Pick the closest existing swatchboard as a "style family" (Blue if they want light/clean, Forge if they want dark/saturated, Midnight if they want dark/luxe, Pink if they want light/playful). Run the converter on that swatchboard, then hand-edit the 6 `--color-brand-primary-*` lines in the generated `theme-<client>.css` to the client's color scale. Paste BRAND with the client's hex. Same import / logo / icons steps. ~15 min.
-
-- **Cleaner option (one-time enhancement)**: Add a `--primary-hex <#xxxxxx>` flag to the converter that overrides the swatchboard's anchor. Then Scenario B becomes a single command:
-  ```bash
-  node app/scripts/swatchboard-to-theme.mjs <baseline-swatchboard> \
-    --slug acme --primary-hex "#7C3AED" --name "Acme Corp"
-  ```
-  Style family + client brand color, fully automated. Estimated build effort: 30 minutes. Not yet implemented — adopt when re-skin volume justifies it.
-
-### Shipping a re-skin (per-client deploy)
-
-Per `CLAUDE.md` § "Deployment model":
-
-1. Create a fresh repo under the **client's** GitHub org (not Kronelius), e.g. `AcmeCorp/app`.
-2. Push a clean copy of `shell-build` (with the new theme + BRAND + logo + seed already swapped) as the initial commit.
-3. Add Kronelius as a collaborator with admin/write for ongoing maintenance.
-4. Per-client work going forward is config + data only — never a code fork. Bug fixes flow shell → client repos as PRs from Kronelius.
-
-The "push" step for a new client is publishing to *their* repo, not to `Kronelius/shell-build`. `Kronelius/shell-build` only receives shell improvements (new components, bug fixes, theme-converter enhancements) — never client-specific data.
-
-### Expected lift per re-skin
-
-| Step | Time |
-|---|---|
-| Run converter | 5 sec |
-| Paste BRAND, swap @import | 30 sec |
-| Drop logo PNG + regenerate icons | 1 min |
-| Push to new client repo + invite Kronelius | 3 min |
-| Visual eyeball + spot-fix anything off | 5 min |
-| **Total per re-skin** | **~10 min** |
-
-Scenario B without the `--primary-hex` flag adds ~5 min for hand-editing the brand-primary scale. Still well under 15 min per client.
-
-### Original per-client recipe (manual, no converter)
-
-Kept as a fallback for situations where the converter doesn't apply (e.g., a client wants a fundamentally different layout, not just a theme swap):
-
-1. Edit `app/src/brand.config.js` — name, hex/rgb, logoFile, titleSuffix.
-2. Copy `app/src/theme-polishpoint.css` → `app/src/theme-<client>.css`; swap the brand-primary scale + any client-specific recipe tweaks. Keep the token names; only values change.
-3. Update `app/src/index.css` line 3 import to the new theme file.
-4. Drop the client logo PNG into `app/public/<logoFile>`.
-5. `node scripts/gen-pwa-icons.mjs` to regenerate favicons + PWA icons.
-6. `npm run dev` — the manifest prebuild + index.html templating run automatically.
-
-That's the full re-skin surface. Everything else (component CSS, JSX) reads from CSS variables and inherits the swap automatically.
+Don't hardcode these colors at call sites; import `flagBadgeVariant` / `flagLabel`. New semantic mappings (e.g. QC pass/fail) follow the same pattern: one mapping function next to its domain logic. The Phase 2 clock/variance component CSS lives in the `SWEPT REPLACEMENT` block at the end of `index.css` (tokens for color, px for layout to match the file's convention).
 
 ---
 

@@ -1,0 +1,25 @@
+<!-- @dsCard group="Containers" height=164 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StatCard</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6) var(--space-6) var(--space-1); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('pv')).render(
+  h('div', { className: 'stat-grid' },
+    h(CS.StatCard, { value: '$12,480.00', label: 'Collected', trendDirection: 'up' }),
+    h(CS.StatCard, { value: '$3,080.00', label: 'Outstanding', trend: '4 invoices', trendDirection: 'down' }),
+    h(CS.StatCard, { value: '$1,125.00', label: 'Overdue', trend: '1 invoice', trendDirection: 'down', to: '/invoices?status=overdue' })
+  )
+);
+</script>
+</body>
+</html>

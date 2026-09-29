@@ -1,0 +1,69 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clean Space</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--page-bg); color: var(--text-primary); font-family: var(--font-family-sans); overflow: hidden; min-height: 0; }
+  .cover { position: relative; height: 288px; overflow: hidden; background: var(--page-bg); }
+  .art { position: absolute; top: 0; left: 480px; width: 480px; height: 288px; overflow: hidden; }
+  .art svg { display: block; width: 480px; height: 288px; overflow: hidden; }
+  .ink { fill: var(--color-brand-primary-700); }
+  .paper { fill: var(--card-bg); stroke: var(--card-border); stroke-width: 1; }
+  .band { fill: var(--table-header-bg); }
+  .gold { fill: var(--color-brand-secondary-500); }
+  .navy { fill: var(--color-link); }
+  .cut { fill: var(--page-bg); }
+  .inkp { fill: var(--color-brand-primary-500); }
+  .blk { rx: var(--radius-lg); }
+  .sq { rx: var(--radius-md); }
+  .words { position: absolute; left: var(--space-6); bottom: var(--space-6); max-width: 440px; }
+  .name { margin: 0; font-size: 104px; line-height: 0.95; font-weight: 700; letter-spacing: var(--letter-spacing-tight); color: var(--text-primary); }
+  .tag { margin: var(--space-2) 0 0 4px; font-size: 14px; line-height: 20px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 480 288" width="480" height="288">
+<!--
+  blocks      color-brand-primary-700 152×264 bled off the top (the rail) · card-bg 184×200 with a card-border hairline and a 40-tall table-header-bg band (R2) · color-brand-secondary-500 112×120 bled off the right · color-link 64×64 once (links only): ≈32% of 960×288
+  arrangement one tall ink slab with satellites, bottoms on one line space-12 above the edge, space-4 gutters
+  pattern     pills, from "gold marks what's live" and the contained nav pills: four space-2-tall pills cut from the ground at a space-6 pitch down the rail around one space-4-tall gold pill (the active row), four ink pills in the card's rows with one gold mark, two ink pills on the gold (gold takes ink): 12 units
+  scales      sides in space-2 multiples; gutters space-4; pitch space-6; corners radius-lg (blocks), radius-md (navy); pill rx = half its height
+-->
+<defs>
+  <clipPath id="card-shape"><rect class="blk" x="184" y="40" width="184" height="200" rx="20"/></clipPath>
+</defs>
+<rect class="ink blk" x="16" y="-24" width="152" height="264" rx="20"/>
+<rect class="paper blk" x="184.5" y="40.5" width="183" height="199" rx="20"/>
+<rect class="band" x="184" y="40" width="184" height="40" clip-path="url(#card-shape)"/>
+<rect class="navy sq" x="384" y="40" width="64" height="64" rx="10"/>
+<rect class="gold blk" x="384" y="120" width="112" height="120" rx="20"/>
+<!-- the rail: label pills cut from the ground, one gold active pill -->
+<rect class="cut" x="36" y="36" width="72" height="8" rx="4"/>
+<rect class="cut" x="36" y="60" width="96" height="8" rx="4"/>
+<rect class="gold" x="28" y="80" width="128" height="16" rx="8"/>
+<rect class="cut" x="36" y="108" width="56" height="8" rx="4"/>
+<rect class="cut" x="36" y="132" width="88" height="8" rx="4"/>
+<!-- the card's rows: ink names, one gold mark -->
+<rect class="inkp" x="200" y="100" width="96" height="8" rx="4"/>
+<rect class="inkp" x="200" y="124" width="64" height="8" rx="4"/>
+<rect class="gold" x="312" y="122" width="40" height="12" rx="6"/>
+<rect class="inkp" x="200" y="148" width="104" height="8" rx="4"/>
+<rect class="inkp" x="200" y="172" width="72" height="8" rx="4"/>
+<!-- ink on the gold -->
+<rect class="inkp" x="400" y="144" width="56" height="8" rx="4"/>
+<rect class="inkp" x="400" y="168" width="40" height="8" rx="4"/>
+</svg>
+</div>
+<div class="words">
+<h1 class="name">Clean<br>Space</h1>
+<p class="tag">Black frames, gold marks, navy links.</p>
+</div>
+</div>
+</body>
+</html>

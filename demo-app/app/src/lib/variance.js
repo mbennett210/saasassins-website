@@ -1,14 +1,16 @@
-// The labor-variance engine — the headline Swept-replacement differentiator.
+// The variance engine — the headline Swept-replacement differentiator.
 //
-// Swept gets MULTI-CLEANER cleans wrong; we don't. The contract: ONE time-entry
+// Swept gets MULTI-CLEANER cleans wrong; we don't. The contract: ONE time_entries
 // row per cleaner per clean. For a clean (a job worked by 1..N cleaners):
-//   - labor   = Σ each cleaner's own durationMinutes  (2 cleaners × 2h = 240 labor-min)
-//   - elapsed = max(clockOut) − min(clockIn)          (the wall-clock the site was open)
-// `basis` (from opsSettings) picks which one variance compares to expected:
+//   - labor   = Σ each cleaner's own duration_minutes  (2 cleaners × 2h = 240 labor-min)
+//   - elapsed = max(clock_out) − min(clock_in)         (the wall-clock the site was open)
+// `expectedBasis` (opsSettings) picks which one variance compares to expected:
 // 'labor' (default — a labor-cost-driven op thinks in labor-minutes) | 'wallclock'.
 //
-// PURE. No React / store / browser deps — ported from the Rainier client build
-// (lib/variance.js) verbatim, so the report flags identically everywhere.
+// PURE. NO React / store / browser deps and explicit .js imports only, so the
+// SERVER report route (api/_lib/variance/compute.js), the demo stub (varianceApi.js),
+// and the report UI all flag identically — server and client can never disagree.
+// See CLEANSPACE_SWEPT.md §5.5 / §2.1.
 
 export const DEFAULT_THRESHOLDS = { overMins: 15, underMins: 15 };
 
@@ -62,9 +64,9 @@ export function byCleanerSplit(entries) {
 }
 
 // One clean's variance. entries = all rows sharing a job. expectedMins is the
-// resolved baseline. Returns null variance (NOT 0) when there's no baseline or
-// the clean is still in progress, so the UI shows 'No baseline' / 'In progress'
-// rather than a false flag.
+// resolved baseline (shift→site→client→null). Returns null variance (NOT 0) when
+// there's no baseline or the clean is still in progress, so the UI shows
+// 'No baseline' / 'In progress' rather than a false flag.
 export function computeCleanVariance(entries, { expectedMins, basis = 'labor', thresholds = DEFAULT_THRESHOLDS } = {}) {
   const list = entries || [];
   const labor = laborMinutes(list);
@@ -87,7 +89,7 @@ export function computeCleanVariance(entries, { expectedMins, basis = 'labor', t
   };
 }
 
-// Group a flat entry list into cleans. A clean = all rows sharing a jobId;
+// Group a flat entry list into cleans. A clean = all rows sharing a job_id;
 // ad-hoc rows (no job) each stand alone.
 export function groupEntriesByClean(entries) {
   const map = new Map();
@@ -100,7 +102,8 @@ export function groupEntriesByClean(entries) {
 }
 
 // Sort comparator for the morning scan: flagged cleans first, then biggest
-// absolute deviation, then no-baseline / in-progress last, then by recency.
+// absolute deviation (a 90-min overrun and a 90-min shortfall both demand
+// attention), then no-baseline / in-progress last, then by recency.
 function reportSort(a, b) {
   const flaggedRank = (r) => (r.flag === 'over' || r.flag === 'under') ? 0 : (r.flag === 'on_target' ? 1 : 2);
   const fr = flaggedRank(a) - flaggedRank(b);
@@ -111,25 +114,29 @@ function reportSort(a, b) {
   return String(b.scheduledStart || '').localeCompare(String(a.scheduledStart || ''));
 }
 
-// Build the full report (rows + summary) from a flat entry list. Each entry carries
-// the denormalized job/site/client/user names + expectedMinutesSnapshot captured
-// at clock-in (point-in-time truth).
+// Build the full report (rows + summary) from a flat entry list. Each entry must
+// carry the denormalized job/site/client/user names + expectedMinutesSnapshot
+// captured at clock-in (point-in-time truth). Server and stub both call this.
 export function buildVarianceReport(entries, { basis = 'labor', thresholds = DEFAULT_THRESHOLDS } = {}) {
   const cleans = groupEntriesByClean(entries || []);
   const rows = [];
   for (const [key, group] of cleans) {
     const head = group[0];
+    // All rows on a clean share the job, so any non-null snapshot is the baseline.
     const expectedMins = group.find((e) => Number.isFinite(e.expectedMinutesSnapshot))?.expectedMinutesSnapshot ?? null;
     const v = computeCleanVariance(group, { expectedMins, basis, thresholds });
     rows.push({
       key,
       jobId: head.jobId || null,
+      seriesId: head.seriesId || null,
       siteId: head.siteId || null,
       clientId: head.clientId || null,
       siteName: head.siteName || '—',
       clientName: head.clientName || '—',
       scheduledStart: head.scheduledStart || null,
       cleaners: byCleanerSplit(group),
+      // Per-entry detail (one row per cleaner-clock-event) so the manager
+      // drill-down can approve / correct / note an individual entry.
       entries: group.map((e) => ({
         id: e.id,
         userId: e.userId,
@@ -137,9 +144,15 @@ export function buildVarianceReport(entries, { basis = 'labor', thresholds = DEF
         durationMinutes: e.durationMinutes ?? null,
         clockInAt: e.clockInAt || null,
         clockOutAt: e.clockOutAt || null,
+        status: e.status || null,
         approvalStatus: e.approvalStatus || 'pending',
         geofenceResult: e.geofenceResult || null,
+        // Why an 'override' verdict happened — the site's geofence switch, the office
+        // turning it off for this cleaner, or the crew's own off-site override. Without it
+        // the drill-down's amber "override" badge means three different things.
+        overrideReason: e.overrideReason || null,
         distanceM: e.distanceM ?? null,
+        note: e.note || null,
       })),
       ...v,
     });
@@ -161,9 +174,9 @@ export function buildVarianceReport(entries, { basis = 'labor', thresholds = DEF
   return { rows, summary };
 }
 
-// Map a flag to a Badge color variant. over = red (paying for unbudgeted labor),
-// under = amber (left early / quality risk), on_target = green, no_baseline =
-// slate, incomplete = blue.
+// Map a flag to a Badge color variant (the STYLING.md vocabulary). over = red
+// (paying for unbudgeted labor), under = amber (left early / quality risk),
+// on_target = green, no_baseline = slate, incomplete = blue.
 export function flagBadgeVariant(flag) {
   switch (flag) {
     case 'over': return 'red';
@@ -182,14 +195,4 @@ export function flagLabel(flag) {
     case 'incomplete': return 'In progress';
     default: return 'No baseline';
   }
-}
-
-// Minutes → "1h 45m" / "45m" display.
-export function fmtMins(m) {
-  if (m == null || !Number.isFinite(m)) return '—';
-  const sign = m < 0 ? '-' : '';
-  const abs = Math.abs(m);
-  const h = Math.floor(abs / 60);
-  const min = abs % 60;
-  return `${sign}${h ? `${h}h ` : ''}${min}m`;
 }

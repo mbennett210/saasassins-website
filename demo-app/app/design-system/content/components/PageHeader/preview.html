@@ -1,0 +1,24 @@
+<!-- @dsCard group="Navigation" height=84 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PageHeader</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6) var(--space-6) var(--space-1); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('pv')).render(h(CS.PageHeader, {
+  title: 'Customers',
+  actions: h(React.Fragment, null,
+    h('button', { className: 'btn btn-gold' }, 'Import CSV'),
+    h('button', { className: 'btn btn-primary' }, 'Add Customer'))
+}));
+</script>
+</body>
+</html>

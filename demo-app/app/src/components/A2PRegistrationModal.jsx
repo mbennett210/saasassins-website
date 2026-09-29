@@ -146,7 +146,7 @@ export default function A2PRegistrationModal({ open, onClose }) {
           value={form.useCase}
           onChange={(e) => setForm({ ...form, useCase: e.target.value })}
           options={USE_CASES}
-          help="Match how you actually use SMS — wrong picks get rejected."
+          help="Match how you actually use SMS. Wrong picks get rejected."
         />
 
         <div className="form-group">
@@ -154,7 +154,7 @@ export default function A2PRegistrationModal({ open, onClose }) {
             Sample messages <span className="form-required">*</span>
           </label>
           <div className="text-xs text-muted" style={{ marginBottom: 6 }}>
-            At least one. Carriers use these to evaluate the campaign — paste real templates you'll send.
+            At least one. Carriers use these to evaluate the campaign. Paste real templates you'll send.
           </div>
           {form.sampleMessages.map((msg, idx) => (
             <div key={idx} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8 }}>
@@ -163,13 +163,13 @@ export default function A2PRegistrationModal({ open, onClose }) {
                 rows={2}
                 value={msg}
                 onChange={(e) => setSample(idx, e.target.value)}
-                placeholder={`Sample ${idx + 1} — e.g. "Hi {name}, your cleaning is scheduled for tomorrow at 9 AM."`}
+                placeholder={`Sample ${idx + 1}. E.g. "Hi {name}, your cleaning is scheduled for tomorrow at 9 AM."`}
                 style={{ flex: 1 }}
               />
               {form.sampleMessages.length > 1 && (
                 <button
                   type="button"
-                  className="btn btn-outline btn-sm"
+                  className="btn btn-outline"
                   onClick={() => removeSample(idx)}
                   aria-label={`Remove sample ${idx + 1}`}
                 >
@@ -179,7 +179,7 @@ export default function A2PRegistrationModal({ open, onClose }) {
             </div>
           ))}
           {form.sampleMessages.length < 5 && (
-            <button type="button" className="btn btn-outline btn-sm" onClick={addSample}>
+            <button type="button" className="btn btn-outline" onClick={addSample}>
               Add sample
             </button>
           )}
@@ -191,7 +191,7 @@ export default function A2PRegistrationModal({ open, onClose }) {
           rows={2}
           value={form.notes}
           onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          help="Optional — context for your team or for re-submission if rejected."
+          help="Optional. Context for your team or for re-submission if rejected."
         />
 
         {error && <div className="form-error" style={{ marginTop: 4 }}>{error}</div>}

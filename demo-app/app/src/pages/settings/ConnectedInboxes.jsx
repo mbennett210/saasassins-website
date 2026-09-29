@@ -2,12 +2,13 @@
 //
 // Each user wires their own mailbox(es) here so messages they send through
 // the Messaging email channel come from their real address — not a generic
-// system sender. Three connection modes: Google OAuth, Microsoft OAuth,
-// and SMTP/IMAP for everything else.
+// system sender. Gmail / Google Workspace only for now (Microsoft 365 and
+// SMTP/IMAP are planned — see ConnectInboxModal for status).
 //
 // What this page is NOT:
 //   - The system Resend provider (that's at Settings → Integrations).
-//   - A marketing / drip / broadcast tool (those are higher-tier add-ons).
+//   - A marketing / drip / broadcast tool — marketing email accounts are
+//     connected in the Marketing tab.
 //
 // Permissions: gated on `messaging.use` — if a user can't access Messaging
 // at all, there's no point setting up their mailbox.
@@ -18,18 +19,15 @@ import { ACTIONS } from '../../store/reducer';
 import {
   selectCurrentUser,
   selectConnectedInboxesForUser,
+  selectOAuthWorkspaces,
 } from '../../store/selectors';
 import { useToast } from '../../components/Toast';
 import Badge from '../../components/Badge';
 import Icon from '../../components/Icon';
-import FormField from '../../components/FormField';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ConnectInboxModal from '../../components/ConnectInboxModal';
-import {
-  disconnectInbox,
-  testInboxSend,
-  INBOX_BACKEND_URL,
-} from '../../lib/connectedInboxes';
+import { disconnectInbox } from '../../lib/connectedInboxes';
+import { IDENTITY } from '../../brand/identity.generated.js';
 
 const PROVIDER_LABEL = {
   google: 'Gmail',
@@ -50,13 +48,10 @@ export default function SettingsConnectedInboxes() {
   const toast = useToast();
   const currentUser = selectCurrentUser(state);
   const inboxes = selectConnectedInboxesForUser(state, currentUser?.id);
+  const wsLabelById = new Map(selectOAuthWorkspaces(state).map((w) => [w.id, w.label]));
 
   const [connectOpen, setConnectOpen] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(null); // inbox id or null
-  const [testTargetId, setTestTargetId] = useState(null);
-  const [testTo, setTestTo] = useState('');
-  const [testBusy, setTestBusy] = useState(false);
-  const [testResult, setTestResult] = useState(null); // { id, status, failureReason? }
 
   const sortedInboxes = useMemo(
     () => [...inboxes].sort((a, b) => {
@@ -82,49 +77,23 @@ export default function SettingsConnectedInboxes() {
     }
   };
 
-  const handleTestSend = async (e) => {
-    e.preventDefault();
-    if (!testTargetId) return;
-    setTestBusy(true);
-    setTestResult({ status: 'sending' });
-    try {
-      const inbox = inboxes.find((i) => i.id === testTargetId);
-      const result = await testInboxSend(testTargetId, {
-        to: testTo.trim() || (inbox?.email || ''),
-        subject: 'Test from Messaging',
-        body: 'This is a test email from your Messaging mailbox. Replying confirms the From + Reply-To routing works.',
-      });
-      setTestResult({ id: result.id, status: result.status });
-      // Reflect lastSyncAt for visual feedback that something happened.
-      dispatch({
-        type: ACTIONS.UPDATE_CONNECTED_INBOX,
-        id: testTargetId,
-        patch: { lastSyncAt: new Date().toISOString(), lastError: null },
-      });
-    } catch (err) {
-      setTestResult({ status: 'failed', failureReason: err.message || 'Unknown error' });
-      dispatch({
-        type: ACTIONS.UPDATE_CONNECTED_INBOX,
-        id: testTargetId,
-        patch: { lastError: err.message || 'Test send failed' },
-      });
-    } finally {
-      setTestBusy(false);
-    }
-  };
-
   return (
     <div>
       <div className="page-head-text">
         <h1 className="page-head-title">Connected Inboxes</h1>
-        <p className="page-head-subtitle">
-          These mailboxes can send and receive emails on your behalf inside Messaging.
-          Each connection is yours alone — your teammates don't see them.
-          {' '}<strong>Email blasts, marketing campaigns, and drip sequences</strong> are not handled here — those live in higher-tier add-ons.
-          {!INBOX_BACKEND_URL && (
-            <> <strong>Dev mode:</strong> connection flows are simulated locally.</>
-          )}
-        </p>
+      </div>
+
+      <div className="info-banner" role="note">
+        <div>
+          <strong>Connected mailboxes vs. your account email.</strong>{' '}
+          The mailboxes here are the addresses you send and receive <em>as</em>{' '}
+          inside Messaging. Distinct from your{' '}
+          <strong>account email</strong> at{' '}
+          <strong>Settings → Your Account</strong>, which is used to sign you
+          in and to send you app notifications, password resets, etc. The two
+          can be the same person, but they're stored separately and {IDENTITY.name}{' '}
+          never assumes one matches the other.
+        </div>
       </div>
 
       {sortedInboxes.length === 0 ? (
@@ -132,7 +101,7 @@ export default function SettingsConnectedInboxes() {
           <Icon name="mail" size={32} />
           <h3 className="dash-card-title" style={{ marginTop: 8 }}>No mailboxes connected yet</h3>
           <p className="text-sm text-muted" style={{ maxWidth: 480, margin: '6px auto 14px' }}>
-            Connect Gmail, Microsoft 365, or any provider with SMTP support so emails sent through Messaging come from <strong>your</strong> real address — not a generic system sender.
+            Connect a Gmail or Google Workspace mailbox so emails sent through Messaging come from <strong>your</strong> real address. Not a generic system sender.
           </p>
           <button className="btn btn-primary" onClick={() => setConnectOpen(true)}>
             Connect a mailbox
@@ -159,6 +128,7 @@ export default function SettingsConnectedInboxes() {
                       </h3>
                       <div className="text-sm text-muted">
                         {PROVIDER_LABEL[inbox.provider] || inbox.provider}
+                        {wsLabelById.get(inbox.workspaceId) && <> · Workspace <strong>{wsLabelById.get(inbox.workspaceId)}</strong></>}
                         {inbox.displayName && <> · Display name <strong>{inbox.displayName}</strong></>}
                         {inbox.connectedAt && <> · Connected {new Date(inbox.connectedAt).toLocaleDateString()}</>}
                       </div>
@@ -172,11 +142,9 @@ export default function SettingsConnectedInboxes() {
                       )}
                       <div className="text-xs text-muted" style={{ marginTop: 4 }}>
                         Inbound capture:{' '}
-                        {inbox.inboundCapability && inbox.inboundEnabled
-                          ? <Badge variant="green">enabled ({inbox.inboundCapability})</Badge>
-                          : inbox.inboundCapability
-                            ? <Badge variant="amber">available ({inbox.inboundCapability}) — wire in Phase 4c</Badge>
-                            : <Badge variant="slate">not yet wired</Badge>}
+                        {inbox.inboundCapability
+                          ? <Badge variant="green">replies threaded</Badge>
+                          : <Badge variant="slate">outbound only</Badge>}
                       </div>
                       {inbox.lastError && (
                         <div className="form-error" style={{ marginTop: 6 }}>
@@ -186,76 +154,18 @@ export default function SettingsConnectedInboxes() {
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {!inbox.isDefault && (
-                        <button className="btn btn-outline btn-sm" onClick={() => handleSetDefault(inbox.id)}>
+                        <button className="btn btn-outline" onClick={() => handleSetDefault(inbox.id)}>
                           Set default
                         </button>
                       )}
                       <button
-                        className="btn btn-outline btn-sm"
-                        onClick={() => {
-                          setTestTargetId(inbox.id);
-                          setTestTo(inbox.email);
-                          setTestResult(null);
-                        }}
-                      >
-                        Test send
-                      </button>
-                      <button
-                        className="btn btn-outline btn-sm"
+                        className="btn btn-outline"
                         onClick={() => setConfirmDisconnect(inbox.id)}
                       >
                         Disconnect
                       </button>
                     </div>
                   </div>
-
-                  {testTargetId === inbox.id && (
-                    <form onSubmit={handleTestSend} style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-color, #e5e7eb)' }}>
-                      <div className="form-row">
-                        <FormField
-                          label="Send test to"
-                          type="email"
-                          required
-                          placeholder={inbox.email}
-                          value={testTo}
-                          onChange={(e) => setTestTo(e.target.value)}
-                        />
-                        <FormField
-                          label="From (this mailbox)"
-                          value={inbox.email}
-                          disabled
-                        />
-                      </div>
-                      <div className="modal-actions" style={{ marginTop: 4 }}>
-                        <div style={{ flex: 1 }}>
-                          {testResult && (
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              <Badge variant={testResult.status === 'sent' ? 'green' : testResult.status === 'failed' ? 'red' : 'slate'}>
-                                {testResult.status}
-                              </Badge>
-                              {testResult.id && <code className="text-xs text-muted">{testResult.id}</code>}
-                              {testResult.failureReason && (
-                                <span className="text-xs" style={{ color: 'var(--color-text-error, #b91c1c)' }}>
-                                  {testResult.failureReason}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          onClick={() => { setTestTargetId(null); setTestResult(null); }}
-                          disabled={testBusy}
-                        >
-                          Close
-                        </button>
-                        <button type="submit" className="btn btn-primary" disabled={testBusy}>
-                          {testBusy ? 'Sending…' : 'Send test'}
-                        </button>
-                      </div>
-                    </form>
-                  )}
                 </div>
               );
             })}

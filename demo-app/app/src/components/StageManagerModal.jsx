@@ -4,7 +4,7 @@ import FormField from './FormField';
 import Icon from './Icon';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
-import { selectActivePipeline, selectActivePipelineStages, selectContactsByStageKey } from '../store/selectors';
+import { selectPipelines, selectActivePipeline, selectActivePipelineStages, selectPipelineOpportunities } from '../store/selectors';
 import { useToast } from './Toast';
 
 function StageRow({ stage, count, index, total, onRename, onMove, onDelete, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isDragOver }) {
@@ -38,14 +38,14 @@ function StageRow({ stage, count, index, total, onRename, onMove, onDelete, onDr
       </span>
       <div className="stage-row-order">
         <button
-          className="btn-icon-sm"
+          className="btn-icon"
           disabled={index === 0}
           onClick={() => onMove(stage.id, -1)}
           aria-label="Move up"
           title="Move up"
         >↑</button>
         <button
-          className="btn-icon-sm"
+          className="btn-icon"
           disabled={index === total - 1}
           onClick={() => onMove(stage.id, 1)}
           aria-label="Move down"
@@ -60,14 +60,14 @@ function StageRow({ stage, count, index, total, onRename, onMove, onDelete, onDr
         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setLabel(stage.label); e.currentTarget.blur(); } }}
       />
       <span className="stage-row-count text-xs text-muted">
-        {count} contact{count === 1 ? '' : 's'}
+        {count} deal{count === 1 ? '' : 's'}
       </span>
       <button
-        className="btn-icon-sm stage-row-delete"
+        className="btn-icon btn-icon-danger"
         disabled={blockDelete}
         onClick={() => onDelete(stage)}
         aria-label="Delete stage"
-        title={blockDelete ? `Move the ${count} contact${count === 1 ? '' : 's'} out of this stage first` : 'Delete stage'}
+        title={blockDelete ? `Move the ${count} deal${count === 1 ? '' : 's'} out of this stage first` : 'Delete stage'}
       >
         <Icon name="trash" size={14} />
       </button>
@@ -79,14 +79,23 @@ export default function StageManagerModal({ open, onClose }) {
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
+  const pipelines = selectPipelines(state);
   const pipeline = selectActivePipeline(state);
   const stages = selectActivePipelineStages(state);
+  const opps = selectPipelineOpportunities(state);
+  const countAt = (key) => opps.filter((o) => o.stage === key).length;
   const pipelineId = pipeline?.id;
+  const pipelineLabel = pipeline?.label || '';
+  const isMaster = !!pipeline?.isMaster;
+  const dealsOnPipeline = opps.length;
 
+  const [nameDraft, setNameDraft] = useState('');
   const [newLabel, setNewLabel] = useState('');
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [hasChanges, setHasChanges] = useState(false);
+
+  useEffect(() => { setNameDraft(pipelineLabel); }, [pipelineLabel, open]);
 
   useEffect(() => {
     if (!open) {
@@ -96,6 +105,12 @@ export default function StageManagerModal({ open, onClose }) {
       setHasChanges(false);
     }
   }, [open]);
+
+  // The name is a draft committed by the Save button (unlike stage rows, which
+  // live-commit on blur) — typing immediately surfaces the save bar.
+  const trimmedName = nameDraft.trim();
+  const nameDirty = trimmedName !== pipelineLabel;
+  const showSave = hasChanges || nameDirty;
 
   const rename = (id, label) => {
     dispatch({ type: ACTIONS.UPDATE_PIPELINE_STAGE, pipelineId, id, patch: { label } });
@@ -114,9 +129,9 @@ export default function StageManagerModal({ open, onClose }) {
   };
 
   const remove = (stage) => {
-    const count = selectContactsByStageKey(state, stage.key).length;
+    const count = countAt(stage.key);
     if (count > 0) {
-      toast.error(`"${stage.label}" has ${count} contact${count === 1 ? '' : 's'} — move them out first.`);
+      toast.error(`"${stage.label}" has ${count} deal${count === 1 ? '' : 's'}. Move them out first.`);
       return;
     }
     dispatch({ type: ACTIONS.DELETE_PIPELINE_STAGE, pipelineId, id: stage.id });
@@ -162,16 +177,51 @@ export default function StageManagerModal({ open, onClose }) {
     setDragOverId(null);
   };
 
+  const deletePipeline = () => {
+    if (isMaster) return;
+    if (dealsOnPipeline > 0) {
+      toast.error(`Move or delete the ${dealsOnPipeline} deal${dealsOnPipeline === 1 ? '' : 's'} on this pipeline first.`);
+      return;
+    }
+    if (!window.confirm(`Delete the "${pipelineLabel}" pipeline? This cannot be undone.`)) return;
+    dispatch({ type: ACTIONS.DELETE_PIPELINE, id: pipelineId });
+    toast.success(`Pipeline "${pipelineLabel}" deleted`);
+    onClose();
+  };
+
   const handleSave = () => {
-    toast.success('Stages saved');
+    if (nameDirty) {
+      if (!trimmedName) {
+        toast.error('Pipeline name is required.');
+        return;
+      }
+      if (pipelines.some((p) => p.id !== pipelineId && p.label.toLowerCase() === trimmedName.toLowerCase())) {
+        toast.error(`A pipeline named "${trimmedName}" already exists.`);
+        return;
+      }
+      dispatch({ type: ACTIONS.UPDATE_PIPELINE, id: pipelineId, patch: { label: trimmedName } });
+    }
+    toast.success('Pipeline saved');
     onClose();
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={`Manage Stages — ${pipeline?.label || 'Pipeline'}`}>
+    <Modal open={open} onClose={onClose} title={`Edit Pipeline. ${pipelineLabel || 'Pipeline'}`}>
       <p className="text-sm text-muted" style={{ marginTop: 0, marginBottom: 12 }}>
-        Rename, reorder, add, or delete stages. Delete is blocked while a stage has contacts in it.
+        Rename the pipeline or its stages, reorder, add, or delete stages. Delete is blocked while a stage has contacts in it.
       </p>
+      <FormField
+        label="Pipeline name"
+        value={nameDraft}
+        onChange={(e) => setNameDraft(e.target.value)}
+        disabled={isMaster}
+        help={isMaster ? 'The Master Pipeline is the default board and cannot be renamed or deleted.' : undefined}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
+          if (e.key === 'Escape') setNameDraft(pipelineLabel);
+        }}
+      />
+      <label className="form-label">Stages</label>
       <div className="stage-list">
         {stages.map((stage, i) => (
           <StageRow
@@ -179,7 +229,7 @@ export default function StageManagerModal({ open, onClose }) {
             stage={stage}
             index={i}
             total={stages.length}
-            count={selectContactsByStageKey(state, stage.key).length}
+            count={countAt(stage.key)}
             onRename={rename}
             onMove={move}
             onDelete={remove}
@@ -203,8 +253,13 @@ export default function StageManagerModal({ open, onClose }) {
         <button type="submit" className="btn btn-primary" disabled={!newLabel.trim()}>Add Stage</button>
       </form>
 
-      <div className={`stage-save-bar ${hasChanges ? 'is-visible' : ''}`}>
-        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={!hasChanges}>Save changes</button>
+      <div className={`stage-save-bar has-split ${showSave || !isMaster ? 'is-visible' : ''}`}>
+        {!isMaster ? (
+          <button type="button" className="btn btn-danger" onClick={deletePipeline}>
+            Delete pipeline
+          </button>
+        ) : <span />}
+        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={!showSave}>Save changes</button>
       </div>
     </Modal>
   );

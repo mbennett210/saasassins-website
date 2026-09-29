@@ -49,13 +49,15 @@ export default function ReminderScheduler() {
   stateRef.current = state;
 
   function fireOne(due) {
-    const key = `${due.template.key}::${due.job.id}`;
-    if (inFlight.has(key)) return;
-    inFlight.add(key);
+    // Deterministic per-(template, job) id: the reducer upserts on it, so a retry
+    // re-uses the row (bumping attempts) and a second tab computing the same id
+    // can't create a duplicate event.
+    const eventId = due.eventId;
+    if (inFlight.has(eventId)) return;
+    inFlight.add(eventId);
 
-    // Step 1: record the event in 'pending' state immediately so it appears
-    // in the Delivery Inbox during the brief window before the adapter resolves.
-    const eventId = `re_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // Step 1: record/refresh the event as 'pending' immediately (idempotent
+    // upsert by id) so its state is captured before the adapter resolves.
     dispatch({
       type: ACTIONS.ADD_REMINDER_EVENT,
       event: {
@@ -65,6 +67,7 @@ export default function ReminderScheduler() {
         clientId: due.client.id,
         channel: due.channel,
         status: 'pending',
+        attempts: due.attempt,
         recipient: due.recipient,
         body: due.body,
         subject: due.subject || null,

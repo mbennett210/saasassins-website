@@ -1,7 +1,7 @@
 // Sequence editor panel — the full edit surface for one marketing sequence,
 // rendered inline inside an expanded SequencesTab accordion row (no popout).
 // Sections: Header (name / status / plain-text / stage-exit), Reply
-// handling (halt + routing + tags), Leads (auto: pipeline-stage
+// handling (halt + routing + tags), Leads (auto: deal-stage
 // sources; manual: contact picker), and Steps
 // (reorderable list → StepEditorModal). Dispatches granular reducer actions
 // directly — no whole-sequence draft.
@@ -22,6 +22,8 @@ import {
   selectContacts,
   selectMarketingSettings,
   selectActiveUsers,
+  selectEnrollmentStepBuckets,
+  selectSequenceDiagnostics,
 } from '../../store/selectors';
 import { useToast } from '../../components/Toast';
 import FormField from '../../components/FormField';
@@ -31,8 +33,11 @@ import Avatar from '../../components/Avatar';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import TagPicker from '../../components/TagPicker';
 import StepEditorModal from './StepEditorModal';
+import StepEnrollmentsModal from './StepEnrollmentsModal';
 import SequenceContactsModal from './SequenceContactsModal';
 import { deleteMarketingAttachment } from '../../lib/attachments';
+import { formatStepDelay, stripHtml, humanizeFailure, contactIdsAtSourceStages } from '../../lib/marketingScheduler';
+import { clearInFlight } from '../../lib/marketingInFlight';
 
 function fmtHour(h) {
   const hr = ((h % 12) || 12);
@@ -53,7 +58,23 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
     () => (sequenceId ? selectEnrollmentsForSequence(state, sequenceId) : []),
     [state, sequenceId]
   );
+  // Per-step "who's here now" counts for the flow cards (active waiting per
+  // step) + replied/completed tallies.
+  const stepBuckets = useMemo(
+    () => selectEnrollmentStepBuckets(state, sequenceId, steps.length),
+    [state, sequenceId, steps.length]
+  );
+  // Delivery diagnostics: failed sends + systemic stalls (e.g. no sending inbox).
+  const diagnostics = useMemo(
+    () => selectSequenceDiagnostics(state, sequenceId),
+    [state, sequenceId]
+  );
   const pipelines = selectPipelines(state);
+  // Deals live on the Master Pipeline (the one sales board); sources and reply
+  // routing target its stages.
+  const masterPipeline = pipelines.find((p) => p.isMaster) || null;
+  const masterId = masterPipeline?.id || null;
+  const masterStages = masterPipeline?.stages || [];
   const contacts = selectContacts(state);
   const settings = selectMarketingSettings(state);
   const users = selectActiveUsers(state);
@@ -61,8 +82,8 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
   const [nameDraft, setNameDraft] = useState('');
   const [nameFocused, setNameFocused] = useState(false);
   const [stepModal, setStepModal] = useState(null); // { step|null, index }
+  const [stepEnroll, setStepEnroll] = useState(null); // null | { bucket, title }
   const [confirmDeleteStep, setConfirmDeleteStep] = useState(null);
-  const [srcPipeline, setSrcPipeline] = useState('');
   const [srcStage, setSrcStage] = useState('');
   const [bulkEnroll, setBulkEnroll] = useState(null); // null | { tab: 'add' | 'enrolled' }
 
@@ -86,13 +107,14 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
     [seq]
   );
 
-  // Count of contacts currently matching the auto sources.
+  // Count of contacts currently matching the auto sources — the primary contact
+  // of every open deal at a source stage (with an email to send to).
   const autoMatchCount = useMemo(() => {
     if (!seq || seq.audienceMode !== 'auto') return 0;
-    return contacts.filter((c) =>
-      c.email && sources.some((s) => c.pipelineId === s.pipelineId && c.stage === s.stageKey)
-    ).length;
-  }, [contacts, sources, seq]);
+    const matchers = sources.filter((s) => s && s.kind === 'pipelineStage' && s.pipelineId && s.stageKey);
+    const ids = contactIdsAtSourceStages(state, matchers);
+    return contacts.filter((c) => c.email && ids.has(c.id)).length;
+  }, [contacts, sources, seq, state]);
 
   // ----- Early return AFTER every hook -----
   if (!seq) return null;
@@ -101,6 +123,24 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
 
   function patchSeq(patch) {
     dispatch({ type: ACTIONS.UPDATE_MARKETING_SEQUENCE, id: seq.id, patch });
+  }
+
+  // Diagnostics "Retry": clear the in-flight guard + drop the failed send so the
+  // scheduler re-attempts it on its next tick — reusing the real send path.
+  function retrySend(sd) {
+    clearInFlight(`${sd.enrollmentId}::${sd.stepId}`);
+    dispatch({ type: ACTIONS.RETRY_MARKETING_SEND, id: sd.id });
+    const c = contacts.find((x) => x.id === sd.contactId);
+    const who = c ? (`${c.firstName} ${c.lastName}`.trim() || c.email) : (sd.toEmail || 'contact');
+    toast.success(`Retrying ${who}…`);
+  }
+  function retryAllFailed() {
+    if (diagnostics.failed.length === 0) return;
+    diagnostics.failed.forEach((sd) => {
+      clearInFlight(`${sd.enrollmentId}::${sd.stepId}`);
+      dispatch({ type: ACTIONS.RETRY_MARKETING_SEND, id: sd.id });
+    });
+    toast.success(`Retrying ${diagnostics.failed.length} failed send${diagnostics.failed.length === 1 ? '' : 's'}…`);
   }
 
   function commitName() {
@@ -136,10 +176,9 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
       patchReplyRouting({ enabled: false, pipelineId: null, stageKey: null });
     }
   }
-  const rrPipeline = pipelines.find((p) => p.id === rr.pipelineId) || null;
-  const rrStages = rrPipeline ? (rrPipeline.stages || []) : [];
-  const rrStage = rrPipeline && rr.stageKey
-    ? (rrPipeline.stages || []).find((st) => st.key === rr.stageKey) || null
+  const rrStages = masterStages;
+  const rrStage = rr.stageKey
+    ? masterStages.find((st) => st.key === rr.stageKey) || null
     : null;
 
   function setTagsEnabled(on) {
@@ -176,19 +215,18 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
     patchSeq(seqPatch);
   }
 
-  // ----- Leads: auto sources -----
-  const srcPipelineObj = pipelines.find((p) => p.id === srcPipeline) || null;
-  const srcStages = srcPipelineObj ? (srcPipelineObj.stages || []) : [];
+  // ----- Leads: auto sources (Master Pipeline deal stages) -----
+  const srcStages = masterStages;
 
   function addSource() {
-    if (!srcPipeline || !srcStage) return;
-    const exists = sources.some((s) => s.pipelineId === srcPipeline && s.stageKey === srcStage);
+    if (!masterId || !srcStage) return;
+    const exists = sources.some((s) => s.pipelineId === masterId && s.stageKey === srcStage);
     if (exists) {
-      toast.error('That pipeline stage is already added.');
+      toast.error('That deal stage is already added.');
       return;
     }
     patchSeq({
-      enrollmentSources: [...sources, { kind: 'pipelineStage', pipelineId: srcPipeline, stageKey: srcStage }],
+      enrollmentSources: [...sources, { kind: 'pipelineStage', pipelineId: masterId, stageKey: srcStage }],
     });
     setSrcStage('');
   }
@@ -202,9 +240,8 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
   }
 
   function describeSource(src) {
-    const p = pipelines.find((x) => x.id === src.pipelineId);
-    const st = p ? (p.stages || []).find((x) => x.key === src.stageKey) : null;
-    return `${p ? p.label : 'Unknown pipeline'} · ${st ? st.label : src.stageKey}`;
+    const st = masterStages.find((x) => x.key === src.stageKey) || null;
+    return st ? st.label : src.stageKey;
   }
 
   // ----- Leads: manual enrollment -----
@@ -231,9 +268,9 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
   }
 
   const statusOptions = [
-    { value: 'draft', label: 'Draft — not sending' },
-    { value: 'active', label: 'Active — sending' },
-    { value: 'paused', label: 'Paused — temporarily stopped' },
+    { value: 'draft', label: 'Draft. Not sending' },
+    { value: 'active', label: 'Active. Sending' },
+    { value: 'paused', label: 'Paused. Temporarily stopped' },
   ];
 
   return (
@@ -259,7 +296,7 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
               onChange={(e) => patchSeq({ status: e.target.value })}
               options={statusOptions}
               help={seq.status === 'active' && steps.length === 0
-                ? 'This sequence is active but has no steps — nothing will send.'
+                ? 'This sequence is active but has no steps. Nothing will send.'
                 : undefined}
             />
           </div>
@@ -276,8 +313,8 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
                 <div className="pref-row-label">If a contact leaves the source stage</div>
                 <div className="pref-row-desc">
                   {seq.onStageExit === 'unenroll'
-                    ? 'Auto-unenroll — remaining steps are cancelled.'
-                    : 'Keep running — remaining steps still send.'}
+                    ? 'Auto-unenroll. Remaining steps are cancelled.'
+                    : 'Keep running. Remaining steps still send.'}
                 </div>
               </div>
               <Toggle
@@ -339,10 +376,10 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
               <div className="marketing-reply-flow-node-icon" aria-hidden="true">
                 <Icon name="tag" size={16} />
               </div>
-              <div className="marketing-reply-flow-node-label">On reply, contact goes to</div>
+              <div className="marketing-reply-flow-node-label">On reply, the deal advances to</div>
               <div className="marketing-reply-flow-node-value">
-                {rr.enabled && rrPipeline && rrStage
-                  ? `${rrPipeline.label} · ${rrStage.label}`
+                {rr.enabled && rrStage
+                  ? rrStage.label
                   : <span className="marketing-reply-flow-node-empty">Stays in Replies inbox</span>}
               </div>
             </div>
@@ -351,7 +388,7 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
           <p className="marketing-editor-hint">
             Decide what happens the moment a contact replies. Every reply also
             lands in the <strong>Replies</strong> inbox regardless of these
-            settings — these only control what else fires.
+            settings. These only control what else fires.
           </p>
 
           {/* 1. Stop sending more emails (haltOnReply) */}
@@ -366,13 +403,13 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
             <Toggle on={seq.haltOnReply !== false} onChange={(v) => patchSeq({ haltOnReply: v })} />
           </div>
 
-          {/* 2. Move them to a pipeline stage */}
+          {/* 2. Advance the deal on reply */}
           <div className="pref-row">
             <div className="pref-row-text">
-              <div className="pref-row-label">Move them to a pipeline stage</div>
+              <div className="pref-row-label">Advance the deal on reply</div>
               <div className="pref-row-desc">
-                Auto-routes the contact to a stage you pick. Useful for parking
-                replies on a "follow up" lane.
+                Moves the contact's company deal to a stage you pick. Useful for
+                parking replies on a "follow up" lane.
               </div>
             </div>
             <Toggle on={rr.enabled === true} onChange={setMoveEnabled} />
@@ -380,23 +417,13 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
           {rr.enabled && (
             <div className="form-row marketing-settings-routing marketing-onreply-detail">
               <FormField
-                label="Pipeline"
-                name="seq-rr-pipeline"
-                as="select"
-                value={rr.pipelineId || ''}
-                onChange={(e) => patchReplyRouting({ pipelineId: e.target.value, stageKey: '' })}
-                placeholder="Select a pipeline…"
-                options={pipelines.map((p) => ({ value: p.id, label: p.label }))}
-              />
-              <FormField
-                label="Stage"
+                label="Advance the deal to stage"
                 name="seq-rr-stage"
                 as="select"
                 value={rr.stageKey || ''}
-                onChange={(e) => patchReplyRouting({ stageKey: e.target.value })}
-                placeholder={rrPipeline ? 'Select a stage…' : 'Pick a pipeline first'}
+                onChange={(e) => patchReplyRouting({ pipelineId: masterId, stageKey: e.target.value })}
+                placeholder="Select a stage…"
                 options={rrStages.map((st) => ({ value: st.key, label: st.label }))}
-                disabled={!rrPipeline}
               />
             </div>
           )}
@@ -476,18 +503,18 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
             value={seq.audienceMode || 'auto'}
             onChange={(e) => patchSeq({ audienceMode: e.target.value })}
             options={[
-              { value: 'auto', label: 'Auto — pull from a pipeline stage' },
-              { value: 'manual', label: 'Manual — pick contacts yourself' },
+              { value: 'auto', label: 'Auto. Pull from a deal stage' },
+              { value: 'manual', label: 'Manual. Pick contacts yourself' },
             ]}
-            help="Switching keeps everyone already enrolled — it only changes how new contacts join."
+            help="Switching keeps everyone already enrolled. It only changes how new contacts join."
           />
           {seq.audienceMode === 'auto' ? (
             <>
               <p className="marketing-editor-hint">
-                Contacts at any of these pipeline stages auto-enroll into the
-                queue right away — including while this sequence is in Draft,
-                so you can see exactly who&apos;s lined up before launching.
-                Sends only fire once you click <strong>Start</strong>.
+                The primary contact of every company with an open deal at any of these
+                stages auto-enrolls into the queue right away. Including while this
+                sequence is in Draft, so you can see exactly who&apos;s lined up before
+                launching. Sends only fire once you click <strong>Start</strong>.
                 {sources.length > 0 && ` ${autoMatchCount} currently match · ${enrolledContactIds.size} enrolled.`}
               </p>
               {sources.length > 0 && (
@@ -495,33 +522,23 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
                   {sources.map((src) => (
                     <span key={`${src.pipelineId}:${src.stageKey}`} className="marketing-source-chip">
                       <span>{describeSource(src)}</span>
-                      <button type="button" aria-label="Remove source" onClick={() => removeSource(src)}>×</button>
+                      <button type="button" className="chip-remove" aria-label="Remove source" onClick={() => removeSource(src)}>×</button>
                     </span>
                   ))}
                 </div>
               )}
               <div className="form-row marketing-source-add">
                 <FormField
-                  label="Pipeline"
-                  name="src-pipeline"
-                  as="select"
-                  value={srcPipeline}
-                  onChange={(e) => { setSrcPipeline(e.target.value); setSrcStage(''); }}
-                  placeholder="Select…"
-                  options={pipelines.map((p) => ({ value: p.id, label: p.label }))}
-                />
-                <FormField
-                  label="Stage"
+                  label="Deal stage"
                   name="src-stage"
                   as="select"
                   value={srcStage}
                   onChange={(e) => setSrcStage(e.target.value)}
-                  placeholder={srcPipelineObj ? 'Select…' : 'Pick a pipeline'}
+                  placeholder="Select a stage…"
                   options={srcStages.map((st) => ({ value: st.key, label: st.label }))}
-                  disabled={!srcPipelineObj}
                 />
                 <div className="marketing-source-add-btn">
-                  <button type="button" className="btn btn-secondary" onClick={addSource} disabled={!srcPipeline || !srcStage}>
+                  <button type="button" className="btn btn-secondary" onClick={addSource} disabled={!srcStage}>
                     Add source
                   </button>
                 </div>
@@ -616,7 +633,9 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
             between boxes shows how long the sequence waits before the next send.
           </p>
           <div className="marketing-flow">
-            {steps.map((step, idx) => (
+            {steps.map((step, idx) => {
+              const bodyPreview = stripHtml(step.body || '');
+              return (
               <Fragment key={step.id}>
                 {idx > 0 && (
                   <button
@@ -627,7 +646,7 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
                   >
                     <span className="marketing-flow-wait-chip">
                       <Icon name="schedule" size={12} />
-                      {step.daysAfterPrevious || 0} day{(step.daysAfterPrevious || 0) === 1 ? '' : 's'}
+                      {formatStepDelay(step)}
                     </span>
                   </button>
                 )}
@@ -636,7 +655,18 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
                   onClick={() => setStepModal({ step, index: idx })}
                 >
                   <div className="marketing-flow-card-head">
-                    <span className="marketing-flow-card-num">Email {idx + 1}</span>
+                    <div className="marketing-flow-card-headleft">
+                      <span className="marketing-flow-card-num">Email {idx + 1}</span>
+                      <button
+                        type="button"
+                        className={`marketing-flow-card-count ${(stepBuckets.perStep[idx] || 0) === 0 ? 'is-zero' : ''}`}
+                        title={`${stepBuckets.perStep[idx] || 0} contact${(stepBuckets.perStep[idx] || 0) === 1 ? '' : 's'} waiting at this step. Click to view`}
+                        onClick={(e) => { e.stopPropagation(); setStepEnroll({ bucket: idx, title: `Email ${idx + 1} · waiting here` }); }}
+                      >
+                        <Icon name="user" size={11} />
+                        {stepBuckets.perStep[idx] || 0}
+                      </button>
+                    </div>
                     <div className="marketing-flow-card-tools">
                       <button
                         type="button"
@@ -666,14 +696,24 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
                       </button>
                     </div>
                   </div>
-                  <div className="marketing-flow-card-subject">
-                    {step.subject || 'Empty email — click to edit'}
+                  <div className="marketing-flow-card-body">
+                    <span className="marketing-flow-card-label">Subject</span>
+                    <div className="marketing-flow-card-subject">
+                      {step.subject || 'Empty email. Click to edit'}
+                    </div>
+                    {bodyPreview && (
+                      <div className="marketing-flow-card-preview">{bodyPreview}</div>
+                    )}
                   </div>
                   <div className="marketing-flow-card-foot">
-                    <span className="marketing-flow-card-when">
-                      {idx === 0 ? 'On enrollment' : `+${step.daysAfterPrevious || 0}d`}
+                    <span className="marketing-flow-card-window">
+                      <Icon name="schedule" size={12} />
+                      {fmtHour(step.sendHourStart ?? 9)}–{fmtHour(step.sendHourEnd ?? 17)}
                     </span>
                     <span className="marketing-flow-card-foot-meta">
+                      {idx === 0 && (
+                        <span className="marketing-flow-card-when">On enrollment</span>
+                      )}
                       {(step.attachments?.length > 0) && (
                         <span
                           className="marketing-flow-card-attach"
@@ -683,24 +723,96 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
                           {step.attachments.length}
                         </span>
                       )}
-                      <span className="marketing-flow-card-window">
-                        {fmtHour(step.sendHourStart ?? 9)}–{fmtHour(step.sendHourEnd ?? 17)}
-                      </span>
                     </span>
                   </div>
                 </div>
               </Fragment>
-            ))}
+              );
+            })}
             {steps.length > 0 && <div className="marketing-flow-join" aria-hidden="true" />}
             <button
               type="button"
-              className="marketing-flow-add"
+              className="add-tile marketing-flow-add"
               onClick={() => setStepModal({ step: null, index: steps.length })}
             >
-              <Icon name="plus" size={20} />
               <span>{steps.length === 0 ? 'Add the first email' : 'Add email'}</span>
             </button>
           </div>
+          {(stepBuckets.replied > 0 || stepBuckets.completed > 0) && (
+            <div className="marketing-flow-tallies">
+              {stepBuckets.replied > 0 && (
+                <button
+                  type="button"
+                  className="chip chip-sm"
+                  onClick={() => setStepEnroll({ bucket: 'replied', title: 'Replied. Sequence paused' })}
+                >
+                  {stepBuckets.replied} replied
+                </button>
+              )}
+              {stepBuckets.completed > 0 && (
+                <button
+                  type="button"
+                  className="chip chip-sm"
+                  onClick={() => setStepEnroll({ bucket: 'completed', title: 'Completed the sequence' })}
+                >
+                  {stepBuckets.completed} completed
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="marketing-editor-section">
+          <div className="section-head"><h3>Diagnostics</h3></div>
+          <p className="marketing-editor-hint">
+            Delivery issues for this sequence. What failed and why, plus a way to
+            re-send once the cause is fixed.
+          </p>
+          {diagnostics.failedCount === 0 && !diagnostics.noActiveInbox ? (
+            <div className="marketing-diag-ok">No delivery issues. Every send has gone through.</div>
+          ) : (
+            <div className="marketing-diag">
+              {diagnostics.noActiveInbox && (
+                <div className="marketing-diag-warn">
+                  <div className="marketing-diag-warn-title">No connected sending inbox</div>
+                  <div className="marketing-diag-warn-hint">
+                    {diagnostics.waitingCount} contact{diagnostics.waitingCount === 1 ? '' : 's'} waiting. Connect a sending inbox under Marketing → Inboxes to resume sending.
+                  </div>
+                </div>
+              )}
+              {diagnostics.failedCount > 0 && (
+                <>
+                  <div className="marketing-diag-bar">
+                    <span className="marketing-diag-bar-count">
+                      {diagnostics.failedCount} failed send{diagnostics.failedCount === 1 ? '' : 's'}
+                    </span>
+                    <button type="button" className="btn btn-outline" onClick={retryAllFailed}>Retry all</button>
+                  </div>
+                  <ul className="marketing-diag-list">
+                    {diagnostics.failed.map((sd) => {
+                      const c = contacts.find((x) => x.id === sd.contactId);
+                      const stepIdx = steps.findIndex((st) => st.id === sd.stepId);
+                      const reason = humanizeFailure(sd.failureReason);
+                      const who = c ? (`${c.firstName} ${c.lastName}`.trim() || c.email) : (sd.toEmail || 'Unknown contact');
+                      return (
+                        <li key={sd.id} className="marketing-diag-item">
+                          <div className="marketing-diag-item-body">
+                            <div className="marketing-diag-item-top">
+                              <span className="marketing-diag-who">{who}</span>
+                              {stepIdx >= 0 && <span className="marketing-diag-step">Email {stepIdx + 1}</span>}
+                              <span className="marketing-diag-reason">{reason.label}</span>
+                            </div>
+                            <div className="marketing-diag-hint">{reason.hint}</div>
+                          </div>
+                          <button type="button" className="btn btn-outline" onClick={() => retrySend(sd)}>Retry</button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
         </section>
       </div>
 
@@ -716,6 +828,15 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
           stepIndex={stepModal.index}
           defaultWindow={settings.defaultSendWindow}
           onClose={() => setStepModal(null)}
+        />
+      )}
+      {stepEnroll && (
+        <StepEnrollmentsModal
+          sequenceId={seq.id}
+          bucket={stepEnroll.bucket}
+          stepCount={steps.length}
+          title={stepEnroll.title}
+          onClose={() => setStepEnroll(null)}
         />
       )}
       {bulkEnroll && (

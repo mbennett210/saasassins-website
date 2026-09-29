@@ -20,13 +20,29 @@
 //   await testInboxSend(inboxId, { to, subject, body });
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { IS_DEMO } from '../demo/isDemo';
+// SEC-03: the /inbox/* routes are now authenticated server-side, so every call from
+// here must carry the signed-in user's bearer token (same pattern as the other adapters).
+import { authHeaders } from './authHeader';
+import { markStub } from './demoMode';
 
-// The demo build hard-pins this to stub mode regardless of any env var, so the
-// sales demo can never reach a real inbox backend (no OAuth, no SMTP, no poll).
-const BACKEND = IS_DEMO
-  ? null
-  : ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAIL_BACKEND_URL) || null);
+const BACKEND = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_EMAIL_BACKEND_URL) || null;
+
+// CS-038: mirror the Twilio adapter — a hosted build with no backend URL would otherwise FAKE
+// mailbox connects and sends. The STATIC MODE/PROD checks come FIRST, so a production build
+// folds INBOX_STUB to a compile-time `false` (`(false) && !BACKEND` short-circuits before
+// BACKEND) and esbuild/rolldown dead-code-eliminate the stub bodies + the
+// 'cs-stub:connectedInboxes' sentinel (check-bundle-stubs.mjs asserts it). `MODE === 'demo'`
+// keeps the stub in `build:demo`. Dispatch keys on the STATIC INBOX_STUB, never on the runtime
+// BACKEND URL (which can't fold). Browser-only, so the plain import.meta.env reads need no
+// `typeof import.meta` guard (a guard blocks the fold). See lib/twilio.js, lib/demoMode.js.
+const INBOX_STUB =
+  (import.meta.env.MODE === 'demo' || !import.meta.env.PROD) && !BACKEND;
+if (INBOX_STUB) markStub('cs-stub:connectedInboxes');
+// INBOX_CONFIGURED is false only in the broken case (a production build with no backend URL):
+// the connect UI shows a "not configured" state instead of faking a connection (CS-038).
+export const INBOX_STUB_ACTIVE = INBOX_STUB;
+export const INBOX_CONFIGURED = !!BACKEND || INBOX_STUB;
+const NOT_CONFIGURED = 'Connected inboxes are not configured for this deployment.';
 
 const STUB_DELAY_MS = 600;
 
@@ -58,22 +74,40 @@ function stubInbox({ provider, email, displayName, smtpHost, smtpPort, smtpSecur
 
 // ---------- OAuth: Google (Gmail / Workspace) ----------
 //
-// Real flow: backend GET /inbox/connect/google starts the OAuth dance,
-// returns a redirect URL; we open it in a popup. The user approves; the
+// Real flow: authenticated GET /inbox/connect/start (owner/admin) mints the Google
+// consent URL and returns it; we open that URL in a popup. The user approves; the
 // callback exchanges the code for tokens (encrypted), then posts back to
 // `window.opener` via postMessage with the new inbox metadata. We resolve
 // with that.
 //
 // Stub flow: simulate a brief delay, then resolve with a synthesized inbox
 // row so the UI can be exercised offline.
-export async function connectGoogle() {
+// `workspaceId` (optional) selects which Google Workspace OAuth app the consent
+// flow routes through (multi-Workspace, v47). The backend looks up that
+// Workspace's client_id/secret. Omitted → the legacy single env OAuth app.
+export async function connectGoogle(workspaceId) {
   if (BACKEND) {
-    return openOAuthPopup(`${BACKEND}/inbox/connect/google`);
+    // Authority is proven at the AUTHENTICATED start endpoint (the popup can't carry our
+    // Bearer header); it returns the Google consent URL and we open THAT directly —
+    // mirrors reviewsApi's connectGmb. Replaces opening /inbox/connect/google, which was
+    // unauthenticated, so anyone could start the flow and graft in a mailbox they
+    // control (2026-08-03 audit S3).
+    const qs = workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : '';
+    const res = await fetch(`${BACKEND}/inbox/connect/start${qs}`, { headers: await authHeaders() });
+    if (!res.ok) {
+      let msg = `Could not start the connect flow (${res.status})`;
+      try { msg = (await res.json()).error || msg; } catch { /* non-JSON */ }
+      throw new Error(msg);
+    }
+    const { url } = await res.json();
+    if (!url) throw new Error('Connect flow did not return a URL.');
+    return openOAuthPopup(url);
   }
+  if (!INBOX_STUB) throw new Error(NOT_CONFIGURED);
   await delay(STUB_DELAY_MS);
   return {
     ok: true,
-    inbox: stubInbox({ provider: 'google', email: 'stub.user@gmail.com', displayName: 'Stub User' }),
+    inbox: stubInbox({ provider: 'google', email: 'stub.marcus@gmail.com', displayName: 'Stub Marcus' }),
   };
 }
 
@@ -82,10 +116,11 @@ export async function connectMicrosoft() {
   if (BACKEND) {
     return openOAuthPopup(`${BACKEND}/inbox/connect/microsoft`);
   }
+  if (!INBOX_STUB) throw new Error(NOT_CONFIGURED);
   await delay(STUB_DELAY_MS);
   return {
     ok: true,
-    inbox: stubInbox({ provider: 'microsoft', email: 'stub.user@outlook.com', displayName: 'Stub User' }),
+    inbox: stubInbox({ provider: 'microsoft', email: 'stub.marcus@outlook.com', displayName: 'Stub Marcus' }),
   };
 }
 
@@ -137,6 +172,7 @@ export async function connectSmtp({
     const data = await res.json();
     return { ok: true, inbox: data };
   }
+  if (!INBOX_STUB) throw new Error(NOT_CONFIGURED);
   // Stub: simulate the handshake. Reject obviously bad ports as a sanity
   // check so the UI's error path gets exercised.
   await delay(STUB_DELAY_MS);
@@ -164,6 +200,7 @@ export async function disconnectInbox(inboxId) {
   if (BACKEND) {
     const res = await fetch(`${BACKEND}/inbox/${encodeURIComponent(inboxId)}/disconnect`, {
       method: 'POST',
+      headers: { ...(await authHeaders()) },
     });
     if (!res.ok) {
       const err = await res.text();
@@ -171,6 +208,7 @@ export async function disconnectInbox(inboxId) {
     }
     return res.json();
   }
+  if (!INBOX_STUB) throw new Error(NOT_CONFIGURED);
   await delay(STUB_DELAY_MS / 2);
   return { ok: true };
 }
@@ -187,7 +225,7 @@ export async function testInboxSend(inboxId, { to, subject, body, fromName }) {
   if (BACKEND) {
     const res = await fetch(`${BACKEND}/inbox/${encodeURIComponent(inboxId)}/test`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify({ to, subject, body, fromName }),
     });
     if (!res.ok) {
@@ -196,6 +234,7 @@ export async function testInboxSend(inboxId, { to, subject, body, fromName }) {
     }
     return res.json();
   }
+  if (!INBOX_STUB) throw new Error(NOT_CONFIGURED);
   await delay(STUB_DELAY_MS);
   return {
     ok: true,
@@ -209,7 +248,7 @@ export async function testInboxSend(inboxId, { to, subject, body, fromName }) {
 // Used by lib/messagingEmail.js (Phase 4b). Routes to the user's connected
 // inbox so the email originates from their real address. The backend picks
 // the right transport (Gmail API / Graph / SMTP) based on the inbox row.
-export async function sendViaInbox(inboxId, { to, from, fromName, subject, body, replyTo, cc, bcc, headers, tags, attachments }) {
+export async function sendViaInbox(inboxId, { to, from, fromName, subject, body, replyTo, cc, bcc, headers, tags, attachments, senderCompanyName, unsubscribe }) {
   if (!inboxId) throw new Error('Connected inbox id is required.');
   if (!to) throw new Error('Recipient email is required.');
   if (!subject) throw new Error('Subject is required.');
@@ -221,9 +260,11 @@ export async function sendViaInbox(inboxId, { to, from, fromName, subject, body,
     if (headers && typeof headers === 'object') payload.headers = headers;
     if (Array.isArray(tags) && tags.length) payload.tags = tags;
     if (Array.isArray(attachments) && attachments.length) payload.attachments = attachments;
+    if (senderCompanyName) payload.senderCompanyName = senderCompanyName;
+    if (unsubscribe && typeof unsubscribe === 'object') payload.unsubscribe = unsubscribe;
     const res = await fetch(`${BACKEND}/inbox/${encodeURIComponent(inboxId)}/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -232,6 +273,7 @@ export async function sendViaInbox(inboxId, { to, from, fromName, subject, body,
     }
     return res.json();
   }
+  if (!INBOX_STUB) throw new Error(NOT_CONFIGURED);
   await delay(STUB_DELAY_MS);
   return {
     ok: true,
@@ -247,7 +289,9 @@ export async function sendViaInbox(inboxId, { to, from, fromName, subject, body,
 // caller's cursor. Stub mode (no backend) resolves to an empty result.
 export async function pollInbound(since = 0) {
   if (!BACKEND) return { ok: true, cursor: since, emails: [] };
-  const res = await fetch(`${BACKEND}/inbox/inbound?since=${encodeURIComponent(since)}`);
+  const res = await fetch(`${BACKEND}/inbox/inbound?since=${encodeURIComponent(since)}`, {
+    headers: { ...(await authHeaders()) },
+  });
   if (!res.ok) {
     throw new Error(`Inbound poll failed (${res.status})`);
   }
@@ -266,11 +310,16 @@ function openOAuthPopup(startUrl) {
       reject(new Error('Popup blocked. Allow popups for this site and try again.'));
       return;
     }
+    // Only trust postMessage from our own app origin or the configured backend origin
+    // (the callback runs on one of them). Before this the handler checked only the
+    // message TYPE and no origin — despite the comment claiming otherwise — so any
+    // window holding a reference to ours could inject a forged 'connect-inbox' payload
+    // (2026-08-03 audit S4).
+    const allowedOrigins = new Set([window.location.origin]);
+    try { if (BACKEND) allowedOrigins.add(new URL(BACKEND, window.location.origin).origin); } catch { /* ignore */ }
     let settled = false;
     const onMessage = (e) => {
-      // Backend's callback page calls `window.opener.postMessage(...)` with
-      // the inbox metadata. We trust messages whose origin matches the API
-      // origin OR the app's own origin (callback can run on either).
+      if (!allowedOrigins.has(e.origin)) return;
       if (!e.data || typeof e.data !== 'object') return;
       if (e.data.type !== 'connect-inbox') return;
       settled = true;

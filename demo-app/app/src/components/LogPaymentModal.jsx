@@ -12,10 +12,10 @@ import {
 } from '../store/selectors';
 import { useToast } from './Toast';
 import { newId } from '../lib/ids';
-import { todayIso, composeIso, money } from '../lib/dates';
+import { todayKey, composeIso, money } from '../lib/dates';
 
 function todayDate() {
-  return todayIso().slice(0, 10);
+  return todayKey();
 }
 
 function buildInitialForm({ presetClientId }) {
@@ -107,6 +107,10 @@ export default function LogPaymentModal({ open, onClose, presetClientId = null }
       type: ACTIONS.ADD_INVOICE_PAYMENT,
       id: targetInvoiceId,
       payment: {
+        // id minted HERE, not in the reducer: it is the dedupe key that makes this
+        // action safe to replay after a save that committed but whose response was lost.
+        // See the note on ADD_INVOICE_PAYMENT in store/reducer.js.
+        id: newId('pay'),
         amount,
         method: form.method,
         date: dateIso,
@@ -121,10 +125,10 @@ export default function LogPaymentModal({ open, onClose, presetClientId = null }
   const submitDisabled = !form.clientId || !(Number(form.amount) > 0);
 
   const invoiceOptions = [
-    { value: '', label: 'No invoice — log standalone payment' },
+    { value: '', label: 'No invoice. Log standalone payment' },
     ...outstandingInvoices.map((inv) => ({
       value: inv.id,
-      label: `${inv.id} — balance ${money(invoiceBalance(inv))}`,
+      label: `${inv.id}. Balance ${money(invoiceBalance(inv))}`,
     })),
   ];
 
@@ -133,16 +137,16 @@ export default function LogPaymentModal({ open, onClose, presetClientId = null }
       <form onSubmit={submit}>
         <div className="form-row">
           <FormField
-            label="Client" as="select" required value={form.clientId}
+            label="Company" as="select" required value={form.clientId}
             onChange={(e) => onClientChange(e.target.value)}
-            options={[{ value: '', label: 'Select a client' }, ...clients.map((c) => ({ value: c.id, label: c.name }))]}
+            options={[{ value: '', label: 'Select a company' }, ...clients.map((c) => ({ value: c.id, label: c.name }))]}
           />
           <FormField
             label="Apply to invoice" as="select" value={form.invoiceId}
             onChange={(e) => setForm({ ...form, invoiceId: e.target.value })}
             options={invoiceOptions}
             disabled={!form.clientId}
-            help={form.clientId && outstandingInvoices.length === 0 ? 'No outstanding invoices for this client.' : undefined}
+            help={form.clientId && outstandingInvoices.length === 0 ? 'No outstanding invoices for this company.' : undefined}
           />
         </div>
 
@@ -184,7 +188,7 @@ export default function LogPaymentModal({ open, onClose, presetClientId = null }
 
         {!form.invoiceId && form.clientId && (
           <div className="text-xs text-muted" style={{ marginTop: 4 }}>
-            We'll create a stub invoice for this client so the payment has a home in reporting.
+            We'll create a stub invoice for this company so the payment has a home in reporting.
           </div>
         )}
 

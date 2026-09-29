@@ -1,0 +1,28 @@
+<!-- @dsCard group="Navigation" height=128 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DetailHeader</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-5) var(--space-6) var(--space-1); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('pv')).render(h(CS.DetailHeader, {
+  backTo: '/contacts',
+  backLabel: 'Customers',
+  title: 'Harbor View Offices',
+  subtitle: '#1042 · 1200 Brickell Ave, Miami, FL',
+  badge: h(CS.Badge, { variant: 'green' }, 'Active'),
+  actions: h('div', { className: 'flex-row' },
+    h('button', { className: 'btn btn-success' }, 'Message'),
+    h('button', { className: 'btn btn-danger' }, 'Delete'))
+}));
+</script>
+</body>
+</html>

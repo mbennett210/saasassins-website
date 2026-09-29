@@ -1,13 +1,15 @@
 import { useStore } from '../store';
-import { selectClientById, selectTagById } from '../store/selectors';
+import { selectClientById, selectContactById, selectTagById } from '../store/selectors';
 import { money, fmtDate } from '../lib/dates';
 import TagChip from './TagChip';
 
-// Single card in the Kanban board. Draggable via native HTML5 DnD.
-// Every row is always rendered (placeholder when empty) so every card has the same footprint.
+// Single card on the Kanban board. Each card is an OPPORTUNITY (a company-owned
+// deal), rendered COMPANY-FIRST: the company name headlines, and the primary
+// contact (the person the deal runs through) is the sub-line. Never a person as
+// the card. Draggable via native HTML5 DnD.
 
 export default function PipelineCard({
-  contact,
+  opportunity,
   onClick,
   onDragStart,
   onDragEnd,
@@ -17,9 +19,19 @@ export default function PipelineCard({
   onToggleSelect,
 }) {
   const state = useStore();
-  const company = contact.companyId ? selectClientById(state, contact.companyId) : null;
-  const companyName = company?.name || contact.customFields?.company || '—';
-  const firstTag = contact.tagIds?.[0] ? selectTagById(state, contact.tagIds[0]) : null;
+  const company = opportunity.clientId ? selectClientById(state, opportunity.clientId) : null;
+  const companyName = company?.name || 'Unknown company';
+  // The person the deal runs through: the opportunity's own primary contact, else
+  // the company's primary contact. Shown BELOW the company, never as the headline.
+  const person = opportunity.primaryContactId
+    ? selectContactById(state, opportunity.primaryContactId)
+    : (company?.primaryContactId ? selectContactById(state, company.primaryContactId) : null);
+  const personName = person ? `${person.firstName || ''} ${person.lastName || ''}`.trim() : '';
+  // Tags are company-level, so the chip reflects the company.
+  const firstTag = company?.tagIds?.[0] ? selectTagById(state, company.tagIds[0]) : null;
+
+  const headline = companyName;
+  const subline = personName || opportunity.title || ' ';
 
   const stop = (e) => e.stopPropagation();
 
@@ -29,12 +41,12 @@ export default function PipelineCard({
       draggable
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', contact.id);
-        onDragStart?.(contact);
+        e.dataTransfer.setData('text/plain', opportunity.id);
+        onDragStart?.(opportunity);
       }}
       onDragEnd={() => onDragEnd?.()}
       onDragOver={onDragOver}
-      onClick={() => onClick?.(contact)}
+      onClick={() => onClick?.(opportunity)}
       role="button"
       tabIndex={0}
     >
@@ -43,29 +55,27 @@ export default function PipelineCard({
           <input
             type="checkbox"
             className="pipeline-card-check"
-            aria-label={`Select ${contact.firstName} ${contact.lastName}`}
+            aria-label={`Select ${companyName}`}
             checked={selected}
-            onChange={() => onToggleSelect(contact.id)}
+            onChange={() => onToggleSelect(opportunity.id)}
             onClick={stop}
             onMouseDown={stop}
           />
         )}
-        <span className="pipeline-card-name" title={`${contact.firstName} ${contact.lastName}`}>
-          {contact.firstName} {contact.lastName}
-        </span>
+        <span className="pipeline-card-name" title={headline}>{headline}</span>
         <span className="pipeline-card-tag-slot">
           {firstTag ? <TagChip tag={firstTag} size="xs" /> : null}
         </span>
       </div>
-      <div className="pipeline-card-sub" title={companyName}>{companyName}</div>
+      <div className="pipeline-card-sub" title={subline}>{subline}</div>
       <div className="pipeline-card-meta">
-        {contact.dealValue ? (
-          <span className="pipeline-card-value">{money(contact.dealValue)}</span>
+        {opportunity.value ? (
+          <span className="pipeline-card-value">{money(opportunity.value)}</span>
         ) : (
           <span className="pipeline-card-value pipeline-card-value-empty">—</span>
         )}
         <span className="text-xs text-muted">
-          {contact.expectedCloseDate ? `Close ${fmtDate(contact.expectedCloseDate)}` : '\u00A0'}
+          {opportunity.expectedCloseDate ? `Close ${fmtDate(opportunity.expectedCloseDate)}` : ' '}
         </span>
       </div>
     </div>

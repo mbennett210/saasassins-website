@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "harbor-pine",
+  "name": "Harbor & Pine",
+  "wordmark": "Harbor&Pine",
+  "shortName": "Harbor & Pine",
+  "appTitle": "Harbor & Pine Ops",
+  "description": "Operations for Harbor & Pine: schedule, message, invoice.",
+  "monogram": "HP",
+  "slug": "harbor-pine",
+  "appUrl": "https://ops.harborpine.example",
+  "company": {
+    "domain": "harborpine.example",
+    "website": "www.harborpine.example",
+    "email": "hello@harborpine.example",
+    "phone": "1-555-010-0142",
+    "street": "88 Wharf Street",
+    "city": "Portland, ME 04101",
+    "tagline": "A Coastal Facility Group Company",
+    "services": "Commercial Cleaning, Day Porter & Floor Care",
+    "signatory": {
+      "name": "Jordan Reyes",
+      "role": "Owner",
+      "title": "Owner & Operations Lead",
+      "email": "jordan@harborpine.example"
+    }
+  },
+  "email": {
+    "quotesFrom": "Harbor & Pine <quotes@mail.harborpine.example>",
+    "authFrom": "Harbor & Pine <login@mail.harborpine.example>"
+  },
+  "colors": {
+    "primary": "#093F3A",
+    "secondary": "#FFB38A",
+    "link": "#1D4ED8",
+    "neutral": "#78716C"
+  },
+  "logos": {
+    "mark": { "file": "mark.svg", "box": { "left": 100, "top": 80, "width": 400, "height": 240 } },
+    "lockup": { "file": "lockup.svg" }
+  }
+}

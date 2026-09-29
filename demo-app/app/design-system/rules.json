@@ -1,0 +1,1778 @@
+{
+  "$comment": "Every numbered rule in UI_RULES.md (from §0), THEME_CLEANSPACE.md (its R headings), STYLING.md (the numbered \"Rules (enforced)\" list only; the naming, alias, recipe and list-keeping rules in its prose are not classified yet) and STRUCTURE.md (every section but its history, Provenance and Changelog, with the §10 lint catalog row by row), with what holds it today. test-design-system.mjs fails the build when a rule heading is added, retitled or removed without updating this file, when an entry cites a check that does not exist, or when a gated entry cites no check CI runs. Statuses: gated = CI fails when broken; checked = a check exists but CI does not run it; construction = held by a shared class/component when used, nothing fails if bypassed; review = people only; superseded = replaced (supersededBy).",
+  "level": "L2",
+  "classified": "2026-09-24",
+  "areas": [
+    {
+      "id": "tokens",
+      "title": "Colour, type and tokens"
+    },
+    {
+      "id": "controls",
+      "title": "Buttons, fields and controls"
+    },
+    {
+      "id": "layout",
+      "title": "Layout, surfaces and spacing"
+    },
+    {
+      "id": "lists",
+      "title": "Lists and tables"
+    },
+    {
+      "id": "navigation",
+      "title": "Navigation"
+    },
+    {
+      "id": "overlays",
+      "title": "Menus, modals and sheets"
+    },
+    {
+      "id": "feedback",
+      "title": "Feedback and states"
+    },
+    {
+      "id": "mobile",
+      "title": "Phones"
+    },
+    {
+      "id": "product",
+      "title": "Product rules"
+    },
+    {
+      "id": "process",
+      "title": "Process"
+    }
+  ],
+  "rules": [
+    {
+      "id": "UI-0-concordia-grade-adoption",
+      "source": "UI_RULES.md",
+      "ref": "§0",
+      "title": "Concordia-grade adoption contract (this shell)",
+      "area": "process",
+      "status": "review",
+      "note": "A process contract for porting Concordia's rules into this shell: adapt them incrementally, never copy verbatim; a port keeps Concordia's number where it is free, otherwise the next free number from §56, citing its origin; Concordia's flooring/quote sections (§66, §69, §71, §72, §79, §80, §83, §84, §88, §90) and .btn-cream §91 are not ported unless a matching surface exists here. People hold it; nothing checks a port."
+    },
+    {
+      "id": "UI-1-container-hygiene-no",
+      "source": "UI_RULES.md",
+      "ref": "§1",
+      "title": "Container hygiene — no pointless nesting",
+      "area": "layout",
+      "status": "review",
+      "note": "No check: a card wrapped around a lone table or stat grid passes every lint."
+    },
+    {
+      "id": "UI-2-section-titles-persist",
+      "source": "UI_RULES.md",
+      "ref": "§2",
+      "title": "Section titles persist outside containers",
+      "area": "layout",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-3-bulk-action-bars",
+      "source": "UI_RULES.md",
+      "ref": "§3",
+      "title": "Bulk-action bars persist — no layout shift on selection",
+      "area": "lists",
+      "status": "superseded",
+      "supersededBy": [
+        "UI-99-list-rows-carry"
+      ],
+      "note": "Replaced by §99: on Clients, Invoices and Pipeline the bar appears only once a row is selected, and test-customers-bulk-authz.mjs (CI) requires that on Clients. There is no `.bulk-bar.is-empty` style."
+    },
+    {
+      "id": "UI-4-click-target-ergonomics",
+      "source": "UI_RULES.md",
+      "ref": "§4",
+      "title": "Click-target ergonomics — checkboxes ≥ 18px",
+      "area": "controls",
+      "status": "construction",
+      "note": "A global `input[type=\"checkbox\"]` rule sizes every checkbox (now a 20px box with a 36px hit area); a local override would bypass it."
+    },
+    {
+      "id": "UI-5-settings-layout-sidebar",
+      "source": "UI_RULES.md",
+      "ref": "§5",
+      "title": "Settings layout — sidebar bottom = main card bottom",
+      "area": "layout",
+      "status": "construction",
+      "note": "The `.settings-content` rules stretch the last card, form or table-wrap in the settings shell and on Marketing. No page puts a side nav beside it today, so the alignment itself is not exercised."
+    },
+    {
+      "id": "UI-6-margin-between-page",
+      "source": "UI_RULES.md",
+      "ref": "§6",
+      "title": "Margin between page-head-text and primary card",
+      "area": "layout",
+      "status": "construction",
+      "note": "`.settings-content .page-head-text { margin-bottom: 30px }`. 30px sits off the 4px grid (a frozen design-lint finding)."
+    },
+    {
+      "id": "UI-7-selectors-segmented-controls",
+      "source": "UI_RULES.md",
+      "ref": "§7",
+      "title": "Selectors / segmented controls — unified pill, equal-width segments, hug content",
+      "area": "controls",
+      "status": "gated",
+      "note": "test-control-parity.mjs (CI) holds the three class pairs to one declared recipe: the tracks' display, grid flow, background (R7's white), border, radius, padding and gap, and the segments' padding, border, radius, type, colour and active state (register CS-357: `.segmented` was the retired flush fill, the Messaging track grey). STRUCTURE §5 agrees with the 3px track since 2.1.0 (register CS-346). The segments also share the icon and count layout (display, alignment, 6px gap). It fails the retired fourth styles too: Marketing's glass pills, the customer Activity toggle, the Messages dock's grey track, the layout picker's range switch and the payroll drawer's tabs (register CS-359). A fourth style under a new class name, and the phone upsizing, are not compared. It also holds one line per label: white-space: nowrap on all three segment classes (the step ④ interaction pass, 2026-09-25, found the user menu's \"Super Admin\" wrapped into a 52px segment).",
+      "coverage": "partial",
+      "checks": [
+        "test-control-parity.mjs"
+      ]
+    },
+    {
+      "id": "UI-8-toasts-only-confirm",
+      "source": "UI_RULES.md",
+      "ref": "§8",
+      "title": "Toasts only confirm save actions",
+      "area": "feedback",
+      "status": "review",
+      "note": "ToastProvider cannot tell a save from any other call; nothing stops a toast on a status change."
+    },
+    {
+      "id": "UI-9-sidebar-footer-single",
+      "source": "UI_RULES.md",
+      "ref": "§9",
+      "title": "Sidebar footer — single border above the user chip",
+      "area": "navigation",
+      "status": "construction",
+      "note": "`.sidebar-footer` draws the one divider."
+    },
+    {
+      "id": "UI-10-new-job-entry",
+      "source": "UI_RULES.md",
+      "ref": "§10",
+      "title": "New Job entry-point lives on the Schedule page only",
+      "area": "product",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-11-button-role-convention",
+      "source": "UI_RULES.md",
+      "ref": "§11",
+      "title": "Button role convention — filled by semantic role, never bare outline as a CTA",
+      "area": "controls",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-button-lint.mjs",
+        "lint:buttons"
+      ],
+      "note": "lint:buttons (CI, via test-button-lint.mjs) requires every .btn to carry one of the role variants (primary, secondary, success/gold, danger, outline, link); one documented exception, Work Orders' Escalate (a soft-danger tint no variant matches). It also fails a stylesheet rule that paints a `.btn` / `.btn-*` class green (a success-token colour, background or border): there are no green buttons (register CS-338, Variance's Approve). Which role a button gets, adjacent buttons filled by role, and outline only in the allowed places are review."
+    },
+    {
+      "id": "UI-12-no-prefix-on",
+      "source": "UI_RULES.md",
+      "ref": "§12",
+      "title": "No \"+\" prefix on button labels",
+      "area": "controls",
+      "status": "gated",
+      "note": "lint:buttons (CI, via test-button-lint.mjs) fails a plus Icon or a \"+ \" prefix inside a button with a text label (a literal, a <span>, or a {variable}); an icon-only create button with an aria-label keeps its plus, and the Launchpad tiles' plus badge is its one allowed entry. 21 were removed on 2026-09-25 (register CS-352). Since 2026-09-25 a plus behind a conditional icon name counts too (register CS-362).",
+      "coverage": "full",
+      "checks": [
+        "test-button-lint.mjs",
+        "lint:buttons"
+      ]
+    },
+    {
+      "id": "UI-13-buttons-lock-to",
+      "source": "UI_RULES.md",
+      "ref": "§13",
+      "title": "Buttons lock to consistent heights and center their content",
+      "area": "controls",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-button-lint.mjs",
+        "lint:buttons"
+      ],
+      "note": "`.btn` and `.btn-sm` take their heights from --btn-height / --btn-height-sm (32px / 28px), so a button with no context rule has that height (construction). The clock control (42/56px minimum) and, on phones, the Messaging header (44px) and the message-pane actions (28px) set their own heights. lint:buttons (CI, via test-button-lint.mjs) keeps btn-sm inside tables and named clusters. Nothing measures a rendered row."
+    },
+    {
+      "id": "UI-14-filled-cta-glows",
+      "source": "UI_RULES.md",
+      "ref": "§14",
+      "title": "Filled CTA glows use halved-intensity shadow recipes",
+      "area": "controls",
+      "status": "superseded",
+      "supersededBy": [
+        "STRUCTURE-5"
+      ],
+      "note": "Marked stale in the doc itself: the flat treatment removes every glow."
+    },
+    {
+      "id": "UI-15-tokens-always-no",
+      "source": "UI_RULES.md",
+      "ref": "§15",
+      "title": "Tokens always — no hex, no raw rgb, no inline-fallback hex in component CSS",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-color-ledger.mjs",
+        "test-design-lint.mjs",
+        "lint:design#no-raw-hex"
+      ],
+      "note": "test-color-ledger.mjs (CI) runs color-ledger.mjs over src, api, index.html, public and the brand-asset scripts (480 files) and fails on any colour literal (hex, rgb/hsl, %23 in a data URI, a named colour in a value position) outside a theme palette entry, the client theme's GENERATED block, a reasoned design:allow, a mask or the named content files; its fixtures prove each detection, so a weakened detector fails too. It covers what design-lint's no-raw-hex misses (rgb()/hsl() in component CSS, a hex inside a JS shorthand such as '1px solid #e5e7eb', an inline-fallback hex). design-lint's ratchet still runs in CI (test-design-lint.mjs)."
+    },
+    {
+      "id": "UI-16-inline-input-action",
+      "source": "UI_RULES.md",
+      "ref": "§16",
+      "title": "Inline input + action button — label above, button centered to the field",
+      "area": "controls",
+      "status": "review",
+      "note": "A layout pattern with two example classes; not checked."
+    },
+    {
+      "id": "UI-17-entity-group-section",
+      "source": "UI_RULES.md",
+      "ref": "§17",
+      "title": "Entity-group section headers read as headers, not eyebrows",
+      "area": "layout",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-18-login-screen-full",
+      "source": "UI_RULES.md",
+      "ref": "§18",
+      "title": "Login screen — full-bleed brand backdrop, single centered card",
+      "area": "product",
+      "status": "construction",
+      "note": "One surface (Login.jsx with the `.login-*` classes)."
+    },
+    {
+      "id": "UI-19-faceted-filter-bar",
+      "source": "UI_RULES.md",
+      "ref": "§19",
+      "title": "Faceted filter bar — shared, URL-persisted filter system",
+      "area": "lists",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "lint",
+        "test-schedule-range-overnight.mjs"
+      ],
+      "note": "FilterBar with useUrlFilters implements it when used. ESLint (in CI) fails a raw <select> in src/pages/reports/**, and the date-range facet's URL round-trip is unit-tested. Any other page can still hand-roll selects."
+    },
+    {
+      "id": "UI-20-crew-my-day",
+      "source": "UI_RULES.md",
+      "ref": "§20",
+      "title": "Crew \"My Day\" — one narrow mobile-first hub, big tap targets, one shared clock control",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-overnight-clockout.mjs"
+      ],
+      "note": "The shared ClockControl holds the clock action (geolocation lives only there). test-overnight-clockout.mjs (CI) pins My Day's carryover card to ClockControl and pins the unbounded timeApi.mine read. The narrow page, timer banner and today/upcoming layout are review."
+    },
+    {
+      "id": "UI-21-variance-report-period",
+      "source": "UI_RULES.md",
+      "ref": "§21",
+      "title": "Variance report — period pills + StatCards + drill-down rows",
+      "area": "product",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-22-encrypted-securitycard-in",
+      "source": "UI_RULES.md",
+      "ref": "§22",
+      "title": "Encrypted SecurityCard + in-app media gallery (account ops)",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-site-access.mjs",
+        "test-manager-tier-gates.mjs"
+      ],
+      "note": "SecurityCard (in LocationCard) and JobDetail's own Codes row both show •••• until Reveal. CI pins who may reveal (the app's Reveal-row rule and the server reveal route). The masking itself, no plaintext in the blob, and MediaGallery's lightbox and read-only variant are not tested."
+    },
+    {
+      "id": "UI-23-quality-hub-one",
+      "source": "UI_RULES.md",
+      "ref": "§23",
+      "title": "Quality hub — one tabbed QC surface (Inspections · Checklists · Problems · Templates)",
+      "area": "product",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-24-responsive-tables-stacked",
+      "source": "UI_RULES.md",
+      "ref": "§24",
+      "title": "Responsive tables → stacked cards on mobile (`.mobile-stack`)",
+      "area": "mobile",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-client-inspections.mjs",
+        "lint:responsive"
+      ],
+      "note": "`.mobile-stack` restacks an opted-in table at 640px and below. CI fails if the customer Inspections tab's two tables drop it (test-client-inspections.mjs). lint:responsive (not in CI) fails a route whose table rows are hidden at phone width with no card list shown. Other tables can skip the class."
+    },
+    {
+      "id": "UI-25-crew-scoped-surfaces",
+      "source": "UI_RULES.md",
+      "ref": "§25",
+      "title": "Crew-scoped surfaces, My-Day photo capture, and the mobile filter/header pass",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-key-scope.mjs",
+        "test-account-media-authz.mjs"
+      ],
+      "note": "CI pins the Keys crew scope (assigned companies by id or normalised name, plus keys the user holds) and the 'clean' media scope. The rule's text is out of date in two places. accountOpsUpdated has no roleAllowlist, because its recipients are the account's crew. Schedule is not gated on schedule.edit: the nav leaf is managerOnly (the flag is pinned in CI by test-master-search-registry.mjs) and /schedule gates on schedule.view. Picker scoping, facet layout and the mobile header pass are review."
+    },
+    {
+      "id": "UI-26-crew-sidebar-flat",
+      "source": "UI_RULES.md",
+      "ref": "§26",
+      "title": "Crew sidebar — flat nav, no \"Operations\" group header",
+      "area": "product",
+      "status": "construction",
+      "note": "Sidebar.jsx branches on the crew role."
+    },
+    {
+      "id": "UI-27-structured-location-address",
+      "source": "UI_RULES.md",
+      "ref": "§27",
+      "title": "Structured location address — street / city / state / zip fields",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-csv-location-import.mjs",
+        "test-location-collapse.mjs"
+      ],
+      "note": "Wherever a location is built (the ADD_CLIENT hook and the v53 collapse), the discrete street/city/state/zip fields and the composed address are pinned in CI. LocationCard's editor and the parseAddress back-fill are not tested."
+    },
+    {
+      "id": "UI-28-click-to-dial",
+      "source": "UI_RULES.md",
+      "ref": "§28",
+      "title": "Click-to-dial — phones render as `tel:` links via `PhoneLink`",
+      "area": "controls",
+      "status": "construction",
+      "note": "PhoneLink renders the tel: link. Its default class `link` is defined nowhere in index.css, so phone numbers fall back to the browser's default link colour."
+    },
+    {
+      "id": "UI-29-effective-crew-standing",
+      "source": "UI_RULES.md",
+      "ref": "§29",
+      "title": "Effective crew — \"(standing)\" suffix + the two-level standing-crew editors",
+      "area": "product",
+      "status": "superseded",
+      "supersededBy": [
+        "UI-93-a-clean-requires"
+      ],
+      "note": "Standing crew was removed on 2026-09-09."
+    },
+    {
+      "id": "UI-28-table-list-text",
+      "source": "UI_RULES.md",
+      "ref": "§28",
+      "title": "Table & list text truncation — one line + ellipsis, hover for the full value",
+      "area": "lists",
+      "status": "construction",
+      "note": "`.truncate` and `.truncate-2` do it; nothing requires them."
+    },
+    {
+      "id": "UI-29-list-tables-paginate",
+      "source": "UI_RULES.md",
+      "ref": "§29",
+      "title": "List tables paginate at 25 / page — URL-backed Prev / Next",
+      "area": "lists",
+      "status": "superseded",
+      "supersededBy": [
+        "UI-72-list-tables-standalone"
+      ],
+      "note": "Pages are 20 rows now (DEFAULT_PAGE_SIZE in usePagedRows)."
+    },
+    {
+      "id": "UI-30-webhook-config-cards",
+      "source": "UI_RULES.md",
+      "ref": "§30",
+      "title": "Webhook config cards — copyable URL/secret cells, rotate, and an inline setup panel",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-manager-tier-gates.mjs"
+      ],
+      "note": "Both webhook cards must keep Copy buttons for their secrets and tokens, shown only under canCopySecret, and the server refuses a rotate without integrations.manage (CI). The table layout, URL cells and .webhook-help panel are review."
+    },
+    {
+      "id": "UI-31-forms-searchable-entity",
+      "source": "UI_RULES.md",
+      "ref": "§31",
+      "title": "Forms — searchable entity pickers, inline sub-options, and on-submit required validation",
+      "area": "controls",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "lint"
+      ],
+      "note": "ESLint (in CI) fails a raw <select> in the Reports pages' entity filters. Elsewhere the shared searchable pickers hold it only when used, and FormField as=\"select\" is not caught. Inline sub-options and on-submit validation are review."
+    },
+    {
+      "id": "UI-32-unified-contacts-list",
+      "source": "UI_RULES.md",
+      "ref": "§32",
+      "title": "Unified Contacts list surfaces account-only companies as rows",
+      "area": "product",
+      "status": "superseded",
+      "supersededBy": [
+        "UI-70-the-person-company"
+      ],
+      "note": "Retired by the customer-first pivot (2026-09-08). The hub lists customers only, so there are no person rows and no separate contactless-company rows."
+    },
+    {
+      "id": "UI-33-new-conversation-modal",
+      "source": "UI_RULES.md",
+      "ref": "§33",
+      "title": "New-conversation modal is a thin thread-starter — compose in the thread, not the modal",
+      "area": "product",
+      "status": "construction",
+      "note": "NewConversationModal is the one thin starter: it opens or creates the thread and navigates into it, composing nothing. Nothing stops another surface from composing in a modal. The rule's channel step and \"Start conversation\" button no longer exist."
+    },
+    {
+      "id": "UI-34-tags-are-company",
+      "source": "UI_RULES.md",
+      "ref": "§34",
+      "title": "Tags are company-level; every Contacts-list row is bulk-selectable",
+      "area": "product",
+      "status": "review",
+      "note": "No check, and nothing shared holds it: selectEffectiveTagIdsForContact is unused. The Customers hub tags customers directly with TAG_CLIENT. The bulk selection across person and company rows, and the `cl:` keys, were retired with the customer-first pivot (aa40bbc)."
+    },
+    {
+      "id": "UI-35-outbound-message-delivery",
+      "source": "UI_RULES.md",
+      "ref": "§35",
+      "title": "Outbound message delivery failures surface inline in the thread — expandable, both channels",
+      "area": "product",
+      "status": "construction",
+      "note": "One shared FailedRow renders delivery failures inline for both channels. Nothing checks that a new bubble uses it."
+    },
+    {
+      "id": "UI-36-weekly-recurring-jobs",
+      "source": "UI_RULES.md",
+      "ref": "§36",
+      "title": "Weekly recurring jobs are built from \"schedule blocks\" — per-day time + crew in one series",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-series-day-set.mjs"
+      ],
+      "note": "Describing, editing and deleting multi-block series is unit-tested; the pre-selection behaviour is not."
+    },
+    {
+      "id": "UI-37-job-time-inputs",
+      "source": "UI_RULES.md",
+      "ref": "§37",
+      "title": "Job time inputs step in 15-minute increments — typed odd minutes stay legal",
+      "area": "product",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-38-account-notes-reach",
+      "source": "UI_RULES.md",
+      "ref": "§38",
+      "title": "Account notes reach the crew as a tinted panel on every clean — durable info lives on the account, not the job",
+      "area": "product",
+      "status": "construction",
+      "note": "One shared AccountNotesPanel on My Day and Job Detail. Nothing stops a surface from inlining the notes."
+    },
+    {
+      "id": "UI-39-design-kit-vocabulary",
+      "source": "UI_RULES.md",
+      "ref": "§39",
+      "title": "Design-kit vocabulary + the design-lint drift gate",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design"
+      ],
+      "note": "design-lint runs in CI through test-design-lint.mjs: a finding above its per-file baseline fails, and so does slack (a fix the baseline did not follow). The S60 drift was re-baselined once, on 2026-09-24, with the reason recorded in the baseline file."
+    },
+    {
+      "id": "UI-40-dashboard-stat-cards",
+      "source": "UI_RULES.md",
+      "ref": "§40",
+      "title": "Dashboard stat cards drill down, and trend arrows require a real prior-period basis",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-windowed-jobs-assumptions.mjs"
+      ],
+      "note": "StatCard's drill-down link and chevron are construction. test-windowed-jobs-assumptions.mjs pins the trend basis: selectDashboardTrends leaves out the missed-cleans trend until jobs and punches are fully loaded, the other trends come from makeTrend, and the Dashboard shows no arrow when a trend is null."
+    },
+    {
+      "id": "UI-41-a-capability-that",
+      "source": "UI_RULES.md",
+      "ref": "§41",
+      "title": "A capability that can't be armed shows a status Badge, never a dead toggle",
+      "area": "feedback",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-team-limits.mjs"
+      ],
+      "note": "Pinned for the Settings → Roles \"Super Admin only\" badge and the badge on TeamDetail Access's locked rows (test-team-limits.mjs). Settings → Reminders and the contact Communication-preferences badges rely on review."
+    },
+    {
+      "id": "UI-42-the-assigned-checklist",
+      "source": "UI_RULES.md",
+      "ref": "§42",
+      "title": "The assigned checklist surfaces INSIDE the clean — one shared `CleanChecklist`, self-hiding",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-crew-checklist.mjs",
+        "test-checklist-default-retired.mjs"
+      ],
+      "note": "test-crew-checklist.mjs pins the one resolution helper: the cleaner's own assignment, else none — R3 (2026-09-27) retired the location-wide default, and test-checklist-default-retired.mjs pins that no surface offers one. The shared CleanChecklist inside the clean and its self-hiding are construction; nothing fails if a page builds its own widget."
+    },
+    {
+      "id": "UI-43-per-inspection-follow",
+      "source": "UI_RULES.md",
+      "ref": "§43",
+      "title": "Per-inspection follow-up (assignee + done) lives in a sparse blob slice; overdue/QC sweeps mirror the invoice-overdue pattern",
+      "area": "product",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-44-revenue-wiring-ar",
+      "source": "UI_RULES.md",
+      "ref": "§44",
+      "title": "Revenue wiring — AR aging strip, catalog line-item prefill, uninvoiced-work disclosure",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-money.mjs"
+      ],
+      "note": "The money math is tested; the surfaces are not."
+    },
+    {
+      "id": "UI-45-deep-link-a",
+      "source": "UI_RULES.md",
+      "ref": "§45",
+      "title": "Deep-link a prefilled composer draft via `initialDraft` — never mutate Messaging internals from outside",
+      "area": "product",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-46-scheduling-integrity-standing",
+      "source": "UI_RULES.md",
+      "ref": "§46",
+      "title": "Scheduling integrity — standing-crew conflicts, the overtime watch, and the payroll export",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-payroll.mjs"
+      ],
+      "note": "The standing-crew half is superseded by §93. test-payroll.mjs pins the overtime and payroll engine: the 40h split per week, otStatus (over above 40h, approaching from 36h), approved-only payroll against the operational watch, and the CSV ALL CLEANERS footer. Conflict warnings, the drag-drop confirm gate and Settings → Operations are review. test-time-off.mjs does not exercise this rule."
+    },
+    {
+      "id": "UI-47-per-contact-communication",
+      "source": "UI_RULES.md",
+      "ref": "§47",
+      "title": "Per-contact communication consent — sparse flags, one pref-row card, enforcement in the pure walkers",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-marketing-gates.mjs",
+        "test-reminder-cron.mjs"
+      ],
+      "note": "The Do-Not-Contact and reminder opt-out gates in the pure walkers are tested; the card is not."
+    },
+    {
+      "id": "UI-48-outbound-email-previews",
+      "source": "UI_RULES.md",
+      "ref": "§48",
+      "title": "Outbound-email previews render through one source of truth; content fields save explicitly, toggles stay silent",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-signature-width.mjs",
+        "test-signature-preview.mjs"
+      ],
+      "note": "test-signature-width.mjs pins the sizing half (the clamp and the sent max-width). test-signature-preview.mjs pins SignaturePreview itself (shared signatureImageWidth, height:auto, no maxHeight, no per-shape branch) and checks that the Account draft preview and every ConversationMessagePanel preview render through it. The explicit Save versus silent toggle split is review."
+    },
+    {
+      "id": "UI-49-recurring-series-edits",
+      "source": "UI_RULES.md",
+      "ref": "§49",
+      "title": "Recurring-series edits/deletes ALWAYS prompt for scope — one shared `SeriesScopeModal`",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-windowed-jobs-assumptions.mjs",
+        "test-series-crew-flatten.mjs",
+        "test-series-started-guard.mjs"
+      ],
+      "note": "One shared SeriesScopeModal. CI pins its prompt sites (JobDetail's gate; Schedule's drag and Reschedule prompts with disableFuture for per-day series), the modal honouring disableFuture, NewJobModal receiving the scope instead of choosing it, the rule that only three files dispatch whole-series actions, and the clamp that skips started occurrences. A new edit or delete path that skips the prompt fails nothing."
+    },
+    {
+      "id": "UI-50-thread-names-belong",
+      "source": "UI_RULES.md",
+      "ref": "§50",
+      "title": "Thread names belong to their creator — and an entity NEVER dies with its owner",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-deletion-ripple.mjs"
+      ],
+      "note": "test-deletion-ripple.mjs runs the real DELETE_USER and pins that a deleted creator's threads and messages survive, with the id nulled and the name kept (createdByName / authorName). Creator-only rename, the Super Admin orphan rename and cleanup panel, and RENAME_CONVERSATION's internal-only guard are review."
+    },
+    {
+      "id": "UI-51-a-list-of",
+      "source": "UI_RULES.md",
+      "ref": "§51",
+      "title": "A list of people is ALWAYS sorted by name — insertion order is never an order a human can search",
+      "area": "lists",
+      "status": "review",
+      "note": "The sort happens at each render site via compareUsersByName; no check covers it. (test-selector-benefit.mjs has no selectUsers assertion, and test-payroll.mjs feeds rows already in name order; lib/payroll.js sorts with an inline localeCompare.)"
+    },
+    {
+      "id": "UI-52-drive-time-between",
+      "source": "UI_RULES.md",
+      "ref": "§52",
+      "title": "Drive time between jobs — a second report on the Variance page, derived rows, and pay adjusted only with a reason",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-drive-time.mjs"
+      ],
+      "note": "The drive-time engine is tested; the report layout is not."
+    },
+    {
+      "id": "UI-53-url-backed-inputs",
+      "source": "UI_RULES.md",
+      "ref": "§53",
+      "title": "URL-backed inputs own a local draft; a Schedule date range displays on the Agenda",
+      "area": "controls",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-54-new-job-pre",
+      "source": "UI_RULES.md",
+      "ref": "§54",
+      "title": "New Job pre-fills crew from the account/site assigned cleaners, removable per-job",
+      "area": "product",
+      "status": "superseded",
+      "supersededBy": [
+        "UI-93-a-clean-requires"
+      ],
+      "note": "There is no crew pre-fill any more; crew is exactly the people named on a clean."
+    },
+    {
+      "id": "UI-55-opportunity-modal-an",
+      "source": "UI_RULES.md",
+      "ref": "§55",
+      "title": "Opportunity modal — an update sinks the card, and header quick-actions call/text/email the contact",
+      "area": "product",
+      "status": "review",
+      "note": "Prose only, and stale: the same-stage sink and the call popover are no longer in OpportunityDetailModal (deals moved to company Opportunities; SET_CONTACT_STAGE removed)."
+    },
+    {
+      "id": "UI-73-87-the-detail-back",
+      "source": "UI_RULES.md",
+      "ref": "§73/87",
+      "title": "The detail back-link is a pill button with an inline arrow _(ported from Concordia §73 + §87, adapted)_",
+      "area": "navigation",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "lint:backnav"
+      ],
+      "note": "lint:backnav (in CI) checks that every link into a back-arrow page carries its referrer; the pill look is construction (`.detail-back`)."
+    },
+    {
+      "id": "UI-67-numeric-columns-use",
+      "source": "UI_RULES.md",
+      "ref": "§67",
+      "title": "Numeric columns use tabular figures _(ported from Concordia §67, adapted)_",
+      "area": "lists",
+      "status": "construction",
+      "note": "`.money` carries tabular figures; nothing requires it on a number column."
+    },
+    {
+      "id": "UI-68-an-opportunity-can",
+      "source": "UI_RULES.md",
+      "ref": "§68",
+      "title": "An opportunity can never be saved onto no board: enforce placement at the reducer, surface orphans for recovery _(ported from base-shell §56)_",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-pipeline-placement.mjs"
+      ],
+      "note": "The pure placement rules that the SET_OPPORTUNITY_STAGE guard and the orphan selector share are pinned (test-pipeline-placement.mjs). The guard, the selector and the editors' toasts are not, and the recovery banner no longer renders (selectOrphanedOpportunities has no caller)."
+    },
+    {
+      "id": "UI-69-detail-pages-use",
+      "source": "UI_RULES.md",
+      "ref": "§69",
+      "title": "Detail pages use underline TABS: one section panel at a time",
+      "area": "navigation",
+      "status": "construction",
+      "note": "SectionTabs with the `.detail-tabs` classes; the payroll line drawer uses the same `.section-tabs` markup."
+    },
+    {
+      "id": "UI-70-the-person-company",
+      "source": "UI_RULES.md",
+      "ref": "§70",
+      "title": "The person↔company link is a first-class, two-way affordance (not a buried field)",
+      "area": "product",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-71-the-new-job",
+      "source": "UI_RULES.md",
+      "ref": "§71",
+      "title": "The New Job modal is a wide two-column form: Details | When, and it has no Service field",
+      "area": "product",
+      "status": "construction",
+      "note": "NewJobModal is the one surface."
+    },
+    {
+      "id": "UI-72-list-tables-standalone",
+      "source": "UI_RULES.md",
+      "ref": "§72",
+      "title": "List tables: standalone frame, one-line header (search + period pills), URL-synced search + 20/page",
+      "area": "lists",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "lint:tables"
+      ],
+      "note": "lint:tables (in CI) fails a <tbody> that maps a whole collection; the standalone frame, the header and the search are review only."
+    },
+    {
+      "id": "UI-73-board-columns-carry",
+      "source": "UI_RULES.md",
+      "ref": "§73",
+      "title": "Board columns carry an always-visible add affordance; a protected default entity hides its destructive controls",
+      "area": "product",
+      "status": "review",
+      "note": "No check. The always-visible add button, the protected Master board's hidden Delete and disabled name, and the UPDATE_/DELETE_PIPELINE isMaster refusal are review (test-pipeline-placement.mjs pins placement validity only)."
+    },
+    {
+      "id": "UI-93-a-clean-requires",
+      "source": "UI_RULES.md",
+      "ref": "§93",
+      "title": "A clean requires a specific site and a named cleaner; there is no standing/default crew",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-crew-resolve.mjs"
+      ],
+      "note": "Crew resolution (exactly job.crewIds, no standing crew) is pinned; the site requirement at save is not verified here."
+    },
+    {
+      "id": "UI-94-expected-clean-time",
+      "source": "UI_RULES.md",
+      "ref": "§94",
+      "title": "Expected clean time is per-SITE and required",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-location-collapse.mjs"
+      ],
+      "note": "test-location-collapse.mjs pins that a new location's expectedCleanMins is pre-filled from the customer's service default (buildClientLocation, shared with ADD_CLIENT). The site-only resolver (selectEffectiveExpectedCleanMins, no account tier) and LocationCard's required field are review. test-jobs-guard.mjs does not exercise this rule."
+    },
+    {
+      "id": "UI-95-the-client-operations",
+      "source": "UI_RULES.md",
+      "ref": "§95",
+      "title": "The client Operations subtab is gone; its pieces live where the work is",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-client-inspections.mjs"
+      ],
+      "note": "A record of a removal. test-client-inspections.mjs (C9) incidentally pins the inspection rollup as ClientDetail's Activity › Inspections sub-tab. That there is no Operations tab, and the other moves (ServiceSetupCard, OpsNoteCard, LocationCard), are review."
+    },
+    {
+      "id": "UI-96-one-location-per",
+      "source": "UI_RULES.md",
+      "ref": "§96",
+      "title": "One location per customer; an \"Access\" tab owns the location + its photos",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-location-collapse.mjs"
+      ],
+      "note": "The v52→v53 collapse to one location per customer is tested; the Access tab is not."
+    },
+    {
+      "id": "UI-97-client-review-markers",
+      "source": "UI_RULES.md",
+      "ref": "§97",
+      "title": "Client review markers live in the nav ONLY, on every page, and toggle in place",
+      "area": "product",
+      "status": "review",
+      "note": "No check covers where the markers render or how they toggle. test-client-review-sync.mjs pins only the review layer's storage in the shared blob, which replaced per-browser localStorage on 2026-09-23."
+    },
+    {
+      "id": "UI-98-a-draft-renders",
+      "source": "UI_RULES.md",
+      "ref": "§98",
+      "title": "A draft renders the REAL template inside the Review focus card, never a mock",
+      "area": "product",
+      "status": "review",
+      "note": "The preview is driven by the same builder the send path uses (DraftPreview → the descriptor's render()), and test-name-ledger.mjs renders all 39 drafts under a throwaway brand; that a draft renders inside the Review focus card (not a mock, not the retired two-pane page) is a review call. See §130."
+    },
+    {
+      "id": "UI-99-list-rows-carry",
+      "source": "UI_RULES.md",
+      "ref": "§99",
+      "title": "List rows carry a per-row ⋯ action menu by default; the master checkbox toggles bulk-select mode",
+      "area": "lists",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-100-a-dismiss-layer",
+      "source": "UI_RULES.md",
+      "ref": "§100",
+      "title": "A dismiss layer must EAT the dismissing tap — never activate what's under it",
+      "area": "overlays",
+      "status": "construction",
+      "note": "useDismissTap and PopMenu eat the tap; a hand-rolled overlay can still let it through, and no test drives it."
+    },
+    {
+      "id": "UI-101-card-style-field",
+      "source": "UI_RULES.md",
+      "ref": "§101",
+      "title": "Card-style field editors are Edit-gated, with the SAME \"Edit\" button + Save/Cancel everywhere",
+      "area": "controls",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-102-a-per-role",
+      "source": "UI_RULES.md",
+      "ref": "§102",
+      "title": "A per-role permission matrix is an accordion of section cards with master switches",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-team-limits.mjs",
+        "test-permission-groups.mjs"
+      ],
+      "note": "The Roles page is the one matrix. test-team-limits.mjs pins its per-role section master over editable rows (default-only and Super Admin-only cells excluded), its switch cells, and UPDATE_PERMISSION as its only write. test-permission-groups.mjs pins the sections. The accordion layout and the mixed-state look are review."
+    },
+    {
+      "id": "UI-103-modals-never-scroll",
+      "source": "UI_RULES.md",
+      "ref": "§103",
+      "title": "Modals never scroll horizontally — the mobile \"no sideways motion\" rule",
+      "area": "overlays",
+      "status": "construction",
+      "note": "`.modal-card { overflow-x: hidden }`; a bespoke overlay would not inherit it."
+    },
+    {
+      "id": "UI-104-native-date-time",
+      "source": "UI_RULES.md",
+      "ref": "§104",
+      "title": "Native date/time inputs are normalized to the field box — no iOS overflow, value left-aligned",
+      "area": "controls",
+      "status": "construction",
+      "note": "A global rule on `input[type=date|time].input`."
+    },
+    {
+      "id": "UI-105-a-mobile-popup",
+      "source": "UI_RULES.md",
+      "ref": "§105",
+      "title": "A mobile popup modal/sheet ALWAYS sits above the floating nav — portal it to `document.body`",
+      "area": "overlays",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-master-search-sources.mjs"
+      ],
+      "note": "Modal and MobileSheet portal to document.body (construction; a bespoke overlay must do the same). test-master-search-sources.mjs pins only the phone search screen (.msearch-screen) as createPortal(…, document.body)."
+    },
+    {
+      "id": "UI-106-mobile-scrolls-without",
+      "source": "UI_RULES.md",
+      "ref": "§106",
+      "title": "Mobile scrolls WITHOUT a visible scrollbar — no bar on the side",
+      "area": "mobile",
+      "status": "construction",
+      "note": "One global rule at 640px and below."
+    },
+    {
+      "id": "UI-107-bulk-person-records",
+      "source": "UI_RULES.md",
+      "ref": "§107",
+      "title": "Bulk person↔records assignment is a two-column transfer; the source column is sectioned by status, unassigned pinned on top",
+      "area": "product",
+      "status": "review",
+      "note": "Prose only."
+    },
+    {
+      "id": "UI-108-exactly-one-back",
+      "source": "UI_RULES.md",
+      "ref": "§108",
+      "title": "Exactly one back-link per page, and it is always the `.detail-back` pill",
+      "area": "navigation",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "lint:backnav"
+      ],
+      "note": "The referrer half is gated by lint:backnav; \"exactly one\" and \"always the pill\" are review."
+    },
+    {
+      "id": "UI-109-adjacent-form-controls",
+      "source": "UI_RULES.md",
+      "ref": "§109",
+      "title": "Adjacent form controls share height, radius, border & baseline — always via the shared primitives",
+      "area": "controls",
+      "status": "gated",
+      "note": "`.input`, `.select`, `textarea.input` and `.select-trigger` declare one shape: padding, border, radius, the --font-input-size token (16px on phones) and an explicit --line-height-normal; 43px on desktop, 46px on phones, measured (register CS-337: the trigger kept 14px on phones, 43px beside 47px inputs, and `line-height: normal` measured each element differently). test-field-primitives.mjs (CI) holds the shared declaration and the phone font rule. A hand-tuned instance in a group (a local padding or height) and the rendered row are the local shape sweep's, not CI's. The same suite holds the base control rule (`button, input, select, textarea` inherit colour and font family), so no control renders in the browser's Arial (register CS-356). test-control-parity.mjs fails the retired .contact-picker-trigger (register CS-365): every picker opens from .select-trigger.",
+      "coverage": "partial",
+      "checks": [
+        "test-field-primitives.mjs",
+        "test-control-parity.mjs"
+      ]
+    },
+    {
+      "id": "UI-110-nav-rail-icons",
+      "source": "UI_RULES.md",
+      "ref": "§110",
+      "title": "Nav-rail icons render on whole device pixels — unified size + non-scaling stroke",
+      "area": "navigation",
+      "status": "construction",
+      "note": "`.nav-btn svg` sets the size and the non-scaling stroke."
+    },
+    {
+      "id": "UI-111-side-by-side",
+      "source": "UI_RULES.md",
+      "ref": "§111",
+      "title": "Side-by-side cards in `.detail-grid` render at equal height — cancel the stacked-card top margin",
+      "area": "layout",
+      "status": "construction",
+      "note": "`.detail-grid > .detail-card + .detail-card { margin-top: 0 }`."
+    },
+    {
+      "id": "UI-112-inside-a-detail",
+      "source": "UI_RULES.md",
+      "ref": "§112",
+      "title": "Inside a detail card: one value size, one sub-head style — labels demote by weight/color, never size",
+      "area": "layout",
+      "status": "construction",
+      "note": "`.detail-dl` sets the one value size; a new size inside a card is not caught."
+    },
+    {
+      "id": "UI-113-a-detail-page",
+      "source": "UI_RULES.md",
+      "ref": "§113",
+      "title": "A detail page with many stacked sections uses section tabs (like Customers), permission-gated",
+      "area": "navigation",
+      "status": "review",
+      "note": "When to switch to tabs is a judgement call."
+    },
+    {
+      "id": "UI-114-anchored-pickers-use",
+      "source": "UI_RULES.md",
+      "ref": "§114",
+      "title": "Anchored pickers use ONE shared `PopMenu`: desktop popover, mobile bottom sheet",
+      "area": "overlays",
+      "status": "construction",
+      "note": "PopMenu; three older overlays hand-roll the same split (named in the rule)."
+    },
+    {
+      "id": "UI-115-one-action-button",
+      "source": "UI_RULES.md",
+      "ref": "§115",
+      "title": "One action-button height (32px) — `btn-sm` (28px) only in data-table rows & dense clusters; every `.btn` carries a colour variant",
+      "area": "controls",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-button-lint.mjs",
+        "lint:buttons",
+        "test-control-parity.mjs"
+      ],
+      "note": "`.btn` reads --btn-height (32px) and `.btn-sm` --btn-height-sm (28px). lint:buttons (CI, via test-button-lint.mjs) keeps btn-sm to tables and named clusters, and requires every .btn to carry a colour variant, written in its className or held by a same-file const; one documented exception, Work Orders' Escalate. It also fails any size class but btn-sm (the retired .btn-xs kept 32px with 10px text). test-control-parity.mjs (CI) fails a retired one-off control class that reappears (the pager, attach picker, \"Read & Reply\", retry buttons, \"more\", .icon-btn; register CS-358). The clause that a neutral action on a grey surface is .btn-secondary (a transparent .btn-outline's hairline all but vanishes there) is a review call: the step ④ interaction pass audited every transparent button over a non-white backdrop across 91 interaction states and 76 route renders (2026-09-25)."
+    },
+    {
+      "id": "UI-116-one-global-search",
+      "source": "UI_RULES.md",
+      "ref": "§116",
+      "title": "ONE global search surface: a ranked palette of pages, actions and records — and it never drifts from the app",
+      "area": "navigation",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-search-lint.mjs",
+        "lint:search",
+        "test-master-search-rank.mjs",
+        "test-master-search-registry.mjs",
+        "test-master-search-sources.mjs"
+      ],
+      "note": "Pinned in CI: the route reconcile (test-search-lint.mjs through run-tests; lint:search locally), the ranking tiers and tie order (test-master-search-rank.mjs), registry integrity and findability of every report and HR tab (test-master-search-registry.mjs), and the permission-scoped record adapters, no search for crew, and the phone search screen (test-master-search-sources.mjs). Desktop layering and keyboard/interaction details are review."
+    },
+    {
+      "id": "UI-117-a-report-reads",
+      "source": "UI_RULES.md",
+      "ref": "§117",
+      "title": "A report reads its whole window or shows an error — never a partial or failed read dressed as data",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-paged-select.mjs",
+        "test-client-inspections.mjs",
+        "test-hub-inspections.mjs",
+        "lint:paging"
+      ],
+      "note": "The complete-read helpers and two capped lists are tested; lint:paging (not in CI) pins page order."
+    },
+    {
+      "id": "UI-118-don-t-offer",
+      "source": "UI_RULES.md",
+      "ref": "§118",
+      "title": "Don't offer what the server refuses for this viewer: the control is off, and says why in visible text",
+      "area": "feedback",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-team-limits.mjs"
+      ],
+      "note": "test-team-limits.mjs pins every surface the rule names (TeamDetail role/status/remove/Access, Team's Revoke, AddUserModal, Company's timezone, the Super Admin-only cells on Roles) against the real reducer and the org_state guard. Controls elsewhere that depend on who the viewer is are review."
+    },
+    {
+      "id": "UI-119-every-var-resolves",
+      "source": "UI_RULES.md",
+      "ref": "§119",
+      "title": "Every `var()` resolves to a defined token; a text field focuses with the ONE ring, `--input-focus-shadow`, ≥3:1 on every surface",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-css-vars-defined.mjs",
+        "test-focus-ring-contrast.mjs"
+      ],
+      "note": "test-css-vars-defined.mjs (CI) fails any var() read, with or without a fallback, that has no definition anywhere in app/src or index.html; it does not check that the definition is in the cascade scope of the read. test-focus-ring-contrast.mjs (CI) resolves --input-focus-shadow through the real cascade and pins a 2px+ ring for the client tint and the shell default. The client tint holds 3:1 or better on the card, field fill, page, L0 well, zebra and gold-hovered row, and against the ink border it wraps. The shell default (the neutral ink) holds 3:1 or better on card, page and L0 well and against the shell's own ink border (register CS-343: it was the border's colour, 1:1). `.btn:focus-visible` must paint the §119 outline ring (register CS-342). Eight named field focus states must paint the ring and no focus state may use the retired --ring-focus (an undefined read fails test-css-vars-defined.mjs as well). A new field with a bespoke focus shadow passes."
+    },
+    {
+      "id": "UI-120-the-design-system",
+      "source": "UI_RULES.md",
+      "ref": "§120",
+      "title": "The design system mirrors the code, and CI holds it there: every token, every kit prop, and what enforces each rule",
+      "area": "process",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-system.mjs"
+      ],
+      "note": "test-design-system.mjs (CI) fails when a top-level :root variable is unclassified or a token (desktop or phone value) drifts from tokens.json; when a bundled export's file, a card's README or preview, or a documented component's prop names drift from the source (prop types are not compared); when a numbered rule's heading is added, retitled or removed without a rules.json entry (a rewrite of the body is not detected); when an entry cites a check that does not exist; and when a gated entry cites no check CI runs (a run-tests suite outside its LIVE_EFFECT list, or a ci.yml lint). The style-snapshot no-op proof is a manual tool, and reading structural tokens instead of literals is a ratchet: lint:design flags raw px, and CI (test-design-lint.mjs) fails a new one above the baseline."
+    },
+    {
+      "id": "UI-121-the-re-skin",
+      "source": "UI_RULES.md",
+      "ref": "§121",
+      "title": "The re-skin guarantee: every colour the app ships reads the theme, so a new brand is new token values and nothing else",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-color-ledger.mjs",
+        "test-design-system.mjs",
+        "test-reskin-sweep.mjs",
+        "test-app-routes.mjs"
+      ],
+      "note": "test-color-ledger.mjs (CI) runs color-ledger.mjs over src, api, index.html, public and the brand-asset scripts (480 files) and fails on any colour literal (hex, rgb/hsl, %23 in a data URI, a named colour in a value position) outside a theme palette entry, the client theme's GENERATED block, a reasoned design:allow, a mask or the named content files; its fixtures prove each detection, so a weakened detector fails too. Its section 4 fails on a client-theme declaration that is not colour-bearing (a radius, a flat `none`): a client theme holds colours only (register CS-346). test-design-system.mjs (CI) fails when BRAND (src/brand/tokens.generated.js), the manifest and theme-color or the client theme's GENERATED block no longer match the cascade. It also renders the quote, the inspection report (screen and PDF), their PDF bars and the server's quote and marketing emails, and fails on any colour in them that is not a brand value (or a brand colour at an opacity), or a running bar that is not the brand-colour image. test-reskin-sweep.mjs and test-app-routes.mjs (CI) hold the coverage of reskin-sweep.mjs, the rendered proof run locally (lint:reskin, like lint:responsive): every palette entry swapped for a canary colour, and every surface App.jsx routes to (scripts/app-routes.mjs, the list lint:responsive and style-snapshot share; a demo page that says \"not found\" fails); the sweep itself (every painted colour at 375 and 1280px must follow the swap, browser defaults included; the base control rule also inherits the font family, held by test-field-primitives.mjs (register CS-356)) needs a running app and Chrome, so CI does not run it. Not seen: colours inside the PNG icons and logos (their generators read BRAND) and pages this render does not cover (the password emails, the unsubscribe and OAuth pages, which the source scan does cover). Whether an allow's reason is true is review."
+    },
+    {
+      "id": "UI-122-a-selector-states",
+      "source": "UI_RULES.md",
+      "ref": "§122",
+      "title": "A selector states each property once: no silent overrides",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "full",
+      "checks": [
+        "test-css-duplicates.mjs"
+      ],
+      "note": "test-css-duplicates.mjs (CI) parses every stylesheet under app/src, each on its own, and fails any selector that sets one property to two values in two top-level rules; a selector list counts for each member, and @media / @supports / @container blocks are skipped. Its fixtures prove it catches a same-selector pair and a shared-list override and passes a scoped @media override. At the fix (2026-09-25, register CS-341) it found 20 conflicting selectors in index.css (33 declarations), one of them the R7 timeline-dot bug (CS-340)."
+    },
+    {
+      "id": "UI-123-icon-only-controls",
+      "source": "UI_RULES.md",
+      "ref": "§123",
+      "title": "Icon-only controls: one square, one close, three glyphs",
+      "area": "controls",
+      "status": "gated",
+      "note": "test-control-parity.mjs (CI) fails the 24 retired icon-only and close classes (register CS-360; one, btn-icon-sm, is a retired size of .btn-icon rather than a distinct control) and any rule that sizes .btn-icon or .modal-close beyond the base rule, the phone tap-target rule and the two documented dense-row exceptions. Which icon look a new control takes (plain, quiet, danger, primary) is a review call. It also fails .btn-icon without its glyph type (font-size and font-weight), which keeps a text glyph (+, −, ↑, ↓) at icon weight.",
+      "coverage": "partial",
+      "checks": [
+        "test-control-parity.mjs"
+      ]
+    },
+    {
+      "id": "UI-124-chips-one-pill",
+      "source": "UI_RULES.md",
+      "ref": "§124",
+      "title": "Chips: one pill, two sizes, one \"on\"",
+      "area": "controls",
+      "status": "gated",
+      "note": "test-control-parity.mjs (CI) fails the retired chip classes (register CS-361) and any rule besides .chip and the day picker's min-width, padding and font-size that sizes a chip, pads it or sets its type. Whether a new pill is a chip (clickable) or a badge (read-only) is a review call.",
+      "coverage": "partial",
+      "checks": [
+        "test-control-parity.mjs"
+      ]
+    },
+    {
+      "id": "UI-125-the-add-tile",
+      "source": "UI_RULES.md",
+      "ref": "§125",
+      "title": "The add tile: one dashed slot",
+      "area": "controls",
+      "status": "gated",
+      "note": "test-control-parity.mjs (CI) fails the retired add-tile classes (register CS-362) and any rule besides .add-tile that sets its border, radius, padding or type; lint:buttons fails a plus behind a conditional icon name. Which affordance is an add tile and which is a disclosure is a review call.",
+      "coverage": "partial",
+      "checks": [
+        "test-control-parity.mjs",
+        "lint:buttons"
+      ]
+    },
+    {
+      "id": "UI-126-text-actions-a",
+      "source": "UI_RULES.md",
+      "ref": "§126",
+      "title": "Text actions: a link in the text, or a text button",
+      "area": "controls",
+      "status": "gated",
+      "note": "test-control-parity.mjs (CI) fails the retired text-action classes (register CS-363) and any className with btn-link but no btn. Which form a new text action takes (in the text or with a box) is a review call. It also fails a .linklike rule that sets type at class specificity: the font reset is :where(.linklike), so a row class or a type utility sizing the link wins.",
+      "coverage": "partial",
+      "checks": [
+        "test-control-parity.mjs"
+      ]
+    },
+    {
+      "id": "UI-127-menu-options-one",
+      "source": "UI_RULES.md",
+      "ref": "§127",
+      "title": "Menu options: one row",
+      "area": "controls",
+      "status": "gated",
+      "note": "test-control-parity.mjs (CI) fails the retired menu classes (register CS-364) and any stylesheet rule that dresses a bare button through a parent selector. Whether a picker row is a simple option or a rich row is a review call.",
+      "coverage": "partial",
+      "checks": [
+        "test-control-parity.mjs"
+      ]
+    },
+    {
+      "id": "UI-128-every-clickable-control",
+      "source": "UI_RULES.md",
+      "ref": "§128",
+      "title": "Every clickable control is a kit control or is written down",
+      "area": "controls",
+      "status": "gated",
+      "note": "test-control-ledger.mjs (CI) fails a control family that is neither a kit family nor classified in app/design-system/controls.json, a stale entry, an entry without a role or a reason, an undocumented kit class, or a reclassified kit family (register CS-366). Whether a classification is right is a review call; the ledger makes every one visible.",
+      "coverage": "full",
+      "checks": [
+        "test-control-ledger.mjs"
+      ]
+    },
+    {
+      "id": "UI-129-the-name-guarantee",
+      "source": "UI_RULES.md",
+      "ref": "§129",
+      "title": "The name guarantee: the brand's identity lives in one brand file, so a new client is a new brand file and nothing else",
+      "area": "product",
+      "status": "gated",
+      "note": "test-name-ledger.mjs (CI) runs name-ledger.mjs over src, api, index.html, public and the brand-asset scripts (480 files) and fails on any occurrence of the shell's name in any spelling, or of one of the active brand's identity strings (brand.mjs identityStrings: name, wordmark, short name, app title, slug, app host, domain, website, email, phone, street, city, tagline, services, signatory, sender addresses), each in any spelling (any case, other separators, a phone in any grouping of its digits: CS-389), or of the brand's city or area code outside the demo's fictional book (CS-392), outside the generated identity and quote pages, the lines the generator owns, a kept identifier, a named data migration, a comment, a reasoned brand:allow or an excluded mockup; its fixtures prove each class, so a weakened detector fails too. It then swaps a throwaway brand into the generated identity in memory and renders the quote (screen and signed; and in the throwaway brand's own pages, where no sentence of the active brand's may show: CS-388), its PDF header and footer, the inspection report (screen and PDF), the letterhead, the client and server emails, all 39 drafts, the seeded org (every seeded email addressed to a seeded inbox, no seeded message naming the active brand's owner, the team inbox signing with the company's phone: CS-390; the stored-owner correction writing the brand's owner: CS-391) and the demo stubs: each must carry the throwaway brand and none of the active one, read as a reader sees it (the text between the tags, so a name split across elements counts), with the letterhead well-formed inside its <img> attribute; the same renders are read as prose (no stray or doubled period, no brand named twice in a sentence: CS-386, CS-387); public/ ships no design mockups or brand sources (CS-202); and the rebrand sweep's identity and colour checks are proved on fixtures. test-brand.mjs (CI) fails on a malformed brand pack (identity, a value holding a line break of any kind (CS-394), colours, logos, and the quote's pages: an unknown or unclosed token, a missing field or signature, a script or handler, a colour literal, the identity written out), an output that no longer matches the active brand's pack (identity.generated.js, quote.generated.js, index.html, the manifest, sw.js, the theme's BRAND PALETTE block, BRAND, the design system's tokens, the images by their pixels), a palette that fails one of the 22 contrast checks (the gold CTA's hover among them: CS-393), a rule that paints text in an accent step on a ground below 4.5:1 under any pack (CS-395), a check that no longer fires on a palette built to break it, a change to the mixing table's golden values, or a generator that writes beyond its owned lines, escapes wrongly or does not round-trip. Not seen by CI: the rendered sweep over every route (rebrand-sweep.mjs, lint:rebrand: under another brand, no route may show the old brand's identity or paint its palette; it needs a running app); the password emails, pushes and monitor alerts are held by the source scan only. Whether a kept identifier's reason is true is review.",
+      "coverage": "partial",
+      "checks": [
+        "test-name-ledger.mjs",
+        "test-brand.mjs"
+      ]
+    },
+    {
+      "id": "UI-130-the-review-section",
+      "source": "UI_RULES.md",
+      "ref": "§130",
+      "title": "The Review section: a hub of areas plus a one-at-a-time focus flow",
+      "area": "product",
+      "status": "gated",
+      "note": "The pieces are CI-gated: test-build-decisions.mjs holds the build-decision catalog well-formed and its heavy-import-free index in lockstep; test-client-review-sync.mjs holds the decisions bucket, isDecisionAnswered, reviewSummary's shared latest-update 'new' (clears on answer, not view) and mergeReview preserving every bucket; test-app-routes.mjs + lint:search hold the /review route and the /drafts redirect; test-control-ledger.mjs holds the .review-tile card; lint:responsive holds the desktop-only viewports. The hub/focus interaction and visual are a review call (driven by a puppeteer pass, not CI).",
+      "coverage": "partial",
+      "checks": [
+        "test-build-decisions.mjs",
+        "test-client-review-sync.mjs",
+        "test-app-routes.mjs",
+        "test-control-ledger.mjs"
+      ]
+    },
+    {
+      "id": "UI-131-a-control-the",
+      "source": "UI_RULES.md",
+      "ref": "§131",
+      "title": "A control the rules lock stays in place, disabled, wearing the reason and the way out — and the server enforces the same rule",
+      "area": "controls",
+      "status": "gated",
+      "note": "test-clock-out-gate.mjs (CI) holds the rule and the copy: clockOutGate’s five states over synced + queued submissions (a later partial never undoes a complete one, another cleaner / checklist / clean never counts), clockOutButtonState’s label, lock, hint and Open-checklist for every state incl. the 409, the memo’s retention (200 rows, 30 days) and never-downgrade, and the reconnect flush order. test-clock-out-checklist-route.mjs (CI) holds the server twin: 409 checklist_incomplete per role on the caller’s own entry, never on someone else’s or on correct / manual / auto-close, and replay accepted + flagged. test-overnight-clockout.mjs (CI) pins ClockControl to the shared state and to the entry-owner-only rule; lint:buttons and lint:responsive hold the two stacked thumb bars. Whether the locked card READS right on a phone is a review call (driven with puppeteer, not CI).",
+      "coverage": "partial",
+      "checks": [
+        "test-clock-out-gate.mjs",
+        "test-clock-out-checklist-route.mjs",
+        "test-overnight-clockout.mjs"
+      ]
+    },
+    {
+      "id": "THEME-R1",
+      "source": "app/src/THEME_CLEANSPACE.md",
+      "ref": "R1",
+      "title": "Surfaces separate by elevation",
+      "area": "layout",
+      "status": "construction",
+      "note": "`page-bg`, `card-bg` and `inset-bg` give the ladder; a card painted the page colour is not caught."
+    },
+    {
+      "id": "THEME-R2",
+      "source": "app/src/THEME_CLEANSPACE.md",
+      "ref": "R2",
+      "title": "Data blocks wear a black header band",
+      "area": "lists",
+      "status": "construction",
+      "note": "The global `table th` rule paints the band on every table that does not override it. Two repaint it (TeamDetail's overrides table on --inset-bg, Variance's entries on the base surface); the CSV preview's white-on-white header was fixed on 2026-09-24 and now keeps the band."
+    },
+    {
+      "id": "THEME-R3",
+      "source": "app/src/THEME_CLEANSPACE.md",
+      "ref": "R3",
+      "title": "Black frames, gold marks, navy links — semantics stay put",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-drive-time.mjs",
+        "test-brand.mjs"
+      ],
+      "note": "The kit classes carry each role: `.btn-primary` black, `.btn-gold`/`.btn-success` gold with dark ink, `table th` black band, `.linklike` navy, gold row hover. test-drive-time.mjs (CI) pins one domain helper's status-to-badge mapping (over red, on target green, unknowable slate). Using the right role elsewhere, and mapping status through a helper rather than by hand, are review; a hand-written rule can still paint a control green (Variance's Approve button). test-brand.mjs (CI) holds gold as text: every index.css rule that paints text in a gold step sits on a ground that keeps 4.5:1 under every brand pack, its own background or a named one (CS-395)."
+    },
+    {
+      "id": "THEME-R4",
+      "source": "app/src/THEME_CLEANSPACE.md",
+      "ref": "R4",
+      "title": "Repeated controls of one kind share an alignment axis",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-button-lint.mjs",
+        "lint:buttons"
+      ],
+      "note": "lint:align is not built. lint:buttons (CI, via test-button-lint.mjs) partly holds the size-tier bullet by keeping the 28px btn-sm to tables and named clusters. The fixed `.tl-card-action` slot and `.modal-actions` give the action and button-cluster axes by construction where they are used. Table action columns line up only through native table sizing."
+    },
+    {
+      "id": "THEME-R5",
+      "source": "app/src/THEME_CLEANSPACE.md",
+      "ref": "R5",
+      "title": "Contrast floor",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-brand.mjs"
+      ],
+      "note": "test-brand.mjs (CI) holds a brand pack's palette to the floor: its 22 contrast checks (text on the ink and on the accent and its hover, links, the text greys, body text at 7:1, the focus ring, the hairlines and the surface ladder) on every pack under brands/, and every index.css rule that paints text in a gold step on its ground (CS-395). Global rules carry the native-control half: fields pin `color-scheme: light` and `select.input option` is forced to --card-bg / --text-primary. Not seen: text set in colours outside the palette steps, and rendered contrast: the 2026-09-12 runtime sweep was one-off and nothing re-runs it (the CSV preview's white-on-white header slipped past until 2026-09-24)."
+    },
+    {
+      "id": "THEME-R6",
+      "source": "app/src/THEME_CLEANSPACE.md",
+      "ref": "R6",
+      "title": "No same-on-same nesting (per-surface contrast)",
+      "area": "layout",
+      "status": "review",
+      "note": "Same-on-same nesting is found by audit only."
+    },
+    {
+      "id": "THEME-R7",
+      "source": "app/src/THEME_CLEANSPACE.md",
+      "ref": "R7",
+      "title": "The schedule (cardinal rule)",
+      "area": "product",
+      "status": "construction",
+      "note": "The `.tl-*` classes and `sched-card-*` tokens. Drift: a later block refills the dots (upcoming renders black-centred, cancelled red-centred)."
+    },
+    {
+      "id": "THEME-R8",
+      "source": "app/src/THEME_CLEANSPACE.md",
+      "ref": "R8",
+      "title": "Detail-page mobile format",
+      "area": "mobile",
+      "status": "checked",
+      "coverage": "partial",
+      "checks": [
+        "lint:responsive"
+      ],
+      "note": "Auto-fit grids are construction; lint:responsive (not in CI, needs a dev server) fails horizontal overflow."
+    },
+    {
+      "id": "THEME-R9",
+      "source": "app/src/THEME_CLEANSPACE.md",
+      "ref": "R9",
+      "title": "Mobile filters, selectors & clusters",
+      "area": "mobile",
+      "status": "checked",
+      "coverage": "partial",
+      "checks": [
+        "lint:responsive"
+      ],
+      "note": "FilterBar's phone sheet, MobileSheet and PopMenu carry it by construction. lint:responsive (not in CI, needs a dev server) fails a toolbar or cluster that pushes the page wider than the viewport, but not one that wraps or clips inside its box."
+    },
+    {
+      "id": "STYLING-1",
+      "source": "app/src/STYLING.md",
+      "ref": "Rule 1",
+      "title": "No hardcoded color values anywhere",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-color-ledger.mjs",
+        "test-design-lint.mjs",
+        "lint:design#no-raw-hex"
+      ],
+      "note": "test-color-ledger.mjs (CI) runs color-ledger.mjs over src, api, index.html, public and the brand-asset scripts (480 files) and fails on any colour literal (hex, rgb/hsl, %23 in a data URI, a named colour in a value position) outside a theme palette entry, the client theme's GENERATED block, a reasoned design:allow, a mask or the named content files; its fixtures prove each detection, so a weakened detector fails too. design-lint's no-raw-hex also ratchets component CSS/JSX in CI (test-design-lint.mjs). A colour inside an image or composed at runtime is not seen."
+    },
+    {
+      "id": "STYLING-2",
+      "source": "app/src/STYLING.md",
+      "ref": "Rule 2",
+      "title": "No hardcoded radii or shadows",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#flat-shadow"
+      ],
+      "note": "flat-shadow runs in CI (test-design-lint.mjs): a new shadow with a colour literal fails. Raw radii are not caught (radius-from-scale is not built)."
+    },
+    {
+      "id": "STYLING-3",
+      "source": "app/src/STYLING.md",
+      "ref": "Rule 3",
+      "title": "No inventing token names in the shell",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-system.mjs"
+      ],
+      "note": "A new :root variable fails the build until it is published as a token with a usage note or listed as a recipe."
+    },
+    {
+      "id": "STYLING-4",
+      "source": "app/src/STYLING.md",
+      "ref": "Rule 4",
+      "title": "No aliases inside component files",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-system.mjs"
+      ],
+      "note": "A new top-level :root variable in index.css fails test-design-system.mjs until it is classified in tokens.config.json. The test does not check which file declares it, so registering the variable is enough to pass. Aliases declared inside component selectors are not checked (e.g. `.cs-fnav` sets --cs-gold / --cs-ink). index.css :root still declares five layout variables."
+    },
+    {
+      "id": "STYLING-5",
+      "source": "app/src/STYLING.md",
+      "ref": "Rule 5",
+      "title": "Recipes don't contain literal color/size values",
+      "area": "tokens",
+      "status": "gated",
+      "note": "test-color-ledger.mjs (CI) fails on a colour literal in a theme file that is not the whole value of a custom property or inside the client theme's GENERATED block, i.e. a colour baked into a recipe (fixtures: a baked shadow in theme.css, a data-URI icon in a client theme). Literal size values in recipes are not checked.",
+      "coverage": "partial",
+      "checks": [
+        "test-color-ledger.mjs"
+      ]
+    },
+    {
+      "id": "STYLING-6",
+      "source": "app/src/STYLING.md",
+      "ref": "Rule 6",
+      "title": "`@media` query breakpoints stay in sync with `--breakpoint-*` tokens",
+      "area": "mobile",
+      "status": "review",
+      "note": "Media queries inline the px; nothing compares them to the breakpoint tokens."
+    },
+    {
+      "id": "STYLING-7",
+      "source": "app/src/STYLING.md",
+      "ref": "Rule 7",
+      "title": "Buttons are never green (CleanSpace brand law)",
+      "area": "controls",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-button-lint.mjs",
+        "lint:buttons#green"
+      ],
+      "note": "`.btn-success` is overridden to gold and `.btn-gold` is gold, so no kit button role paints green, and Variance's Approve is now `.btn.btn-sm.btn-gold` (the old `.btn-approve` and its green text, border and success-50 hover are gone, 4c813e7). lint:buttons (CI, via test-button-lint.mjs) fails any stylesheet rule whose selector names `.btn` / `.btn-*` and sets a colour, background or border from a success token (register CS-338). Green from a raw hex is no-raw-hex's, and green on a non-`.btn` selector is not covered here."
+    },
+    {
+      "id": "STYLING-8",
+      "source": "app/src/STYLING.md",
+      "ref": "Rule 8",
+      "title": "Every `var(--x)` resolves to a definition",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-css-vars-defined.mjs"
+      ],
+      "note": "test-css-vars-defined.mjs (CI) scans every .css/.js/.jsx/.mjs under app/src plus index.html: each var() read, fallback or not, needs a definition (a CSS declaration, a JS style key, setProperty or @property). It checks that a definition exists, not that it is in the cascade scope of the read; a runtime-built name fails until listed."
+    },
+    {
+      "id": "STRUCTURE-0",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§0",
+      "title": "Purpose & precedence",
+      "area": "process",
+      "status": "review",
+      "note": "Precedence on conflict (the board > this file > any restatement) and the one-place rule for values are held by people. Nothing checks that a number is not restated, and STYLING, UI_RULES and the brand book restate many (STYLING's focus-ring and structure blocks mark theirs as owned by §1). The board lives outside this repo. The design-system gate keeps the published values equal to the theme files, not to this file."
+    },
+    {
+      "id": "STRUCTURE-1",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§1",
+      "title": "Token tables",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-system.mjs"
+      ],
+      "note": "The structural tokens this build defines are in theme.css: control heights, border widths, the gap ladder, container paddings, the overlay shadow, the 12px step, the field size (16px on phones) and the focus ring. test-design-system.mjs (CI) fails if one changes value or disappears without regenerating tokens.json. The kit's own rules read them for heights, hairlines, main gaps, paddings and the overlay shadow; most feature CSS still writes numbers directly, which lint:design reports as a ratchet (CI, test-design-lint.mjs). §1 is only partly in place: --space-9, --space-11, --radius-control-alt, --font-body-size and --h1/--h2/--h3-size are not defined; --line-height-relaxed is 1.75, not 1.6; --focus-ring-offset is unread. Radii: md / lg are 10 / 20 in theme.css since 2.1.0 (register CS-346), and test-color-ledger.mjs (CI) fails a client-theme declaration that isn't colour-bearing, so a client can't re-point them."
+    },
+    {
+      "id": "STRUCTURE-2",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§2",
+      "title": "Control contract (per-control anatomy)",
+      "area": "controls",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-button-lint.mjs",
+        "lint:buttons"
+      ],
+      "note": "The kit covers part of §2. Deviations: buttons are the sm tier (32px, --btn-height) and fields are about 43px from padding, not a shared 36px md height. There is no .seg, .page-btn, .btn-lg, .input-sm/-lg/-xs or .textarea-sm/-md/-lg. Checkboxes are 20px, table-cell inputs pad 7px 10px and badges pad 3px 10px. lint:buttons (CI, via test-button-lint.mjs) keeps the 28px btn-sm (--btn-height-sm, the xs tier) to tables and named clusters."
+    },
+    {
+      "id": "STRUCTURE-3",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§3",
+      "title": "Alignment contract (toolbars)",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-button-lint.mjs",
+        "lint:buttons"
+      ],
+      "note": "`.filter-bar` gives the 12px gap (--gap-control) on desktop (10px at ≤640px) and flex-end alignment by construction; there is no shared `.toolbar`. lint:buttons (CI, via test-button-lint.mjs) keeps the 28px btn-sm out of rows outside tables and named clusters. A 32px button next to ~43px fields in one row, and gaps anywhere else, are not checked."
+    },
+    {
+      "id": "STRUCTURE-4",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§4",
+      "title": "Container skeletons",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#scaffold-inline"
+      ],
+      "note": "The app's container classes exist (`.card`, `.detail-card`, `.table-wrap`, `.modal-card`); the kit's `.block`, `.tile`, `.row-item` and `.table-card` do not. scaffold-inline (CI, via test-design-lint.mjs) fails a new inline style that changes a scaffold's geometry; the existing ones are frozen in the baseline. `.detail-card` pads 18px, off the tier scale, and nothing checks it."
+    },
+    {
+      "id": "STRUCTURE-5",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§5",
+      "title": "Treatment rules",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#no-decorative-gradient",
+        "lint:design#flat-shadow",
+        "lint:design#no-glow-filter",
+        "lint:design#shadow-tier"
+      ],
+      "note": "The flat rules are in design-lint, which CI runs through test-design-lint.mjs: a new gradient, coloured shadow or glow fails, and so does a floating surface that reads a shadow tier other than --shadow-overlay (shadow-tier, register CS-344). The segmented-track bullet describes the build's 3px padded track since 2.1.0 (UI_RULES §7; register CS-346); the flush-fill rule and its seg-flush-fill lint are retired."
+    },
+    {
+      "id": "STRUCTURE-6",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§6",
+      "title": "Page scaffolds",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#scaffold-inline"
+      ],
+      "note": "Picking the right scaffold is review. The scaffold classes that exist carry the geometry, and scaffold-inline (CI, via test-design-lint.mjs) fails a new inline style on them. `.toolbar`, `.table-card`, `.pagination` and `.grid-2` do not exist."
+    },
+    {
+      "id": "STRUCTURE-7",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§7",
+      "title": "Responsive & mobile contract",
+      "area": "mobile",
+      "status": "checked",
+      "coverage": "partial",
+      "checks": [
+        "lint:responsive"
+      ],
+      "note": "lint:responsive (not in CI, run by hand against a dev server) fails horizontal page overflow and a mobile table hidden with no card list in its place. Tap targets and the rest of the contract are not checked; the 16px phone field size is the --font-input-size token."
+    },
+    {
+      "id": "STRUCTURE-8",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§8",
+      "title": "Dynamic-style policy",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#no-inline-px",
+        "lint:design#scaffold-inline",
+        "lint:design#no-raw-hex"
+      ],
+      "note": "In CI through test-design-lint.mjs: no-inline-px flags single literal px on the `style={{` line, scaffold-inline a style on a scaffold class, and no-raw-hex inline colour literals; new findings fail, the existing ones are frozen in the baseline. Multi-value strings, multi-line style objects and radii are not caught."
+    },
+    {
+      "id": "STRUCTURE-9",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§9",
+      "title": "The build loop (mandatory for any UI change)",
+      "area": "process",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design"
+      ],
+      "note": "The mechanical step runs in CI (test-design-lint.mjs: no new findings, no slack); the visual and contract re-checks are manual."
+    },
+    {
+      "id": "STRUCTURE-11",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§11",
+      "title": "Ownership & cross-references",
+      "area": "process",
+      "status": "review",
+      "note": "A map of which doc owns what; people hold it. \"A number appears here and nowhere else\" does not hold: STYLING.md lists the structural values (only its focus-ring and structure blocks mark them as owned by §1), and UI_RULES and the brand book restate button and field sizes. THEME_CLEANSPACE.md sets its own precedence (colour values and contrast rules → that file), which §0 and §11 do not list; people reconcile it. The vault docs it names (Role Vocabulary.md, Token Schema.md) and the board live outside this repo."
+    },
+    {
+      "id": "STRUCTURE-LINT-no-raw-hex",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 no-raw-hex",
+      "title": "hex / rgb(/hsl( colour literal in JSX or component CSS (incl. inline-fallback var(--x, #hex)). Exempt: rgba(var(--…-rgb), α), embedded SVG data-URI icons.",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#no-raw-hex",
+        "test-color-ledger.mjs"
+      ],
+      "note": "design-lint implements it for #hex in CSS and hex/rgb()/hsl() in JSX (CI through test-design-lint.mjs); test-color-ledger.mjs (CI) closes the rest, rgb()/hsl() in component CSS and inline-fallback hex included. This build is stricter than the STRUCTURE exemption for data-URI icons: one must be generated by brand:js (UI_RULES §121)."
+    },
+    {
+      "id": "STRUCTURE-LINT-no-raw-px",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 no-raw-px",
+      "title": "raw px on spacing/height/font-size properties in CSS outside token files. Width/max-width family exempt (layout, not rhythm).",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#no-raw-px"
+      ],
+      "note": "Implemented line by line: spacing px on a line containing \"width\" are skipped unless the line also sets a height or font-size (the `.input` padding among them). In CI through test-design-lint.mjs since the 2026-09-24 re-baseline: new findings and slack fail."
+    },
+    {
+      "id": "STRUCTURE-LINT-no-inline-px",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 no-inline-px",
+      "title": "literal px/number spacing in JSX style={{}}; dynamic values (${}, identifiers, ternaries, %, var(), calc()) pass. th/td/col width exempt.",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#no-inline-px"
+      ],
+      "note": "Implemented for single-value literals on the `style={{` line; in CI through test-design-lint.mjs. Multi-value strings and multi-line style objects pass."
+    },
+    {
+      "id": "STRUCTURE-LINT-off-grid",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 off-grid",
+      "title": "px value not a multiple of 4 (excluding 1–2px borders and the type scale) on spacing/size props.",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#off-grid"
+      ],
+      "note": "Implemented with line-level exemptions: a line mentioning font-size, line-height, border, outline or shadow is skipped, as is a width line with no height, and any value of 2px or less. So off-grid spacing next to a radius or border, and off-scale font sizes, pass. In CI through test-design-lint.mjs."
+    },
+    {
+      "id": "STRUCTURE-LINT-height-via-token",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 height-via-token",
+      "title": "a control selector (button/input/select/seg…) that sets height/min-height with a literal instead of --control-height-*.",
+      "area": "controls",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#no-raw-px"
+      ],
+      "note": "There is no dedicated rule. no-raw-px (CI, via test-design-lint.mjs) flags px heights on control selectors; heights written as var(--space-*) pass. The --control-height-* tokens exist and `.btn`, `.btn-sm` and `.btn-icon` read them; other controls do not yet."
+    },
+    {
+      "id": "STRUCTURE-LINT-gap-from-ladder",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 gap-from-ladder",
+      "title": "a gap/margin on a layout element that isn't a gap-ladder alias.",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#no-raw-px",
+        "lint:design#no-inline-px"
+      ],
+      "note": "There is no dedicated rule. no-raw-px (CSS) and no-inline-px (JSX) flag px gaps and margins, in CI through test-design-lint.mjs. Gaps written as var(--space-*) pass. The head-action clusters, .modal-actions, .table-controls, the desktop .filter-bar, .list-pager, .sheet-body/.sheet-foot and .toast-stack read the gap aliases. .page-head (10px), .detail-head (6px), .detail-head-body (16px), .list-pager-controls (10px), .toast (10px) and the phone .filter-bar (10px) still use literals."
+    },
+    {
+      "id": "STRUCTURE-LINT-radius-from-scale",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 radius-from-scale",
+      "title": "border-radius literal instead of a --radius-* / role alias.",
+      "area": "tokens",
+      "status": "review",
+      "note": "Roadmap: not implemented."
+    },
+    {
+      "id": "STRUCTURE-LINT-shadow-tier",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 shadow-tier",
+      "title": "a box-shadow that reads a --shadow-* tier other than --shadow-overlay on a floating surface.",
+      "area": "tokens",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#shadow-tier"
+      ],
+      "note": "Shipped in 4c813e7 as design-lint's shadow-tier (error, design-lint.mjs): a box-shadow reading any --shadow-* step but --shadow-overlay fails, in component CSS or a JSX style. CI runs it through test-design-lint.mjs (whose fixture proves a non-overlay tier fails). Component CSS holds no other tier — the crew, tag and contact picker menus and the messenger's active segment moved off --shadow-md / --shadow-sm to --shadow-overlay — so the baseline is 0 and a new tier fails at once. Its sibling flat-shadow fails a box-shadow with a colour literal; theme*.css, which owns the recipe layer, is not scanned."
+    },
+    {
+      "id": "STRUCTURE-LINT-focus-ring-required",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 focus-ring-required",
+      "title": "an interactive selector with no :focus-visible ring.",
+      "area": "controls",
+      "status": "review",
+      "note": "Roadmap: not implemented."
+    },
+    {
+      "id": "STRUCTURE-LINT-seg-flush-fill",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 seg-flush-fill",
+      "title": "Retired in 2.1.0: this build pads segmented tracks 3px (UI_RULES §7), so a rule that required padding 0 no longer holds.",
+      "area": "controls",
+      "status": "superseded",
+      "note": "Retired 2026-09-24 on the owner's decision (register CS-346): the build's 3px padded track (UI_RULES §7) is the law, STRUCTURE §5 says so since 2.1.0, and the rule is gone from design-lint.mjs (it matched only .seg / .seg-* selectors, none of which exist).",
+      "supersededBy": [
+        "UI-7-selectors-segmented-controls"
+      ]
+    },
+    {
+      "id": "STRUCTURE-LINT-scaffold-inline",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 scaffold-inline",
+      "title": "a style attribute on an element whose className is a scaffold class (page-head, filter-bar, card, form-row, section-head…).",
+      "area": "layout",
+      "status": "gated",
+      "coverage": "full",
+      "checks": [
+        "test-design-lint.mjs",
+        "lint:design#scaffold-inline"
+      ],
+      "note": "Implemented; in CI through test-design-lint.mjs (a new finding above the baseline fails)."
+    },
+    {
+      "id": "STRUCTURE-LINT-input-font-16-mobile",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 input-font-16-mobile",
+      "title": "a mobile input rule with font-size < 16.",
+      "area": "mobile",
+      "status": "construction",
+      "note": "The --font-input-size token is 16px at 640px and below; the field rule reads it, and a late phone rule re-asserts it over same-specificity local sizes. Not linted."
+    },
+    {
+      "id": "STRUCTURE-LINT-tap-target-44",
+      "source": "app/src/STRUCTURE.md",
+      "ref": "§10 tap-target-44",
+      "title": "a primary/row interactive target below 44 on mobile.",
+      "area": "mobile",
+      "status": "review",
+      "note": "Roadmap: not implemented."
+    }
+  ]
+}

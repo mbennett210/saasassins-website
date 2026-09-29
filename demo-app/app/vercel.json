@@ -1,0 +1,31 @@
+{
+  "buildCommand": "npm run build",
+  "regions": ["pdx1"],
+  "rewrites": [
+    { "source": "/api/quotes/:rest*",     "destination": "/api/quotes/_?subpath=:rest*" },
+    { "source": "/api/settings/:rest*",    "destination": "/api/settings/_?subpath=:rest*" },
+    { "source": "/api/webhooks/:rest*",    "destination": "/api/webhooks/_?subpath=:rest*" },
+    { "source": "/api/public/pay/:rest*",  "destination": "/api/public/pay/_?subpath=:rest*" },
+    { "source": "/api/public/qc/:rest*",    "destination": "/api/public/qc/_?subpath=:rest*" },
+    { "source": "/api/workspaces/:rest*",  "destination": "/api/workspaces/_?subpath=:rest*" },
+    { "source": "/api/site-security/:rest*", "destination": "/api/site-security/_?subpath=:rest*" },
+    { "source": "/api/account-media/:rest*", "destination": "/api/account-media/_?subpath=:rest*" },
+    { "source": "/api/invoice-attachments/:rest*", "destination": "/api/invoice-attachments/_?subpath=:rest*" },
+    { "source": "/api/hr-files/:rest*",     "destination": "/api/hr-files/_?subpath=:rest*" },
+    { "source": "/api/qc/:rest*",           "destination": "/api/qc/_?subpath=:rest*" },
+    { "source": "/api/time/:rest*",         "destination": "/api/time/_?subpath=:rest*" },
+    { "source": "/api/variance/:rest*",     "destination": "/api/variance/_?subpath=:rest*" },
+    { "source": "/api/reviews/:rest*",      "destination": "/api/reviews/_?subpath=:rest*" },
+    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/inbox/ingest", "schedule": "* * * * *" },
+    { "path": "/api/push/dispatch", "schedule": "* * * * *" },
+    { "path": "/api/reminders/run", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/ops-alerts", "schedule": "*/5 * * * *" },
+    { "path": "/api/time/auto-close", "schedule": "0 * * * *" },
+    { "path": "/api/time/watchdog", "schedule": "0 14 * * *" },
+    { "path": "/api/reviews/sync", "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/reap", "schedule": "0 8 * * *" }
+  ]
+}

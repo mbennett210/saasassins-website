@@ -1,28 +1,44 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Twilio adapter — frontend interface for SMS send / connection / A2P.
 //
-// IMPORTANT: This module is environment-aware.
+// IMPORTANT: This module is environment-aware, in THREE states:
 //
-// In a stub deployment (the default for the shell repo and any dev session),
-// network calls are simulated locally and resolve with realistic-shaped responses
-// after a short delay. Outbound messages cycle through queued → sent → delivered;
-// occasionally a stubbed message will fail to exercise the failure UI path.
+//   1. Real backend  — VITE_TWILIO_BACKEND_URL is set: every call hits the backend
+//      (Vercel API routes / Supabase Edge Functions); credentials never live in the
+//      browser.
+//   2. Demo/dev stub — no backend URL, in a DEMO/DEV build (MODE === 'demo', or any
+//      non-production build): calls are simulated locally with realistic-shaped
+//      responses so the messaging UI is exercisable (fake numbers, simulated delivery,
+//      an occasional failure to exercise the failure UI).
+//   3. Not configured — no backend URL in a PRODUCTION build: the stub is dead code
+//      (DCE'd), every call throws 'not configured', and the Integrations page hides the
+//      Connect/Simulate controls (CS-038). A hosted build must NOT fake a Twilio
+//      connection and hand out fake numbers that look real; until the Twilio backend
+//      ships (CS-069) SMS is honestly unavailable.
 //
-// In a hosted/production deployment, the real backend (Vercel API routes or
-// Supabase Edge Functions) sets `import.meta.env.VITE_TWILIO_BACKEND_URL` to a
-// base URL. When that env var is present, every call hits the backend instead
-// of the stub — credentials never live in the browser.
-//
-// The shell ships disconnected. Per-deployment ops fills env vars at deploy time.
+// CS-038: previously the stub engaged whenever the backend URL was unset — INCLUDING in
+// production — so staff could "connect" Twilio and get fake +1 206-555 numbers, and with
+// A2P flipped to approved, messages showed delivered but never sent. TWILIO_STUB now gates
+// on the STATIC Vite mode Vite inlines at build time, so a production build folds it to
+// false and the stub bodies + the 'cs-stub:twilio' sentinel dead-code-eliminate
+// (check-bundle-stubs.mjs asserts it). This module is browser-only, so the plain
+// import.meta.env reads need no `typeof import.meta` guard. See lib/demoMode.js.
 // ─────────────────────────────────────────────────────────────────────────────
+import { markStub } from './demoMode';
 
-import { IS_DEMO } from '../demo/isDemo';
+const BACKEND = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TWILIO_BACKEND_URL) || null;
 
-// The demo build hard-pins this to stub mode regardless of any env var, so the
-// sales demo can never reach a real Twilio backend.
-const BACKEND = IS_DEMO
-  ? null
-  : ((typeof import.meta !== 'undefined' && import.meta.env?.VITE_TWILIO_BACKEND_URL) || null);
+// Stub allowed only in a demo/dev build with no real backend. Ordered `(mode) && !BACKEND`
+// so production's `false && …` folds the whole thing away → DCE.
+const TWILIO_STUB =
+  (import.meta.env.MODE === 'demo' || !import.meta.env.PROD) && !BACKEND;
+if (TWILIO_STUB) markStub('cs-stub:twilio');
+
+// True when SMS can actually be used at all (real backend, or the demo/dev stub). False =
+// "not configured" — the Integrations page shows that state instead of a Connect button.
+export const TWILIO_STUB_ACTIVE = TWILIO_STUB;
+export const TWILIO_CONFIGURED = !!BACKEND || TWILIO_STUB;
+const NOT_CONFIGURED = 'SMS is not configured for this deployment.';
 
 const STUB_DELAY_MS = 600;
 const STUB_FAILURE_RATE = 0.08; // ~8% of stubbed outbound sends fail, to exercise failure UI
@@ -64,15 +80,16 @@ export async function connectTwilio({ accountSid, authToken }) {
     }
     return res.json();
   }
+  if (!TWILIO_STUB) throw new Error(NOT_CONFIGURED);
   // Stub path — pretend Twilio responded with a couple of available numbers.
   await delay(STUB_DELAY_MS);
   return {
     ok: true,
     accountSidLast4: accountSid.slice(-4),
     availableNumbers: [
-      { phoneNumber: '+12065550100', friendlyName: '(206) 555-0100 — Seattle' },
-      { phoneNumber: '+14155550199', friendlyName: '(415) 555-0199 — San Francisco' },
-      { phoneNumber: '+18005550144', friendlyName: '(800) 555-0144 — Toll-free' },
+      { phoneNumber: '+12065550100', friendlyName: '(206) 555-0100. Seattle' },
+      { phoneNumber: '+14155550199', friendlyName: '(415) 555-0199. San Francisco' },
+      { phoneNumber: '+18005550144', friendlyName: '(800) 555-0144. Toll-free' },
     ],
   };
 }
@@ -95,6 +112,7 @@ export async function provisionNumber({ phoneNumber, friendlyName }) {
     if (!res.ok) throw new Error(`Provision failed (${res.status})`);
     return res.json();
   }
+  if (!TWILIO_STUB) throw new Error(NOT_CONFIGURED);
   await delay(STUB_DELAY_MS);
   // The webhook URL the deployment exposes for inbound SMS. In real production
   // the backend hands back its actual URL; the stub fakes one for display.
@@ -113,6 +131,7 @@ export async function disconnectTwilio() {
     if (!res.ok) throw new Error('Disconnect failed');
     return res.json();
   }
+  if (!TWILIO_STUB) throw new Error(NOT_CONFIGURED);
   await delay(200);
   return { ok: true };
 }
@@ -143,6 +162,7 @@ export async function sendSMS({ from, to, body }) {
     }
     return res.json();
   }
+  if (!TWILIO_STUB) throw new Error(NOT_CONFIGURED);
   // Stub path — return queued immediately. Caller polls / subscribes for status.
   await delay(200);
   const sid = `SM${Math.random().toString(36).slice(2, 14)}`;
@@ -167,6 +187,7 @@ export function subscribeToDelivery(sid, onUpdate) {
     };
     return () => es.close();
   }
+  if (!TWILIO_STUB) return () => {}; // not configured — no fabricated status
   // Stub: simulate the lifecycle.
   let cancelled = false;
   const willFail = Math.random() < STUB_FAILURE_RATE;
@@ -208,15 +229,18 @@ export function subscribeToInbound(onMessage) {
     };
     return () => es.close();
   }
-  // Stub: nothing to subscribe to — inbound only arrives via simulateInbound().
+  // Stub / not configured: nothing to subscribe to — inbound only arrives via
+  // simulateInbound() in a demo/dev build; a production build has no live stream here.
   return () => {};
 }
 
 /**
- * Locally simulate an inbound SMS — used by the Integrations page in dev.
- * In production this isn't called; real inbound arrives via webhook.
+ * Locally simulate an inbound SMS — used by the Integrations page in a demo/dev build.
+ * In production this isn't reachable (the Simulate control is hidden); real inbound
+ * arrives via webhook.
  */
 export function simulateInbound({ fromPhone, toPhone, body }) {
+  if (!TWILIO_STUB) return null;
   return {
     fromPhone,
     toPhone,
@@ -254,6 +278,7 @@ export async function submitA2P(payload) {
     if (!res.ok) throw new Error(`A2P submit failed (${res.status})`);
     return res.json();
   }
+  if (!TWILIO_STUB) throw new Error(NOT_CONFIGURED);
   await delay(STUB_DELAY_MS);
   return { ok: true, status: 'pending' };
 }

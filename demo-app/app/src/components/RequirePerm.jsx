@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { usePermission } from '../hooks/usePermission';
+import { HOME_PATH } from '../demo/demoConfig';
 
 export default function RequirePerm({ perm, children, fallbackLabel }) {
   const allowed = usePermission(perm);
@@ -16,7 +17,7 @@ export default function RequirePerm({ perm, children, fallbackLabel }) {
         </div>
         <h2>Page not available</h2>
         <p>You don&rsquo;t have access to{fallbackLabel ? ` ${fallbackLabel}` : ' this page'}.</p>
-        <Link to="/" className="btn btn-outline">Go home</Link>
+        <Link to={HOME_PATH} className="btn btn-outline">Go home</Link>
       </div>
     </div>
   );

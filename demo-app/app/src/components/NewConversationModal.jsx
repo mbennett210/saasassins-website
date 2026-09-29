@@ -1,26 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Modal from './Modal';
-import FormField from './FormField';
-import ContactPicker from './ContactPicker';
-import SnippetPicker from './SnippetPicker';
+import Avatar from './Avatar';
+import Icon from './Icon';
+import Badge from './Badge';
 import { useDispatch, useStore } from '../store';
-import { ACTIONS } from '../store/reducer';
-import { selectContactById, selectConversationsForContact } from '../store/selectors';
-import { usePermission } from '../hooks/usePermission';
 import { useAuth } from '../hooks/useAuth';
+import { ACTIONS } from '../store/reducer';
+import {
+  selectVisibleContactsFor,
+  selectContactById,
+  selectConversationsForContact,
+} from '../store/selectors';
+import { isDoNotContact } from '../lib/contactConsent';
+import { usePermission } from '../hooks/usePermission';
 import { useToast } from './Toast';
 import { newId } from '../lib/ids';
-import { nowIso } from '../lib/dates';
 
-// Channel picker is deliberately SMS + Email only — Phase 2a scope.
-// Internal-only conversations are seeded but not creatable from this flow.
-const CHANNEL_OPTIONS = [
-  { value: 'sms',   label: 'SMS' },
-  { value: 'email', label: 'Email' },
-];
+// Page the visible book: 20 on open, +10 per "Load more" (at the bottom of the list).
+const INITIAL = 20;
+const STEP = 10;
 
-export default function NewConversationModal({ open, onClose, defaultContactId = null, defaultChannel = 'sms' }) {
+// The "New conversation" picker. A THIN clickthrough: search the whole book (by
+// name, company, or email), then click a person to open their thread — no channel
+// step here, because the thread composer already switches SMS<->Email in-thread
+// (ConversationMessagePanel) and ADD_CONVERSATION defaults a channel. Reachability
+// (phone/email on file) is shown per row so the choice is informed; a Do-Not-Contact
+// contact is tagged (the thread itself carries the DNC guard). Contacts with no phone
+// AND no email still show and remain clickable — the thread is the dead-end, not this.
+export default function NewConversationModal({ open, onClose, defaultContactId = null }) {
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
@@ -28,44 +36,68 @@ export default function NewConversationModal({ open, onClose, defaultContactId =
   const { currentUser } = useAuth();
   const canStart = usePermission('messaging.startConversation');
 
-  const [contactId, setContactId] = useState(defaultContactId);
-  const [channel, setChannel] = useState(defaultChannel);
-  const [body, setBody] = useState('');
-  const [snippetId, setSnippetId] = useState(null);
+  // Crew see only contacts of clients they're assigned to; managers see all.
+  const contacts = useMemo(() => selectVisibleContactsFor(state, currentUser), [state, currentUser]);
+  // company name lookup (contact.companyId -> client.name), built once per client list.
+  const clientNameById = useMemo(
+    () => new Map((state.clients || []).map((c) => [c.id, c.name])),
+    [state.clients],
+  );
 
+  const [query, setQuery] = useState('');
+  const [shown, setShown] = useState(INITIAL);
+  const listRef = useRef(null);
+
+  // Opening from a company page pre-targets its primary contact: seed the search
+  // with that person's name so they surface at the top (the user still clicks).
   useEffect(() => {
-    if (open) {
-      setContactId(defaultContactId);
-      setChannel(defaultChannel);
-      setBody('');
-      setSnippetId(null);
-    }
-  }, [open, defaultContactId, defaultChannel]);
+    if (!open) return;
+    const dc = defaultContactId ? selectContactById(state, defaultContactId) : null;
+    setQuery(dc ? `${dc.firstName} ${dc.lastName}` : '');
+    setShown(INITIAL);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const contact = contactId ? selectContactById(state, contactId) : null;
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return contacts
+      .map((c) => ({ contact: c, companyName: clientNameById.get(c.companyId) || '' }))
+      .filter(({ contact, companyName }) => {
+        if (!q) return true;
+        const name = `${contact.firstName} ${contact.lastName}`.toLowerCase();
+        return (
+          name.includes(q) ||
+          (contact.email || '').toLowerCase().includes(q) ||
+          companyName.toLowerCase().includes(q) ||
+          (contact.title || '').toLowerCase().includes(q)
+        );
+      });
+  }, [contacts, clientNameById, query]);
 
-  // Dedupe: if the picked contact already has a conversation, offer to jump
-  // to it instead of letting the user spawn a duplicate thread.
-  const existingThread = useMemo(() => {
-    if (!contactId) return null;
-    const threads = selectConversationsForContact(state, contactId)
-      .slice()
-      .sort((a, b) => new Date(b.lastMessageAt || b.createdAt) - new Date(a.lastMessageAt || a.createdAt));
-    return threads[0] || null;
-  }, [state, contactId]);
-
-  const canSend = canStart && contact && body.trim().length > 0 && !existingThread;
-
-  const handleInsertSnippet = ({ id, body: snippetBody }) => {
-    setSnippetId(id);
-    setBody((prev) => (prev ? `${prev}\n${snippetBody}` : snippetBody));
+  const onSearchChange = (e) => {
+    setQuery(e.target.value);
+    setShown(INITIAL);
+    if (listRef.current) listRef.current.scrollTop = 0;
   };
 
-  const handleSend = (e) => {
-    e.preventDefault();
-    if (!canSend) return;
+  const visible = results.slice(0, shown);
+  const hasMore = shown < results.length;
+
+  const handlePick = (contact) => {
+    if (!canStart) return;
+    // Open the contact's most recent SMS/email thread if one exists; otherwise
+    // create a new one on the channel we CAN reach them on (phone -> sms, else
+    // email). Dedupes rather than spawning a parallel thread per click.
+    const existing = selectConversationsForContact(state, contact.id)
+      .filter((c) => c.channel === 'sms' || c.channel === 'email')
+      .slice()
+      .sort((a, b) => new Date(b.lastMessageAt || b.createdAt) - new Date(a.lastMessageAt || a.createdAt))[0];
+    if (existing) {
+      onClose();
+      navigate(`/messaging/${existing.id}`);
+      return;
+    }
+    const channel = contact.phone ? 'sms' : contact.email ? 'email' : 'sms';
     const conversationId = newId('cv');
-    const sentAt = nowIso();
     dispatch({
       type: ACTIONS.ADD_CONVERSATION,
       conversation: {
@@ -74,19 +106,6 @@ export default function NewConversationModal({ open, onClose, defaultContactId =
         contactId: contact.id,
         clientId: contact.companyId || null,
         title: null,
-        createdAt: sentAt,
-        lastMessageAt: sentAt,
-      },
-    });
-    dispatch({
-      type: ACTIONS.ADD_MESSAGE,
-      message: {
-        conversationId,
-        direction: 'out',
-        text: body.trim(),
-        authorUserId: currentUser?.id || null,
-        snippetId,
-        sentAt,
       },
     });
     toast.success('Conversation started');
@@ -95,70 +114,84 @@ export default function NewConversationModal({ open, onClose, defaultContactId =
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="New conversation">
-      <form onSubmit={handleSend}>
-        <FormField label="Contact" required>
-          <ContactPicker value={contactId} onChange={setContactId} placeholder="Pick a contact…" />
-        </FormField>
-
-        {existingThread && (
-          <div className="callout callout-warning" style={{ margin: '4px 0 12px' }}>
-            <div className="text-sm">
-              {contact ? `${contact.firstName} ${contact.lastName}` : 'This contact'} already has an active thread.
-              Reuse it instead of starting a new one.
-            </div>
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              style={{ marginTop: 8 }}
-              onClick={() => { onClose(); navigate(`/messaging/${existingThread.id}`); }}
-            >
-              Open existing thread
-            </button>
+    <Modal open={open} onClose={onClose} title="New conversation" size="convo">
+      <div className="newconv">
+        <label className="form-label">Contact</label>
+        <div className="newconv-combo">
+          <div className="newconv-search">
+            <Icon name="search" size={15} />
+            <input
+              className="newconv-search-input"
+              placeholder="Search by name, company, or email…"
+              value={query}
+              onChange={onSearchChange}
+              autoFocus
+            />
           </div>
-        )}
-
-        <FormField label="Channel" required>
-          <div className="segmented">
-            {CHANNEL_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`segmented-btn ${channel === opt.value ? 'active' : ''}`}
-                onClick={() => setChannel(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
+          <div className="newconv-list" ref={listRef}>
+            {results.length === 0 ? (
+              <div className="newconv-empty">No contacts match</div>
+            ) : (
+              <>
+                {visible.map(({ contact, companyName }) => {
+                  const hasPhone = Boolean(contact.phone);
+                  const hasEmail = Boolean(contact.email);
+                  const initials = `${(contact.firstName[0] || '').toUpperCase()}${(contact.lastName[0] || '').toUpperCase()}`;
+                  return (
+                    <button
+                      key={contact.id}
+                      type="button"
+                      className="newconv-row"
+                      onClick={() => handlePick(contact)}
+                      disabled={!canStart}
+                    >
+                      <Avatar initials={initials} variant={(contact.id.length % 5) + 1} size="sm" />
+                      <span className="newconv-main">
+                        <span className="newconv-name">{contact.firstName} {contact.lastName}</span>
+                        {contact.title && <span className="newconv-title">{contact.title}</span>}
+                      </span>
+                      <span className="newconv-chan">
+                        <span className={`newconv-ic ${hasPhone ? 'on' : 'off'}`} title={hasPhone ? 'Reachable by SMS' : 'No phone on file'}>
+                          <Icon name="phone" size={16} />
+                        </span>
+                        <span className={`newconv-ic ${hasEmail ? 'on' : 'off'}`} title={hasEmail ? 'Reachable by email' : 'No email on file'}>
+                          <Icon name="mail" size={16} />
+                        </span>
+                      </span>
+                      <span className="newconv-co" title={companyName}>
+                        {companyName ? (
+                          <>
+                            <Icon name="building" size={13} />
+                            <span>{companyName}</span>
+                          </>
+                        ) : null}
+                      </span>
+                      <span className="newconv-dnc">
+                        {isDoNotContact(contact) && <Badge variant="red">DNC</Badge>}
+                      </span>
+                    </button>
+                  );
+                })}
+                <div className="newconv-foot">
+                  {hasMore && (
+                    <button type="button" className="btn btn-outline" onClick={() => setShown((n) => n + STEP)}>
+                      Load more
+                    </button>
+                  )}
+                  <div className="newconv-count">
+                    Showing {Math.min(shown, results.length)} of {results.length}{query.trim() ? ' matches' : ' contacts'}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-        </FormField>
-
-        <FormField label="Message" required>
-          <textarea
-            className="input"
-            rows={5}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder={channel === 'email' ? 'Email body…' : 'Text message…'}
-          />
-        </FormField>
-
-        <div className="flex-row" style={{ gap: 8, marginTop: 4 }}>
-          <SnippetPicker channel={channel} onInsert={handleInsertSnippet} />
-          {snippetId && <span className="text-xs text-muted">Snippet inserted</span>}
         </div>
-
-        <div className="modal-actions">
-          <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={!canSend}>Send & open</button>
-        </div>
-
         {!canStart && (
           <p className="text-xs text-muted" style={{ marginTop: 8 }}>
             You don't have permission to start new conversations.
           </p>
         )}
-      </form>
+      </div>
     </Modal>
   );
 }

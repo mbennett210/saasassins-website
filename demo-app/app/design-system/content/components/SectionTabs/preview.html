@@ -1,0 +1,33 @@
+<!-- @dsCard group="Navigation" height=80 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SectionTabs</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6) var(--space-6) var(--space-4); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Demo() {
+  var s = React.useState('overview'), active = s[0], setActive = s[1];
+  return h(CS.SectionTabs, {
+    sections: [
+      { key: 'overview', label: 'Overview' },
+      { key: 'access', label: 'Access' },
+      { key: 'contacts', label: 'Contacts', count: 3 },
+      { key: 'activity', label: 'Activity', count: 42 },
+      { key: 'notes', label: 'Notes', count: 5 }
+    ],
+    activeKey: active,
+    onSelect: setActive
+  });
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(Demo));
+</script>
+</body>
+</html>

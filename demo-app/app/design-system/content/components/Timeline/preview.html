@@ -1,0 +1,41 @@
+<!-- @dsCard group="Data" height=510 width=720 page subtitle="CSS classes: .tl-track, .tl-item, .tl-card" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Timeline</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6); }
+  .pv .card { margin: 0; }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+var JOBS = [
+  { status: 'done', time: '6:00 PM – 8:30 PM', client: 'Harbor View Offices', service: 'Nightly clean', crew: 'Maria Reyes, Ana Kim', badge: ['green', 'Done'] },
+  { status: 'in_progress', time: '7:00 PM – 10:00 PM', client: 'Brickell Medical Suites', service: 'Deep clean', crew: 'Jon Smith', badge: ['amber', 'In Progress'] },
+  { status: 'missed', time: '5:30 PM – 7:00 PM', client: 'Coral Gables Law Group', service: 'Nightly clean', crew: 'Luis Torres', badge: ['red', 'Missed'] },
+  { status: 'upcoming', time: '9:00 PM – 11:00 PM', client: 'Dadeland Dental', service: 'Nightly clean', crew: 'Maria Reyes', action: true }
+];
+ReactDOM.createRoot(document.getElementById('pv')).render(
+  h('div', { className: 'card dash-card tl-day-card' },
+    h('div', { className: 'tl-track' },
+      h('div', { className: 'tl-line' }),
+      JOBS.map(function (j, i) {
+        return h('div', { key: i, className: 'tl-item ' + j.status },
+          h('div', { className: 'tl-dot' }),
+          h('div', { className: 'tl-time' }, j.time),
+          h('div', { className: 'tl-card clickable' },
+            h('div', { className: 'tl-card-head' },
+              h('div', { className: 'tl-card-title' }, h('strong', null, j.client), ' — ', j.service),
+              h('div', { className: 'tl-card-meta' }, j.badge ? h(CS.Badge, { variant: j.badge[0] }, j.badge[1]) : null),
+              h('div', { className: 'tl-card-action' }, j.action ? h('button', { className: 'btn btn-outline btn-sm' }, 'Reschedule') : null)),
+            h('span', { className: 'text-xs text-muted' }, j.crew)));
+      })))
+);
+</script>
+</body>
+</html>

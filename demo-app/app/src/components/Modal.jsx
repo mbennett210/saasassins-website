@@ -4,8 +4,10 @@ import { createPortal } from 'react-dom';
 const __modalStack = [];
 
 export default function Modal({ open, onClose, title, children, size }) {
+  // Keep the latest onClose in a ref so the Esc handler always calls the
+  // current one without re-running its effect (which would churn __modalStack).
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => { onCloseRef.current = onClose; });
 
   useEffect(() => {
     if (!open) return;

@@ -1,0 +1,24 @@
+<!-- @dsCard group="Overlays" height=300 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ConfirmDialog</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+</head>
+<body>
+<div id="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('pv')).render(h(CS.ConfirmDialog, {
+  open: true,
+  title: 'Delete this invoice?',
+  message: "INV-1047 and its 2 payments will be removed. This can't be undone.",
+  confirmLabel: 'Delete',
+  variant: 'danger',
+  onConfirm: function () {},
+  onClose: function () {}
+}));
+</script>
+</body>
+</html>

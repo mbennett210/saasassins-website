@@ -1,0 +1,40 @@
+<!-- @dsCard group="Containers" height=268 width=960 page subtitle="CSS classes: .card, .detail-card, .detail-dl" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Card</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var h = React.createElement;
+function Row(term, value, sub) {
+  return h('div', null, h('dt', null, term), h('dd', null, value, sub ? h('div', { className: 'text-sm text-muted' }, sub) : null));
+}
+function Card(title, rows) {
+  return h('div', { className: 'detail-card' },
+    h('div', { className: 'overview-card-head' }, h('h3', null, title), h('button', { className: 'btn btn-outline btn-sm' }, 'Edit')),
+    h('dl', { className: 'detail-dl' }, rows));
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(
+  h('div', { className: 'detail-grid' },
+    Card('Account details', [
+      h(React.Fragment, { key: 1 }, Row('Company', 'Harbor View Offices')),
+      h(React.Fragment, { key: 2 }, Row('Service', 'Nightly clean', 'Mon to Fri, 6:00 PM')),
+      h(React.Fragment, { key: 3 }, Row('Expected time', '2h 30m')),
+      h(React.Fragment, { key: 4 }, Row('Manager', 'Jordan Lee'))
+    ]),
+    Card('Location', [
+      h(React.Fragment, { key: 1 }, Row('Address', '1200 Brickell Ave', 'Miami, FL 33131')),
+      h(React.Fragment, { key: 2 }, Row('Entry', 'Service door on SE 12th St'))
+    ])
+  )
+);
+</script>
+</body>
+</html>

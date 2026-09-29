@@ -15,13 +15,15 @@ import {
   selectContacts,
   selectTags,
   selectPipelines,
+  selectContactIsVendor,
 } from '../../store/selectors';
 import { useToast } from '../../components/Toast';
 import Modal from '../../components/Modal';
 import Avatar from '../../components/Avatar';
 import Badge from '../../components/Badge';
-import Icon from '../../components/Icon';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import FilterSelect from '../../components/FilterSelect';
+import ListPager from '../../components/ListPager';
 
 const PAGE_SIZE = 10;
 const LIFECYCLES = [
@@ -72,6 +74,47 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
 
   const tagsById = useMemo(() => new Map(tags.map((t) => [t.id, t])), [tags]);
 
+  // Options for the searchable filter dropdowns (FilterSelect). Each leads with
+  // an "All …" default (value '') that clears the filter. Pipeline stages are
+  // flattened across pipelines, prefixed with the pipeline name only when more
+  // than one exists.
+  const tagFilterOptions = useMemo(
+    () => [{ value: '', label: 'All tags' }, ...tags.map((t) => ({ value: t.id, label: t.label }))],
+    [tags]
+  );
+  const lifecycleFilterOptions = useMemo(
+    () => [{ value: '', label: 'All lifecycle stages' }, ...LIFECYCLES.map((l) => ({ value: l.value, label: l.label }))],
+    []
+  );
+  const stageFilterOptions = useMemo(() => {
+    // Deals live on the Master Pipeline now; filter the manual list by the stage
+    // of a contact's company deal. Guard any label-less stage.
+    const master = pipelines.find((p) => p.isMaster) || null;
+    const opts = [{ value: '', label: 'All deal stages' }];
+    (master?.stages || []).forEach((s) => {
+      if (!s.key || !s.label) return;
+      opts.push({ value: `${master.id}::${s.key}`, label: s.label });
+    });
+    return opts;
+  }, [pipelines]);
+
+  // A contact's "deal stage" as `${pipelineId}::${stageKey}` — the open opportunity
+  // they're the primary of, else any open opportunity at their company. A person is
+  // never on a pipeline; the deal belongs to the company.
+  const dealStageByContact = useMemo(() => {
+    const m = new Map();
+    const opps = (state.opportunities || []).filter((o) => o.status === 'open' && o.stage);
+    for (const o of opps) {
+      if (o.primaryContactId && !m.has(o.primaryContactId)) m.set(o.primaryContactId, `${o.pipelineId}::${o.stage}`);
+    }
+    for (const c of contacts) {
+      if (m.has(c.id) || !c.companyId) continue;
+      const o = opps.find((x) => x.clientId === c.companyId);
+      if (o) m.set(c.id, `${o.pipelineId}::${o.stage}`);
+    }
+    return m;
+  }, [state.opportunities, contacts]);
+
   const enrollmentByContact = useMemo(() => {
     const m = new Map();
     enrollments
@@ -86,20 +129,19 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
     const q = query.trim().toLowerCase();
     return contacts
       .filter((c) => {
+        // Vendors are excluded from all marketing targeting (CRM-MODEL §6).
+        if (selectContactIsVendor(state, c)) return false;
         if (q) {
           const name = fullName(c).toLowerCase();
           if (!name.includes(q) && !(c.email || '').toLowerCase().includes(q)) return false;
         }
         if (tagFilter && !(c.tagIds || []).includes(tagFilter)) return false;
         if (lifecycleFilter && c.lifecycle !== lifecycleFilter) return false;
-        if (stageFilter) {
-          const [pid, key] = stageFilter.split('::');
-          if (c.pipelineId !== pid || c.stage !== key) return false;
-        }
+        if (stageFilter && dealStageByContact.get(c.id) !== stageFilter) return false;
         return true;
       })
       .sort((a, b) => fullName(a).localeCompare(fullName(b)));
-  }, [contacts, query, tagFilter, lifecycleFilter, stageFilter]);
+  }, [contacts, query, tagFilter, lifecycleFilter, stageFilter, dealStageByContact, state.clients]);
 
   // Of the filtered set, the ones that can actually be added.
   const addable = useMemo(
@@ -216,10 +258,11 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
   }
 
   function stageLabelFor(c) {
-    if (!c.pipelineId || !c.stage) return null;
-    const p = pipelines.find((x) => x.id === c.pipelineId);
-    if (!p) return null;
-    const st = (p.stages || []).find((s) => s.key === c.stage);
+    const key = dealStageByContact.get(c.id);
+    if (!key) return null;
+    const [, stageKey] = key.split('::');
+    const master = pipelines.find((p) => p.isMaster) || null;
+    const st = (master?.stages || []).find((s) => s.key === stageKey);
     return st ? st.label : null;
   }
 
@@ -237,8 +280,8 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
 
         {tab === 'add' ? (
           <>
-            <p className="text-sm text-muted" style={{ margin: '4px 0 10px', padding: '8px 10px', background: 'var(--color-info-bg, #eff6ff)', borderRadius: 4 }}>
-              Selected contacts are added to the <strong>back of the queue</strong> and start at <strong>Step 1</strong> of the sequence. Sends process in <strong>FIFO order</strong> — earlier enrollments send before later ones, paced by each connected inbox&apos;s daily limit and send interval.
+            <p className="text-sm text-muted" style={{ margin: '4px 0 10px', padding: '8px 10px', background: 'var(--inset-bg)', borderRadius: 4 }}>
+              Selected contacts are added to the <strong>back of the queue</strong> and start at <strong>Step 1</strong> of the sequence. Sends process in <strong>FIFO order</strong>. Earlier enrollments send before later ones, paced by each connected inbox&apos;s daily limit and send interval.
             </p>
             <div className="enroll-toolbar">
               <input
@@ -248,24 +291,24 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
                 onChange={(e) => { setQuery(e.target.value); setPage(0); }}
               />
               <div className="enroll-filters">
-                <select className="select" value={tagFilter} onChange={(e) => { setTagFilter(e.target.value); setPage(0); }}>
-                  <option value="">All tags</option>
-                  {tags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                </select>
-                <select className="select" value={lifecycleFilter} onChange={(e) => { setLifecycleFilter(e.target.value); setPage(0); }}>
-                  <option value="">All lifecycle stages</option>
-                  {LIFECYCLES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
-                </select>
-                <select className="select" value={stageFilter} onChange={(e) => { setStageFilter(e.target.value); setPage(0); }}>
-                  <option value="">All pipeline stages</option>
-                  {pipelines.map((p) => (
-                    <optgroup key={p.id} label={p.label}>
-                      {(p.stages || []).map((s) => (
-                        <option key={s.key} value={`${p.id}::${s.key}`}>{s.label}</option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+                <FilterSelect
+                  ariaLabel="Filter by tag"
+                  value={tagFilter}
+                  options={tagFilterOptions}
+                  onChange={(v) => { setTagFilter(v); setPage(0); }}
+                />
+                <FilterSelect
+                  ariaLabel="Filter by lifecycle stage"
+                  value={lifecycleFilter}
+                  options={lifecycleFilterOptions}
+                  onChange={(v) => { setLifecycleFilter(v); setPage(0); }}
+                />
+                <FilterSelect
+                  ariaLabel="Filter by deal stage"
+                  value={stageFilter}
+                  options={stageFilterOptions}
+                  onChange={(v) => { setStageFilter(v); setPage(0); }}
+                />
               </div>
             </div>
 
@@ -283,7 +326,7 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
                 </span>
                 <span>Contact</span>
                 <span className="enroll-cell-tags">Tags</span>
-                <span className="enroll-cell-stage">Pipeline stage</span>
+                <span className="enroll-cell-stage">Deal stage</span>
               </div>
 
               <div className="enroll-scroll">
@@ -292,14 +335,14 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
                     {allAddableSelected ? (
                       <>
                         <span>All <strong>{addable.length}</strong> matching contact{addable.length === 1 ? '' : 's'} selected.</span>
-                        <button type="button" className="enroll-banner-link" onClick={() => setSelectedIds(new Set())}>
+                        <button type="button" className="linklike" onClick={() => setSelectedIds(new Set())}>
                           Clear selection
                         </button>
                       </>
                     ) : (
                       <>
                         <span>All <strong>{pageAddable.length}</strong> on this page selected.</span>
-                        <button type="button" className="enroll-banner-link" onClick={selectAllMatching}>
+                        <button type="button" className="linklike" onClick={selectAllMatching}>
                           Select all {addable.length} contacts
                         </button>
                       </>
@@ -340,7 +383,7 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
                             {isEnrolled && <Badge variant="green">Enrolled</Badge>}
                           </span>
                           <span className={`enroll-contact-mail ${noEmail ? 'is-warn' : ''}`}>
-                            {c.email || 'No email — can’t enroll'}
+                            {c.email || 'No email. Can’t enroll'}
                           </span>
                         </span>
                       </span>
@@ -364,29 +407,10 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
               </div>
             </div>
 
-            {totalPages > 1 && (
-              <div className="enroll-pager">
-                <button
-                  type="button"
-                  className="marketing-pagination-btn"
-                  aria-label="Previous page"
-                  disabled={safePage === 0}
-                  onClick={() => setPage(safePage - 1)}
-                >
-                  <Icon name="chevronLeft" size={15} />
-                </button>
-                <span className="enroll-pager-label">Page {safePage + 1} of {totalPages}</span>
-                <button
-                  type="button"
-                  className="marketing-pagination-btn"
-                  aria-label="Next page"
-                  disabled={safePage === totalPages - 1}
-                  onClick={() => setPage(safePage + 1)}
-                >
-                  <Icon name="chevronRight" size={15} />
-                </button>
-              </div>
-            )}
+            <ListPager
+              pager={{ page: safePage + 1, totalPages, setPage: (p) => setPage(p - 1), start: safePage * PAGE_SIZE + 1, end: Math.min((safePage + 1) * PAGE_SIZE, filtered.length), total: filtered.length }}
+              noun="contacts"
+            />
 
             <div className="enroll-foot">
               <span className="enroll-foot-count"><strong>{selectedIds.size}</strong> selected</span>
@@ -400,7 +424,7 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
           </>
         ) : (
           <>
-            <p className="text-sm text-muted" style={{ margin: '4px 0 10px', padding: '8px 10px', background: 'var(--color-info-bg, #eff6ff)', borderRadius: 4 }}>
+            <p className="text-sm text-muted" style={{ margin: '4px 0 10px', padding: '8px 10px', background: 'var(--inset-bg)', borderRadius: 4 }}>
               Listed in <strong>FIFO send order</strong> (Position 1 = oldest enrollment, next in line). All contacts begin at Step 1; the scheduler advances them through the sequence subject to inbox throttles and daily caps.
             </p>
             <div className="enroll-toolbar">
@@ -453,7 +477,7 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
                               minWidth: 24,
                               marginRight: 6,
                               fontSize: 11,
-                              color: 'var(--color-text-muted, #6b7280)',
+                              color: 'var(--color-text-muted)',
                               fontVariantNumeric: 'tabular-nums',
                             }}>#{idx + 1}</span>
                             {fullName(c) || 'Unnamed contact'}
@@ -461,7 +485,7 @@ export default function SequenceContactsModal({ sequenceId, initialTab, onClose 
                               marginLeft: 6,
                               fontSize: 10,
                               fontWeight: 400,
-                              color: 'var(--color-text-muted, #6b7280)',
+                              color: 'var(--color-text-muted)',
                               textTransform: 'uppercase',
                               letterSpacing: 0.4,
                             }}>{sourceLabel}</span>

@@ -1,13 +1,11 @@
 import { useLocation } from 'react-router-dom';
 
-function deriveFromLabel(pathname, search) {
-  const params = new URLSearchParams(search);
-  const tab = params.get('tab');
-
+function deriveFromLabel(pathname) {
   if (pathname === '/' || pathname === '/dashboard') return 'Dashboard';
   if (pathname === '/contacts' || pathname === '/clients') {
-    // Accept legacy ?tab=accounts deep-links as 'Clients' for the breadcrumb.
-    return (tab === 'clients' || tab === 'accounts') ? 'Clients' : 'Contacts';
+    // The top-level list is the Customers hub (companies). People live under a
+    // customer, so the breadcrumb back to this list reads 'Customers'.
+    return 'Customers';
   }
   if (pathname === '/schedule') return 'Schedule';
   if (pathname === '/pipeline') return 'Pipeline';
@@ -26,5 +24,5 @@ function deriveFromLabel(pathname, search) {
 
 export function useFromHere() {
   const { pathname, search } = useLocation();
-  return { from: `${pathname}${search}`, fromLabel: deriveFromLabel(pathname, search) };
+  return { from: `${pathname}${search}`, fromLabel: deriveFromLabel(pathname) };
 }

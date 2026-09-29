@@ -31,27 +31,29 @@ export default function Marketing() {
         </div>
         <div className="page-head-actions">
           {active === 'sequences' && canManage && (
-            <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>+ New sequence</button>
+            <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>New sequence</button>
           )}
           {active === 'inboxes' && canConnect && (
-            <button className="btn btn-primary" onClick={() => setConnectOpen(true)}>+ Connect Gmail</button>
+            <button className="btn btn-primary" onClick={() => setConnectOpen(true)}>Connect Gmail</button>
           )}
         </div>
       </div>
 
-      <div className="settings-pill-wrap">
-        <nav className="settings-pills">
+      <div className="marketing-tabs">
+        <div className="tab-container tab-container-line" role="tablist" aria-label="Marketing">
           {TABS.map((t) => (
             <button
               key={t.key}
               type="button"
-              className={`settings-pill ${active === t.key ? 'active' : ''}`}
+              role="tab"
+              aria-selected={active === t.key}
+              className={`tab-btn ${active === t.key ? 'active' : ''}`}
               onClick={() => setActive(t.key)}
             >
-              <span>{t.label}</span>
+              {t.label}
             </button>
           ))}
-        </nav>
+        </div>
       </div>
 
       <div className="settings-content">

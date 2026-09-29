@@ -1,0 +1,37 @@
+<!-- @dsCard group="Actions" height=128 width=720 page subtitle="CSS classes: .btn + a role" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Button</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-5) var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+  .pv-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .pv-cap { font-size: var(--font-size-2xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); width: 72px; }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Row(props) { return h('div', { className: 'pv-row' }, h('span', { className: 'pv-cap' }, props.label), props.children); }
+ReactDOM.createRoot(document.getElementById('pv')).render(h(React.Fragment, null,
+  h(Row, { label: 'Roles' },
+    h('button', { className: 'btn btn-primary' }, 'Save Changes'),
+    h('button', { className: 'btn btn-gold' }, 'Import CSV'),
+    h('button', { className: 'btn btn-secondary' }, 'No-show'),
+    h('button', { className: 'btn btn-outline' }, 'Cancel'),
+    h('button', { className: 'btn btn-danger' }, 'Delete')
+  ),
+  h(Row, { label: 'Sizes' },
+    h('button', { className: 'btn btn-primary btn-sm' }, h(CS.Icon, { name: 'check', size: 12 }), h('span', null, 'Mark read')),
+    h('button', { className: 'btn btn-outline btn-sm' }, 'Reschedule'),
+    h('button', { className: 'btn btn-primary', disabled: true }, 'Save Changes'),
+    h('button', { className: 'btn-icon', 'aria-label': 'Edit' }, h(CS.Icon, { name: 'edit', size: 14 })),
+    h('button', { className: 'linklike' }, 'Harbor View Offices')
+  )
+));
+</script>
+</body>
+</html>

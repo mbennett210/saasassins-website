@@ -1,0 +1,175 @@
+  <!-- Cover -->
+  <div class="page cover">
+    <div style="height:26px"></div>
+    <div class="big r1">{{wordmark.1}}</div>{{#wordmark.2}}
+    <div class="big r2">{{wordmark.2}}</div>{{/wordmark.2}}
+    <div class="rule"></div>
+    <div class="serif" style="font-style:italic;font-size:18pt;color:{{doc.ink}};margin-top:8px;">Customized Cleaning Proposal</div>
+    <p class="muted" style="margin-top:6px;">Prepared exclusively for:&nbsp; {{field.clientName|Client Name}}. {{field.companyName|Company Name}}</p>
+    <table class="badges" style="margin-top:18px;"><tr>
+      <td><div class="bt">Licensed, Bonded</div><div>&amp; Fully Insured</div></td>
+      <td><div class="bt">Background-Checked</div><div>&amp; OSHA-Trained Staff</div></td>
+      <td><div class="bt">Satisfaction</div><div>Guaranteed</div></td>
+    </tr></table>
+    <p class="muted center" style="margin-top:20px;font-size:9.5pt;">{{company.street}} |&nbsp; {{company.city}}&nbsp; |&nbsp; {{company.phone}}<br/>{{company.website}}</p>
+    <img class="logo" src="{{logo}}" alt="{{name}}" />
+  </div>
+
+  <!-- Cover letter -->
+  <div class="page pb">
+    <p>{{date}}</p>
+    <p>Dear {{field.clientName|Client Name}},</p>
+    <p>Thank you for considering {{name}} for your facility care needs. This proposal reflects a cleaning program built specifically around {{field.companyName|Company Name}}, not a generic package pulled off a shelf.</p>
+    <p>We've been in the business long enough to know what separates a good cleaning company from a great one. It's not just the mop and the bucket; it's accountability, communication, and showing up the same way every single time. That consistency is what protects your space, your reputation, and your peace of mind.</p>
+    <p>What you'll find in this proposal is straightforward: a <strong>clearly defined scope of work</strong>, a <strong>fair and transparent price</strong>, and our <strong>personal commitment</strong> to making sure your facility is something you're proud to walk into every day.</p>
+    <p>We use a custom platform, designed to give you real-time 24/7 communication with our leadership team, completed digital checklists after every clean, and direct visibility into your account. You will never be left wondering if the job got done.</p>
+    <p>We're honest about one thing: nobody's perfect. But when something isn't right, we respond fast, we take responsibility, and we fix it at no cost to you. That's not fine print, it's how we've built every relationship we have.</p>
+    <p>I look forward to earning your business and your trust.</p>
+    <p>Warmly,</p>
+    <div class="ksig">{{signatory.name}}</div>
+    <p style="margin:0;"><strong>{{signatory.name}}</strong><br/>{{signatory.title}}<br/>{{name}}<br/><span style="font-style:italic;">{{company.phone}}&nbsp; |&nbsp; {{signatory.email}}</span></p>
+  </div>
+
+  <!-- Cleaning Proposal: pricing + included + guarantees -->
+  <div class="page pb">
+    <h1 class="title">Cleaning Proposal</h1>
+    <p class="subtitle">Your customized service agreement. Built around your facility and your needs.</p>
+    <div class="seclabel">Service &amp; Pricing</div>
+    <table class="pricing">
+      <tr><td>Monthly Investment</td><td>${{field.amount|Amount}}/month. Flat rate, no hidden fees</td></tr>
+      <tr><td>Service Frequency</td><td>{{field.frequency|Insert Frequency}}. {{field.dayOfWeek|Day(s) of Week}}</td></tr>
+      <tr><td>Payment Terms</td><td>Due the 1st of each month. Card on file preferred.</td></tr>
+    </table>
+    <div class="seclabel">What's Included</div>
+    <p>Every visit includes the following core services:</p>
+    <ul class="bullets">
+      <li>Cleaning and sanitizing of all hard surfaces</li>
+      <li>Dusting. General and detail dusting of accessible surfaces</li>
+      <li>Floor care. Sweeping, mopping, and vacuuming as applicable</li>
+      <li>Trash and recycling removal with liner replacement</li>
+      <li>Restroom cleaning. Disinfecting, restocking, and floor care</li>
+      <li>High-touch disinfection. Door handles, light switches, shared surfaces</li>
+    </ul>
+    <div class="seclabel">Our Guarantees To You</div>
+    <div class="card"><div class="ic ic-green">✓</div><div class="ct"><div class="ch">Consistent assigned team</div><div>The same trained cleaners visit your site on a set schedule. No strangers, no surprises.</div></div></div><div class="card"><div class="ic ic-green">✓</div><div class="ct"><div class="ch">Accountability, every clean</div><div>Your crew submits a completed digital checklist after every shift. Verifiable proof of work.</div></div></div><div class="card"><div class="ic ic-green">✓</div><div class="ct"><div class="ch">QA inspections included</div><div>Our Quality Assurance team conducts regular inspections of your site and shares the full report.</div></div></div><div class="card"><div class="ic ic-green">✓</div><div class="ct"><div class="ch">Real-time communication</div><div>Direct access to our leadership team via our customized app. Requests answered fast, not buried in a queue.</div></div></div><div class="card"><div class="ic ic-green">✓</div><div class="ct"><div class="ch">Satisfaction guarantee</div><div>If something isn't right, we come back and fix it within 24 hours at no additional cost. No debate.</div></div></div>
+    <div class="callout">{{name}} is fully licensed, bonded, and insured. All staff are background-checked, drug-screened, and OSHA-trained. Your facility and the people in it are in good hands.</div>
+  </div>
+
+  <!-- Cleaning Scope -->
+  <div class="page pb">
+    <h1 class="title">Cleaning Scope</h1>
+    <p class="subtitle">A detailed breakdown of exactly what gets done. Every visit.</p>
+    <div class="seclabel">Weekly Services</div>
+    <p style="font-weight:700;color:var(--doc-brand);margin-bottom:4px;">Reception / Showroom / Offices / Workspaces</p>
+    <ul class="bullets">
+      <li>Floors swept, mopped, and/or vacuumed. Including edges and under furniture</li>
+      <li>All hard surfaces wiped clean and disinfected</li>
+      <li>Dusting of accessible surfaces, shelving, and equipment</li>
+      <li>Trash emptied and liners replaced</li>
+      <li>Recycling removed</li>
+      <li>Shredding bins emptied (where applicable)</li>
+      <li>High-touch disinfection. Door handles, light switches, shared equipment, counters</li>
+    </ul>
+    <p style="font-weight:700;color:var(--doc-brand);margin-bottom:4px;">Kitchen / Break Room</p>
+    <ul class="bullets">
+      <li>Floors swept, mopped, and/or vacuumed</li>
+      <li>All hard surfaces and countertops wiped clean and sanitized</li>
+      <li>Exterior of all appliances wiped down</li>
+      <li>Interior of microwave cleaned</li>
+      <li>Sink scrubbed and disinfected</li>
+      <li>Trash and recycling emptied with liner replacement</li>
+      <li>High-touch disinfection. Cabinet handles, appliance controls, fixtures</li>
+    </ul>
+    <p style="font-weight:700;color:var(--doc-brand);margin-bottom:4px;">Restrooms&nbsp; ({{field.restrooms|Insert number of restrooms}})</p>
+    <ul class="bullets">
+      <li>Toilets scrubbed inside and out. Bowl, seat, lid, base, and sides</li>
+      <li>Sinks and countertops cleaned and disinfected</li>
+      <li>Mirrors cleaned streak-free</li>
+      <li>All trash cans wiped down, emptied, and relined</li>
+      <li>Toilet paper, paper towels, and soap restocked</li>
+      <li>Floors swept and mopped. Including behind fixtures</li>
+      <li>High-touch disinfection. Door handles, light switches, dispensers</li>
+    </ul>
+    <div class="note">Note: This scope covers our standard service visit. Any additional or specialty services (deep cleaning, post-construction cleaning, floor stripping and waxing, etc.) can be added to your plan. Just ask and we'll build a custom add-on proposal.</div>
+  </div>
+
+  <!-- Enhanced Services -->
+  <div class="page pb">
+    <h1 class="title">Enhanced Services</h1>
+    <p class="subtitle">Monthly / Quarterly / and Annual add-ons and specialty services available for your facility.</p>
+    <div class="seclabel">Monthly Deep-Clean Services</div>
+    <p>The following services are performed monthly as part of your enhanced plan, or available as add-ons to a standard agreement:</p>
+    <div class="seclabel">Optional Service Add-Ons</div>
+    <table class="addon">
+      <tr><th>Service</th><th>Details</th></tr>
+      <tr><td>Floor Stripping &amp; Waxing</td><td>Deep restoration of hard floors. Strip, clean, re-wax, and buff</td></tr>
+      <tr><td>Carpet Shampooing</td><td>Hot water extraction. Removes deep stains and allergens</td></tr>
+      <tr><td>Window Cleaning</td><td>Interior and exterior window and glass cleaning</td></tr>
+      <tr><td>Pressure Washing</td><td>Exterior surfaces, entryways, and parking areas</td></tr>
+      <tr><td>Disinfection Services</td><td>Electrostatic or fogging disinfection for enhanced sanitation</td></tr>
+    </table>
+    <p class="muted" style="font-style:italic;">All add-on pricing is provided upon request. We'll come out, assess your space, and give you an accurate quote. No guesswork.</p>
+  </div>
+
+  <!-- Why {{name}} -->
+  <div class="page pb">
+    <h1 class="title">Why {{name}}?</h1>
+    <p class="subtitle">What makes us different. And why it matters for your business.</p>
+    <div class="seclabel">The {{name}} Difference</div>
+    <p>Most cleaning companies send a crew and hope for the best. {{name}} delivers <strong>Supervised Services</strong>. Real oversight, not constant follow-up. As {{company.tagline}} with a directly-employed workforce of 1,000+ W-2 employees serving Miami, Fort Lauderdale, West Palm Beach, Tampa, and Orlando, we bring structured janitorial services and the accountability that only a supervised, in-house team can stand behind.</p>
+    <p>Here's what that means in practice:</p>
+    <div class="card"><div class="ic">📋</div><div class="ct"><div class="ch">Detailed, customized scope</div><div>Every client gets a cleaning plan tailored to their space. Not a generic checklist. We document your preferences and make sure every cleaner assigned to your account knows exactly how you want things done.</div></div></div><div class="card"><div class="ic">📱</div><div class="ct"><div class="ch">Technology that keeps you in control</div><div>Our cleaners use our custom platform; digital sign-in, completed checklists, and real-time messaging. You'll know your clean happened, what was done, and you can reach us in seconds if anything comes up.</div></div></div><div class="card"><div class="ic">🔍</div><div class="ct"><div class="ch">Regular quality inspections</div><div>We don't just trust that everything went well, we verify it. Our QA team conducts scheduled and surprise inspections, generates written reports, and shares findings directly with you.</div></div></div><div class="card"><div class="ic">🛡️</div><div class="ct"><div class="ch">Rigorous hiring standards</div><div>Every cleaner passes a background check, drug screen, and a paid working interview before they ever step foot in a client's facility. We set the bar high because your trust depends on it.</div></div></div><div class="card"><div class="ic">💬</div><div class="ct"><div class="ch">Direct owner access</div><div>You won't be passed to a call center. You have direct access to our ownership team, because we're a local company that stands behind every contract we sign.</div></div></div><div class="card"><div class="ic">🌟</div><div class="ct"><div class="ch">A team that's invested</div><div>We pay living wages, offer raises, and recognize performance. Happy employees clean better. We've built a team that takes ownership of their work and it shows in every building we service.</div></div></div>
+    <div class="callout">"Instead of underbidding to get you in the door, you'll receive an accurate, fair quote that delivers real results. We'd rather earn a long-term relationship than win a short-term contract."<br/>{{signatory.name}}, {{signatory.role}}</div>
+  </div>
+
+  <!-- How We Work -->
+  <div class="page pb">
+    <h1 class="title">How We Work</h1>
+    <p class="subtitle">Systems built for consistency. So your facility is always ready.</p>
+    <div class="seclabel">Our Operating Systems</div>
+    <div class="card"><div class="ic">✅</div><div class="ct"><div class="ch">Digital checklists after every clean</div><div>Your crew completes a detailed electronic checklist at the end of every shift. You have a timestamped, verifiable record that the work was done, available on request anytime.</div></div></div><div class="card"><div class="ic">📸</div><div class="ct"><div class="ch">Photo-based cleaning instructions</div><div>We photograph your facility and build a visual instruction library for your account. Every cleaner, including new ones, knows exactly how your space should look. No retraining gaps, no dropped standards.</div></div></div><div class="card"><div class="ic">🔔</div><div class="ct"><div class="ch">Proactive issue reporting</div><div>Our cleaners are trained to report anything unusual; a leak, a broken fixture, a safety concern, at the end of every shift. You'll hear about issues from us before they become bigger problems.</div></div></div><div class="card"><div class="ic">⏱️</div><div class="ct"><div class="ch">Shift-level coverage management</div><div>If a cleaner is going to be late or absent, we know before you do, and we handle coverage so your clean happens on time, every time.</div></div></div><div class="card"><div class="ic">📊</div><div class="ct"><div class="ch">QA inspections & written reports</div><div>Regular quality inspections by our QA team give you objective data on service quality, not just our word for it. Reports are shared with you and used to continuously improve.</div></div></div>
+    <div class="seclabel">Our Hiring Process</div>
+    <p>You deserve to know who's walking through your door. Here's how we select and train every member of our team:</p>
+    <ol class="steps">
+      <li><strong>Values-based screening</strong>. We hire for character first: teaming up, serving others, being real, and making it happen.</li>
+      <li><strong>Group + one-on-one interviews</strong>. Twice weekly. Every serious candidate meets ownership directly.</li>
+      <li><strong>Background check &amp; drug screen</strong>. Required before a working interview is offered.</li>
+      <li><strong>Paid working interview</strong>. Supervised by our training lead. Real work, real evaluation.</li>
+      <li><strong>2-week paid training period</strong>. Followed by an official offer, a raise, and a welcome package.</li>
+      <li><strong>Quarterly reviews, raises &amp; bonuses</strong>. We retain great people by investing in them. Retention means consistency for you.</li>
+    </ol>
+  </div>
+
+  <!-- Our Guarantee -->
+  <div class="page pb">
+    <h1 class="title">Our Guarantee</h1>
+    <p class="subtitle">We don't just promise quality. We back it up.</p>
+    <div class="seclabel">Satisfaction Guaranteed. No Exceptions</div>
+    <div class="card"><div class="ic">🔄</div><div class="ct"><div class="ch">We make it right. Free</div><div>If you're ever unhappy with a clean, we'll return within 24 hours and re-do it at no additional charge. No negotiating, no excuses.</div></div></div><div class="card"><div class="ic">📞</div><div class="ct"><div class="ch">24/7 leadership access</div><div>Questions, concerns, or urgent requests go directly to our leadership team via our custom app. You'll never be stuck waiting on hold or filling out a form.</div></div></div><div class="card"><div class="ic">📝</div><div class="ct"><div class="ch">Proactive communication</div><div>We don't wait for you to notice a problem. Our team is trained to surface issues first, and our QA inspections give us objective data before they become complaints.</div></div></div><div class="card"><div class="ic">🤝</div><div class="ct"><div class="ch">A long-term partnership</div><div>We're not here for a short-term contract. We're here to be the last cleaning company you ever have to hire, because we'll give you every reason to stay.</div></div></div>
+    <div class="callout">We're human and we'll own that. What sets us apart isn't perfection. It's that when something falls short, we respond immediately, take full responsibility, and make it right. Every time. That is how trust is built, and that is what we are committed to with every client we serve.</div>
+    <p class="serif center" style="font-style:italic;font-size:16pt;color:var(--doc-brand);margin-top:20px;">Ready to get started? Let's talk.</p>
+    <p class="muted center">{{company.phone}}&nbsp; |&nbsp; {{signatory.email}}&nbsp; |&nbsp; {{company.domain}}</p>
+  </div>
+
+  <!-- Service Agreement -->
+  <div class="page pb">
+    <h1 class="title">Service Agreement</h1>
+    <p class="subtitle">Please review, sign, and return to activate your service.</p>
+    <div class="seclabel">Terms of Agreement</div>
+    <p class="agree-lead">I, {{agreement.name}}, authorized representative of {{agreement.company}}, agree to the service agreement and scope of work set forth in this cleaning proposal prepared by <strong>{{name}}</strong>.</p>
+    <p style="font-weight:700;">I understand that:</p>
+    <ul class="bullets">
+      <li>Services are customized to the scope outlined in this proposal. Any additions or changes require a new written proposal.</li>
+      <li>Payment is due on the 1st of each month for services rendered that month.</li>
+      <li>Either party may cancel this agreement with 30 days written notice.</li>
+      <li>{{name}} is fully licensed, bonded, and insured, and all staff are background-checked per company policy.</li>
+      <li>In the event of a service concern, {{name}} will respond promptly and resolve the issue at no additional cost.</li>
+    </ul>
+    <p style="font-style:italic;">By signing below, both parties agree to the terms of this service agreement and look forward to a successful, long-term partnership.</p>
+    <div class="sigtable">
+      <div>{{signature.client}}{{#client.company}}<div class="sigcap sigsub">{{client.company}}</div>{{/client.company}}</div>
+      <div>{{signature.admin}}<div class="sigcap sigsub">{{name}} Representative</div></div>
+    </div>
+    <p class="muted center serif" style="font-style:italic;margin-top:26px;">Thank you for choosing {{name}}. We look forward to serving you.</p>
+    <img class="logo" src="{{logo}}" alt="{{name}}" style="width:150px;margin:18px auto 0;display:block;" />
+  </div>

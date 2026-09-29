@@ -1,0 +1,26 @@
+<!-- @dsCard group="Data" height=76 width=720 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TableSearch</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6) var(--space-6) var(--space-2); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Demo() {
+  var a = React.useState(''), b = React.useState('brickell');
+  return h('div', { className: 'table-controls' },
+    h(CS.TableSearch, { value: a[0], onChange: a[1], placeholder: 'Search punches' }),
+    h(CS.TableSearch, { value: b[0], onChange: b[1], placeholder: 'Search customers' }),
+    b[0] ? h('span', { className: 'table-count' }, '3 of 48') : null);
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(Demo));
+</script>
+</body>
+</html>

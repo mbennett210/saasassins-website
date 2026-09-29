@@ -3,72 +3,80 @@ import Modal from './Modal';
 import FormField from './FormField';
 import ContactPicker from './ContactPicker';
 import Icon from './Icon';
+import ServicePicker from './ServicePicker';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
-import { selectActiveClients, selectClientById, selectSitesForClient, nextInvoiceId } from '../store/selectors';
+import {
+  selectActiveClients, selectClientById, selectSitesForClient, nextInvoiceId,
+  selectServiceById, lineItemFromService,
+} from '../store/selectors';
 import { useToast } from './Toast';
 import { newId } from '../lib/ids';
-import { todayIso, composeIso } from '../lib/dates';
+import { todayKey, addDaysKey, composeIso } from '../lib/dates';
 import {
   saveAttachment,
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_ALLOWED_MIME,
   formatBytes,
 } from '../lib/attachments';
+import { usePagedRows } from '../hooks/usePagedRows';
+import ListPager from './ListPager';
 
 const newLine = () => ({ id: newId('li'), description: '', qty: 1, unitPrice: 0 });
 
-function addDays(isoDate, days) {
-  const d = new Date(isoDate);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-function buildInitialForm({ presetClientId, presetSiteId, presetClient, defaultTaxRate }) {
+function buildInitialForm({ presetClientId, presetSiteId, presetClient, defaultTaxRate, presetService }) {
+  // A preset service (job → invoice flow) seeds a catalog-priced line and opens
+  // the line-item detail view so the total is derived, not hand-typed.
+  const seededLines = presetService
+    ? [{ id: newId('li'), ...lineItemFromService(presetService) }]
+    : [newLine()];
   return {
     clientId: presetClientId || '',
     siteId: presetSiteId || '',
     billingContactId: presetClient?.primaryContactId || null,
-    issueDate: todayIso().slice(0, 10),
-    dueDate: addDays(todayIso(), 30),
+    issueDate: todayKey(),
+    dueDate: addDaysKey(todayKey(), 30),
     totalAmount: '',
     notes: '',
-    showDetail: false,
+    showDetail: !!presetService,
     taxRate: defaultTaxRate || 0,
-    lineItems: [newLine()],
+    lineItems: seededLines,
   };
 }
 
-export default function LogInvoiceModal({ open, onClose, presetClientId = null, presetSiteId = null, presetJobId = null }) {
+export default function LogInvoiceModal({ open, onClose, presetClientId = null, presetSiteId = null, presetJobId = null, presetServiceId = null }) {
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
   const clients = selectActiveClients(state);
 
   const presetClient = presetClientId ? selectClientById(state, presetClientId) : null;
+  const presetService = presetServiceId ? selectServiceById(state, presetServiceId) : null;
   const defaultTaxRate = state.company.taxRate || 0;
 
-  const [form, setForm] = useState(() => buildInitialForm({ presetClientId, presetSiteId, presetClient, defaultTaxRate }));
+  const [form, setForm] = useState(() => buildInitialForm({ presetClientId, presetSiteId, presetClient, defaultTaxRate, presetService }));
   const [pendingFile, setPendingFile] = useState(null);
   const [fileError, setFileError] = useState(null);
+  const linesPager = usePagedRows(form.lineItems);
 
   useEffect(() => {
     if (!open) return;
     const seededClient = presetClientId ? selectClientById(state, presetClientId) : null;
-    setForm(buildInitialForm({ presetClientId, presetSiteId, presetClient: seededClient, defaultTaxRate }));
+    const seededService = presetServiceId ? selectServiceById(state, presetServiceId) : null;
+    setForm(buildInitialForm({ presetClientId, presetSiteId, presetClient: seededClient, defaultTaxRate, presetService: seededService }));
     setPendingFile(null);
     setFileError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, presetClientId, presetSiteId]);
-
-  const clientSites = form.clientId ? selectSitesForClient(state, form.clientId) : [];
+  }, [open, presetClientId, presetSiteId, presetServiceId]);
 
   const onClientChange = (clientId) => {
     const picked = clientId ? selectClientById(state, clientId) : null;
+    // Every customer has exactly one location; default the invoice to it.
+    const loc = clientId ? selectSitesForClient(state, clientId)[0] : null;
     setForm({
       ...form,
       clientId,
-      siteId: '',
+      siteId: loc?.id || '',
       billingContactId: picked?.primaryContactId || null,
     });
   };
@@ -77,10 +85,32 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
     ...form,
     lineItems: form.lineItems.map((li) => (li.id === id ? { ...li, ...patch } : li)),
   });
-  const addLine = () => setForm({ ...form, lineItems: [...form.lineItems, newLine()] });
+  const addLine = () => { setForm({ ...form, lineItems: [...form.lineItems, newLine()] }); linesPager.goToLast(); };
   const removeLine = (id) => setForm({ ...form, lineItems: form.lineItems.filter((li) => li.id !== id) });
 
-  const subtotal = form.lineItems.reduce((a, li) => a + (Number(li.qty) || 0) * (Number(li.unitPrice) || 0), 0);
+  // Pre-fill a line item from the services catalog (description + default rate).
+  // Replaces a single blank starter row rather than stacking an empty line.
+  const addLineFromService = (serviceId) => {
+    const svc = serviceId ? selectServiceById(state, serviceId) : null;
+    if (!svc) return;
+    const line = { id: newId('li'), ...lineItemFromService(svc) };
+    setForm((f) => {
+      const items = f.lineItems.filter((li) => li.description.trim() || Number(li.unitPrice) > 0);
+      return { ...f, showDetail: true, lineItems: [...items, line] };
+    });
+    linesPager.goToLast();
+  };
+
+  // 🔴 PREVIEW THE SAVED SET, NOT THE TYPED SET. save() drops any line with a blank
+  // description (`.filter((li) => li.description.trim())`) but this total summed every
+  // row — so a line with a price and no description was included in the figure the user
+  // read and then silently excluded from the invoice that was stored. The user agreed to
+  // one number and got another, at creation time, with nothing indicating why.
+  //
+  // Same predicate as save(), deliberately duplicated rather than approximated: if the
+  // two ever diverge again the displayed total stops meaning anything.
+  const savedLineItems = form.lineItems.filter((li) => li.description.trim());
+  const subtotal = savedLineItems.reduce((a, li) => a + (Number(li.qty) || 0) * (Number(li.unitPrice) || 0), 0);
   const taxAmount = subtotal * ((Number(form.taxRate) || 0) / 100);
   const detailTotal = subtotal + taxAmount;
   const effectiveTotal = form.showDetail ? detailTotal : (Number(form.totalAmount) || 0);
@@ -174,13 +204,6 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
             onChange={(e) => onClientChange(e.target.value)}
             options={[{ value: '', label: 'Select a client' }, ...clients.map((c) => ({ value: c.id, label: c.name }))]}
           />
-          {clientSites.length > 0 && (
-            <FormField
-              label="Site" as="select" value={form.siteId}
-              onChange={(e) => setForm({ ...form, siteId: e.target.value })}
-              options={[{ value: '', label: '— No specific site —' }, ...clientSites.map((s) => ({ value: s.id, label: s.name }))]}
-            />
-          )}
         </div>
 
         <div className="form-group">
@@ -192,7 +215,7 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
             placeholder="Select a billing contact…"
           />
           <div className="text-xs text-muted" style={{ marginTop: 4 }}>
-            Optional — defaults to the client's primary contact.
+            Optional. Defaults to the client's primary contact.
           </div>
         </div>
 
@@ -215,7 +238,7 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
             className="input" rows={2}
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="Optional — PO #, internal reference, etc."
+            placeholder="Optional. PO #, internal reference, etc."
           />
         </div>
 
@@ -232,7 +255,7 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
                 </button>
               </div>
             ) : (
-              <label className="attachment-picker-label">
+              <label className="btn btn-secondary">
                 <Icon name="upload" size={16} />
                 <span>Choose PDF or image</span>
                 <input
@@ -252,11 +275,11 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
 
         <button
           type="button"
-          className="disclosure-toggle"
+          className="btn btn-link log-invoice-detail-toggle"
           onClick={() => setForm({ ...form, showDetail: !form.showDetail })}
           aria-expanded={form.showDetail}
         >
-          <Icon name={form.showDetail ? 'x' : 'plus'} size={12} />
+          <Icon name={form.showDetail ? 'chevronUp' : 'chevronDown'} size={12} />
           {form.showDetail ? 'Hide line-item detail' : 'Add line-item detail'}
         </button>
 
@@ -264,6 +287,12 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
           <div className="disclosure-body">
             <div className="form-group">
               <label className="form-label">Line items</label>
+              <div className="catalog-prefill-row">
+                <span className="text-sm text-muted">Pre-fill from catalog</span>
+                <div className="catalog-prefill-picker">
+                  <ServicePicker value={null} onChange={addLineFromService} placeholder="Pick a service…" />
+                </div>
+              </div>
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -275,7 +304,7 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
                     </tr>
                   </thead>
                   <tbody>
-                    {form.lineItems.map((li) => (
+                    {linesPager.pageRows.map((li) => (
                       <tr key={li.id}>
                         <td><input className="input" placeholder="e.g., Weekly janitorial" value={li.description} onChange={(e) => updateLine(li.id, { description: e.target.value })} /></td>
                         <td><input type="number" min="0" step="0.5" className="input" value={li.qty} onChange={(e) => updateLine(li.id, { qty: e.target.value })} /></td>
@@ -289,8 +318,9 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
                     ))}
                   </tbody>
                 </table>
+                <ListPager pager={linesPager} noun="lines" />
               </div>
-              <button type="button" className="btn btn-outline btn-sm" onClick={addLine} style={{ marginTop: 8 }}>Add line</button>
+              <button type="button" className="btn btn-outline" onClick={addLine} style={{ marginTop: 8 }}>Add line</button>
             </div>
 
             <FormField

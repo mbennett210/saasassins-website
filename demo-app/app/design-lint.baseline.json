@@ -1,0 +1,307 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-26T16:32:24.547Z",
+  "rebaselined": [
+    {
+      "at": "2026-09-25",
+      "reason": "S102 step 3 (owner go 2026-09-24): lint:design becomes a CI gate (test-design-lint.mjs). The S60-era drift (742 findings over the old baseline) is frozen here; from now on it only ratchets down, and no-raw-hex is driven to zero by the re-skin colour work.",
+      "raisedCells": 17
+    }
+  ],
+  "totals": {
+    "no-inline-px": 544,
+    "scaffold-inline": 55,
+    "no-raw-hex": 31,
+    "no-raw-px": 2495,
+    "off-grid": 519
+  },
+  "files": {
+    "App.jsx": {
+      "no-inline-px": 2
+    },
+    "components/A2PRegistrationModal.jsx": {
+      "no-inline-px": 6
+    },
+    "components/AddContactModal.jsx": {
+      "no-inline-px": 7
+    },
+    "components/AddContactsToStageModal.jsx": {
+      "no-inline-px": 3
+    },
+    "components/AddUserModal.jsx": {
+      "no-inline-px": 7
+    },
+    "components/AddWorkspaceModal.jsx": {
+      "no-inline-px": 4
+    },
+    "components/AppVersionsCard.jsx": {
+      "no-inline-px": 6,
+      "scaffold-inline": 1
+    },
+    "components/ChecklistFill.jsx": {
+      "no-inline-px": 1
+    },
+    "components/CleaningInstructionsCard.jsx": {
+      "no-inline-px": 3,
+      "scaffold-inline": 1
+    },
+    "components/ClientPicker.jsx": {
+      "no-inline-px": 1
+    },
+    "components/ConnectEmailProviderModal.jsx": {
+      "no-inline-px": 5
+    },
+    "components/ConnectFailureHelp.jsx": {
+      "no-inline-px": 3
+    },
+    "components/ConnectInboxModal.jsx": {
+      "no-inline-px": 2
+    },
+    "components/ConnectTwilioModal.jsx": {
+      "no-inline-px": 6
+    },
+    "components/ConversationContextPanel.jsx": {
+      "no-inline-px": 2
+    },
+    "components/ConversationMessagePanel.jsx": {
+      "no-inline-px": 18,
+      "scaffold-inline": 1
+    },
+    "components/CreateQuoteModal.jsx": {
+      "no-inline-px": 1,
+      "scaffold-inline": 1
+    },
+    "components/CsvImportModal.jsx": {
+      "no-inline-px": 19
+    },
+    "components/DriveTimeReport.jsx": {
+      "no-inline-px": 3,
+      "scaffold-inline": 2
+    },
+    "components/EmployeeDocumentsCard.jsx": {
+      "no-inline-px": 3
+    },
+    "components/EmployeeHrFieldsCard.jsx": {
+      "no-inline-px": 2
+    },
+    "components/ErrorBoundary.jsx": {
+      "no-inline-px": 3
+    },
+    "components/GmailConnectInstructions.jsx": {
+      "no-inline-px": 16
+    },
+    "components/GmbInsightsPanel.jsx": {
+      "no-inline-px": 13,
+      "scaffold-inline": 2
+    },
+    "components/GmbPhotosPanel.jsx": {
+      "no-inline-px": 9,
+      "scaffold-inline": 1
+    },
+    "components/GmbPostsPanel.jsx": {
+      "no-inline-px": 19,
+      "scaffold-inline": 1
+    },
+    "components/GoogleWorkspacesSection.jsx": {
+      "no-inline-px": 16,
+      "scaffold-inline": 2
+    },
+    "components/InspectionFill.jsx": {
+      "no-inline-px": 1
+    },
+    "components/InspectionTemplateEditor.jsx": {
+      "no-inline-px": 1
+    },
+    "components/LeadWebhookModal.jsx": {
+      "no-inline-px": 8,
+      "scaffold-inline": 2
+    },
+    "components/LeadWebhooksSection.jsx": {
+      "no-inline-px": 10
+    },
+    "components/LocationCard.jsx": {
+      "no-inline-px": 3
+    },
+    "components/LogInvoiceModal.jsx": {
+      "no-inline-px": 4
+    },
+    "components/LogPaymentModal.jsx": {
+      "no-inline-px": 2
+    },
+    "components/MediaGallery.jsx": {
+      "no-inline-px": 4
+    },
+    "components/MobilePushGate.jsx": {
+      "no-inline-px": 2
+    },
+    "components/NewConversationModal.jsx": {
+      "no-inline-px": 1
+    },
+    "components/NewDmModal.jsx": {
+      "no-inline-px": 2
+    },
+    "components/NewInternalThreadModal.jsx": {
+      "no-inline-px": 1
+    },
+    "components/NewJobModal.jsx": {
+      "no-inline-px": 8,
+      "scaffold-inline": 1
+    },
+    "components/OpportunityDetailModal.jsx": {
+      "no-inline-px": 5
+    },
+    "components/OpsNoteCard.jsx": {
+      "no-inline-px": 3,
+      "scaffold-inline": 1
+    },
+    "components/PipelineBoard.jsx": {
+      "no-inline-px": 2
+    },
+    "components/ReviewGrowthPanel.jsx": {
+      "no-inline-px": 11,
+      "scaffold-inline": 1
+    },
+    "components/ScheduleBlocksEditor.jsx": {
+      "no-inline-px": 1
+    },
+    "components/ServicePicker.jsx": {
+      "no-inline-px": 2
+    },
+    "components/SignatureCapture.jsx": {
+      "no-inline-px": 7
+    },
+    "components/SignaturePreview.jsx": {
+      "no-inline-px": 1
+    },
+    "components/StageManagerModal.jsx": {
+      "no-inline-px": 1
+    },
+    "components/StubRecoveryBanner.jsx": {
+      "no-inline-px": 3
+    },
+    "components/TagPicker.jsx": {
+      "no-inline-px": 2
+    },
+    "components/TimeOffCard.jsx": {
+      "no-inline-px": 5
+    },
+    "components/WebhooksSection.jsx": {
+      "no-inline-px": 7
+    },
+    "components/WorkspacePicker.jsx": {
+      "no-inline-px": 2
+    },
+    "data/demoSiteMedia.js": {
+      "no-raw-hex": 31
+    },
+    "index.css": {
+      "no-raw-px": 2486,
+      "off-grid": 518
+    },
+    "layouts/AppLayout.jsx": {
+      "no-inline-px": 2
+    },
+    "pages/ClientDetail.jsx": {
+      "no-inline-px": 10,
+      "scaffold-inline": 2
+    },
+    "pages/Clients.jsx": {
+      "no-inline-px": 2
+    },
+    "pages/Dashboard.jsx": {
+      "no-inline-px": 16,
+      "scaffold-inline": 1
+    },
+    "pages/Inspections.jsx": {
+      "no-inline-px": 5,
+      "scaffold-inline": 1
+    },
+    "pages/InvoiceDetail.jsx": {
+      "no-inline-px": 11,
+      "scaffold-inline": 2
+    },
+    "pages/Invoices.jsx": {
+      "no-inline-px": 2
+    },
+    "pages/JobDetail.jsx": {
+      "no-inline-px": 10,
+      "scaffold-inline": 1
+    },
+    "pages/Keys.jsx": {
+      "scaffold-inline": 3,
+      "no-inline-px": 2
+    },
+    "pages/Login.jsx": {
+      "no-inline-px": 2
+    },
+    "pages/marketing/RepliesTab.jsx": {
+      "no-inline-px": 1
+    },
+    "pages/marketing/SequenceEditorPanel.jsx": {
+      "no-inline-px": 1
+    },
+    "pages/MyDay.jsx": {
+      "no-inline-px": 7,
+      "scaffold-inline": 4
+    },
+    "pages/public-form.css": {
+      "no-raw-px": 9,
+      "off-grid": 1
+    },
+    "pages/PublicQuote.jsx": {
+      "no-inline-px": 13
+    },
+    "pages/QuoteEditor.jsx": {
+      "no-inline-px": 7
+    },
+    "pages/Quotes.jsx": {
+      "no-inline-px": 2
+    },
+    "pages/Reviews.jsx": {
+      "no-inline-px": 44,
+      "scaffold-inline": 4
+    },
+    "pages/Schedule.jsx": {
+      "no-inline-px": 2
+    },
+    "pages/settings/Account.jsx": {
+      "no-inline-px": 21,
+      "scaffold-inline": 2
+    },
+    "pages/settings/ConnectedInboxes.jsx": {
+      "no-inline-px": 11,
+      "scaffold-inline": 1
+    },
+    "pages/settings/Integrations.jsx": {
+      "no-inline-px": 53,
+      "scaffold-inline": 11
+    },
+    "pages/settings/Operations.jsx": {
+      "no-inline-px": 3
+    },
+    "pages/settings/Reminders.jsx": {
+      "no-inline-px": 2
+    },
+    "pages/settings/Services.jsx": {
+      "no-inline-px": 7,
+      "scaffold-inline": 2
+    },
+    "pages/settings/Tags.jsx": {
+      "no-inline-px": 5,
+      "scaffold-inline": 1
+    },
+    "pages/settings/Team.jsx": {
+      "no-inline-px": 8
+    },
+    "pages/settings/TeamDetail.jsx": {
+      "no-inline-px": 10
+    },
+    "pages/Variance.jsx": {
+      "no-inline-px": 5,
+      "scaffold-inline": 3
+    },
+    "store/index.jsx": {
+      "no-inline-px": 1
+    }
+  }
+}

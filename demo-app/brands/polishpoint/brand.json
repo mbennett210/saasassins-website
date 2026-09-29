@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "polishpoint",
+  "name": "PolishPoint",
+  "wordmark": "PolishPoint",
+  "shortName": "PolishPoint",
+  "appTitle": "PolishPoint CRM",
+  "description": "Operations CRM for PolishPoint — schedule, message, invoice.",
+  "monogram": "PP",
+  "slug": "polishpoint",
+  "appUrl": "https://polishpointdev.com",
+  "company": {
+    "domain": "polishpointdev.com",
+    "website": "www.polishpointdev.com",
+    "email": "hello@polishpointdev.com",
+    "phone": "1-555-010-0100",
+    "street": "100 Main Street",
+    "city": "Miami, FL 33101",
+    "tagline": "Commercial cleaning, run on PolishPoint",
+    "services": "Commercial Cleaning, Janitorial & Floor Care",
+    "signatory": {
+      "name": "PolishPoint Team",
+      "role": "Owner",
+      "title": "Management",
+      "email": "hello@polishpointdev.com"
+    }
+  },
+  "email": {
+    "quotesFrom": "PolishPoint <quotes@polishpointdev.com>",
+    "authFrom": "PolishPoint <login@polishpointdev.com>"
+  },
+  "colors": {
+    "primary": "#02358B",
+    "secondary": "#C0DDFF",
+    "link": "#0266C4",
+    "neutral": "#6D727B"
+  },
+  "logos": {
+    "mark": { "file": "mark.png", "color": "mark-color.png", "tile": "white" },
+    "lockup": { "file": "lockup.png", "color": "lockup-color.png" }
+  }
+}

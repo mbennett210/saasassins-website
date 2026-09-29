@@ -1,0 +1,9 @@
+# Full-app deploy: the serverless backend (api/) IS deployed as functions.
+# Exclude only build output, deps, migrations, dev scripts, and local secrets.
+node_modules/
+dist/
+supabase/
+scripts/
+*.local
+*.log
+.DS_Store

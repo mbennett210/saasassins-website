@@ -1,6 +1,6 @@
 export default function TabContainer({ tabs, active, onChange, className = '' }) {
   return (
-    <div className={`tab-container ${className}`}>
+    <div className={`tab-container tab-container-line ${className}`}>
       {tabs.map((t) => (
         <button
           key={t}

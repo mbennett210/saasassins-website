@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 
-export default function DetailHeader({ backTo, backLabel = 'Back', title, subtitle, badge, actions }) {
+export default function DetailHeader({ backTo, backLabel = 'Back', title, subtitle, badge, actions, relationship }) {
   const navigate = useNavigate();
   const location = useLocation();
   const target = location.state?.from || backTo;
@@ -22,6 +22,7 @@ export default function DetailHeader({ backTo, backLabel = 'Back', title, subtit
             {badge}
           </div>
           {subtitle && <p className="detail-head-subtitle">{subtitle}</p>}
+          {relationship && <div className="detail-head-relationship">{relationship}</div>}
         </div>
         {actions && <div className="detail-head-actions">{actions}</div>}
       </div>

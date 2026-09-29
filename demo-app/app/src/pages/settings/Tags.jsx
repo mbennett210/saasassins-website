@@ -9,18 +9,19 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import EmptyState from '../../components/EmptyState';
 import Icon from '../../components/Icon';
 import TagChip from '../../components/TagChip';
+import { usePagedRows } from '../../hooks/usePagedRows';
+import ListPager from '../../components/ListPager';
 
-// Color and scope inputs are removed from the UI: TagChip stopped reading
-// tag.color (every tag renders with neutral chrome to match GHL), and tags are
-// contact-only (no Clients use case). The fields are still passed at create
-// time as stable defaults so any older code paths that read them keep working.
+// Two views behind a segmented toggle:
+//   - Tags: user-managed contact tags (add / edit / delete).
+//   - Variables: the fixed, read-only {placeholder} catalog used in marketing
+//     emails. Each row shows where its value is routed from, plus the live
+//     value for company-level ones. Source of truth: MARKETING_VARIABLES in
+//     lib/marketingScheduler.js — the catalog is intentionally not editable here.
 
-// Read-only reference for the {merge fields} usable in marketing emails. Grouped
-// by source; the live value (when a company field) is shown so the catalog
-// doubles as a "what will this resolve to" preview. Sourced from the same
-// MARKETING_VARIABLES catalog the scheduler substitutes at send time.
+// Section grouping + intro copy for the read-only Variables view.
 const VAR_GROUPS = [
-  { key: 'contact',  title: 'Contact',    desc: 'Filled in per recipient from their contact record — the value differs for every contact the email reaches.' },
+  { key: 'contact',  title: 'Contact',    desc: 'Filled in per recipient from their contact record. The value differs for every contact the email reaches.' },
   { key: 'brand',    title: 'Your brand', desc: 'Your own company details and the teammate whose inbox sends the email.' },
   { key: 'sequence', title: 'Sequence',   desc: 'About the sequence the email belongs to.' },
 ];
@@ -32,9 +33,9 @@ function VariablesView({ company }) {
         <Icon name="lock" size={18} />
         <div>
           <strong>Variables are fixed and read-only.</strong>{' '}
-          Drop one into a marketing email&rsquo;s subject or body as{' '}
-          <code className="var-token">{'{token}'}</code> and it&rsquo;s swapped for the
-          real value when the email sends. To change a value, edit its source —
+          Drop one into a marketing email's subject or body as{' '}
+          <code className="var-token">{'{token}'}</code> and it's swapped for the
+          real value when the email sends. To change a value, edit its source. 
           e.g. a company detail at Settings → Company.
         </div>
       </div>
@@ -54,7 +55,14 @@ function VariablesView({ company }) {
                     <div className="var-row-body">
                       <div className="var-row-label">{v.label}</div>
                       <div className="var-row-from">
-                        {liveValue ? (<><span className="var-row-value">{liveValue}</span>{' — '}{v.from}</>) : (v.from)}
+                        {liveValue ? (
+                          <>
+                            <span className="var-row-value">{liveValue}</span>
+                            {'. '}{v.from}
+                          </>
+                        ) : (
+                          v.from
+                        )}
                       </div>
                     </div>
                   </div>
@@ -68,6 +76,11 @@ function VariablesView({ company }) {
   );
 }
 
+// Color and scope inputs are removed from the UI: TagChip stopped reading
+// tag.color (every tag renders with neutral chrome to match GHL), and tags are
+// contact-only (no Clients use case). The fields are still passed at create
+// time as stable defaults so any older code paths that read them keep working.
+
 export default function SettingsTags() {
   const state = useStore();
   const dispatch = useDispatch();
@@ -78,6 +91,7 @@ export default function SettingsTags() {
   const [draft, setDraft] = useState({ label: '' });
   const [editing, setEditing] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const tagPager = usePagedRows(tags);
 
   const usageCount = (tagId) =>
     (state.contacts || []).filter((c) => (c.tagIds || []).includes(tagId)).length;
@@ -93,6 +107,7 @@ export default function SettingsTags() {
     }
     dispatch({ type: ACTIONS.ADD_TAG, tag: { label, color: 'slate', scope: 'contact' } });
     setDraft({ label: '' });
+    tagPager.goToLast();
     toast.success('Tag added');
   };
 
@@ -118,14 +133,23 @@ export default function SettingsTags() {
     <div>
       <div className="page-head-text">
         <h1 className="page-head-title">Tags &amp; Variables</h1>
-        <p className="page-head-subtitle">
-          Tags categorize contacts. Variables are the read-only placeholders you drop into marketing emails.
-        </p>
       </div>
 
       <div className="segmented" style={{ marginBottom: 20 }}>
-        <button type="button" className={`segmented-btn ${view === 'tags' ? 'active' : ''}`} onClick={() => setView('tags')}>Tags</button>
-        <button type="button" className={`segmented-btn ${view === 'variables' ? 'active' : ''}`} onClick={() => setView('variables')}>Variables</button>
+        <button
+          type="button"
+          className={`segmented-btn ${view === 'tags' ? 'active' : ''}`}
+          onClick={() => setView('tags')}
+        >
+          Tags
+        </button>
+        <button
+          type="button"
+          className={`segmented-btn ${view === 'variables' ? 'active' : ''}`}
+          onClick={() => setView('variables')}
+        >
+          Variables
+        </button>
       </div>
 
       {view === 'variables' ? (
@@ -174,13 +198,13 @@ export default function SettingsTags() {
                       <div className="mc-meta">
                         {isEditing ? (
                           <>
-                            <button className="btn btn-sm btn-primary" onClick={() => saveTag(editing)}>Save</button>
-                            <button className="btn btn-sm btn-outline" onClick={() => setEditing(null)}>Cancel</button>
+                            <button className="btn btn-primary" onClick={() => saveTag(editing)}>Save</button>
+                            <button className="btn btn-outline" onClick={() => setEditing(null)}>Cancel</button>
                           </>
                         ) : (
                           <>
-                            <button className="btn btn-sm btn-outline" onClick={() => setEditing({ ...t })}>Edit</button>
-                            <button className="btn btn-sm btn-outline" onClick={() => setConfirm(t)} aria-label={`Delete ${t.label}`}>
+                            <button className="btn btn-outline" onClick={() => setEditing({ ...t })}>Edit</button>
+                            <button className="btn btn-outline" onClick={() => setConfirm(t)} aria-label={`Delete ${t.label}`}>
                               <Icon name="trash" size={14} />
                             </button>
                           </>
@@ -200,7 +224,7 @@ export default function SettingsTags() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tags.map((t) => {
+                    {tagPager.pageRows.map((t) => {
                       const isEditing = editing?.id === t.id;
                       const used = usageCount(t.id);
                       return (
@@ -242,6 +266,7 @@ export default function SettingsTags() {
                     })}
                   </tbody>
                 </table>
+                <ListPager pager={tagPager} noun="tags" />
               </div>
               </>
             )}

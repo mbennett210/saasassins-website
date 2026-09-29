@@ -1,0 +1,28 @@
+<!-- @dsCard group="Status" height=96 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Badge</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-5) var(--space-6); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('pv')).render(h(React.Fragment, null,
+  h(CS.Badge, { variant: CS.statusBadgeVariant('Paid') }, 'Paid'),
+  h(CS.Badge, { variant: CS.statusBadgeVariant('Pending') }, 'Pending'),
+  h(CS.Badge, { variant: CS.statusBadgeVariant('In Progress') }, 'In Progress'),
+  h(CS.Badge, { variant: CS.statusBadgeVariant('Overdue') }, 'Overdue'),
+  h(CS.Badge, { variant: CS.statusBadgeVariant('Inactive') }, 'Inactive'),
+  h(CS.Badge, { variant: 'yellow' }, 'Unknown'),
+  h(CS.ChannelBadge, { channel: 'internal' }),
+  h(CS.Badge, { variant: 'white' }, 'pending')
+));
+</script>
+</body>
+</html>

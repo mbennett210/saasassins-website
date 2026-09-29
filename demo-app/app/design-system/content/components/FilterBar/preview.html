@@ -1,0 +1,44 @@
+<!-- @dsCard group="Filters" height=380 width=960 subtitle="Click a facet to open it" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FilterBar</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+<style>
+  .pv { padding: var(--space-6); }
+</style>
+</head>
+<body>
+<div id="pv" class="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+var SPECS = [
+  { key: 'location', label: 'Locations', kind: 'multi', staticOptions: [
+    { value: 'hv', label: 'Harbor View Offices', group: 'Brickell' },
+    { value: 'bm', label: 'Brickell Medical Suites', group: 'Brickell' },
+    { value: 'cg', label: 'Coral Gables Law Group', group: 'Coral Gables' },
+    { value: 'dd', label: 'Dadeland Dental', group: 'Kendall' }] },
+  { key: 'cleaner', label: 'Cleaner', kind: 'single', staticOptions: [
+    { value: '', label: 'All cleaners' }, { value: 'mr', label: 'Maria Reyes' }, { value: 'ak', label: 'Ana Kim' }, { value: 'js', label: 'Jon Smith' }] },
+  { key: 'range', label: 'Date range', kind: 'dateRange' },
+  { key: 'crew', label: 'Crew size', kind: 'toggle', staticOptions: [
+    { value: '', label: 'Any' }, { value: 'solo', label: 'Solo' }, { value: '2', label: '2' }, { value: '3', label: '3+' }] }
+];
+var EMPTY = { location: [], cleaner: '', range: null, crew: '' };
+function Demo() {
+  var s = React.useState({ location: ['hv', 'bm'], cleaner: '', range: { preset: 'week' }, crew: '' }), v = s[0], setV = s[1];
+  var active = (v.location.length ? 1 : 0) + (v.cleaner ? 1 : 0) + (v.range ? 1 : 0) + (v.crew ? 1 : 0);
+  return h(CS.FilterBar, {
+    specs: SPECS,
+    values: v,
+    setValue: function (k, x) { var n = Object.assign({}, v); n[k] = x; setV(n); },
+    clearAll: function () { setV(EMPTY); },
+    activeCount: active,
+    action: h('button', { className: 'btn btn-gold' }, 'New Job')
+  });
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(Demo));
+</script>
+</body>
+</html>

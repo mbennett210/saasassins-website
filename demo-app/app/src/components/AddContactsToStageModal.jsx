@@ -1,84 +1,80 @@
 import { useEffect, useMemo, useState } from 'react';
 import Modal from './Modal';
 import Avatar from './Avatar';
-import AddContactModal from './AddContactModal';
+import AddCompanyModal from './AddCompanyModal';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
-import { selectContacts, selectPipelines } from '../store/selectors';
+import { selectClients, selectOpportunities } from '../store/selectors';
 import { useToast } from './Toast';
+import { newId } from '../lib/ids';
+
+// "Add a deal to <stage>": pick the COMPANIES you have a deal with; each becomes a
+// company-owned Opportunity placed at that stage. Vendors are excluded. Deal value
+// and details are filled in afterward on the card.
+
+const companyInitials = (name) =>
+  (name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
 
 export default function AddContactsToStageModal({ open, onClose, pipelineId, stageKey, stageLabel }) {
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
-  const allContacts = selectContacts(state);
-  const pipelines = selectPipelines(state);
+  const clients = selectClients(state);
+  const opportunities = selectOpportunities(state);
 
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(() => new Set());
-  const [addContactOpen, setAddContactOpen] = useState(false);
+  const [addCompanyOpen, setAddCompanyOpen] = useState(false);
 
   useEffect(() => {
-    if (!open) {
-      setQuery('');
-      setSelected(new Set());
-    }
+    if (!open) { setQuery(''); setSelected(new Set()); }
   }, [open]);
 
-  const eligible = useMemo(() => {
-    return allContacts.filter((c) => {
-      if (c.lifecycle === 'vendor' || c.lifecycle === 'client') return false;
-      if (c.pipelineId === pipelineId && c.stage === stageKey) return false;
-      return true;
-    });
-  }, [allContacts, pipelineId, stageKey]);
+  // Any non-vendor company can have a deal (a company may have several).
+  const eligible = useMemo(() => clients.filter((c) => c.type !== 'vendor'), [clients]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return eligible;
-    return eligible.filter((c) => {
-      const name = `${c.firstName} ${c.lastName}`.toLowerCase();
-      const email = (c.email || '').toLowerCase();
-      const company = (c.customFields?.company || '').toLowerCase();
-      return name.includes(q) || email.includes(q) || company.includes(q);
-    });
+    return eligible.filter((c) => c.name.toLowerCase().includes(q));
   }, [eligible, query]);
 
-  const toggle = (id) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
+  const toggle = (id) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
-  const currentLocation = (contact) => {
-    if (!contact.pipelineId || !contact.stage) return null;
-    const pl = pipelines.find((p) => p.id === contact.pipelineId);
-    if (!pl) return null;
-    const st = (pl.stages || []).find((s) => s.key === contact.stage);
-    if (!st) return null;
-    return `${pl.label} / ${st.label}`;
-  };
+  const openCountFor = (clientId) => opportunities.filter((o) => o.clientId === clientId && o.status === 'open').length;
 
   const handleAdd = () => {
     if (selected.size === 0) return;
-    selected.forEach((id) => {
-      dispatch({ type: ACTIONS.SET_CONTACT_STAGE, id, stage: stageKey, pipelineId });
+    selected.forEach((clientId) => {
+      const cl = clients.find((c) => c.id === clientId);
+      dispatch({
+        type: ACTIONS.ADD_OPPORTUNITY,
+        opportunity: {
+          id: newId('opp'),
+          clientId,
+          primaryContactId: cl?.primaryContactId || null,
+          pipelineId,
+          stage: stageKey,
+        },
+      });
     });
-    toast.success(`${selected.size} contact${selected.size === 1 ? '' : 's'} added to ${stageLabel}`);
+    toast.success(`${selected.size} deal${selected.size === 1 ? '' : 's'} added to ${stageLabel}`);
     onClose();
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={`Add Contacts to ${stageLabel}`}>
+    <Modal open={open} onClose={onClose} title={`Add a deal to ${stageLabel}`}>
       <p className="text-sm text-muted" style={{ marginTop: 0, marginBottom: 12 }}>
-        Pick leads or prospects to add. Clients and vendors are excluded. Contacts already in another pipeline will be moved.
+        Pick the companies you have a deal with. Vendors are excluded. Fill in the deal value and details afterward on the card.
       </p>
 
       <input
         className="input"
-        placeholder="Search by name, email, or company…"
+        placeholder="Search companies…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         autoFocus
@@ -88,28 +84,23 @@ export default function AddContactsToStageModal({ open, onClose, pipelineId, sta
       <div className="add-contacts-list">
         {filtered.length === 0 && (
           <div className="text-sm text-muted" style={{ padding: 12, textAlign: 'center' }}>
-            {eligible.length === 0 ? 'No eligible contacts available.' : 'No matches.'}
+            {eligible.length === 0 ? 'No companies available.' : 'No matches.'}
           </div>
         )}
         {filtered.map((c) => {
           const isOn = selected.has(c.id);
-          const location = currentLocation(c);
+          const openCount = openCountFor(c.id);
           return (
             <label key={c.id} className={`add-contacts-row ${isOn ? 'is-selected' : ''}`}>
               <input type="checkbox" checked={isOn} onChange={() => toggle(c.id)} />
-              <Avatar
-                initials={`${(c.firstName[0] || '').toUpperCase()}${(c.lastName[0] || '').toUpperCase()}`}
-                variant={(c.id.length % 5) + 1}
-                size="sm"
-              />
+              <Avatar initials={companyInitials(c.name)} variant={(c.id.length % 5) + 1} size="sm" />
               <div className="add-contacts-info">
-                <div className="add-contacts-name">{c.firstName} {c.lastName}</div>
+                <div className="add-contacts-name">{c.name}</div>
                 <div className="add-contacts-meta text-xs text-muted">
-                  {c.customFields?.company || c.email}
-                  {location && <span className="add-contacts-loc"> · Currently in: {location}</span>}
+                  {c.contactNumber ? `#${c.contactNumber}` : ''}
+                  {openCount > 0 && <span className="add-contacts-loc"> · {openCount} open deal{openCount === 1 ? '' : 's'}</span>}
                 </div>
               </div>
-              <span className={`badge badge-${c.lifecycle === 'lead' ? 'amber' : 'blue'}`}>{c.lifecycle}</span>
             </label>
           );
         })}
@@ -117,15 +108,13 @@ export default function AddContactsToStageModal({ open, onClose, pipelineId, sta
 
       <div className="modal-actions">
         <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn btn-outline" onClick={() => setAddContactOpen(true)}>
-          New contact
-        </button>
+        <button type="button" className="btn btn-outline" onClick={() => setAddCompanyOpen(true)}>New company</button>
         <button type="button" className="btn btn-primary" disabled={selected.size === 0} onClick={handleAdd}>
-          Add {selected.size > 0 ? `${selected.size} ` : ''}to {stageLabel}
+          {selected.size > 0 ? `Add ${selected.size} deal${selected.size === 1 ? '' : 's'}` : 'Add deals'}
         </button>
       </div>
 
-      <AddContactModal open={addContactOpen} onClose={() => setAddContactOpen(false)} />
+      <AddCompanyModal open={addCompanyOpen} onClose={() => setAddCompanyOpen(false)} />
     </Modal>
   );
 }

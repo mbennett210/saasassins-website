@@ -1,0 +1,25 @@
+<!-- @dsCard group="Status" height=184 width=720 page subtitle="ToastProvider + useToast" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Toast</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+</head>
+<body>
+<div id="pv"></div>
+<script>
+var CS = window.CleanSpace, h = React.createElement;
+function Fire() {
+  var toast = CS.useToast();
+  React.useEffect(function () {
+    toast.info('Signed. Review the document, then send.', { duration: 0 });
+    toast.error('Enter an amount', { duration: 0 });
+    toast.success('Note added', { duration: 0 });
+  }, []);
+  return null;
+}
+ReactDOM.createRoot(document.getElementById('pv')).render(h(CS.ToastProvider, null, h(Fire)));
+</script>
+</body>
+</html>

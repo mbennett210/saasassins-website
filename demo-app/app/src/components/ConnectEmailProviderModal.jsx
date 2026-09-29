@@ -18,7 +18,7 @@ import FormField from './FormField';
 import { useDispatch } from '../store';
 import { ACTIONS } from '../store/reducer';
 import { useToast } from './Toast';
-import { getEmailHealth, EMAIL_BACKEND_URL } from '../lib/email';
+import { getEmailHealth, EMAIL_STUB_ACTIVE, EMAIL_CONFIGURED } from '../lib/email';
 
 const EMPTY = {
   apiKey: '',
@@ -103,8 +103,12 @@ export default function ConnectEmailProviderModal({ open, onClose }) {
         <p className="text-sm text-muted" style={{ marginTop: -4, marginBottom: 14 }}>
           Enter your Resend API key and the subdomain you verified in Resend.
           This provider sends invitations, reminders, and (later) billing email.
-          {!EMAIL_BACKEND_URL && (
+          {EMAIL_STUB_ACTIVE && (
             <> <strong>Dev mode:</strong> credentials are simulated locally and not sent to Resend.</>
+          )}
+          {/* CS-038: a production build with no email backend must NOT fake a connection. */}
+          {!EMAIL_CONFIGURED && (
+            <> <strong>Not configured:</strong> email is not set up for this deployment; connecting a provider is disabled until the email backend is provisioned.</>
           )}
         </p>
         <FormField
@@ -126,14 +130,14 @@ export default function ConnectEmailProviderModal({ open, onClose }) {
         />
         <div className="form-row">
           <FormField
-            label="From — display name"
+            label="From (display name)"
             placeholder="Your Company"
             value={form.defaultFromName}
             onChange={(e) => setForm({ ...form, defaultFromName: e.target.value })}
             help="Shown to recipients before the email address."
           />
           <FormField
-            label="From — local part"
+            label="From (local part)"
             placeholder="hello"
             value={form.defaultFromLocalPart}
             onChange={(e) => setForm({ ...form, defaultFromLocalPart: e.target.value })}
@@ -156,7 +160,7 @@ export default function ConnectEmailProviderModal({ open, onClose }) {
         {error && <div className="form-error" style={{ marginTop: 4 }}>{error}</div>}
         <div className="modal-actions">
           <button type="button" className="btn btn-outline" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !EMAIL_CONFIGURED}>
             {busy ? 'Connecting…' : 'Connect'}
           </button>
         </div>

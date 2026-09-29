@@ -12,7 +12,7 @@ export default function TagChip({ tag, onRemove, size = 'sm' }) {
       {onRemove && (
         <button
           type="button"
-          className="tag-remove"
+          className="chip-remove"
           aria-label={`Remove ${tag.label}`}
           onClick={(e) => { e.stopPropagation(); onRemove(tag); }}
         >

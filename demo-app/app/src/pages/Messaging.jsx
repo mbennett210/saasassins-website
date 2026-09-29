@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import MessagingHeader, { EMPTY_FILTERS } from '../components/MessagingHeader';
 import ConversationThreadList from '../components/ConversationThreadList';
 import ConversationMessagePanel from '../components/ConversationMessagePanel';
@@ -18,6 +18,7 @@ import ConversationContextPanel from '../components/ConversationContextPanel';
 import NewConversationModal from '../components/NewConversationModal';
 import NewDmModal from '../components/NewDmModal';
 import NewInternalThreadModal from '../components/NewInternalThreadModal';
+import OrphanedThreadsModal from '../components/OrphanedThreadsModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
@@ -26,14 +27,12 @@ import { usePermission } from '../hooks/usePermission';
 import {
   selectContactById, selectConversationById, selectMessagesForConversation,
   selectUnreadForConversation, selectConversationsForInbox, selectUnreadCountForInbox,
-  selectEffectiveStatus, selectIsTwilioSendReady, selectTwilioPhone, selectTwilioBlockers,
   selectConnectedInboxesForUser, selectDefaultConnectedInbox,
-  selectMessagingEmailBlockersForUser, selectEmailDefaultReplyTo,
-  selectConversationsForContact,
+  selectMessagingEmailBlockersForUser,
+  selectOrphanedInternalThreads,
 } from '../store/selectors';
-import { sendSMS, subscribeToDelivery } from '../lib/twilio';
-import { sendViaInbox } from '../lib/connectedInboxes';
 import { useToast } from '../components/Toast';
+import { useMessageSender } from '../hooks/useMessageSender';
 
 const DATE_WINDOW_MS = {
   '24h': 24 * 60 * 60 * 1000,
@@ -147,10 +146,6 @@ function passesFilters(conv, filters, state) {
   if (filters.dateRange && filters.dateRange !== 'all') {
     active.push(withinDateRange(conv, filters.dateRange));
   }
-  if (filters.statuses && filters.statuses.length > 0) {
-    const eff = selectEffectiveStatus(conv);
-    active.push(filters.statuses.includes(eff));
-  }
   if (filters.starredOnly) {
     const uid = state.currentUserId;
     active.push(Boolean(uid) && (conv.starredByUserIds || []).includes(uid));
@@ -174,29 +169,33 @@ export default function Messaging() {
   const state = useStore();
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const { conversationId: paramId } = useParams();
   const { currentUser } = useAuth();
+  // A payment reminder (or any deep-link) can seed the composer via nav state.
+  const reminderDraft = location.state?.reminderDraft || null;
 
   const canStart = usePermission('messaging.startConversation');
   const canStartInternalThread = usePermission('messaging.startInternalThread');
   const canBulk = usePermission('messaging.bulkActions');
   const canViewExternalInbox = usePermission('messaging.startConversation');
   const isSuperAdmin = currentUser?.role === 'owner';
+  // CS-002: star / mute (snooze) are per-conversation flags the crew WRITE MERGE drops, so a
+  // crew tab would see a dead toggle. Hide them for a non-office role (owner/admin/manager keep
+  // them). Passed as undefined → ConversationThreadList / ConversationMessagePanel omit the button.
+  const canStarMute = currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
   const toast = useToast();
 
-  // Twilio readiness — used to gate outbound SMS in handleSend.
-  const sendReady = selectIsTwilioSendReady(state);
-  const blockers = selectTwilioBlockers(state);
-  const twilioPhone = selectTwilioPhone(state);
-
   // Per-user Connected Inboxes — drive the "Sending as" dropdown + Email
   // channel send flow. Email blockers surface inline in the compose pane
-  // when the user has no active inbox.
+  // when the user has no active inbox. The outbound send pipeline itself lives
+  // in useMessageSender, shared with the floating MessagesDock so the dock's
+  // inline composer sends through the exact same path.
   const myConnectedInboxes = selectConnectedInboxesForUser(state, currentUser?.id);
   const myDefaultInbox = selectDefaultConnectedInbox(state, currentUser?.id);
   const emailBlockers = selectMessagingEmailBlockersForUser(state, currentUser?.id);
-  const emailDefaultReplyTo = selectEmailDefaultReplyTo(state);
+  const { sendMessage, retryMessage } = useMessageSender();
 
   // Read ?inbox=… from the URL once on mount so deep-links from "New DM" land on the DMs tab.
   const initialInbox = (() => {
@@ -208,16 +207,40 @@ export default function Messaging() {
     return canViewExternalInbox ? 'inbox' : 'internal';
   })();
   const [selectedInbox, setSelectedInbox] = useState(initialInbox);
+  // Re-read ?inbox on every NAVIGATION to this page (e.g. global search "Team chat" while
+  // already in Messaging). The in-page inbox toggle doesn't navigate, so it's never
+  // overridden; Messaging's own navigations write ?inbox from selectedInbox, so they agree.
+  useEffect(() => {
+    const v = new URLSearchParams(location.search).get('inbox');
+    if (v === 'inbox' || v === 'internal' || v === 'dm') setSelectedInbox(v);
+  }, [location.key, location.search]);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   const [activeId, setActiveId] = useState(paramId || null);
   const [newConvOpen, setNewConvOpen] = useState(false);
+  // Global search "New message" deep-link: ?new=1 opens the new-conversation modal once,
+  // then strips it (preserving ?inbox). Gated on canStart.
+  const [msearchParams, setMsearchParams] = useSearchParams();
+  useEffect(() => {
+    if (msearchParams.get('new') && canStart) {
+      setNewConvOpen(true);
+      const next = new URLSearchParams(msearchParams);
+      next.delete('new');
+      setMsearchParams(next, { replace: true });
+    }
+  }, [msearchParams, canStart, setMsearchParams]);
   const [newDmOpen, setNewDmOpen] = useState(false);
   const [newInternalThreadOpen, setNewInternalThreadOpen] = useState(false);
+  const [orphansOpen, setOrphansOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   // null when closed; { ids, deletable, skipped } when the bulk-delete confirm dialog is open.
   const [bulkDeletePrompt, setBulkDeletePrompt] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  // Multi-select mode: OFF → each row shows a ⋯ action menu; ON → rows show
+  // checkboxes for bulk actions. Toggled from the thread-list master checkbox.
+  const [bulkMode, setBulkMode] = useState(false);
+  // null when closed; { id, count } when the single-row delete confirm is open.
+  const [rowDeletePrompt, setRowDeletePrompt] = useState(null);
   const paneContainerRef = useRef(null);
   const panes = usePaneSizes(paneContainerRef);
 
@@ -233,6 +256,19 @@ export default function Messaging() {
     [inboxConversations, filters, search, state]
   );
 
+  // Orphaned team threads — creator deleted or no longer active. Super Admin only:
+  // this set deliberately bypasses the participant scoping that governs every other
+  // read on this page, because an orphan can be invisible to every last user and
+  // still be sitting in the shared blob. Computed only for owners so nobody else
+  // pays for the scan.
+  const orphanCount = useMemo(
+    () => (isSuperAdmin ? selectOrphanedInternalThreads(state).length : 0),
+    [state, isSuperAdmin]
+  );
+
+  // Close the panel if the last orphan is cleaned up (or stops being one).
+  useEffect(() => { if (orphanCount === 0) setOrphansOpen(false); }, [orphanCount]);
+
   const inboxUnread = useMemo(() => ({
     inbox:    selectUnreadCountForInbox(state, 'inbox',    currentUser),
     internal: selectUnreadCountForInbox(state, 'internal', currentUser),
@@ -242,15 +278,15 @@ export default function Messaging() {
   const visibleInboxes = canViewExternalInbox
     ? [
         { key: 'inbox',    label: 'Inbox' },
-        { key: 'internal', label: 'Threads' },
+        { key: 'internal', label: 'Channels' },
         { key: 'dm',       label: 'DMs' },
       ]
     : [
-        { key: 'internal', label: 'Threads' },
+        { key: 'internal', label: 'Channels' },
         { key: 'dm',       label: 'DMs' },
       ];
 
-  // Force crew into Threads when they can't see the external inbox.
+  // Force crew into Channels when they can't see the external inbox.
   useEffect(() => {
     if (!canViewExternalInbox && selectedInbox !== 'internal') {
       setSelectedInbox('internal');
@@ -276,6 +312,7 @@ export default function Messaging() {
   // and clear any lingering bulk selection (selections don't cross inboxes).
   useEffect(() => {
     setSelectedIds(new Set());
+    setBulkMode(false);
     if (!visibleConversations.length) {
       setActiveId(null);
       return;
@@ -289,7 +326,21 @@ export default function Messaging() {
     }
   }, [selectedInbox]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const activeConversation = activeId ? selectConversationById(state, activeId) : null;
+  // Direct-URL guard: the set of conversation ids the user is allowed to OPEN — the
+  // union of their visible, participant-scoped inboxes. The thread LIST is already
+  // scoped, but activeConversation resolves by id straight from the URL, so without
+  // this a crew member with a shared link to an external (sms/email) thread — or an
+  // internal thread they're not a participant of — would render it (and could hit the
+  // context-panel null-lifecycle crash). Managers can view every inbox → no change.
+  const allowedConvIds = useMemo(() => {
+    const keys = canViewExternalInbox ? ['inbox', 'internal', 'dm'] : ['internal', 'dm'];
+    const ids = new Set();
+    for (const k of keys) for (const c of selectConversationsForInbox(state, k, currentUser)) ids.add(c.id);
+    return ids;
+  }, [state, currentUser, canViewExternalInbox]);
+
+  const rawActive = activeId ? selectConversationById(state, activeId) : null;
+  const activeConversation = rawActive && allowedConvIds.has(rawActive.id) ? rawActive : null;
   const activeContact = activeConversation?.contactId ? selectContactById(state, activeConversation.contactId) : null;
   const activeMessages = activeConversation ? selectMessagesForConversation(state, activeConversation.id) : [];
 
@@ -314,217 +365,11 @@ export default function Messaging() {
     navigate('/messaging');
   };
 
-  const handleSend = (text, opts) => {
-    if (!activeConversation) return;
-    const isDmThread = activeConversation.channel === 'dm';
-    // DM messages all carry direction='internal' (peer-to-peer, no external counterpart).
-    const direction = isDmThread || opts?.channel === 'internal' ? 'internal' : 'out';
-    const isSMS = activeConversation.channel === 'sms' && direction === 'out';
-    const isEmail = activeConversation.channel === 'email' && direction === 'out';
+  const handleSend = (text, opts) => sendMessage(activeConversation, activeContact, activeMessages, text, opts);
 
-    // Resolve email metadata up front so the optimistic message carries
-    // it. Threading headers (In-Reply-To / References) chain off the most
-    // recent prior email message in this thread so Gmail / Outlook group
-    // the conversation correctly.
-    let emailSubject = null;
-    let emailFromInboxId = null;
-    let emailHeaders = null;
-    if (isEmail) {
-      emailSubject = opts?.subject || null;
-      if (!emailSubject) {
-        // Replies inherit subject from the most recent prior email message.
-        const prior = [...activeMessages].reverse().find((m) => m.emailSubject);
-        emailSubject = prior?.emailSubject || null;
-      }
-      emailFromInboxId = opts?.inboxId || myDefaultInbox?.id || null;
-      // Build threading headers from prior emails in this thread.
-      const priorEmails = activeMessages.filter((m) => m.emailHeaders?.messageId);
-      const messageId = `<msg-${activeConversation.id}-${Date.now()}@app.local>`;
-      const inReplyTo = priorEmails.length ? priorEmails[priorEmails.length - 1].emailHeaders.messageId : null;
-      const references = priorEmails.length
-        ? priorEmails.map((m) => m.emailHeaders.messageId).join(' ')
-        : null;
-      emailHeaders = { messageId, inReplyTo, references };
-    }
-
-    // Recipients + attachments from the compose / reply-forward modal. Reply &
-    // Forward pass an explicit `to`; inline compose falls back to the linked
-    // contact. Cc/Bcc are optional. Attachment File objects are kept only as
-    // {name,size} metadata on the stored message (the demo never uploads blobs).
-    const parseAddrs = (raw) => String(raw || '').split(',').map((a) => a.trim()).filter(Boolean);
-    const toList = isEmail
-      ? (opts?.to ? parseAddrs(opts.to) : (activeContact?.email ? [activeContact.email] : []))
-      : [];
-    const ccList = parseAddrs(opts?.cc);
-    const bccList = parseAddrs(opts?.bcc);
-    const attachmentsMeta = Array.isArray(opts?.attachments)
-      ? opts.attachments.map((a) => ({ name: a.name, size: a.size }))
-      : [];
-
-    // Optimistically insert the outbound message so the UI updates immediately.
-    // For SMS we'll also kick off the Twilio adapter and patch deliveryStatus as it cycles.
-    // For Email we kick off the per-user-inbox send and patch the same way.
-    const messageId = `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    dispatch({
-      type: ACTIONS.ADD_MESSAGE,
-      message: {
-        id: messageId,
-        conversationId: activeConversation.id,
-        direction,
-        text,
-        authorUserId: currentUser?.id || null,
-        snippetId: opts?.snippetId || null,
-        // SMS-only: track delivery state.
-        ...(isSMS ? { deliveryStatus: 'queued' } : {}),
-        // Email-only: subject + threading + which inbox sent it + recipients
-        // (toEmails/ccEmails drive the modal's To: display + Reply-All) and
-        // any attachment metadata (drives the attachment chips/count).
-        ...(isEmail
-          ? {
-              deliveryStatus: 'queued',
-              emailSubject,
-              emailFromInboxId,
-              emailHeaders,
-              toEmail: toList[0] || null,
-              toEmails: toList,
-              ccEmails: ccList,
-              ...(attachmentsMeta.length ? { attachments: attachmentsMeta } : {}),
-            }
-          : {}),
-      },
-    });
-
-    if (isEmail) {
-      // Gate: must have an active connected inbox + the contact must have
-      // an email address on file. Empty array == ready in the selector.
-      if (emailBlockers.length > 0 || !emailFromInboxId) {
-        const reasons = emailBlockers.map((b) => b.label).join('; ') || 'No connected inbox selected';
-        dispatch({
-          type: ACTIONS.SET_MESSAGE_DELIVERY,
-          id: messageId,
-          status: 'failed',
-          failureReason: reasons,
-        });
-        toast.error(`Email not sent: ${reasons}`);
-        return;
-      }
-      if (!toList.length) {
-        dispatch({
-          type: ACTIONS.SET_MESSAGE_DELIVERY,
-          id: messageId,
-          status: 'failed',
-          failureReason: 'No recipient email address on this thread',
-        });
-        toast.error('Email not sent: no recipient email on this thread.');
-        return;
-      }
-      const inbox = myConnectedInboxes.find((i) => i.id === emailFromInboxId);
-      const fromAddress = inbox?.displayName ? `${inbox.displayName} <${inbox.email}>` : inbox?.email;
-      // Reply-To: when the inbox supports inbound capture (Phase 4c), set
-      // it to a per-conversation address so replies thread back into the
-      // app. Otherwise omit (replies land in the user's actual mailbox).
-      const replyTo = inbox?.inboundEnabled
-        ? `reply+${activeConversation.id}@inbound.app.local`
-        : (emailDefaultReplyTo || undefined);
-      sendViaInbox(emailFromInboxId, {
-        to: toList.join(', '),
-        cc: ccList.length ? ccList.join(', ') : undefined,
-        bcc: bccList.length ? bccList.join(', ') : undefined,
-        from: fromAddress,
-        subject: emailSubject || '(no subject)',
-        // Prefer the HTML sendBody (image signatures); falls back to plain text.
-        body: opts?.sendBody || text,
-        inlineImages: (opts?.inlineImages && opts.inlineImages.length) ? opts.inlineImages : undefined,
-        attachments: attachmentsMeta.length ? attachmentsMeta : undefined,
-        replyTo,
-        headers: emailHeaders ? {
-          'Message-ID': emailHeaders.messageId,
-          ...(emailHeaders.inReplyTo ? { 'In-Reply-To': emailHeaders.inReplyTo } : {}),
-          ...(emailHeaders.references ? { References: emailHeaders.references } : {}),
-        } : undefined,
-        tags: ['messaging'],
-      })
-        .then((result) => {
-          dispatch({
-            type: ACTIONS.SET_MESSAGE_DELIVERY,
-            id: messageId,
-            status: result.status === 'sent' ? 'delivered' : (result.status || 'sent'),
-            emailMessageId: result.id,
-          });
-        })
-        .catch((err) => {
-          dispatch({
-            type: ACTIONS.SET_MESSAGE_DELIVERY,
-            id: messageId,
-            status: 'failed',
-            failureReason: err.message || 'Send error',
-          });
-          toast.error(`Email not sent: ${err.message || 'Unknown error'}`);
-        });
-      return;
-    }
-
-    if (!isSMS) return;
-
-    // Gate: must be Twilio-ready (connected + number + A2P approved).
-    if (!sendReady) {
-      const reasons = blockers.map((b) => b.label).join('; ') || 'SMS sending is not configured';
-      dispatch({
-        type: ACTIONS.SET_MESSAGE_DELIVERY,
-        id: messageId,
-        status: 'failed',
-        failureReason: reasons,
-      });
-      toast.error(`SMS not sent: ${reasons}`);
-      return;
-    }
-
-    // Resolve "to" — prefer linked contact's phone, fall back to thread title (raw number).
-    const toPhone = activeContact?.phone || activeConversation.title || null;
-    if (!toPhone) {
-      dispatch({
-        type: ACTIONS.SET_MESSAGE_DELIVERY,
-        id: messageId,
-        status: 'failed',
-        failureReason: 'No recipient phone number on this thread',
-      });
-      toast.error('SMS not sent: no recipient phone number on this thread.');
-      return;
-    }
-
-    sendSMS({ from: twilioPhone, to: toPhone, body: text })
-      .then((result) => {
-        dispatch({
-          type: ACTIONS.SET_MESSAGE_DELIVERY,
-          id: messageId,
-          status: result.status, // 'queued' initially
-          twilioMessageSid: result.sid,
-        });
-        const unsubscribe = subscribeToDelivery(result.sid, (update) => {
-          dispatch({
-            type: ACTIONS.SET_MESSAGE_DELIVERY,
-            id: messageId,
-            status: update.status,
-            ...(update.failureReason ? { failureReason: update.failureReason } : {}),
-          });
-          if (update.status === 'delivered' || update.status === 'failed') {
-            unsubscribe();
-            if (update.status === 'failed') {
-              toast.error(`SMS failed: ${update.failureReason || 'Unknown error'}`);
-            }
-          }
-        });
-      })
-      .catch((err) => {
-        dispatch({
-          type: ACTIONS.SET_MESSAGE_DELIVERY,
-          id: messageId,
-          status: 'failed',
-          failureReason: err.message || 'Send error',
-        });
-        toast.error(`SMS not sent: ${err.message || 'Unknown error'}`);
-      });
-  };
+  // Re-send a message that previously failed — same shared pipeline as the
+  // initial send (SMS/email routing, delivery lifecycle, cached attachments).
+  const handleRetry = (message) => retryMessage(activeConversation, activeContact, message);
 
   // Hard-delete the active thread for everyone. Gated to creator OR Super Admin at the
   // call site: the Delete-thread button only renders when canHardDelete is true on the
@@ -540,14 +385,6 @@ export default function Messaging() {
   };
 
   // --- Phase 2b per-thread action handlers -------------------------------
-  const handleSetStatus = (status) => {
-    if (!activeConversation) return;
-    dispatch({ type: ACTIONS.SET_CONVERSATION_STATUS, id: activeConversation.id, status });
-  };
-  const handleSnooze = (until) => {
-    if (!activeConversation) return;
-    dispatch({ type: ACTIONS.SNOOZE_CONVERSATION, id: activeConversation.id, until });
-  };
   const handleToggleStarActive = () => {
     if (!activeConversation) return;
     dispatch({ type: ACTIONS.TOGGLE_CONVERSATION_STAR, id: activeConversation.id });
@@ -559,6 +396,14 @@ export default function Messaging() {
     if (!activeConversation || !currentUser) return;
     dispatch({ type: ACTIONS.TOGGLE_CONVERSATION_MUTE, id: activeConversation.id, userId: currentUser.id });
   };
+  // Retitle the active internal thread. Gated at the render site: the pane only
+  // exposes the editor when selectCanRenameThread passes (creator, or Super
+  // Admin on an orphan), and the reducer enforces the shape invariants.
+  const handleRenameConversation = (title) => {
+    if (!activeConversation) return;
+    dispatch({ type: ACTIONS.RENAME_CONVERSATION, id: activeConversation.id, title });
+  };
+
   const handleLinkContact = (contactId) => {
     if (!activeConversation) return;
     dispatch({
@@ -598,6 +443,38 @@ export default function Messaging() {
   };
   const handleSelectAll = (ids) => setSelectedIds(new Set(ids));
   const handleClearSelection = () => setSelectedIds(new Set());
+  const handleEnterBulk = () => setBulkMode(true);
+  const handleExitBulk = () => { setBulkMode(false); setSelectedIds(new Set()); };
+
+  // --- Per-row (single-thread) actions from the row ⋯ menu ---------------
+  const handleRowMarkRead = (id) =>
+    dispatch({ type: ACTIONS.MARK_CONVERSATION_READ, id, currentUserId: currentUser?.id });
+  const handleRowMarkUnread = (id) =>
+    dispatch({ type: ACTIONS.MARK_CONVERSATION_UNREAD, id, currentUserId: currentUser?.id });
+  // Row delete re-gates to creator-or-Super-Admin (same rule as bulk) before
+  // popping the confirm — DELETE_CONVERSATION is a hard delete for everyone.
+  const handleRowDeleteRequest = (id) => {
+    const conv = state.conversations.find((c) => c.id === id);
+    if (!conv) return;
+    const allowed = isSuperAdmin || (currentUser && conv.createdByUserId === currentUser.id);
+    if (!allowed) {
+      toast.error("You can't delete this thread. Only its creator or a Super Admin can.");
+      return;
+    }
+    setRowDeletePrompt({ id, count: selectMessagesForConversation(state, id).length });
+  };
+  const handleRowDeleteConfirm = () => {
+    if (!rowDeletePrompt) return;
+    const { id } = rowDeletePrompt;
+    dispatch({ type: ACTIONS.DELETE_CONVERSATION, id });
+    if (activeId === id) {
+      setActiveId(null);
+      navigate('/messaging' + (selectedInbox !== 'inbox' ? `?inbox=${selectedInbox}` : ''));
+    }
+    setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    setRowDeletePrompt(null);
+    toast.success('Thread deleted for everyone.');
+  };
 
   const handleBulkMarkRead = () => {
     dispatch({ type: ACTIONS.BULK_MARK_CONVERSATIONS_READ, ids: Array.from(selectedIds) });
@@ -621,7 +498,7 @@ export default function Messaging() {
       if (allowed) eligible.push(id); else skipped.push(id);
     }
     if (eligible.length === 0) {
-      toast.error("You can't delete any of the selected threads — only their creators or a Super Admin can.");
+      toast.error("You can't delete any of the selected threads. Only their creators or a Super Admin can.");
       return;
     }
     setBulkDeletePrompt({ ids: eligible, skipped: skipped.length });
@@ -658,6 +535,8 @@ export default function Messaging() {
           onNewDm={() => setNewDmOpen(true)}
           onNewInternalThread={() => setNewInternalThreadOpen(true)}
           visibleInboxes={visibleInboxes}
+          orphanCount={orphanCount}
+          onOpenOrphans={isSuperAdmin ? () => setOrphansOpen(true) : undefined}
         />
         <div
           className={`msg-3pane ${activeId ? 'has-active' : ''}`}
@@ -675,12 +554,18 @@ export default function Messaging() {
             onToggleSelect={handleToggleSelect}
             onSelectAll={handleSelectAll}
             onClearSelection={handleClearSelection}
-            onToggleStar={handleToggleStarRow}
+            onToggleStar={canStarMute ? handleToggleStarRow : undefined}
             onBulkMarkRead={handleBulkMarkRead}
             onBulkMarkUnread={handleBulkMarkUnread}
             onBulkDelete={handleBulkDeleteRequest}
             canBulk={canBulk}
             selectedInbox={selectedInbox}
+            bulkMode={bulkMode}
+            onEnterBulk={handleEnterBulk}
+            onExitBulk={handleExitBulk}
+            onRowMarkRead={handleRowMarkRead}
+            onRowMarkUnread={handleRowMarkUnread}
+            onRowDelete={handleRowDeleteRequest}
           />
           <div
             className={`msg-pane-handle msg-pane-handle-left ${panes.dragging === 'left' ? 'is-dragging' : ''}`}
@@ -698,16 +583,17 @@ export default function Messaging() {
             isSuperAdmin={isSuperAdmin}
             onSend={handleSend}
             onDeleteForever={() => setConfirmDeleteOpen(true)}
-            onSetStatus={handleSetStatus}
-            onSnooze={handleSnooze}
-            onToggleStar={handleToggleStarActive}
-            onToggleMute={handleToggleMute}
+            onRename={handleRenameConversation}
+            onToggleStar={canStarMute ? handleToggleStarActive : undefined}
+            onToggleMute={canStarMute ? handleToggleMute : undefined}
             onBack={handleBackToInbox}
             connectedInboxes={myConnectedInboxes}
             defaultInboxId={myDefaultInbox?.id || null}
             emailBlockers={emailBlockers}
             onSwitchChannel={handleSwitchChannel}
             composeChannelOverride={composeChannelOverride}
+            onRetry={handleRetry}
+            initialDraft={reminderDraft}
           />
           <div
             className={`msg-pane-handle msg-pane-handle-right ${panes.dragging === 'right' ? 'is-dragging' : ''}`}
@@ -740,6 +626,15 @@ export default function Messaging() {
         onClose={() => setNewInternalThreadOpen(false)}
       />
 
+      {/* Super-Admin-only. Gated here as well as on the trigger so the panel can
+          never mount for anyone else, whatever the header does. */}
+      {isSuperAdmin && (
+        <OrphanedThreadsModal
+          open={orphansOpen}
+          onClose={() => setOrphansOpen(false)}
+        />
+      )}
+
       <ConfirmDialog
         open={confirmDeleteOpen}
         title="Permanently delete this thread?"
@@ -770,6 +665,20 @@ export default function Messaging() {
         variant="danger"
         onConfirm={handleBulkDeleteConfirm}
         onClose={() => setBulkDeletePrompt(null)}
+      />
+
+      <ConfirmDialog
+        open={!!rowDeletePrompt}
+        title="Permanently delete this thread?"
+        message={
+          rowDeletePrompt
+            ? `This permanently deletes the thread and all ${rowDeletePrompt.count} message${rowDeletePrompt.count === 1 ? '' : 's'} for everyone. This cannot be undone.`
+            : ''
+        }
+        confirmLabel="Delete forever"
+        variant="danger"
+        onConfirm={handleRowDeleteConfirm}
+        onClose={() => setRowDeletePrompt(null)}
       />
     </>
   );

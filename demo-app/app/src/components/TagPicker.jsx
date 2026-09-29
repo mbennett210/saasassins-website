@@ -1,4 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import PopMenu from './PopMenu';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
 import { selectTags } from '../store/selectors';
@@ -25,13 +27,7 @@ export default function TagPicker({ value = [], onChange, canCreate = true, plac
   const [query, setQuery] = useState('');
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
-    window.addEventListener('mousedown', onClick);
-    return () => window.removeEventListener('mousedown', onClick);
-  }, [open]);
+  const isMobile = useIsMobile();
 
   // Clear any uncommitted query whenever the picker closes — abandoned typing
   // shouldn't survive a click-outside / Escape. createNew / Enter-commit paths
@@ -99,7 +95,9 @@ export default function TagPicker({ value = [], onChange, canCreate = true, plac
 
   const focusInput = () => {
     setOpen(true);
-    inputRef.current?.focus();
+    // On mobile the search/create field lives in the sheet (autofocus); focusing the
+    // read-only row input would just pop the keyboard behind the backdrop.
+    if (!isMobile) inputRef.current?.focus();
   };
 
   return (
@@ -109,52 +107,68 @@ export default function TagPicker({ value = [], onChange, canCreate = true, plac
           <TagChip key={t.id} tag={t} onRemove={() => toggle(t)} />
         ))}
         <input
-          ref={inputRef}
+          ref={isMobile ? undefined : inputRef}
           className="tag-picker-input"
           placeholder={selected.length === 0 ? placeholder : ''}
           value={query}
+          readOnly={isMobile}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
         />
       </div>
-      {open && (visibleTags.length > 0 || showCreate || query.trim()) && (
-        <div className="tag-picker-menu">
-          {showCreate && (
-            <button
-              type="button"
-              className="tag-picker-option tag-picker-create-option"
-              onClick={createNew}
-            >
-              Create “{query.trim()}”
-            </button>
-          )}
-          {!showCreate && exactMatch && query.trim() && (
-            <div className="tag-picker-empty" style={{ borderBottom: '1px solid var(--border-light)', marginBottom: 6, paddingBottom: 8 }}>
-              "{query.trim()}" already exists — pick it below.
-            </div>
-          )}
-          <div className="tag-picker-list">
-            {visibleTags.length === 0 && !showCreate && (
-              <div className="tag-picker-empty">No matches</div>
-            )}
-            {visibleTags.map((t) => {
-              const on = value.includes(t.id);
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  className={`tag-picker-option ${on ? 'on' : ''}`}
-                  onClick={() => toggle(t)}
-                >
-                  <TagChip tag={t} />
-                  {on && <span className="tag-check">✓</span>}
-                </button>
-              );
-            })}
+      <PopMenu
+        open={open && (isMobile || visibleTags.length > 0 || showCreate || !!query.trim())}
+        onClose={() => setOpen(false)}
+        anchorRef={wrapRef}
+        className="tag-picker-menu"
+        sheetTitle="Tags"
+      >
+        {isMobile && (
+          <input
+            ref={inputRef}
+            className="input pop-sheet-search"
+            placeholder={placeholder}
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+            onKeyDown={handleKeyDown}
+            autoFocus
+          />
+        )}
+        {showCreate && (
+          <button
+            type="button"
+            className="menu-option menu-option-action tag-picker-create-option"
+            onClick={createNew}
+          >
+            Create “{query.trim()}”
+          </button>
+        )}
+        {!showCreate && exactMatch && query.trim() && (
+          <div className="tag-picker-empty" style={{ borderBottom: '1px solid var(--border-light)', marginBottom: 6, paddingBottom: 8 }}>
+            "{query.trim()}" already exists. Pick it below.
           </div>
+        )}
+        <div className="tag-picker-list">
+          {visibleTags.length === 0 && !showCreate && (
+            <div className="tag-picker-empty">No matches</div>
+          )}
+          {visibleTags.map((t) => {
+            const on = value.includes(t.id);
+            return (
+              <button
+                key={t.id}
+                type="button"
+                className={`menu-option ${on ? 'on' : ''}`}
+                onClick={() => toggle(t)}
+              >
+                <TagChip tag={t} />
+                {on && <span className="tag-check">✓</span>}
+              </button>
+            );
+          })}
         </div>
-      )}
+      </PopMenu>
     </div>
   );
 }

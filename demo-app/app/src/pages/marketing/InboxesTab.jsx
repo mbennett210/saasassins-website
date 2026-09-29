@@ -21,12 +21,17 @@ import Toggle from '../../components/Toggle';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ConnectMarketingInboxModal from '../../components/ConnectMarketingInboxModal';
 import InboxSignatureModal from './InboxSignatureModal';
+import { IDENTITY } from '../../brand/identity.generated.js';
 
 const STATUS_VARIANTS = { active: 'green', pending: 'amber', expired: 'amber', error: 'red' };
 
 // Emails an inbox sends per day before the scheduler holds it back. Kept in
 // sync with the reducer default on ADD_MARKETING_INBOX.
 const DEFAULT_DAILY_LIMIT = 10;
+
+// Consumer Gmail (personal @gmail.com) — low daily caps + weaker bulk-sender
+// standing than a Workspace domain, and not officially supported for connect.
+const CONSUMER_GMAIL = /@(?:gmail|googlemail)\.com$/i;
 
 export default function InboxesTab({ connectOpen, onOpenConnect, onCloseConnect }) {
   const state = useStore();
@@ -78,7 +83,7 @@ export default function InboxesTab({ connectOpen, onOpenConnect, onCloseConnect 
       <div className="info-banner">
         <Icon name="building" size={18} />
         <div>
-          <strong>These are shared marketing accounts — not anyone's personal email.</strong>{' '}
+          <strong>These are shared marketing accounts. Not anyone's personal email.</strong>{' '}
           The Gmail inboxes connected here send for marketing sequences only and
           are shared by the whole team. They're separate from the per-user
           mailboxes each person connects under Settings → Connected Inboxes for
@@ -87,9 +92,9 @@ export default function InboxesTab({ connectOpen, onOpenConnect, onCloseConnect 
       </div>
       <p className="marketing-tab-intro">
         These mailboxes rotate for marketing sends. Each sequence sends through
-        Position 1, then Position 2, and so on — wrapping back to the top;
+        Position 1, then Position 2, and so on. Wrapping back to the top;
         disabled inboxes are skipped. Each inbox sends up to its own daily
-        limit — {DEFAULT_DAILY_LIMIT}/day by default. Raise it cautiously:
+        limit. {DEFAULT_DAILY_LIMIT}/day by default. Raise it cautiously:
         sending too much too fast from a mailbox, especially a newly connected
         one, hurts your sender reputation and can land emails in spam.
       </p>
@@ -117,8 +122,8 @@ export default function InboxesTab({ connectOpen, onOpenConnect, onCloseConnect 
             />
           ))}
           {canConnect && (
-            <button type="button" className="marketing-inbox-ghost" onClick={onOpenConnect}>
-              <span className="marketing-inbox-ghost-icon"><Icon name="mail" size={18} /></span>
+            <button type="button" className="add-tile" onClick={onOpenConnect}>
+              <Icon name="mail" size={18} />
               <span>Add new inbox</span>
             </button>
           )}
@@ -179,6 +184,11 @@ function InboxRow({ inbox, idx, total, canConnect, onMove, onToggleEnabled, onSe
         <Badge variant={STATUS_VARIANTS[inbox.status] || 'slate'}>
           {inbox.status === 'active' ? 'Connected' : inbox.status}
         </Badge>
+        {CONSUMER_GMAIL.test(inbox.email || '') && (
+          <span title={`Personal Gmail accounts have low daily send caps (~500/day) and weaker bulk-sender standing than a Workspace domain. Prefer a ${IDENTITY.company.domain} mailbox for marketing.`}>
+            <Badge variant="amber">Personal Gmail</Badge>
+          </span>
+        )}
       </div>
       <div className="marketing-inbox-controls">
         <div className="marketing-inbox-enabled">

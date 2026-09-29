@@ -1,20 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import PopMenu from './PopMenu';
 import Icon from './Icon';
 import Select from './Select';
 import TagPicker from './TagPicker';
+import NotificationsBell from './NotificationsBell';
 
 export const EMPTY_FILTERS = {
   channels: [],        // [] = all
   tagIds: [],          // [] = all
   dateRange: 'all',    // '24h' | '7d' | '30d' | 'all'
   logic: 'and',        // 'and' | 'or'
-  statuses: [],        // [] = all statuses (subset of 'open' | 'snoozed' | 'closed')
   starredOnly: false,  // true → only starred threads
 };
 
 const INBOXES = [
   { key: 'inbox',    label: 'Inbox' },
-  { key: 'internal', label: 'Threads' },
+  { key: 'internal', label: 'Channels' },
   { key: 'dm',       label: 'DMs' },
 ];
 
@@ -32,46 +33,21 @@ const CHANNEL_CHIPS = [
   { key: 'dm',       label: 'DM' },
 ];
 
-const STATUS_CHIPS = [
-  { key: 'open',    label: 'Open' },
-  { key: 'snoozed', label: 'Snoozed' },
-  { key: 'closed',  label: 'Closed' },
-];
-
-function FiltersPopover({ filters, onFiltersChange, onClose }) {
-  const wrapRef = useRef(null);
-
-  useEffect(() => {
-    const onClick = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) onClose(); };
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('mousedown', onClick);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('mousedown', onClick);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
-
+function FiltersPopover({ open, anchorRef, filters, onFiltersChange, onClose }) {
   const toggleChannel = (ch) => {
     const set = new Set(filters.channels);
     if (set.has(ch)) set.delete(ch); else set.add(ch);
     onFiltersChange({ ...filters, channels: Array.from(set) });
-  };
-  const toggleStatus = (st) => {
-    const set = new Set(filters.statuses);
-    if (set.has(st)) set.delete(st); else set.add(st);
-    onFiltersChange({ ...filters, statuses: Array.from(set) });
   };
 
   const anyFilter =
     filters.channels.length > 0 ||
     filters.tagIds.length > 0 ||
     filters.dateRange !== 'all' ||
-    filters.statuses.length > 0 ||
     filters.starredOnly;
 
   return (
-    <div className="filters-popover" ref={wrapRef} role="dialog" aria-label="Filters">
+    <PopMenu open={open} onClose={onClose} anchorRef={anchorRef} className="filters-popover" role="dialog" aria-label="Filters" sheetTitle="Filters">
       <div className="filters-popover-head">
         <span>Filters</span>
         {anyFilter && (
@@ -89,24 +65,8 @@ function FiltersPopover({ filters, onFiltersChange, onClose }) {
               <button
                 key={c.key}
                 type="button"
-                className={`filter-chip ${filters.channels.includes(c.key) ? 'on' : ''}`}
+                className={`chip ${filters.channels.includes(c.key) ? 'on' : ''}`}
                 onClick={() => toggleChannel(c.key)}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="filter-block">
-          <div className="filter-label">Status</div>
-          <div className="filter-chips">
-            {STATUS_CHIPS.map((c) => (
-              <button
-                key={c.key}
-                type="button"
-                className={`filter-chip ${filters.statuses.includes(c.key) ? 'on' : ''}`}
-                onClick={() => toggleStatus(c.key)}
               >
                 {c.label}
               </button>
@@ -147,7 +107,7 @@ function FiltersPopover({ filters, onFiltersChange, onClose }) {
 
         <div className="filter-block">
           <div className="filter-label">Combine filters</div>
-          <div className="segmented segmented-sm">
+          <div className="segmented">
             {['and', 'or'].map((v) => (
               <button
                 key={v}
@@ -161,7 +121,7 @@ function FiltersPopover({ filters, onFiltersChange, onClose }) {
           </div>
         </div>
       </div>
-    </div>
+    </PopMenu>
   );
 }
 
@@ -177,14 +137,18 @@ export default function MessagingHeader({
   onNewDm,
   onNewInternalThread,
   visibleInboxes,
+  // Super-Admin-only orphan maintenance. Count comes from the parent so this
+  // header stays presentation-focused; 0 hides the entry point entirely.
+  orphanCount = 0,
+  onOpenOrphans,
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersWrapRef = useRef(null);
 
   const anyFilter =
     filters.channels.length > 0 ||
     filters.tagIds.length > 0 ||
     filters.dateRange !== 'all' ||
-    filters.statuses.length > 0 ||
     filters.starredOnly;
 
   return (
@@ -210,10 +174,10 @@ export default function MessagingHeader({
       </div>
 
       <div className="messaging-header-actions">
-        <div className="filters-wrap">
+        <div className="filters-wrap" ref={filtersWrapRef}>
           <button
             type="button"
-            className={`btn btn-success btn-sm ${anyFilter ? 'has-active-filter' : ''}`}
+            className={`btn btn-success ${anyFilter ? 'has-active-filter' : ''}`}
             onClick={() => setFiltersOpen((v) => !v)}
             aria-expanded={filtersOpen}
           >
@@ -221,40 +185,51 @@ export default function MessagingHeader({
             <span>Filters</span>
             {anyFilter && <span className="filter-active-dot" aria-label="filters active" />}
           </button>
-          {filtersOpen && (
-            <FiltersPopover
-              filters={filters}
-              onFiltersChange={onFiltersChange}
-              onClose={() => setFiltersOpen(false)}
-            />
-          )}
+          <FiltersPopover
+            open={filtersOpen}
+            anchorRef={filtersWrapRef}
+            filters={filters}
+            onFiltersChange={onFiltersChange}
+            onClose={() => setFiltersOpen(false)}
+          />
         </div>
 
         {selectedInbox === 'dm' && (
           <button
             type="button"
-            className="btn btn-primary btn-sm"
+            className="btn btn-primary"
             onClick={onNewDm}
             title="Start a direct message with another user"
           >
             <span>New DM</span>
           </button>
         )}
+        {selectedInbox === 'internal' && orphanCount > 0 && onOpenOrphans && (
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={onOpenOrphans}
+            title="Channels whose creator was removed or is no longer active"
+          >
+            <Icon name="warning" size={14} />
+            <span>Orphaned ({orphanCount})</span>
+          </button>
+        )}
         {selectedInbox === 'internal' && (
           <button
             type="button"
-            className="btn btn-primary btn-sm"
+            className="btn btn-primary"
             onClick={onNewInternalThread}
             disabled={!canStartInternalThread}
-            title={canStartInternalThread ? 'Start a new team thread' : 'You lack permission to start threads'}
+            title={canStartInternalThread ? 'Start a new channel' : 'You lack permission to start channels'}
           >
-            <span>New thread</span>
+            <span>New channel</span>
           </button>
         )}
         {selectedInbox === 'inbox' && (
           <button
             type="button"
-            className="btn btn-primary btn-sm"
+            className="btn btn-primary"
             onClick={onNewConversation}
             disabled={!canStart}
             title={canStart ? 'Start a new conversation' : 'You lack permission to start conversations'}
@@ -262,6 +237,10 @@ export default function MessagingHeader({
             <span>New conversation</span>
           </button>
         )}
+        {/* Notifications bell lives in the header on mobile (CSS-shown ≤640) so it
+            no longer floats over the top bar; the global .bell-floater is hidden
+            on mobile messaging. Desktop keeps the floater. */}
+        <NotificationsBell className="msg-inbox-bell" />
       </div>
     </header>
   );

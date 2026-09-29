@@ -2,19 +2,46 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="%BASE_URL%favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>%BRAND_TITLE%</title>
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <!-- viewport-fit=cover + apple-mobile-web-app-status-bar-style=black-translucent (below)
+         make the app draw edge-to-edge UNDER the iOS status bar, so the messaging white runs
+         flush to the very top in BOTH Safari and the installed home-screen app. iOS tints the
+         status bar from the content behind it and auto-contrasts the clock (dark over the white
+         header — as it already does over the light app bg; evidence: the client's installed-app
+         screenshots showed a DARK clock, i.e. the old `black` opaque setting was being ignored
+         and the bar was sampling the gray page bg). Safe areas handled in CSS via
+         env(safe-area-inset-*); the --cs-vh shell (AppLayout: floored + burst-remeasured on
+         resume) absorbs the standalone-PWA "short viewport on resume" that cover/translucent
+         can trigger.
+         NOTE: apple-mobile-web-app-* metas are captured at Add-to-Home-Screen time — an
+         installed app must be REMOVED & RE-ADDED to pick up a change here. If a future iOS
+         renders a WHITE (invisible) clock over the white header instead of auto-contrasting,
+         fall back to status-bar `black` (opaque bar, white clock, white header below — legible
+         but not white-to-top). See HANDOFF 2026-09-14. -->
+    <!-- user-scalable=no + maximum-scale=1: this is a fixed-layout app shell, not a
+         document — pinch-zoom just lets the fixed header/nav/compose bar drift out of
+         the viewport and clip. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>PolishPoint CRM</title>
+
+    <!-- Cursive fonts for the type-to-sign signature option -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Allura&family=Alex+Brush&family=Yellowtail&family=Satisfy&family=Dancing+Script:wght@600&family=Mr+Dafoe&family=Herr+Von+Muellerhoff&family=Rouge+Script&display=swap" rel="stylesheet" />
 
     <!-- PWA -->
-    <link rel="manifest" href="%BASE_URL%manifest.json" />
-    <meta name="theme-color" content="%BRAND_PRIMARY%" />
-    <meta name="application-name" content="%BRAND_SHORT_NAME%" />
-    <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#02358b" />
+    <meta name="application-name" content="PolishPoint" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="%BRAND_SHORT_NAME%" />
+    <!-- black-translucent: app draws under the status bar so the messaging white reaches the
+         top edge (see viewport note). The --cs-vh floor+burst neutralises the old "translucent
+         shrinks the PWA viewport" bug. Fall back to `black` if any iOS forces a white clock. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PolishPoint" />
   </head>
   <body>
     <div id="root"></div>
