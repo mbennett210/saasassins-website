@@ -18,8 +18,9 @@
   color: var(--text-primary);
   font-family: var(--font-family-base, 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
 }
-.ppl h1, .ppl h2, .ppl h3 { color: var(--text-primary); margin: 0; line-height: 1.15; }
-.ppl p { margin: 0; }
+/* resets at zero specificity (:where), so each section's own margins (.ppl-hero-sub's centring, the blurbs' gaps) win */
+:where(.ppl) h1, :where(.ppl) h2, :where(.ppl) h3 { color: var(--text-primary); margin: 0; line-height: 1.15; }
+:where(.ppl) p { margin: 0; }
 
 /* top bar */
 .ppl-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px clamp(16px, 5vw, 56px); background: #fff; border-bottom: 1px solid var(--ppl-border); }
@@ -27,7 +28,7 @@
 .ppl-top-actions { display: flex; align-items: center; gap: 10px; }
 
 /* buttons */
-.ppl-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font: inherit; font-weight: 600; font-size: 14px; padding: 9px 16px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: background .15s, color .15s, border-color .15s; }
+.ppl-btn { display: inline-flex; align-items: center; justify-content: safe center; text-align: center; gap: 8px; font: inherit; font-weight: 600; font-size: 14px; padding: 9px 16px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; text-decoration: none; transition: background .15s, color .15s, border-color .15s; }
 .ppl-btn-lg { font-size: 15.5px; padding: 13px 24px; border-radius: 12px; }
 .ppl-btn-primary { background: var(--ppl-ink); color: var(--ppl-on); }
 .ppl-btn-primary:hover { background: var(--ppl-deep); }
@@ -67,6 +68,9 @@
 .ppl-module-features { list-style: none; margin: 16px 0 0; padding: 16px 0 0; border-top: 1px solid var(--ppl-border); display: grid; gap: 7px; }
 .ppl-module-features li { position: relative; padding-left: 20px; font-size: 13.5px; color: var(--text-muted); }
 .ppl-module-features li::before { content: '›'; position: absolute; left: 4px; color: var(--ppl-ink); font-weight: 800; }
+/* the card's way into the live app, pinned to the card's foot so a row of cards lines up */
+.ppl-module-foot { margin-top: auto; padding-top: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.ppl-module-how { font-size: 12.5px; color: var(--text-muted); }
 
 /* cta band */
 .ppl-cta-band { padding: clamp(40px, 6vw, 64px) clamp(16px, 5vw, 56px); background: var(--ppl-deep); }

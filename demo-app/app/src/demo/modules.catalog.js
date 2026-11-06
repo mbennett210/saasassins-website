@@ -1,250 +1,190 @@
-// Demo catalog — the modules shown in the marketing demo: the Core platform plus
-// the add-on modules we can build. DISPLAY data only (name, copy, features).
+// Demo catalog: the Core platform and the modules shown on the landing (/polishpoint). DISPLAY data only.
 //
-// There is NO pricing here. The demo does not sell modules directly — every
-// commercial CTA points to a Strike Call ("Book a call"), where scope and cost
-// are figured out for the specific business.
+// Every module here is in the live demo (Daniel's pick, 2026-11-05: "every module the demo has"), drawn from
+// the app's own pages, so each card's features can be clicked into. Keep it in step with the app: when a sync
+// from Clean Space (scripts/sync-polishpoint-demo.mjs) adds or retires a page, update its card here.
 //
-//   tier        'core' (the always-included base) vs 'addon'.
-//   route       set when the module has a live page in the app (Marketing,
-//               Quality); the nav links straight to it. Page-less modules open
-//               an info dialog.
-//   navLabel    short label for the sidebar (the full `name` is too long there).
-//   placements  where a module's in-context CTA appears inside the live app
-//               (consumed by components/PlacementCTAs on the feature pages).
-//               Valid keys: dashboard / invoices / schedule / clients /
-//               pipeline / team / integrations.
+// There is NO pricing here. The demo does not sell modules directly: every commercial CTA points to a call
+// ("Book a call"), where scope and cost are worked out for the specific business.
 //
-// Extend this list as new modules ship; everything downstream (sidebar, landing,
-// placements) is driven off it.
+//   route   the module's page in the live app (under /polishpoint/demo); the card links straight to it
+//   how     how to see it when it's a view rather than a page (the crew's phone app is a role); the card links
+//           to the demo's home
 
-// The Core platform — included in every plan. SMS/A2P is INCLUDED in Core (we
-// stand up Twilio + A2P 10DLC as part of the build). Sales automation (timed
-// follow-up workflows) ships with Core, so it is NOT a separate module. Reminders
-// here are appointment/job reminders only; invoice/overdue reminders live in the
-// Invoicing + Quoting module (kept worded distinctly so the two never read as the
-// same feature).
 export const CORE = {
   id: 'core',
   name: 'Core Platform',
-  tier: 'core',
-  blurb: 'The full operations suite every plan starts with.',
+  blurb: 'What every build starts with: the office runs the day, and every role sees its own view.',
   features: [
-    'Operations Dashboard',
-    'Reports & analytics',
-    'Scheduling & Calendar',
-    'Client Database (Contacts + Accounts)',
-    'Sales Pipeline',
-    'Sales automation (timed follow-up workflows & triggers)',
-    'Messaging Suite (email + in-app)',
-    'SMS texting via Twilio — A2P 10DLC & number setup included',
-    'Invoice & payment logging',
-    'Automated appointment reminders (booking, 24h, day-of, post-service)',
-    'Team, Roles & Permissions',
+    'Dashboard with owner, manager, operations and supply views',
+    'Schedule: every visit by day and crew',
+    'Customers: people, companies and every building',
+    'Sales pipeline: deals by stage',
+    'Messaging: customers, team channels and direct messages in one inbox',
+    'Email from your company mailbox, texts from your own number',
+    'Customer messages on a schedule: reminders, receipts and "on my way"',
+    'Invoices: billing and payments',
+    'Reports to run and export: hours, missed clock-ins, inspections, supply usage',
+    'Team, roles and permissions, down to each person',
   ],
 };
 
 export const MODULE_CATALOG = [
   {
-    id: 'marketing',
-    name: 'Marketing — Warm Outreach & Reviews',
-    navLabel: 'Marketing',
-    icon: '📣',
-    category: 'Growth',
-    tier: 'addon',
-    route: '/marketing', // has a live page in the app — nav links straight to it
-    blurb: 'Warm-email outreach at scale plus review generation and reputation management.',
-    longDescription:
-      'Two growth engines in one module. Outreach: multi-step warm-email sequences that send from company-shared rotation inboxes — we stand up the domain, DNS, and inbox warmup for you — with AI-routed replies and reply-to-pipeline routing. Reputation: automatically request reviews after a completed job, monitor what comes in, and respond — all inside PolishPoint.',
+    id: 'crew',
+    name: 'Crew App',
+    icon: '📱',
+    how: 'In the demo, pick a cleaner from the user menu',
+    blurb: 'The phone app your cleaners carry: tonight’s stops, clock in on site, and each visit’s checklist, in their own language.',
     features: [
-      'Multi-step warm-email sequences',
-      'Company-shared rotation inboxes',
-      'Domain / DNS / inbox warmup setup',
-      'AI-routed inbound replies',
-      'Send-window + daily-cap controls',
-      'Reply-to-pipeline routing',
-      'Automated review requests',
-      'Review monitoring & response',
-      'Reputation dashboard',
+      'Tonight’s stops and one-tap clock in and out',
+      'Clock-in checked against the building’s location',
+      'Each visit’s checklist, done on the phone',
+      'Scan an area’s QR code',
+      'Their hours, requests and supply asks',
+      'English, Spanish and Haitian Creole',
     ],
-    placements: [],
-    featured: true,
   },
   {
-    id: 'qc',
-    name: 'Quality Control & Inspections',
-    navLabel: 'Quality',
-    icon: '🔍',
-    category: 'Quality',
-    tier: 'addon',
-    route: '/inspections', // has a live page in the app — nav links straight to it
-    blurb: 'Score every clean. Area-by-area inspections, a cross-account problems queue, branded client reports, and labor variance that catches what Swept misses.',
-    longDescription:
-      'The janitorial quality layer a Swept user switches to get — built natively in. Build versioned inspection templates, walk a site scoring each area pass/fail or 1–5 with per-item photos, and instantly get a cleaning score. Open issues roll into a cross-account problems / punch-list queue, and you can send the client a branded report proving their building scored 94%. Pairs with Labor Variance: actual clocked labor vs each account’s expected time, multi-cleaner-attributed (the case Swept gets wrong) and flagged over / under.',
+    id: 'time',
+    name: 'Time & Attendance',
+    icon: '⏱️',
+    route: '/check-in',
+    blurb: 'See who showed up, approve every hour before payroll, and catch labor that runs over.',
     features: [
-      'Scored site inspections (area-level cleaning scores)',
-      'Drag-to-build, versioned inspection templates',
-      'In-field scoring with per-item photos',
-      'Cross-account problems / punch-list queue',
-      'Client-facing shareable quality report',
-      'Labor variance — clocked time vs expected (multi-cleaner-accurate)',
+      'Shift Check-in: who arrived and who is late',
+      'Time Clock: every punch in and out',
+      'Hours to approve before payroll, missing time included',
+      'Variance: clocked labor against expected, per clean',
+      'Cleans that ran over or under, flagged',
     ],
-    placements: [],
-    featured: true,
   },
   {
-    id: 'leadscraper',
-    name: 'AI Lead Scraper',
-    navLabel: 'Lead Scraper',
-    icon: '🧲',
-    category: 'Growth',
-    tier: 'addon',
-    blurb: 'AI finds decision-makers that match your ICP and feeds them straight into your pipeline.',
-    longDescription:
-      'Constant top-of-funnel, on autopilot. The AI Lead Scraper searches for decision-makers that match your Ideal Customer Profile, enriches each with verified contact details, and drops them into a dedicated Pipeline stage — ready for your sequences and automations to work. Run it on a schedule for a steady drip of fresh leads, or trigger a search by hand whenever you want more. Standalone — but it plugs straight into your pipeline and automations for nonstop lead flow.',
-    features: [
-      'ICP-based decision-maker search',
-      'AI contact enrichment (email, title, company)',
-      'Auto-pipe into a Pipeline stage',
-      'Feeds sequences & automations',
-      'Scheduled or manual runs',
-      'Dedup against existing contacts',
-    ],
-    placements: ['pipeline'],
-    featured: true,
-  },
-  {
-    id: 'invoicing',
-    name: 'Invoicing + Quoting',
-    navLabel: 'Invoicing',
-    icon: '🧾',
-    category: 'Billing & Payments',
-    tier: 'addon',
-    blurb: 'Quote-to-cash: branded quotes with e-sign, then online card payments and recurring billing.',
-    longDescription:
-      'Turn Core’s invoice log into a full quote-to-cash engine. Build and send branded quotes/estimates, collect an e-signature, and convert an accepted quote into an invoice in one click. Then get paid: customizable invoice templates, online card payments via Stripe Connect, recurring/subscription billing, tipping, payment routing, and automated overdue-invoice reminders (distinct from Core’s appointment reminders — these chase money owed).',
-    features: [
-      'Quote & estimate builder',
-      'E-signature acceptance',
-      'One-click quote → invoice',
-      'Customizable invoice templates',
-      'Online card payments (Stripe Connect)',
-      'Recurring / subscription billing',
-      'Tipping when a customer pays',
-      'Automated overdue-invoice reminders',
-      'Payment routing',
-    ],
-    placements: ['invoices', 'integrations'],
-    featured: true,
-  },
-  {
-    id: 'quickbooks',
-    name: 'QuickBooks Integration',
-    navLabel: 'QuickBooks',
-    icon: '🔄',
-    category: 'Billing & Payments',
-    tier: 'addon',
-    blurb: 'Two-way sync with QuickBooks Online — customers, invoices, and payments.',
-    longDescription:
-      'Keep PolishPoint and QuickBooks Online perfectly in step. Customers, invoices, and payments sync in both directions, and AR aging surfaces right inside your books — no double entry. Pairs best with Invoicing + Quoting, which turns on the card payments and recurring billing that make the two-way sync worth the most.',
-    features: [
-      'Bidirectional customer sync',
-      'Bidirectional invoice sync',
-      'Bidirectional payment sync',
-      'AR aging surfaces',
-    ],
-    placements: ['integrations'],
-    featured: true,
-  },
-  {
-    id: 'inventory',
-    name: 'Inventory & Key Tracking',
-    navLabel: 'Inventory',
-    icon: '📦',
-    category: 'Operations',
-    tier: 'addon',
-    blurb: 'Track physical keys per site and general inventory with low-stock alerts.',
-    longDescription:
-      'Never lose a client key or run out of supplies again. Track physical keys per site plus general inventory — supplies, equipment, and stock — with automatic low-stock alerts that ride your existing notification preferences.',
-    features: [
-      'Physical key tracking per site',
-      'General inventory (supplies, equipment)',
-      'Stock-level tracking',
-      'Low-stock alerts',
-    ],
-    placements: ['dashboard'],
-    featured: true,
-  },
-  {
-    id: 'fieldops',
-    name: 'Field Ops',
-    navLabel: 'Field Ops',
-    icon: '📋',
-    category: 'Operations',
-    tier: 'addon',
-    blurb: 'Run scheduled jobs in the field — a mobile crew app with checklists, photos, and GPS-verified completion.',
-    longDescription:
-      'Core schedules the work; Field Ops runs it in the field. Push each scheduled job to a mobile app your crews carry, where they work digital checklists, capture before/after photos, and confirm completion with GPS — even offline. Status rolls back into a live board so the office sees what’s done in real time. The field-execution layer you’d otherwise reach for a tool like Jobber to get, built natively in.',
-    features: [
-      'Mobile field app for crews',
-      'Push assigned jobs to crews',
-      'Digital job checklists',
-      'Before / after photos',
-      'GPS-verified completion (offline-capable)',
-      'Live status board',
-    ],
-    placements: ['schedule'],
-    featured: true,
-  },
-  {
-    id: 'ems',
-    name: 'HR, Time & Payroll',
-    navLabel: 'HR',
+    id: 'payroll-hr',
+    name: 'Payroll & HR',
     icon: '👥',
-    category: 'Workforce',
-    tier: 'addon',
-    blurb: 'The workforce layer: HR records, GPS time clock with timesheet approval, native payroll, PTO, and onboarding.',
-    longDescription:
-      'Core’s Team & Roles control who can log in and what they can do; this module adds the whole workforce layer on top. Capture GPS clock-in/out on the crew app and approve timesheets, then run payroll natively — hours × rate → gross with custom pay lines and CSV export — alongside reimbursements and special-service pay. Store documents with expiration tracking, manage certifications and training, run compliant digital onboarding, and handle raises, supervisor inspections, and time-off in one place. Shares the crew mobile surface with Field Ops, so clock-in rides on the same app your crews already carry.',
+    route: '/payroll',
+    blurb: 'Pay runs built from approved hours, and every employee record in one place.',
     features: [
-      'Manager time clock + timesheet approval',
-      'Payroll runs — hours × rate → gross, custom pay lines, CSV export',
-      'Reimbursements & special-service pay',
-      'Time-off (PTO) requests & tracking',
-      'GPS clock-in / clock-out',
-      'Document storage with expiration tracking',
-      'Certifications & training records',
-      'ESIGN/UETA-compliant onboarding',
-      'Raise & promotion workflow',
-      'Supervisor inspections',
+      'Pay runs by period, from approved hours',
+      'Close the period and export it',
+      'Employees with pay rates and overtime',
+      'Special-service pay and reimbursements',
+      'PTO tracked for each employee',
+      'Warnings, incidents and terminations',
     ],
-    placements: ['team'],
-    featured: true,
   },
   {
-    id: 'migration',
-    name: 'Data Migration',
-    navLabel: 'Data Migration',
-    icon: '📥',
-    category: 'Onboarding',
-    tier: 'addon',
-    blurb: 'We import your existing data from your current system (for example, a GoHighLevel export).',
-    longDescription:
-      'Bring your history with you. We map and import your existing contacts, accounts, and activity from your current system (for example, a GoHighLevel export), with field mapping, email-keyed dedup, and validation so you start clean.',
+    id: 'quality',
+    name: 'Quality & Client Requests',
+    icon: '🔍',
+    route: '/inspections',
+    blurb: 'Score every building, answer what customers raise on time, and show them the proof.',
     features: [
-      'Per-source field mapping',
-      'Contacts + Accounts import',
-      'Email-keyed dedup + validation',
-      'Sample-CSV guidance',
+      'Scored inspections, area by area',
+      'Inspection templates you build',
+      'Today’s checklist for each visit',
+      'Client Requests with response deadlines',
+      'A QR code label for every cleaning area',
+      'Inspection reports to share with the customer',
     ],
-    placements: [],
-    featured: true,
+  },
+  {
+    id: 'hub',
+    name: 'Customer Hub',
+    icon: '🏢',
+    route: '/hub',
+    blurb: 'A portal for your customers: their buildings, tonight’s crew, inspections, invoices and requests.',
+    features: [
+      'Every building they manage under one login',
+      'Each visit’s crew check-in, check-out and photos',
+      'Checklists and inspection scores',
+      'Invoices and documents',
+      'Raise a request and follow it to done',
+      'Message their account manager',
+    ],
+  },
+  {
+    id: 'supplies',
+    name: 'Supplies & Deliveries',
+    icon: '📦',
+    route: '/supplies',
+    blurb: 'Approved supply lists for each building, one order queue, and deliveries the driver closes out.',
+    features: [
+      'An approved supply list for each building',
+      'Requests approved one at a time or in bulk',
+      'Orders tracked from new to with the supplier to fulfilled',
+      'A master supply catalog',
+      'Driver deliveries with a Delivered button',
+      'Usage and budget by building',
+    ],
+  },
+  {
+    id: 'keys',
+    name: 'Key Tracking',
+    icon: '🔑',
+    route: '/keys',
+    blurb: 'Every building key: where it opens, who has it, and where it has been.',
+    features: [
+      'Keys by building and door',
+      'Check out to a person, check back in',
+      'In, out, unknown and lost at a glance',
+      'A history for every key',
+    ],
+  },
+  {
+    id: 'contracts',
+    name: 'Contracts & Renewals',
+    icon: '📑',
+    route: '/contracts',
+    blurb: 'Every signed agreement with its yearly value, its term, and the reminders that protect the renewal.',
+    features: [
+      'Signed agreements by customer and manager',
+      'Annual value and the total book',
+      'Price-change and cancellation-notice reminders',
+      'Terms and end dates',
+      'Drafts, active and ended',
+    ],
+  },
+  {
+    id: 'pnl',
+    name: 'Property P&L',
+    icon: '📈',
+    route: '/pnl',
+    blurb: 'Margin for every building, so the accounts below target are the first thing you see.',
+    features: [
+      'Revenue, past due and margin for each building',
+      'Below target, watch and on target',
+      'Any date range',
+      'The whole book’s margin on the owner’s dashboard',
+    ],
+  },
+  {
+    id: 'quotes',
+    name: 'Quotes & E-Sign',
+    icon: '✍️',
+    route: '/quotes',
+    blurb: 'Proposals from your own template, signed online and sent to the customer to sign.',
+    features: [
+      'Quotes from your own template',
+      'Sign it and send it for signature',
+      'The customer signs online from a link',
+      'Draft, sent and signed at a glance',
+      'Download the signed copy',
+    ],
+  },
+  {
+    id: 'marketing',
+    name: 'Email Marketing',
+    icon: '📣',
+    route: '/marketing',
+    blurb: 'Multi-step email sequences sent from your own inboxes, with replies routed to the pipeline.',
+    features: [
+      'Multi-step email sequences',
+      'Sent from your connected inboxes',
+      'Every reply in one place',
+      'Send windows and daily caps',
+      'Replies routed to a pipeline stage',
+    ],
   },
 ];
-
-export const getModule = (id) => MODULE_CATALOG.find((m) => m.id === id) || null;
-
-export const modulesForPlacement = (placement) =>
-  MODULE_CATALOG.filter((m) => m.placements.includes(placement));
-
-export const featuredModules = () => MODULE_CATALOG.filter((m) => m.featured);
