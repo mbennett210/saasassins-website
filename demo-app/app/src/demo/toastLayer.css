@@ -2,6 +2,11 @@
    The wrapper draws no box of its own. */
 .pp-toast-layer { display: contents; }
 
+/* Its layer: over the page (#root, 1), the messages dock (50) and the menu's section panel (51), and under every layer
+   a person opens (a side panel, 90; a pop-up, 100 and up; a sheet or the Home Screen welcome, 400 and up), where
+   Clean Space's toasts draw today, so a toast never lies over a pop-up's buttons. */
+.pp-toast-layer .toast-stack { z-index: 60; }
+
 /* A desktop: over the messages dock's button (the dock sits var(--space-6) from the bottom; its button is 54px). */
 .pp-toast-layer .toast-stack { right: var(--space-6); bottom: calc(var(--space-6) + 54px + var(--space-3)); }
 

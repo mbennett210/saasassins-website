@@ -1,6 +1,7 @@
 // ToastLayer: Clean Space's toast stack (components/Toast.jsx), drawn at the page's top level and kept off every
 // button. Inside the page (#root is its own layer, z-index 1) the stack drew under everything portaled to <body>, so
-// the messages dock's button lay over its Dismiss; at the top level it's over them again, as --z-toast means.
+// the messages dock's button lay over its Dismiss. At the top level toastLayer.css puts it over the page and the dock,
+// and still under every layer a person opens (a side panel, a pop-up, a sheet, the Home Screen welcome), as before.
 // toastLayer.css lifts it over the bars pinned to the bottom (the dock's button, the phone's floating menu, the
 // customer hub's New request). While a toast shows, this gives the page that much more room at its end
 // (`--pp-toast-room`, from the bottom of the window to the top of the stack), so a page's last buttons scroll up out

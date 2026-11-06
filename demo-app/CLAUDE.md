@@ -32,7 +32,7 @@ script's `PATCHES` or in one of the files the demo owns.
 | `app/src/demo/modules.catalog.js` | The Core list and the module cards. Every card is a module that is in the live demo, with a link to its page; keep it in step with the app after a sync |
 | `app/src/demo/demoConfig.js` | `ROUTER_BASE` / `APP_ROOT` (the app lives at `/polishpoint/demo`), `demoEntry()` (landing vs app vs an old deep link), the Book a call link |
 | `app/src/demo/AnchoredPortal.jsx`, `anchoredPortal.css` | Draws a dropdown at the page's top level while its CSS still places it under its trigger (the bells, the messaging filters); `.claude/styling.json` names it a pop-up part |
-| `app/src/demo/ToastLayer.jsx`, `toastLayer.css` | Clean Space's toasts at the page's top level, over the bars pinned to the bottom (the dock's button, the phone's floating menu, the hub's New request), one at a time on a phone, with room at a page's end while one shows |
+| `app/src/demo/ToastLayer.jsx`, `toastLayer.css` | Clean Space's toasts at the page's top level, over the bars pinned to the bottom (the dock's button, the phone's floating menu, the hub's New request) and under any pop-up a person opens, one at a time on a phone, with room at a page's end while one shows |
 | `app/src/demo/centering.css` | Clean Space's shared parts with their words in their middle in Poppins (counts, badges, tabs, chips, small buttons, avatars, the section tabs' underline), each part its own size; imported after `index.css` |
 | `app/src/lib/assetUrl.js` | Prefixes runtime `/file.png` paths with the `/polishpoint` base |
 | `brands/polishpoint/` | The brand pack (name, contacts, colours, logos, quote pages) |
@@ -52,8 +52,9 @@ script's `PATCHES` or in one of the files the demo owns.
 - **Every panel and pop-up at the page's top level** (the styling rules, and Forge's file check on each sync's
   lines): the notification bells, the messaging filters, the messages dock, the menu's section panel and the toasts
   are portaled to `<body>`, each dismiss spares its portaled panel, and Clean Space's unused review mockup is left
-  out. The toasts sit over the bars pinned to the bottom, and while one shows the page, the hub and the phone menu
-  get that much room at their end, so no button stays under it (Forge's `covered` measure).
+  out. The toasts sit over the bars pinned to the bottom and under any pop-up, sheet or full screen a person opens
+  (as Clean Space draws them), and while one shows the page, the hub and the phone menu get that much room at their
+  end, so no button stays under it (Forge's `covered` measure).
 - **Words in their parts' middle** (Daniel's pick, 2026-11-05). Clean Space's measures draw a fallback font; this
   repo's load Poppins, in which Clean Space's counts, badges, tabs and chips read 0.5 to 0.7px high. `centering.css`
   moves each part's words without changing its size, and the Pipeline icon's "$" is a path (an SVG `<text>` defeats
