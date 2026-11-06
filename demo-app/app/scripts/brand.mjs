@@ -4,11 +4,12 @@
 // A new client is a new brand pack; nothing else in the app changes. The pack is brands/<id>/brand.json
 // (the identity, the four base colours, the logo sources) and the logo images beside it. This script
 // writes it everywhere the app reads it:
-//   src/brand/identity.generated.js   IDENTITY: the name, contact details, signatory, senders (for code)
+//   src/brand/identity.generated.js   IDENTITY: the company's name, contact details, signatory, the sign-in
+//                                     mails' reply-to, and the software's own names (IDENTITY.product) (for code)
 //   src/brand/quote.generated.js      QUOTE_BODY: the quote's pages in the brand's words (brands/<id>/quote.html)
-//   index.html                        <title>, application-name, apple-mobile-web-app-title
-//   public/manifest.json              name, short_name, description
-//   public/sw.js                      the push notifications' default title (APP_NAME)
+//   index.html                        <title>, application-name, apple-mobile-web-app-title (the software's names)
+//   public/manifest.json              name, short_name (the software's names), description
+//   public/sw.js                      the push notifications' default title (APP_NAME, the software's name)
 //   src/theme-cleanspace.css          the BRAND PALETTE block: every ramp and surface, derived from the four
 //                                     base colours or pinned (scripts/brand-colors.mjs), and refused when a
 //                                     contrast check fails
@@ -24,7 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { HEX, PIN_KEYS, PALETTE_BLOCK, paletteBlock } from './brand-colors.mjs';
+import { HEX, PIN_KEYS, PALETTE_BLOCK, paletteBlock, AVATAR_TEXT } from './brand-colors.mjs';
 
 const APP = fileURLToPath(new URL('..', import.meta.url));
 export const BRANDS = path.join(APP, '..', 'brands');
@@ -43,18 +44,67 @@ const SCHEMA = {
     domain: 'string', website: 'string', email: 'string', phone: 'string', street: 'string', city: 'string',
     tagline: 'string', services: 'string', signatory: { name: 'string', role: 'string', title: 'string', email: 'string' },
   },
-  email: { quotesFrom: 'string', authFrom: 'string' },
+  // the Reply-To of the app's sign-in mails (an invite's, a password reset's): the app sends through Google
+  // as the system sender mailbox, so a pack names no From of its own (api/_lib/users.js)
+  email: { authFrom: 'string' },
 };
-// the colour and logo sections, validated on their own (validateColors, validateLogos)
-const SECTIONS = new Set(['colors', 'logos']);
+// email.quotesFrom was the Resend-era default quotes sender. Nothing has read it since email moved to Google
+// (Wave 0, 2026-09-29: Gmail sends as the system sender mailbox), so it left the packs and IDENTITY
+// (2026-10-03). A pack that still carries it is accepted and the field ignored, because Forge's pack writer
+// (outside this repo) writes it into every new copy.
+// TODO(remove-by: 2026-10-31): drop LEGACY_EMAIL once Forge's lib/pack.mjs stops writing email.quotesFrom.
+const LEGACY_EMAIL = new Set(['quotesFrom']);
+// The SOFTWARE's own names, kept apart from the company's (UI_RULES §129). `product` is optional: a pack without
+// one names the software as the company (its name, shortName, appTitle and wordmark), exactly as before. Clean
+// Space's software is Clean Corner ("Clean Space's proprietary software, Clean Corner, powered by Clean Space",
+// kept off the company's name so it can be licensed later): the browser tab, the home screen, the sign-in page,
+// the app's own chrome, pushes and sign-in mails read the product (IDENTITY.product); the quotes, inspection
+// reports, invoices, client mails, the client hub's footer and anything legal read the company (IDENTITY.name).
+// In the block only `name` is required; shortName, appTitle and wordmark default to it.
+const PRODUCT_FIELDS = ['name', 'shortName', 'appTitle', 'wordmark'];
+// the colour, logo and product sections, validated on their own (validateColors, validateLogos, validateProduct)
+const SECTIONS = new Set(['colors', 'logos', 'product']);
 const BASE_COLOURS = ['primary', 'secondary', 'link', 'neutral'];
 
 // The optional brand-pack fields this shell understands, for a pack-making tool (Forge) to read from a shell
-// commit before it writes them: 'color-logos' = logos.*.color and logos.mark.tile (REBRAND.md §1, UI_RULES §121).
-export const PACK_FEATURES = Object.freeze(['color-logos']);
+// commit before it writes them: 'color-logos' = logos.*.color, logos.mark.tile and logos.lockup.sidebar, and
+// the login card's own logo for a light ground (REBRAND.md §1, UI_RULES §121); 'avatar-text' = colors.avatarText,
+// the avatar initials' colour on the brand ink (UI_RULES §121, CS-578); 'sidebar-mark' = logos.sidebar, what the
+// nav bar shows (the lockup, or the mark alone); 'product-name' = product, the software's own names apart from
+// the company's (UI_RULES §129).
+export const PACK_FEATURES = Object.freeze(['color-logos', 'avatar-text', 'sidebar-mark', 'product-name']);
 
-// A logo's fields, per key: the mark may carry a colour mark and a tile choice, the lockup a colour lockup.
-const LOGO_FIELDS = { mark: ['file', 'box', 'color', 'tile'], lockup: ['file', 'box', 'color'] };
+/** The `product` block's errors: optional, else an object with the software's `name` and optionally its shortName, appTitle and wordmark. */
+export function validateProduct(product) {
+  if (product === undefined) return [];
+  if (!product || typeof product !== 'object' || Array.isArray(product)) return ["product: an object with the software's name (leave it out to name the software as the company)"];
+  const errors = [];
+  for (const k of Object.keys(product)) if (!PRODUCT_FIELDS.includes(k)) errors.push(`product.${k}: not a brand field`);
+  for (const k of PRODUCT_FIELDS) {
+    const v = product[k];
+    if (v === undefined && k !== 'name') continue;
+    const where = `product.${k}`;
+    // the same line rules as every identity value: it lands in a title, a meta, the manifest and sw.js
+    if (typeof v !== 'string' || !v.trim()) errors.push(`${where}: missing or not a string`);
+    else if (/[\u0000-\u001f\u007f\u0085\u2028\u2029]/.test(v) || v !== v.trim()) errors.push(`${where}: one line, without leading or trailing spaces`);
+    else if (/[<>"%\\]/.test(v)) errors.push(`${where}: no < > " % or \\ characters`);
+  }
+  return errors;
+}
+
+/**
+ * The software's names: the pack's `product` block (shortName, appTitle and wordmark default to its name), or,
+ * with no block, the company's own, so a pack without one renders exactly as before.
+ */
+export function productOf(brand) {
+  const p = brand?.product;
+  if (!p) return { name: brand.name, shortName: brand.shortName, appTitle: brand.appTitle, wordmark: brand.wordmark };
+  return { name: p.name, shortName: p.shortName ?? p.name, appTitle: p.appTitle ?? p.name, wordmark: p.wordmark ?? p.name };
+}
+
+// A logo's fields, per key: the mark may carry a colour mark and a tile choice, the lockup a colour lockup and
+// how the sidebar shows it.
+const LOGO_FIELDS = { mark: ['file', 'box', 'color', 'tile'], lockup: ['file', 'box', 'color', 'sidebar'] };
 // A colour file (the client's logo in its own colours, for a light ground) is png, svg or webp — never jpg,
 // which cannot be transparent.
 const COLOUR_FILE = /^[\w.-]+\.(png|svg|webp)$/i;
@@ -63,7 +113,10 @@ export function validateColors(colors) {
   if (!colors || typeof colors !== 'object' || Array.isArray(colors)) return ['colors: missing (an object with primary, secondary, link and neutral)'];
   const errors = [];
   for (const k of BASE_COLOURS) if (typeof colors[k] !== 'string' || !HEX.test(colors[k])) errors.push(`colors.${k}: a colour as #rrggbb`);
-  for (const k of Object.keys(colors)) if (!BASE_COLOURS.includes(k) && k !== 'pins') errors.push(`colors.${k}: not a brand field`);
+  for (const k of Object.keys(colors)) if (!BASE_COLOURS.includes(k) && k !== 'pins' && k !== 'avatarText') errors.push(`colors.${k}: not a brand field`);
+  if (colors.avatarText !== undefined && !AVATAR_TEXT.includes(colors.avatarText)) {
+    errors.push('colors.avatarText: "accent" (the brand accent) or "white" (the text on the brand ink); leave it out to choose by contrast');
+  }
   if (colors.pins !== undefined) {
     if (!colors.pins || typeof colors.pins !== 'object' || Array.isArray(colors.pins)) errors.push('colors.pins: an object of palette keys to #rrggbb');
     else for (const [k, v] of Object.entries(colors.pins)) {
@@ -77,7 +130,7 @@ export function validateColors(colors) {
 export function validateLogos(logos) {
   if (!logos || typeof logos !== 'object' || Array.isArray(logos)) return ['logos: missing (an object with mark and lockup)'];
   const errors = [];
-  for (const k of Object.keys(logos)) if (!['mark', 'lockup'].includes(k)) errors.push(`logos.${k}: not a brand field`);
+  for (const k of Object.keys(logos)) if (!['mark', 'lockup', 'sidebar'].includes(k)) errors.push(`logos.${k}: not a brand field`);
   for (const k of ['mark', 'lockup']) {
     const l = logos[k];
     if (!l || typeof l !== 'object') { errors.push(`logos.${k}: missing (an object with a file)`); continue; }
@@ -97,12 +150,26 @@ export function validateLogos(logos) {
     if (tile !== 'ink' && tile !== 'white') errors.push('logos.mark.tile: "ink" (the brand ink, the default) or "white" (the colour mark on a white tile)');
     else if (tile === 'white' && typeof logos.mark?.color !== 'string') errors.push('logos.mark.tile: "white" needs logos.mark.color (the colour mark to place on the white tile)');
   }
+  // logos.sidebar chooses what the NAV BAR shows: the lockup (the default, which carries the name) or the mark
+  // alone, for a brand whose nav bar wants just its icon. The login card and the documents' letterhead keep the
+  // lockup either way, so the name still heads a quote and the sign-in page.
+  const navSource = logos.sidebar;
+  if (navSource !== undefined && navSource !== 'lockup' && navSource !== 'mark') {
+    errors.push('logos.sidebar: "lockup" (the default: the horizontal logo, which carries the name) or "mark" (the icon alone, in the nav bar)');
+  }
+  // logos.lockup.sidebar is lockup-only: "color" (the default with a colour lockup) shows it in its own colours, on a white
+  // plate where they don't read on the sidebar; "white" keeps the one-colour knock-out there.
+  const sidebar = logos.lockup?.sidebar;
+  if (sidebar !== undefined) {
+    if (sidebar !== 'color' && sidebar !== 'white') errors.push('logos.lockup.sidebar: "color" (their colours, on a white plate where needed) or "white" (the knock-out on the brand ink)');
+    else if (sidebar === 'color' && typeof logos.lockup?.color !== 'string') errors.push('logos.lockup.sidebar: "color" needs logos.lockup.color (the colour lockup to show)');
+  }
   return errors;
 }
 
 const EMAIL = /^[^\s@<>]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 const SENDER = /^[^<>\r\n]+ <[^\s@<>]+@[a-z0-9.-]+\.[a-z]{2,}>$/i;
-const SENDERS = new Set(['email.quotesFrom', 'email.authFrom']); // "Name <address>": the brackets belong
+const SENDERS = new Set(['email.authFrom']); // "Name <address>": the brackets belong
 const CITY_LINE = /^(.+?), ([A-Z]{2}) (\d{5}(?:-\d{4})?)$/;
 
 export function validate(brand, schema = SCHEMA, at = '') {
@@ -122,10 +189,10 @@ export function validate(brand, schema = SCHEMA, at = '') {
   }
   if (!at) {
     for (const key of Object.keys(brand || {})) if (!(key in SCHEMA) && !SECTIONS.has(key)) errors.push(`${key}: not a brand field`);
-    errors.push(...validateColors(brand?.colors), ...validateLogos(brand?.logos));
+    errors.push(...validateColors(brand?.colors), ...validateLogos(brand?.logos), ...validateProduct(brand?.product));
     for (const [key, sub] of [['company', SCHEMA.company], ['email', SCHEMA.email], ['company.signatory', SCHEMA.company.signatory]]) {
       const obj = key.split('.').reduce((o, k) => o?.[k], brand);
-      if (obj && typeof obj === 'object') for (const k of Object.keys(obj)) if (!(k in sub)) errors.push(`${key}.${k}: not a brand field`);
+      if (obj && typeof obj === 'object') for (const k of Object.keys(obj)) if (!(k in sub) && !(key === 'email' && LEGACY_EMAIL.has(k))) errors.push(`${key}.${k}: not a brand field`);
     }
     if (brand?.version !== 1) errors.push('version: this generator reads version 1');
     if (typeof brand?.id === 'string' && !/^[a-z0-9-]+$/.test(brand.id)) errors.push('id: lowercase letters, digits and hyphens only (it names the brand\'s folder)');
@@ -138,7 +205,7 @@ export function validate(brand, schema = SCHEMA, at = '') {
     if (typeof c.city === 'string' && !CITY_LINE.test(c.city)) errors.push('company.city: "City, ST 12345" (the city, the state\'s two letters, the ZIP)');
     if (typeof c.signatory?.email === 'string' && !EMAIL.test(c.signatory.email)) errors.push('company.signatory.email: an email address');
     if (typeof brand?.appUrl === 'string' && !/^https:\/\/[a-z0-9.-]+(:\d+)?$/i.test(brand.appUrl)) errors.push('appUrl: https://host, no path');
-    for (const k of ['quotesFrom', 'authFrom']) if (typeof brand?.email?.[k] === 'string' && !SENDER.test(brand.email[k])) errors.push(`email.${k}: a sender such as "Name <quotes@example.com>"`);
+    for (const k of ['authFrom', ...LEGACY_EMAIL]) if (typeof brand?.email?.[k] === 'string' && !SENDER.test(brand.email[k])) errors.push(`email.${k}: a sender such as "Name <login@example.com>"`);
   }
   return errors;
 }
@@ -236,7 +303,11 @@ export function identityStrings(brand) {
     ['domain', c.domain], ['website', c.website], ['email', c.email], ['phone', c.phone], ['street', c.street], ['city', c.city],
     ['tagline', desc(c.tagline)], ['services', desc(c.services)],
     ['signatory', c.signatory.name], ['signatory title', desc(c.signatory.title)], ['signatory email', c.signatory.email],
-    ['quotes sender', addr(brand.email.quotesFrom)], ['auth sender', addr(brand.email.authFrom)],
+    ['auth sender', addr(brand.email.authFrom)],
+    // the software's own names, when the pack gives them (without a product block they are the company's, above)
+    ...(brand.product ? (({ name, wordmark, shortName, appTitle }) => [
+      ['product name', name], ['product wordmark', wordmark], ['product short name', shortName], ['product app title', appTitle],
+    ])(productOf(brand)) : []),
   ].filter(([, s]) => typeof s === 'string' && s.length >= 4);
 }
 
@@ -255,22 +326,31 @@ export function localeOf(company) {
   };
 }
 
-// The identity code reads: the brand file minus the colour and asset sections, plus what follows from it: the
-// joined address, the locale (localeOf), and the signatory's initials (the seeded owner's avatar and the
-// stored-owner correction).
+// The identity code reads: the brand file minus the colour and asset sections (and a legacy sender nothing
+// reads), plus what follows from it: the software's names (productOf, always present: the company's without a
+// product block), the joined address, the locale (localeOf), and the signatory's initials (the seeded owner's
+// avatar and the stored-owner correction).
 export function identityOf(brand) {
   const rest = { ...brand };
-  for (const k of ['colors', 'logos', 'version']) delete rest[k];
-  const words = rest.company.signatory.name.split(/\s+/);
+  for (const k of ['colors', 'logos', 'version', 'product']) delete rest[k];
+  const { company, email: rawEmail, ...head } = rest;
+  const email = Object.fromEntries(Object.entries(rawEmail || {}).filter(([k]) => !LEGACY_EMAIL.has(k)));
+  const words = company.signatory.name.split(/\s+/);
   const initials = (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : '')).toUpperCase();
-  return { ...rest, company: { ...rest.company, signatory: { ...rest.company.signatory, initials }, address: `${rest.company.street}, ${rest.company.city}`, ...localeOf(rest.company) } };
+  return {
+    ...head,
+    product: productOf(brand),
+    company: { ...company, signatory: { ...company.signatory, initials }, address: `${company.street}, ${company.city}`, ...localeOf(company) },
+    email,
+  };
 }
 
 export function identityText(brand) {
   return `// GENERATED by \`npm --prefix app run brand -- ${brand.id}\` from brands/${brand.id}/brand.json. Do not edit: change the
 // brand file, then regenerate. test-brand.mjs fails when this file no longer matches it.
-// The brand's identity for code that shows it: the name, wordmark, app title, contact details and sender
-// addresses (UI_RULES §129). Never write one of these values anywhere else (the name ledger checks).
+// The brand's identity for code that shows it: the company's name, wordmark, app title, contact details and the
+// sign-in mails' reply-to address, and the software's own names in \`product\` (the company's when the pack names
+// no product) (UI_RULES §129). Never write one of these values anywhere else (the name ledger checks).
 const deepFreeze = (o) => { for (const v of Object.values(o)) if (v && typeof v === 'object') deepFreeze(v); return Object.freeze(o); };
 export const IDENTITY = deepFreeze(${JSON.stringify(identityOf(brand), null, 2)});
 `;
@@ -280,20 +360,22 @@ const escHtml = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(
 const json = JSON.stringify;
 // The static outputs, by path under app/: [the line's anchor, what it becomes]. Each rewrites only the lines
 // it owns (one value per line, so a rewrite never adds or removes a line), leaving the rest of the file as it
-// is. The replacements are functions, so a `$1` or `$&` in a client's name is written literally.
+// is. The replacements are functions, so a `$1` or `$&` in a client's name is written literally. The tab, the
+// home screen, the install dialog and a push's default title name the SOFTWARE (productOf: the company's names
+// when the pack has no product block).
 const STATIC = {
   'index.html': [
-    [/<title>[^<]*<\/title>/, (b) => `<title>${escHtml(b.appTitle)}</title>`],
-    [/(<meta name="application-name" content=")[^"]*(")/, (b, m) => `${m[1]}${escHtml(b.shortName)}${m[2]}`],
-    [/(<meta name="apple-mobile-web-app-title" content=")[^"]*(")/, (b, m) => `${m[1]}${escHtml(b.shortName)}${m[2]}`],
+    [/<title>[^<]*<\/title>/, (b) => `<title>${escHtml(productOf(b).appTitle)}</title>`],
+    [/(<meta name="application-name" content=")[^"]*(")/, (b, m) => `${m[1]}${escHtml(productOf(b).shortName)}${m[2]}`],
+    [/(<meta name="apple-mobile-web-app-title" content=")[^"]*(")/, (b, m) => `${m[1]}${escHtml(productOf(b).shortName)}${m[2]}`],
   ],
   'public/manifest.json': [
-    [/("name"\s*:\s*)"(?:[^"\\]|\\.)*"/, (b, m) => `${m[1]}${json(b.name)}`],
-    [/("short_name"\s*:\s*)"(?:[^"\\]|\\.)*"/, (b, m) => `${m[1]}${json(b.shortName)}`],
+    [/("name"\s*:\s*)"(?:[^"\\]|\\.)*"/, (b, m) => `${m[1]}${json(productOf(b).name)}`],
+    [/("short_name"\s*:\s*)"(?:[^"\\]|\\.)*"/, (b, m) => `${m[1]}${json(productOf(b).shortName)}`],
     [/("description"\s*:\s*)"(?:[^"\\]|\\.)*"/, (b, m) => `${m[1]}${json(b.description)}`],
   ],
   'public/sw.js': [
-    [/^const APP_NAME = .*$/m, (b) => `const APP_NAME = ${json(b.name)}; // GENERATED by \`npm --prefix app run brand\` from the brand file`],
+    [/^const APP_NAME = .*$/m, (b) => `const APP_NAME = ${json(productOf(b).name)}; // GENERATED by \`npm --prefix app run brand\` from the brand file`],
   ],
 };
 const STATIC_FILES = { 'index.html': INDEX, 'public/manifest.json': MANIFEST, 'public/sw.js': SW };

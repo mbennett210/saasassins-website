@@ -2,7 +2,9 @@
 // 'Missed' on the Schedule. selectEffectiveJobStatus synthesizes 'missed' for any
 // past-start 'upcoming' job, and the clock was DECOUPLED from status — so a clean
 // being actively worked (open punch) showed Missed. Fix: clocking in advances the
-// job to in_progress; clocking out marks it done. This pins that wiring AND the
+// job to in_progress; clocking out marks it done — since CS-051 (2026-10-03) only when
+// the SERVER answers jobDone (the clean's last open punch closed, and the server wrote
+// the status itself: test-job-done-last-clockout.mjs). This pins that wiring AND the
 // invariant it leans on (crew may write job.status; it is not a protected field).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -21,17 +23,18 @@ ok('🔴 an UPCOMING job past its start synthesizes to missed (why an un-transit
   /new Date\(job\.startAt\)\.getTime\(\) < now \? 'missed' : 'upcoming'/.test(sel));
 
 // ── the fix: clock-in → in_progress, clock-out → done ────────────────────────
-const cc = read('src/components/ClockControl.jsx');
+// The ONE clock (the Cleaner Hub, brief A): what a punch does lives in hooks/useClockActions; ClockControl draws it.
+const cc = `${read('src/components/ClockControl.jsx')}\n${read('src/hooks/useClockActions.js')}`;
 ok('ClockControl can dispatch (imports useDispatch + ACTIONS)',
-  /import \{ useDispatch \} from '\.\.\/store'/.test(cc) && /import \{ ACTIONS \} from '\.\.\/store\/reducer'/.test(cc) && /const dispatch = useDispatch\(\)/.test(cc));
+  /import \{[^}]*\buseDispatch\b[^}]*\} from '\.\.\/store'/.test(cc) && /import \{ ACTIONS \} from '\.\.\/store\/reducer'/.test(cc) && /const dispatch = useDispatch\(\)/.test(cc));
 ok('🔴 clock-IN advances an upcoming/missed job to in_progress',
   /job\.status === 'upcoming' \|\| job\.status === 'missed'[\s\S]{0,140}SET_JOB_STATUS, id: job\.id, status: 'in_progress'/.test(cc));
-ok('🔴 clock-OUT marks the job done (unless already done/cancelled)',
-  /job\.status !== 'done' && job\.status !== 'cancelled'[\s\S]{0,140}SET_JOB_STATUS, id: job\.id, status: 'done'/.test(cc));
+ok('🔴 clock-OUT marks the job done only on the server\'s jobDone (CS-051), unless already done/cancelled',
+  /jobDone && job && job\.status !== 'done' && job\.status !== 'cancelled'[\s\S]{0,140}SET_JOB_STATUS, id: job\.id, status: 'done'/.test(cc));
 ok('🔴 the 409 already-clocked-in path also heals status → in_progress (lost-response re-tap)',
   /e\.status === 409[\s\S]{0,600}job\.status === 'upcoming' \|\| job\.status === 'missed'[\s\S]{0,160}SET_JOB_STATUS, id: job\.id, status: 'in_progress'/.test(cc));
 ok('both transitions are guarded on `job` being present (carryover card can pass null)',
-  /if \(job && \(job\.status === 'upcoming'/.test(cc) && /if \(job && job\.status !== 'done'/.test(cc));
+  /if \(job && \(job\.status === 'upcoming'/.test(cc) && /if \(jobDone && job && job\.status !== 'done'/.test(cc));
 
 // ── the invariant the fix relies on: crew may write status (not protected) ────
 const guard = read('api/_lib/jobsGuard.js');

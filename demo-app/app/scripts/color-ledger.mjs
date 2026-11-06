@@ -9,6 +9,7 @@
 //
 // UNIVERSE (every file the app serves or renders from):
 //   src/**/*.{css,js,jsx,mjs}   components, pages, report/quote templates, canvas, demo data
+//   src/**/*.html               a Review design question's mockup (review-mockups/, UI_RULES §179)
 //   api/**/*.{js,mjs}           emails, PDF rendering, public pages
 //   index.html                  meta theme-color and any inline style
 //   public/**/*.{json,webmanifest,svg,js,html}   the PWA manifest, icons, the service worker
@@ -98,7 +99,7 @@ const rel = (f) => path.relative(APP, f).split(path.sep).join('/');
 // the UNIVERSE above, as app-relative paths
 export function universe() {
   return [
-    ...walk(path.join(APP, 'src'), /\.(css|js|jsx|mjs)$/),
+    ...walk(path.join(APP, 'src'), /\.(css|js|jsx|mjs|html)$/),
     ...walk(path.join(APP, 'api'), /\.(js|mjs)$/),
     path.join(APP, 'index.html'),
     ...walk(path.join(APP, 'public'), /\.(json|webmanifest|svg|js|html)$/),

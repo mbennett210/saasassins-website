@@ -10,8 +10,10 @@ import { Link } from 'react-router-dom';
 import { usePermissionChecker } from '../../hooks/usePermission';
 import Icon from '../../components/Icon';
 import { SETTINGS_GROUPS, SETTINGS_PINNED } from './settingsNav';
+import { useT } from '../../i18n/react';
 
 export default function SettingsHub() {
+  const t = useT();
   const check = usePermissionChecker();
 
   // A group whose every item is permission-hidden must not leave its heading
@@ -28,23 +30,23 @@ export default function SettingsHub() {
         <Link to={SETTINGS_PINNED.to} className="set-hub-card set-hub-pinned">
           <span className="set-hub-card-title">
             <Icon name={SETTINGS_PINNED.icon} size={16} />
-            {SETTINGS_PINNED.label}
+            {t(SETTINGS_PINNED.labelKey)}
           </span>
-          <span className="set-hub-card-desc">{SETTINGS_PINNED.desc}</span>
+          <span className="set-hub-card-desc">{t(SETTINGS_PINNED.descKey, SETTINGS_PINNED.descParams)}</span>
         </Link>
       )}
 
       {groups.map((group) => (
         <section className="set-hub-group" key={group.key}>
-          <h2 className="set-hub-group-title">{group.label}</h2>
+          <h2 className="set-hub-group-title">{t(group.labelKey)}</h2>
           <div className="set-hub-grid">
             {group.items.map((item) => (
               <Link to={item.to} className="set-hub-card" key={item.to}>
                 <span className="set-hub-card-title">
                   <Icon name={item.icon} size={16} />
-                  {item.label}
+                  {t(item.labelKey)}
                 </span>
-                <span className="set-hub-card-desc">{item.desc}</span>
+                <span className="set-hub-card-desc">{t(item.descKey)}</span>
               </Link>
             ))}
           </div>

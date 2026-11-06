@@ -35,8 +35,10 @@ ok('poll still gates on the INBOX label (the spam gate)', /labelIds\.includes\('
 const inbound = read('../api/inbox/inbound.js');
 ok('poll endpoint piggybacks personalInboxes from the DB', /listAccountEmails\(\)/.test(inbound) && /personalInboxes,/.test(inbound));
 
+// The listener's decision lives in lib/inboundCursor.js since CS-968 (the listener only calls it).
 const listener = read('../src/components/InboundListener.jsx');
-ok('client fork prefers the server-provided personal set', /res\.personalInboxes/.test(listener));
+const listenerRule = read('../src/lib/inboundCursor.js');
+ok('client fork prefers the server-provided personal set', /res\.personalInboxes/.test(listenerRule) && /inboundActions\(res, /.test(listener));
 
 const accounts = read('../api/_lib/accounts.js');
 ok('listAccountEmails reads inbox_accounts', /from\('inbox_accounts'\)\.select\('email'\)/.test(accounts));

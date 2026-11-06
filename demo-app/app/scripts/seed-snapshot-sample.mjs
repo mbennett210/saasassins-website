@@ -1,7 +1,7 @@
 // Seed the dashboard's financial_snapshot for go-live: REAL revenue/MRR pulled
 // live from the financial Google Sheet (per-client roster, gid 693729890) + STUB
-// values for the metrics the sheet does NOT contain (Google/Indeed reviews, open
-// complaints, new-business, variance, AR aging) so the redesigned dashboard
+// values for the metrics the sheet does NOT contain (open complaints, new-business,
+// variance, AR aging) so the redesigned dashboard
 // renders fully for the client. Swap the stubs for real numbers via the sheet's
 // summary tab (or another source) when ready. Re-run any time to refresh revenue.
 //   node scripts/seed-snapshot-sample.mjs         (pull revenue + load stubs)
@@ -59,15 +59,13 @@ const snapshot = {
   revenue_current_month_cents: mrrCents ?? 25000000, // MRR = sum of monthly payments
   // STUB — NOT in the sheet; swap when the summary tab / real source is ready:
   new_business_actual_cents: 34000000, new_business_goal_cents: 100000000, // $340k / $1M goal
-  google_reviews_actual: 62, google_reviews_goal: 100,
-  indeed_reviews_actual: 18, indeed_reviews_goal: 50,
   open_complaints: 3, variance_yesterday_cents: -125000,
   outstanding_quotes_cents: 1875000, ar_cents: 4200000, past_due_30_cents: 1150000,
   source: mrrCents ? 'sheet_mrr+stub' : 'stub',
 };
 await store.upsertSnapshot(snapshot);
 const back = await store.getSnapshot();
-const okFields = ['revenue_current_month_cents', 'new_business_actual_cents', 'google_reviews_actual', 'open_complaints', 'ar_cents']
+const okFields = ['revenue_current_month_cents', 'new_business_actual_cents', 'outstanding_quotes_cents', 'open_complaints', 'ar_cents']
   .filter((k) => back[k] === snapshot[k]);
 console.log(`snapshot round-trip: ${okFields.length}/5 fields persisted`);
 console.log(`REAL revenue/MRR from sheet${mrrCents ? '' : ' (FELL BACK TO STUB)'}; goals / complaints / AR are STUBS — swap when ready.`);

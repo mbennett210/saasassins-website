@@ -8,6 +8,8 @@ import InspectionReportModal from './InspectionReportModal';
 import { useStore } from '../store';
 import { selectSiteById } from '../store/selectors';
 import { summarizeInspections, resultBadgeVariant, resultLabel } from '../lib/inspections';
+import { DRAFT_STATUS } from '../lib/inspectionDrafts';
+import { useT } from '../i18n/react';
 import { fmtDate } from '../lib/dates';
 import { searchRows } from '../lib/searchRows';
 import * as qcApi from '../lib/qcApi';
@@ -36,6 +38,7 @@ const LOADING = { rows: null, truncated: false, error: null };
 // under Quality. Records carry `inspector_name` denormalized, so "who" needs no join.
 export default function ClientInspections({ client }) {
   const state = useStore();
+  const t = useT();
   // Read BY CUSTOMER — the server filters. This tab used to take the org's newest 200
   // and keep this customer's rows, so once the org passed 200 an account's older
   // inspections (or all of them) vanished from its own tab. It is a newest-N list:
@@ -147,7 +150,10 @@ export default function ClientInspections({ client }) {
                         <td data-label="Location"><span className="truncate" title={siteName(r)}>{siteName(r)}</span></td>
                         <td data-label="Inspector"><span className="truncate" title={r.inspector_name || ''}>{r.inspector_name || '—'}</span></td>
                         <td data-label="Score">{r.overall_score != null ? `${r.overall_score}%` : <span className="text-muted">—</span>}</td>
-                        <td data-label="Result">{r.result ? <Badge variant={resultBadgeVariant(r.result)}>{resultLabel(r.result)}</Badge> : <span className="text-muted">Draft</span>}</td>
+                        {/* An inspection left open to finish later (lib/inspectionDrafts) reads In
+                            progress here as on the Quality hub; it is continued from there. */}
+                        <td data-label="Result">{r.result ? <Badge variant={resultBadgeVariant(r.result)}>{resultLabel(r.result)}</Badge>
+                          : r.status === DRAFT_STATUS ? <Badge variant="slate">{t('inspectionFill.draft.inProgress')}</Badge> : <span className="text-muted">—</span>}</td>
                         <td className="cell-actions" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                           {r.status === 'submitted' && (
                             <button type="button" className="btn btn-link btn-sm" onClick={() => setReportId(r.id)}>View report</button>

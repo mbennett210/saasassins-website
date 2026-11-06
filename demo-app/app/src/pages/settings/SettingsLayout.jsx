@@ -19,8 +19,10 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import BackLink from '../../components/BackLink';
 import { findSettingsEntry } from './settingsNav';
+import { useT } from '../../i18n/react';
 
 export default function SettingsLayout() {
+  const t = useT();
   const { pathname } = useLocation();
   const onHub = !findSettingsEntry(pathname);
   // A nested detail route (e.g. /settings/team/:userId) renders its OWN DetailHeader
@@ -33,8 +35,8 @@ export default function SettingsLayout() {
       {onHub ? (
         <div className="page-head">
           <div className="page-head-text">
-            <h1 className="page-head-title">Settings</h1>
-            <p className="page-sub">Everything you can configure, grouped by what it affects.</p>
+            <h1 className="page-head-title">{t('nav.settings')}</h1>
+            <p className="page-sub">{t('settingsHub.sub')}</p>
           </div>
         </div>
       ) : isDetail ? null : (
@@ -44,7 +46,7 @@ export default function SettingsLayout() {
         // so "Manage" led to a back arrow that said "Settings" and went somewhere the
         // user had never been. Now the referrer wins and `/settings` is only the fallback
         // for a direct URL or refresh. Daniel, 2026-07-28.
-        <BackLink to="/settings" label="Settings" className="set-back" />
+        <BackLink to="/settings" label={t('nav.settings')} className="set-back" />
       )}
       <div className="settings-content">
         <Outlet />

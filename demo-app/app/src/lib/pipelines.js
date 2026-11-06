@@ -27,6 +27,41 @@ export function isValidPlacement(pipelines, pipelineId, stage) {
   return stageExistsOnPipeline(pl, stage);
 }
 
+// 🔴 A WON OR LOST DEAL LEAVES THE BOARD (Matt, 2026-09-29, MISC-1 → CS-141). The board
+// shows OPEN deals only and its headline says "Open deals", so the figure always equals the
+// sum of the cards you can see — it used to sum `status === 'open'` while the columns
+// rendered by `stage`, so a won or lost deal sat in an open column and the headline
+// under-counted the board by exactly that deal.
+//
+// A closed deal is NEVER deleted or un-placed: it keeps its `pipelineId` + `stage`, still
+// shows on the company's Opportunities tab (`selectOpportunitiesForClient`), and a won one
+// still promotes the company (`selectClientStatus`). Only the BOARD stops drawing it — which
+// is why `selectPipelineOpportunities` (the stage editor's in-use count) must stay the whole
+// placed set, or deleting the Won stage would orphan every won deal on it.
+export const CLOSED_OPPORTUNITY_STATUSES = ['won', 'lost'];
+
+// The two terminal columns every board carries (ADD_PIPELINE appends them, Master ships
+// with them). Dropping a card here is how a deal is CLOSED, so the stage key IS the
+// contract — `statusForStage` is the one definition of that coupling, read by the reducer's
+// SET_OPPORTUNITY_STAGE guard and by the board, which offers no "Add deal" here (a deal is
+// never BORN closed; it is dragged in, and then it leaves the board).
+export const TERMINAL_STAGE_KEYS = ['won', 'lost'];
+export const isTerminalStage = (stage) => TERMINAL_STAGE_KEYS.includes(stage);
+export const statusForStage = (stage) => (isTerminalStage(stage) ? stage : 'open');
+
+// Open = anything not explicitly closed. A row with no status reads OPEN (the reducer
+// defaults `status: 'open'`, but a hand-made or migrated row may carry none, and a deal
+// with no verdict belongs on the board).
+export function isOpenOpportunity(opportunity) {
+  if (!opportunity) return false;
+  return !CLOSED_OPPORTUNITY_STATUSES.includes(opportunity.status);
+}
+
+// The cards a board draws: the placed deals on this pipeline that are still open.
+export function boardOpportunities(opportunities) {
+  return (opportunities || []).filter(isOpenOpportunity);
+}
+
 // An orphaned opportunity is one that THINKS it is on a board (it has a stage) but whose
 // placement is invalid — a stale stage key, or a pipeline that no longer exists. These are
 // the already-vanished rows the recovery banner resurfaces. An opportunity with no stage

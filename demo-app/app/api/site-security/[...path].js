@@ -24,13 +24,41 @@
 // entirely on the key staying server-side (NEVER VITE_-prefixed) and the reveal
 // route's server-side authorization. See CLEANSPACE_SWEPT.md §2.4.
 
-import { encrypt, decrypt } from '../_lib/crypto.js';
+import { encrypt, decrypt, hasEncryptionKey, isEncryptionKeyMissing } from '../_lib/crypto.js';
 import { readOrgState, writeOrgState } from '../_lib/orgState.js';
 import { requirePermission, requireSiteAssignment } from '../_lib/authz.js';
+import { logActivityAs } from '../_lib/activityLog.js';
 import { fanOutOpsNotification } from '../../src/lib/notifications.js';
 import { CODE_REVEAL_WINDOW } from '../../src/lib/siteAccess.js';
+import { msg } from '../../src/i18n/core.js';
 
 const OPS_KEY = 'OPS_CODE_ENCRYPTION_KEY';
+
+// What the browser is told when OPS_CODE_ENCRYPTION_KEY is not set in this environment.
+// 503 (not 500): nothing is wrong with the request, the server is missing a setting, and
+// retrying the identical call will work the moment an operator sets it. `code` is what
+// the client keys off to keep the REST of the Location save (CS-037) — before this the
+// browser got a 500 whose text named the variable and abandoned the whole edit.
+export const CODES_UNAVAILABLE = Object.freeze({
+  status: 503,
+  code: 'codes_unavailable',
+  error: 'Door and alarm codes can’t be stored yet — this server has no access-code encryption key. Ask an admin to set one up.',
+});
+
+/**
+ * Pre-flight for a `set` body: the 503 block when it asks to STORE a code and the key is
+ * not configured, else null. Checked before the read-modify-write so a missing key can
+ * never abort mid-transaction, and scoped to the encrypted fields only — a body that
+ * merely edits the hint, key number or access instructions still saves without a key.
+ * `undefined` means "leave as is" and `''` means "clear", and neither needs to encrypt.
+ * Pure + exported so `test-ops-code-key.mjs` drives the real rule, not a copy of it.
+ */
+export function opsCodeWriteBlock(body = {}) {
+  const storing = (v) => v !== undefined && v !== '';
+  if (!storing(body.doorCode) && !storing(body.alarmCode)) return null;
+  if (hasEncryptionKey(OPS_KEY)) return null;
+  return CODES_UNAVAILABLE;
+}
 
 // CAS-retry: read current org_state, patch ONLY the one site's security block,
 // write with optimistic version check, retry a few times on a concurrent bump.
@@ -60,7 +88,8 @@ async function casPatchSiteSecurity(siteId, makeSecurity, { actorEmail } = {}, t
           notifications: fanOutOpsNotification(nextState, {
             clientId: site.clientId,
             actorName: actor?.name,
-            summary: 'Access or security details were updated.',
+            // A message: each cleaner's bell row is written in their language (CS-193).
+            summary: msg('alerts.ops.accessUpdated'),
           }),
         };
       }
@@ -87,6 +116,14 @@ export default async function handler(req, res) {
       const g = await requirePermission(req, res, 'ops.edit');
       if (!g) return;
       if (!siteId) return res.status(400).json({ error: 'siteId is required' });
+      // Refuse the CODES cleanly before touching org_state when the key is missing, so
+      // the caller gets an actionable 503 instead of a mid-CAS throw surfaced as a 500
+      // naming the env var (CS-037 / CS-077).
+      const blocked = opsCodeWriteBlock(body);
+      if (blocked) {
+        console.error(`[site-security] ${OPS_KEY} is not configured — refusing a code write`);
+        return res.status(blocked.status).json({ error: blocked.error, code: blocked.code });
+      }
 
       const result = await casPatchSiteSecurity(siteId, (prev) => {
         // undefined => keep existing; '' => clear; value => (re)encrypt.
@@ -143,11 +180,26 @@ export default async function handler(req, res) {
       let code;
       try {
         code = decrypt(cipher, OPS_KEY);
-      } catch {
+      } catch (e) {
+        // An unset key is an operator condition, not a corrupt ciphertext: say so as a
+        // 503 the office can act on, and never echo the env name (CS-037 / CS-077).
+        if (isEncryptionKeyMissing(e)) {
+          console.error(`[site-security] ${OPS_KEY} is not configured — cannot reveal`);
+          return res.status(CODES_UNAVAILABLE.status).json({ error: CODES_UNAVAILABLE.error, code: CODES_UNAVAILABLE.code });
+        }
         return res.status(500).json({ error: 'Could not decrypt code' });
       }
-      // Sensitive-action audit (server log; a richer in-app audit trail can follow).
-      console.log(`[site-security] ${g.user.email} revealed ${which} code for site ${siteId}`);
+      // 🔴 SENSITIVE-ACTION AUDIT (CS-081 / CS-379). This used to be a console line only —
+      // invisible to the office, gone with the log retention. It is now a row in the activity
+      // log, written server-side from the caller's verified claim, with the site and its
+      // customer so the office can answer "who has had this code?". The plaintext code is
+      // NEVER stored: the summary names WHICH code, never its value.
+      await logActivityAs(g, {
+        action: 'code.revealed',
+        entityId: siteId,
+        clientId: site?.clientId || null,
+        summary: `${which === 'alarm' ? 'Alarm' : 'Door'} code revealed for ${site?.name || `site ${siteId}`}`,
+      });
       return res.status(200).json({ which, code });
     }
 

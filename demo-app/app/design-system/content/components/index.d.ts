@@ -23,7 +23,8 @@ export interface TagChipProps { tag: { id?: string; label: string } | null; onRe
 export declare function TagChip(props: TagChipProps): React.ReactElement | null;
 
 /** Initials on a black disc in gold letters. */
-export interface AvatarProps { initials: string; variant?: 1 | 2 | 3 | 4 | 5; size?: 'xs' | 'sm' | 'md' | 'lg' }
+export interface AvatarUser { id: string; initials?: string; avatar?: 1 | 2 | 3 | 4 | 5; photo?: { v: string } | null }
+export interface AvatarProps { user?: AvatarUser; initials?: string; variant?: 1 | 2 | 3 | 4 | 5; size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'; centred?: boolean }
 export declare function Avatar(props: AvatarProps): React.ReactElement;
 
 /** An on/off switch that saves on flip. */
@@ -83,8 +84,10 @@ export interface FormFieldProps extends Omit<React.InputHTMLAttributes<HTMLInput
 }
 export declare function FormField(props: FormFieldProps): React.ReactElement;
 
-/** A searchable single-select for filter bars; options[0] is the pinned reset row ("All …", value ''). */
-export interface FilterSelectProps { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; ariaLabel?: string }
+/** A searchable single-select for filter bars; options[0] is the pinned reset row ("All …", value ''). It caps what
+ *  renders at PICKER_MAX_VISIBLE by default (`maxVisible` retunes it, never to off); `float` draws the menu at the
+ *  trigger through a portal, for a picker in a table row (PopMenu `float`). */
+export interface FilterSelectProps { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; ariaLabel?: string; maxVisible?: number; float?: boolean }
 export declare function FilterSelect(props: FilterSelectProps): React.ReactElement;
 
 /** A type-to-search combobox for one record. */
@@ -98,20 +101,24 @@ export declare function SearchSelect(props: SearchSelectProps): React.ReactEleme
 export interface AutoGrowTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> { value?: string; rows?: number; className?: string; style?: React.CSSProperties }
 export declare function AutoGrowTextarea(props: AutoGrowTextareaProps): React.ReactElement;
 
-/** A tel: link for a display phone number; renders nothing without one. */
-export interface PhoneLinkProps { phone?: string | null; className?: string; onClick?: React.MouseEventHandler<HTMLAnchorElement>; title?: string }
+/** A tel: link for a display phone number; renders nothing without one. `children` replaces the
+ *  visible number (an icon-only Call button), and then `ariaLabel` names it. */
+export interface PhoneLinkProps { phone?: string | null; className?: string; onClick?: React.MouseEventHandler<HTMLAnchorElement>; title?: string; ariaLabel?: string; children?: React.ReactNode }
 export declare function PhoneLink(props: PhoneLinkProps): React.ReactElement | null;
 
-/** The anchored panel behind every picker: a popover on desktop, a MobileSheet at 640px and below. */
-export interface PopMenuProps extends React.HTMLAttributes<HTMLDivElement> { open: boolean; onClose: () => void; anchorRef: React.RefObject<HTMLElement>; className?: string; role?: string; sheetTitle?: string; children?: React.ReactNode }
+/** The anchored panel behind every picker: a popover on desktop, a MobileSheet at 640px and below. `float` (desktop):
+ *  drawn through a portal in fixed position at the trigger — below it, or above when that has more room
+ *  (lib/floatPlacement) — so a container that clips (a table's sideways scroller) never cuts it off; it closes on a
+ *  scroll outside it or a resize. */
+export interface PopMenuProps extends React.HTMLAttributes<HTMLDivElement> { open: boolean; onClose: () => void; anchorRef: React.RefObject<HTMLElement>; className?: string; role?: string; sheetTitle?: string; float?: boolean; children?: React.ReactNode }
 export declare function PopMenu(props: PopMenuProps): React.ReactElement | null;
 
 /** The bottom sheet every phone picker and filter drawer opens in. Portaled to document.body. */
-export interface MobileSheetProps { open: boolean; onClose: () => void; title?: string; children?: React.ReactNode; footer?: React.ReactNode }
+export interface MobileSheetProps { open: boolean; onClose: () => void; title?: string; titleAside?: React.ReactNode; actions?: React.ReactNode; children?: React.ReactNode; footer?: React.ReactNode }
 export declare function MobileSheet(props: MobileSheetProps): React.ReactElement | null;
 
 /** A centred dialog. Portaled to document.body; Escape closes the top one. */
-export interface ModalProps { open: boolean; onClose: () => void; title: React.ReactNode; size?: 'sm' | 'md' | 'lg' | 'wide'; children?: React.ReactNode }
+export interface ModalProps { open: boolean; onClose: () => void; title: React.ReactNode; size?: 'sm' | 'md' | 'lg' | 'wide' | 'sheet'; centred?: boolean; children?: React.ReactNode }
 export declare function Modal(props: ModalProps): React.ReactElement | null;
 
 /** "Are you sure?" before an action that can't be undone. */
@@ -141,7 +148,7 @@ export type IconName =
   | 'trash' | 'check' | 'x' | 'camera' | 'bell' | 'bellOff' | 'building' | 'chart' | 'dollarCircle' | 'user' | 'lock'
   | 'logout' | 'archive' | 'tag' | 'filter' | 'mail' | 'phone' | 'mapPin' | 'phoneSolid' | 'mailSolid' | 'messagingSolid'
   | 'chevronRight' | 'chevronLeft' | 'arrowLeft' | 'chevronUp' | 'chevronDown' | 'resizeGrip' | 'dots' | 'star' | 'moon'
-  | 'folder' | 'forms' | 'expand' | 'repeat' | 'warning' | 'paperclip' | 'upload' | 'box' | 'grip';
+  | 'folder' | 'forms' | 'expand' | 'repeat' | 'warning' | 'paperclip' | 'upload' | 'box' | 'home' | 'clock' | 'shield' | 'grip';
 /** The app's stroke icon set (24px grid, currentColor). */
 export interface IconProps extends React.SVGProps<SVGSVGElement> { name: IconName; size?: number; strokeWidth?: number; className?: string }
 export declare function Icon(props: IconProps): React.ReactElement | null;

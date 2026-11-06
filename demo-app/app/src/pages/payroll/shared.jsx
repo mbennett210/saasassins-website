@@ -3,6 +3,7 @@
 // rounds identically to the ledger (cents always shown). See lib/payroll.js for math.
 import { money } from '../../lib/dates';
 import { minutesToHours } from '../../lib/payroll';
+import { buildingRatesOf } from '../../lib/payRates';
 
 export const fmtMoney = (n) => (n == null ? '—' : money(n));
 export const fmtSigned = (n) => {
@@ -38,10 +39,19 @@ export const LINE_CATEGORY = {
   deduction: { label: 'Deduction', cls: 'lc-ded' },
 };
 
-// A short one-line description of how a person is paid, for row subtitles.
+// A short one-line description of how a person is paid, for row subtitles. An hourly member
+// with a rate at one or more buildings says so (PAY-7 / PAY-18) — the main rate alone would read
+// as their whole wage, and the drawer's breakdown is the place that lists each one.
 export function rateSummary(pay) {
   if (!pay || !pay.type) return 'Pay not set';
-  if (pay.type === 'hourly') return `${money(pay.hourlyRate || 0)}/hr · OT ×1.5`;
+  if (pay.type === 'hourly') {
+    // With a rate at another building the main rate alone would read as their whole wage, and
+    // "OT ×1.5" would name a rate that no longer decides the premium — the week's blend does.
+    // One rate keeps the exact string it always had.
+    const extra = buildingRatesOf(pay).length;
+    if (extra) return `${money(pay.hourlyRate || 0)}/hr main · ${extra} building rate${extra === 1 ? '' : 's'} · OT blended`;
+    return `${money(pay.hourlyRate || 0)}/hr · OT ×1.5`;
+  }
   if (pay.type === 'salary') return `${money(pay.salaryPerPeriod || 0)}/period`;
   if (pay.type === 'per_visit') return `${money(pay.perVisitRate || 0)}/clean`;
   return 'Owner draw — not on payroll';

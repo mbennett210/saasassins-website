@@ -5,15 +5,19 @@ import { useDispatch, useStore } from '../../store';
 import { ACTIONS } from '../../store/reducer';
 import { useToast } from '../../components/Toast';
 import FormField from '../../components/FormField';
-import Avatar from '../../components/Avatar';
+import AvatarPhotoControl from '../../components/AvatarPhotoControl';
 import Toggle from '../../components/Toggle';
 import SignaturePreview from '../../components/SignaturePreview';
-import { ROLE_LABELS, ROLE_DESCRIPTIONS, areNotificationsMandatory } from '../../lib/roles';
+import LanguageCard from '../../components/LanguageCard';
+import { areNotificationsMandatory } from '../../lib/roles';
 import { SIGNATURE_IMAGE_WIDTH_PRESETS, DEFAULT_SIGNATURE_IMAGE_WIDTH, signatureImageWidth } from '../../lib/signature';
 import { uploadSignatureImage } from '../../lib/signatureApi';
 import useSignatureImageSrc from '../../hooks/useSignatureImageSrc';
 import { selectVisibleNotificationGroups, selectNotificationPrefs, selectSignaturePrefs } from '../../store/selectors';
 import { isNotificationEnabled } from '../../lib/notifications';
+import {
+  quietHoursFor, smsAlertsEnabled, isSmsOptedOut, toE164, QUIET_HOURS_DEFAULTS,
+} from '../../lib/alertDelivery';
 import { IDENTITY } from '../../brand/identity.generated.js';
 import {
   enableMobilePush,
@@ -26,13 +30,25 @@ import {
   isStandalonePWA,
   isCurrentDeviceSubscribed,
 } from '../../lib/push';
+import { fmtDate } from '../../lib/dates';
+import { useT } from '../../i18n/react';
+import { errorText } from '../../i18n/errors';
+
+// Your account — every person's own settings, cleaners included, so every word is a
+// catalog line in their language (CS-193). The role names and descriptions come from the
+// catalog too (`role.*`), keyed by the schema role.
 
 // Kept in step with SIGNATURE_MAX_B64_BYTES in api/_lib/blobBudget.js: 36 KB of image
 // is ~48 KB once base64'd, which is what the server enforces per user. Asserted by
 // app/scripts/test-blob-budget.mjs so the two cannot drift apart silently.
 const SIGNATURE_MAX_IMAGE_BYTES = 36 * 1024;
 
+// The role's name and one-line description, by schema key, from the catalog.
+const ROLE_NAME_KEYS = { owner: 'role.owner', admin: 'role.admin', manager: 'role.manager', crew: 'role.crew' };
+const ROLE_DESC_KEYS = { owner: 'role.owner.desc', admin: 'role.admin.desc', manager: 'role.manager.desc', crew: 'role.crew.desc' };
+
 function MobilePushCard({ user, prefs, dispatch, toast }) {
+  const t = useT();
   const supported = isPushSupported();
   const iosBlocked = isIOS() && !isStandalonePWA();
   // Opt-out master switch — absent/true = on, matching the push dispatcher
@@ -72,9 +88,9 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
       await enableMobilePush({ userId: user.id });
       setPerm(typeof Notification !== 'undefined' ? Notification.permission : 'granted');
       await reload();
-      toast.success('This device is subscribed.');
+      toast.success(t('account.push.subscribed'));
     } catch (err) {
-      toast.error(err?.message || 'Could not subscribe this device.');
+      toast.error(errorText(t, err, 'account.push.subscribeFailed'));
     } finally {
       setBusy(false);
     }
@@ -103,7 +119,7 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
       // only the subscription side-effect failed. Surface the error and
       // leave the pref in whichever state matches what the user intended.
       setPref(next);
-      toast.error(err?.message || 'Could not update mobile push.');
+      toast.error(errorText(t, err, 'account.push.updateFailed'));
     } finally {
       setBusy(false);
     }
@@ -114,7 +130,7 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
     try {
       const res = await sendTestPush({ userId: user.id });
       if (res?.stub) {
-        toast.info('Test push fired locally (stub mode, no backend wired).');
+        toast.info(t('account.push.testStub'));
       } else {
         const delivered = res?.delivered ?? 0;
         const failed = res?.failed ?? 0;
@@ -122,19 +138,15 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
           // Never report a green success when nothing was delivered. Common cause:
           // a rotated/mismatched server VAPID keypair 401ing every send, or all
           // subscriptions expired — "sent to 0 devices" used to hide a dead channel.
-          toast.error(
-            failed > 0
-              ? `Test push reached 0 devices. ${failed} failed. The subscription may be expired or the server VAPID keys may not match.`
-              : 'Test push reached 0 devices. Subscribe this device first (it may have been unsubscribed).'
-          );
+          toast.error(failed > 0 ? t('account.push.testNoneFailed', { count: failed }) : t('account.push.testNone'));
         } else if (failed > 0) {
-          toast.info(`Test push sent to ${delivered} device${delivered === 1 ? '' : 's'}; ${failed} failed.`);
+          toast.info(t('account.push.testSomeFailed', { count: delivered, failed }));
         } else {
-          toast.success(`Test push sent to ${delivered} device${delivered === 1 ? '' : 's'}.`);
+          toast.success(t('account.push.testSent', { count: delivered }));
         }
       }
     } catch (err) {
-      toast.error(err?.message || 'Test push failed.');
+      toast.error(errorText(t, err, 'account.push.testFailed'));
     } finally {
       setBusy(false);
     }
@@ -145,9 +157,9 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
     try {
       await removeDevice({ userId: user.id, endpoint });
       await reload();
-      toast.success('Device removed.');
+      toast.success(t('account.push.deviceRemoved'));
     } catch (err) {
-      toast.error(err?.message || 'Could not remove device.');
+      toast.error(errorText(t, err, 'account.push.removeFailed'));
     } finally {
       setBusy(false);
     }
@@ -158,8 +170,8 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
       <div className="card detail-card">
         <div className="push-card-head">
           <div>
-            <div className="pref-row-label">Mobile push notifications</div>
-            <div className="pref-row-desc">This browser does not support push notifications.</div>
+            <div className="pref-row-label">{t('account.push.title')}</div>
+            <div className="pref-row-desc">{t('account.push.unsupported')}</div>
           </div>
         </div>
       </div>
@@ -168,22 +180,22 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
 
   let statusLine;
   if (!enabled) {
-    statusLine = 'Off. Turn on to receive notifications on this device even when the app is closed.';
+    statusLine = t('account.push.statusOff');
   } else if (subscribed) {
-    statusLine = 'Subscribed on this device. Events you have turned on above will arrive as push notifications.';
+    statusLine = t('account.push.statusSubscribed');
   } else if (iosBlocked) {
-    statusLine = 'On for your account. Install this app to your home screen to receive push on this iPhone or iPad.';
+    statusLine = t('account.push.statusIosInstall');
   } else if (perm === 'denied') {
-    statusLine = 'On for your account, but this browser is blocking notifications.';
+    statusLine = t('account.push.statusDenied');
   } else {
-    statusLine = 'On for your account. Subscribe this device to start receiving push here.';
+    statusLine = t('account.push.statusSubscribeHere');
   }
 
   return (
     <div className="card detail-card">
       <div className="push-card-head">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="pref-row-label">Mobile push notifications</div>
+          <div className="pref-row-label">{t('account.push.title')}</div>
           <div className="pref-row-desc">{statusLine}</div>
         </div>
         <Toggle on={enabled} onChange={handleToggle} />
@@ -191,19 +203,19 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
 
       {enabled && iosBlocked && (
         <div className="text-xs text-muted" style={{ marginTop: 8 }}>
-          On iPhone or iPad, install this app to your home screen first: tap the share icon in Safari, then "Add to Home Screen", then return here.
+          {t('account.push.iosHowTo')}
         </div>
       )}
       {enabled && !iosBlocked && perm === 'denied' && (
         <div className="text-xs text-danger" style={{ marginTop: 8 }}>
-          Notifications are blocked for this site in your browser. Allow them in site settings, then click Subscribe this device.
+          {t('account.push.blockedHowTo')}
         </div>
       )}
 
       {enabled && !subscribed && !iosBlocked && (
         <div className="push-card-actions">
           <button type="button" className="btn btn-primary" onClick={subscribeThisDevice} disabled={busy}>
-            Subscribe this device
+            {t('account.push.subscribe')}
           </button>
         </div>
       )}
@@ -212,7 +224,7 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
         <>
           <div className="push-card-actions">
             <button type="button" className="btn btn-secondary" onClick={handleTest} disabled={busy}>
-              Send test push
+              {t('account.push.sendTest')}
             </button>
           </div>
 
@@ -221,14 +233,14 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
               {devices.map((d) => (
                 <div key={d.subscriptionId || d.endpoint} className="push-device-row">
                   <div className="push-device-meta">
-                    <div className="push-device-label">{d.deviceLabel || 'Device'}</div>
+                    <div className="push-device-label">{d.deviceLabel || t('account.push.device')}</div>
                     <div className="push-device-sub">
                       {d.endpointMasked || d.endpoint?.slice(0, 24) + '…'}
-                      {d.lastSeenAt && ` · subscribed ${new Date(d.lastSeenAt).toLocaleDateString()}`}
+                      {d.lastSeenAt && ` · ${t('account.push.subscribedOn', { date: fmtDate(d.lastSeenAt, { month: 'numeric', day: 'numeric', year: 'numeric' }) })}`}
                     </div>
                   </div>
                   <button type="button" className="btn btn-secondary" onClick={() => handleRemoveDevice(d.endpoint)} disabled={busy}>
-                    Remove
+                    {t('account.push.remove')}
                   </button>
                 </div>
               ))}
@@ -240,6 +252,76 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
   );
 }
 
+// 🔴 ALERT DELIVERY — quiet hours (NTF-2 ★a) + alert texts (NTF-1 ★b), Matt 2026-09-29.
+// Both are DELIVERY prefs, not event mutes: they decide whether an alert reaches this person's
+// phone, never whether the alert happens. The policy is pure and shared with the server
+// (lib/alertDelivery), so what this card promises is exactly what the dispatcher does.
+//
+// Hidden for a mandatory-notifications role (crew): their operational alerts are not theirs to
+// silence, and the two events that text are office ones, so there would be nothing to switch.
+// The READER enforces that too (quietHoursFor returns null for them), because org_state is
+// browser-writable and a UI that merely hides a control is not a boundary.
+function AlertDeliveryCard({ user, prefs, dispatch }) {
+  const t = useT();
+  const locked = areNotificationsMandatory(user);
+  if (locked) return null;
+  const quiet = quietHoursFor(user);
+  const quietOn = prefs.quietHoursEnabled === true;
+  const start = prefs.quietHoursStart || QUIET_HOURS_DEFAULTS.quietHoursStart;
+  const end = prefs.quietHoursEnd || QUIET_HOURS_DEFAULTS.quietHoursEnd;
+  const textsOn = smsAlertsEnabled(user);
+  const optedOut = isSmsOptedOut(user);
+  const textable = toE164(user.phone);
+  const setPref = (patch) => dispatch({ type: ACTIONS.UPDATE_NOTIFICATION_PREFS, userId: user.id, patch });
+
+  return (
+    <div className="card detail-card">
+      <h3 className="dash-card-title">{t('account.alerts.title')}</h3>
+      <div className="pref-row">
+        <div className="pref-row-text">
+          <div className="pref-row-label">{t('account.alerts.quietHours')}</div>
+          <div className="pref-row-desc">
+            {t('account.alerts.quietHoursDesc')}
+          </div>
+        </div>
+        <Toggle on={quietOn} onChange={(next) => setPref({ quietHoursEnabled: next })} />
+      </div>
+      {quietOn && (
+        <div className="form-row">
+          <FormField label={t('account.alerts.from')} type="time" value={start} onChange={(e) => setPref({ quietHoursStart: e.target.value })} />
+          <FormField
+            label={t('account.alerts.until')} type="time" value={end} onChange={(e) => setPref({ quietHoursEnd: e.target.value })}
+            // A half-typed or equal pair is NO quiet hours rather than an all-day one, so the
+            // card has to say when the window it is showing is not actually in force.
+            help={quiet ? t('account.alerts.crossesMidnight') : t('account.alerts.setTwoTimes')}
+          />
+        </div>
+      )}
+      <div className="pref-row">
+        <div className="pref-row-text">
+          <div className="pref-row-label">{t('account.alerts.texts')}</div>
+          <div className="pref-row-desc">
+            {t('account.alerts.textsDesc')}
+            {' '}
+            {textable ? t('account.alerts.textsTo', { phone: user.phone }) : t('account.alerts.addPhone')}
+          </div>
+        </div>
+        <Toggle on={textsOn && !optedOut} onChange={(next) => setPref({ smsAlertsEnabled: next, ...(next ? { smsOptedOut: false, smsOptedOutAt: null } : {}) })} />
+      </div>
+      {optedOut && (
+        <div className="info-banner" role="note">
+          <div>
+            {t.rich('account.alerts.optedOut')}
+          </div>
+        </div>
+      )}
+      <p className="text-xs text-muted" style={{ marginTop: 'var(--space-1)' }}>
+        {t.rich('account.alerts.companySwitch')}
+      </p>
+    </div>
+  );
+}
+
 // Per-user email signature — text + optional image, auto-appended to outbound
 // Messaging emails (replies/forwards included). Emails send real HTML with the
 // image inline (Content-ID); the preview here renders through SignaturePreview,
@@ -247,6 +329,7 @@ function MobilePushCard({ user, prefs, dispatch, toast }) {
 // Content fields (text / image / size) use an explicit draft + Save + toast
 // (§48); the `enabled` toggle auto-saves immediately + silently (§8).
 function SignatureCard({ user, dispatch, toast }) {
+  const t = useT();
   const state = useStore();
   const prefs = selectSignaturePrefs(state, user.id);
   const fileRef = useRef(null);
@@ -277,7 +360,7 @@ function SignatureCard({ user, dispatch, toast }) {
     e.target.value = '';
     if (!file) return;
     if (!/^image\/(png|jpe?g|gif)$/.test(file.type)) {
-      toast.error('Please choose a PNG, JPG, or GIF image.');
+      toast.error(t('account.signature.wrongType'));
       return;
     }
     // 36 KB of image ≈ 48 KB once base64'd. That was the per-user BLOB budget
@@ -286,13 +369,13 @@ function SignatureCard({ user, dispatch, toast }) {
     // and a signature is a small flat image by nature. Checked here only so the user
     // finds out before uploading — the server is the real gate.
     if (file.size > SIGNATURE_MAX_IMAGE_BYTES) {
-      toast.error(`Signature image must be under ${Math.round(SIGNATURE_MAX_IMAGE_BYTES / 1024)} KB.`);
+      toast.error(t('account.signature.tooBig', { kb: Math.round(SIGNATURE_MAX_IMAGE_BYTES / 1024) }));
       return;
     }
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const dataUrl = String(ev.target?.result || '');
-      if (!dataUrl) { toast.error('Could not read that image.'); return; }
+      if (!dataUrl) { toast.error(t('account.signature.unreadable')); return; }
       // Upload at PICK time, not at Save. The image has to be in Storage before the
       // preview can render it (the bucket is private, so the preview needs a signed URL
       // for a real object). An abandoned draft leaves one unreferenced object behind,
@@ -307,7 +390,7 @@ function SignatureCard({ user, dispatch, toast }) {
       setDraft((d) => ({ ...d, imagePath: r.path, imageDataUrl: null }));
       setImageReloadKey((k) => k + 1);
     };
-    reader.onerror = () => toast.error('Could not read that image.');
+    reader.onerror = () => toast.error(t('account.signature.unreadable'));
     reader.readAsDataURL(file);
   };
 
@@ -336,19 +419,20 @@ function SignatureCard({ user, dispatch, toast }) {
         imageWidth: signatureImageWidth(draft),
       },
     });
-    toast.success('Signature saved');
+    toast.success(t('account.signature.saved'));
     setEditing(false);
   };
+
+  // S/M/L — the size presets' names, from the catalog.
+  const SIZE_KEYS = { S: 'account.signature.small', M: 'account.signature.medium', L: 'account.signature.large' };
 
   return (
     <div className="card detail-card">
       <div className="push-card-head">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="pref-row-label">Email signature</div>
+          <div className="pref-row-label">{t('account.signature.title')}</div>
           <div className="pref-row-desc">
-            {prefs.enabled
-              ? 'Added automatically to new emails, replies, and forwards you send from Messaging.'
-              : 'Off. Your signature is not added to outgoing emails.'}
+            {prefs.enabled ? t('account.signature.on') : t('account.signature.off')}
           </div>
         </div>
         <Toggle on={prefs.enabled} onChange={(next) => dispatch({ type: ACTIONS.UPDATE_SIGNATURE_PREFS, userId: user.id, patch: { enabled: next } })} />
@@ -358,39 +442,39 @@ function SignatureCard({ user, dispatch, toast }) {
         <div style={{ marginTop: 14 }}>
           {hasContent ? (
             <>
-              <div style={labelStyle}>Preview</div>
+              <div style={labelStyle}>{t('account.signature.preview')}</div>
               <div className="card" style={{ padding: 12, background: 'var(--inset-bg)' }}>
                 <SignaturePreview prefs={{ ...draft, enabled: true }} />
               </div>
             </>
           ) : (
-            <p className="text-sm text-muted" style={{ margin: 0 }}>No signature added yet.</p>
+            <p className="text-sm text-muted" style={{ margin: 0 }}>{t('account.signature.none')}</p>
           )}
           <div style={{ marginTop: 12 }}>
-            <button type="button" className="btn btn-outline" onClick={() => setEditing(true)}>Edit</button>
+            <button type="button" className="btn btn-outline" onClick={() => setEditing(true)}>{t('account.edit')}</button>
           </div>
         </div>
       ) : (
       <>
       <div style={{ marginTop: 14 }}>
-        <div style={labelStyle}>Signature text</div>
+        <div style={labelStyle}>{t('account.signature.text')}</div>
         <textarea
           className="input"
           style={{ width: '100%', minHeight: 96, resize: 'vertical', lineHeight: 1.5 }}
-          placeholder={`${user.name || 'Your name'}\n${IDENTITY.name}\n${IDENTITY.company.phone}`}
+          placeholder={`${user.name || t('account.signature.yourName')}\n${IDENTITY.name}\n${IDENTITY.company.phone}`}
           value={draft.text || ''}
           onChange={(e) => setDraft((d) => ({ ...d, text: e.target.value }))}
         />
       </div>
 
       <div style={{ marginTop: 14 }}>
-        <div style={labelStyle}>Signature image (optional)</div>
+        <div style={labelStyle}>{t('account.signature.image')}</div>
         {hasImage ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {draftImageSrc && (
               <img
                 src={draftImageSrc}
-                alt="Signature"
+                alt={t('account.signature.imageAlt')}
                 style={{ maxHeight: 64, maxWidth: 240, borderRadius: 6, border: '1px solid var(--border-light)' }}
               />
             )}
@@ -399,12 +483,12 @@ function SignatureCard({ user, dispatch, toast }) {
                 object is left in place. It is overwritten on the next upload, and
                 deleting it here would break an unsaved Cancel. */}
             <button type="button" className="btn btn-outline" onClick={() => setDraft((d) => ({ ...d, imageDataUrl: null, imagePath: null }))}>
-              Remove image
+              {t('account.signature.removeImage')}
             </button>
           </div>
         ) : (
           <button type="button" className="btn btn-outline" disabled={uploading} onClick={() => fileRef.current?.click()}>
-            {uploading ? 'Uploading…' : 'Add image'}
+            {uploading ? t('account.signature.uploading') : t('account.signature.addImage')}
           </button>
         )}
         <input
@@ -415,7 +499,7 @@ function SignatureCard({ user, dispatch, toast }) {
           onChange={onPickImage}
         />
         <div className="text-xs text-muted" style={{ marginTop: 6 }}>
-          PNG, JPG, or GIF, up to {Math.round(SIGNATURE_MAX_IMAGE_BYTES / 1024)} KB. Shows up in your signature on every email you send.
+          {t('account.signature.imageHelp', { kb: Math.round(SIGNATURE_MAX_IMAGE_BYTES / 1024) })}
         </div>
       </div>
 
@@ -423,11 +507,10 @@ function SignatureCard({ user, dispatch, toast }) {
           segmented idiom as the compose channel toggle. */}
       {hasImage && (
         <div style={{ marginTop: 14 }}>
-          <div style={labelStyle}>Image size</div>
-          <div style={{ display: 'flex', gap: 6 }} role="group" aria-label="Signature image size">
+          <div style={labelStyle}>{t('account.signature.size')}</div>
+          <div style={{ display: 'flex', gap: 6 }} role="group" aria-label={t('account.signature.sizeAria')}>
             {Object.entries(SIGNATURE_IMAGE_WIDTH_PRESETS).map(([key, w]) => {
               const active = signatureImageWidth(draft) === w;
-              const label = key === 'S' ? 'Small' : key === 'M' ? 'Medium' : 'Large';
               return (
                 <button
                   key={key}
@@ -436,7 +519,7 @@ function SignatureCard({ user, dispatch, toast }) {
                   onClick={() => setDraft((d) => ({ ...d, imageWidth: w }))}
                   aria-pressed={active}
                 >
-                  {label}
+                  {t(SIZE_KEYS[key] || 'account.signature.large')}
                 </button>
               );
             })}
@@ -446,7 +529,7 @@ function SignatureCard({ user, dispatch, toast }) {
 
       {hasContent && (
         <div style={{ marginTop: 14 }}>
-          <div style={labelStyle}>Preview</div>
+          <div style={labelStyle}>{t('account.signature.preview')}</div>
           <div className="card" style={{ padding: 12, background: 'var(--inset-bg)' }}>
             <SignaturePreview prefs={{ ...draft, enabled: true }} />
           </div>
@@ -454,9 +537,9 @@ function SignatureCard({ user, dispatch, toast }) {
       )}
 
       <div className="inline-edit-savebar">
-        <span className="save-hint">{dirty ? 'Unsaved changes' : 'No changes yet'}</span>
-        <button type="button" className="btn btn-outline" onClick={cancel}>Cancel</button>
-        <button type="button" className="btn btn-primary" onClick={save}>Save Changes</button>
+        <span className="save-hint">{dirty ? t('account.unsaved') : t('account.noChanges')}</span>
+        <button type="button" className="btn btn-outline" onClick={cancel}>{t('common.cancel')}</button>
+        <button type="button" className="btn btn-primary" onClick={save}>{t('account.saveChanges')}</button>
       </div>
       </>
       )}
@@ -466,6 +549,7 @@ function SignatureCard({ user, dispatch, toast }) {
 
 // Change the password used to sign in (authed/Supabase mode only).
 function ChangePasswordCard() {
+  const t = useT();
   const { updatePassword } = useSession();
   const toast = useToast();
   const [pw, setPw] = useState('');
@@ -474,33 +558,34 @@ function ChangePasswordCard() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (pw.length < 8) { toast.error('Password must be at least 8 characters.'); return; }
-    if (pw !== confirm) { toast.error('Passwords do not match.'); return; }
+    if (pw.length < 8) { toast.error(t('account.password.tooShort')); return; }
+    if (pw !== confirm) { toast.error(t('account.password.mismatch')); return; }
     setBusy(true);
     const { error } = await updatePassword(pw);
     setBusy(false);
-    if (error) { toast.error(error.message || 'Could not change password.'); return; }
+    if (error) { toast.error(errorText(t, error, 'account.password.failed')); return; }
     setPw(''); setConfirm('');
-    toast.success('Password changed.');
+    toast.success(t('account.password.changed'));
   };
 
   return (
     <form className="card detail-card" onSubmit={submit}>
       <div style={{ marginBottom: 12 }}>
-        <h2 className="page-head-title" style={{ fontSize: 16 }}>Password</h2>
+        <h2 className="page-head-title" style={{ fontSize: 16 }}>{t('account.password.title')}</h2>
       </div>
       <div className="form-row">
-        <FormField label="New password" type="password" value={pw} onChange={(e) => setPw(e.target.value)} help="At least 8 characters" autoComplete="new-password" />
-        <FormField label="Confirm new password" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+        <FormField label={t('account.password.new')} type="password" value={pw} onChange={(e) => setPw(e.target.value)} help={t('account.password.help')} autoComplete="new-password" />
+        <FormField label={t('account.password.confirm')} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
       </div>
       <div className="modal-actions">
-        <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Change password'}</button>
+        <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? t('account.saving') : t('account.password.change')}</button>
       </div>
     </form>
   );
 }
 
 export default function SettingsAccount() {
+  const t = useT();
   const { currentUser, authConfigured } = useAuth();
   const state = useStore();
   const dispatch = useDispatch();
@@ -519,7 +604,7 @@ export default function SettingsAccount() {
     const patch = { name: form.name, phone: form.phone, initials: form.initials };
     if (!authConfigured) patch.email = form.email;
     dispatch({ type: ACTIONS.UPDATE_USER, id: currentUser.id, patch });
-    toast.success('Profile saved');
+    toast.success(t('account.profileSaved'));
   };
 
   const prefs = selectNotificationPrefs(state, currentUser.id) || {};
@@ -536,51 +621,51 @@ export default function SettingsAccount() {
   return (
     <div>
       <div className="page-head-text">
-        <h1 className="page-head-title">Your Account</h1>
+        <h1 className="page-head-title">{t('account.title')}</h1>
       </div>
 
       <div className="account-grid">
         <div className="account-col">
           <form className="card detail-card" onSubmit={save}>
-            <div className="flex-row" style={{ gap: 16, alignItems: 'center', marginBottom: 20 }}>
-              <Avatar initials={currentUser.initials} variant={currentUser.avatar} size="lg" />
-              <div>
-                <div className="text-sm font-semi">{ROLE_LABELS[currentUser.role]}</div>
-                <div className="text-xs text-muted">{ROLE_DESCRIPTIONS[currentUser.role]}</div>
-              </div>
-            </div>
+            {/* Your photo (UI_RULES §141): everyone sets their own; the buttons are type="button",
+                so they never submit this form. */}
+            <AvatarPhotoControl user={currentUser} canEdit self>
+              <div className="text-sm font-semi">{ROLE_NAME_KEYS[currentUser.role] ? t(ROLE_NAME_KEYS[currentUser.role]) : ''}</div>
+              <div className="text-xs text-muted">{ROLE_DESC_KEYS[currentUser.role] ? t(ROLE_DESC_KEYS[currentUser.role]) : ''}</div>
+            </AvatarPhotoControl>
             <div className="form-row">
-              <FormField label="Full name" required value={form.name || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <FormField label="Initials" value={form.initials || ''} onChange={(e) => setForm({ ...form, initials: e.target.value.toUpperCase().slice(0, 3) })} help="2–3 characters used in the avatar" />
+              <FormField label={t('account.fullName')} required value={form.name || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <FormField label={t('account.initials')} value={form.initials || ''} onChange={(e) => setForm({ ...form, initials: e.target.value.toUpperCase().slice(0, 3) })} help={t('account.initialsHelp')} />
             </div>
             <div className="info-banner" role="note">
               <div>
-                <strong>Account email vs. connected mailboxes.</strong>{' '}
-                Your account email is what we use to sign you in and to send you
-                app notifications, password resets, etc. Mailboxes you connect under{' '}
-                <strong>Settings → Connected Inboxes</strong> are different. 
-                those are the addresses you send and receive <em>as</em> inside
-                Messaging. The two can be the same person, but they're stored
-                separately and {IDENTITY.name} never assumes one matches the other.
+                {/* the software keeps the two apart, so it is the software's name (UI_RULES §129) */}
+                {t.rich('account.emailVsMailboxes', { brand: IDENTITY.product.name })}
               </div>
             </div>
             <div className="form-row">
               <FormField
-                label="Email"
+                label={t('account.email')}
                 type="email"
                 value={form.email || ''}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 disabled={authConfigured}
-                help={authConfigured ? 'Your sign-in email. Contact a Super Admin to change it.' : undefined}
+                help={authConfigured ? t('account.emailLocked') : undefined}
               />
-              <FormField label="Phone" value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              <FormField label={t('account.phone')} value={form.phone || ''} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div className="modal-actions">
-              <button type="submit" className="btn btn-primary">Save</button>
+              <button type="submit" className="btn btn-primary">{t('common.save')}</button>
             </div>
           </form>
 
+          {/* CS-193 — the language this person reads the app in (LANG-3 + LANG-11). */}
+          <LanguageCard user={currentUser} />
+
           <MobilePushCard user={currentUser} prefs={prefs} dispatch={dispatch} toast={toast} />
+
+          {/* NTF-2 + NTF-1 — when a phone may be buzzed, and whether it is also texted. */}
+          <AlertDeliveryCard user={currentUser} prefs={prefs} dispatch={dispatch} />
 
           {/* Crew don't send outbound emails, so no signature for them. */}
           {currentUser.role !== 'crew' && (
@@ -592,25 +677,25 @@ export default function SettingsAccount() {
 
         <div className="card detail-card">
           <div style={{ marginBottom: 12 }}>
-            <h2 className="page-head-title" style={{ fontSize: 16 }}>Notifications</h2>
+            <h2 className="page-head-title" style={{ fontSize: 16 }}>{t('account.notifications.title')}</h2>
             {areNotificationsMandatory(currentUser) && (
               <p className="text-sm text-muted">
-                Notifications are required for your role and can’t be turned off.
+                {t('account.notifications.mandatory')}
               </p>
             )}
           </div>
 
           {groups.length === 0 ? (
-            <p className="text-sm text-muted">No notification preferences are available for your role.</p>
+            <p className="text-sm text-muted">{t('account.notifications.none')}</p>
           ) : (
             groups.map((group, idx) => (
               <div key={group.id} style={{ marginTop: idx === 0 ? 8 : 18 }}>
-                <h3 className="perm-group-head">{group.label}</h3>
+                <h3 className="perm-group-head">{t(group.labelKey)}</h3>
                 {group.items.map((item) => (
                   <div key={item.key} className="pref-row">
                     <div className="pref-row-text">
-                      <div className="pref-row-label">{item.label}</div>
-                      {item.description && <div className="pref-row-desc">{item.description}</div>}
+                      <div className="pref-row-label">{t(item.labelKey)}</div>
+                      {item.descKey && <div className="pref-row-desc">{t(item.descKey)}</div>}
                     </div>
                     <Toggle
                       // Single source of truth shared with the fan-out gates, so

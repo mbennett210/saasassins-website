@@ -1,0 +1,139 @@
+{
+  "Header": {
+    "Time": "2026-09-28T20:19:15-07:00",
+    "ReportName": "ProfitAndLoss",
+    "ReportBasis": "Accrual",
+    "StartPeriod": "2026-09-28",
+    "EndPeriod": "2026-09-28",
+    "SummarizeColumnsBy": "Departments",
+    "Currency": "USD",
+    "Option": [
+      {
+        "Name": "AccountingStandard",
+        "Value": "GAAP"
+      },
+      {
+        "Name": "NoReportData",
+        "Value": "true"
+      }
+    ]
+  },
+  "Columns": {
+    "Column": [
+      {
+        "ColTitle": "",
+        "ColType": "Account",
+        "MetaData": [
+          {
+            "Name": "ColKey",
+            "Value": "account"
+          }
+        ]
+      },
+      {
+        "ColTitle": "Total",
+        "ColType": "Money",
+        "MetaData": [
+          {
+            "Name": "ColKey",
+            "Value": "total"
+          }
+        ]
+      }
+    ]
+  },
+  "Rows": {
+    "Row": [
+      {
+        "Header": {
+          "ColData": [
+            {
+              "value": "Income"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Total Income"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "Income"
+      },
+      {
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Gross Profit"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "GrossProfit"
+      },
+      {
+        "Header": {
+          "ColData": [
+            {
+              "value": "Expenses"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Total Expenses"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "Expenses"
+      },
+      {
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Net Operating Income"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "NetOperatingIncome"
+      },
+      {
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Net Income"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "NetIncome"
+      }
+    ]
+  }
+}

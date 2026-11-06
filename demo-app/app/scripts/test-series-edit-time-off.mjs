@@ -16,7 +16,7 @@
 //
 // Drives the REAL reducer (loadStore, deletion-core.mjs) with the payloads the UI sends.
 // The series starts two org-days ahead so every clean is still upcoming whatever time the
-// suite runs (APPLY_TIME_OFF_EXCLUSIONS only pulls people off cleans not yet started).
+// suite runs (ADD_TIME_OFF's removeFromCleans only pulls people off cleans not yet started).
 //   node app/scripts/test-series-edit-time-off.mjs
 import { loadStore } from './deletion-core.mjs';
 import { todayKey, addDaysKey, composeIso, dayKey, dayOfWeekKey } from '../src/lib/dates.js';
@@ -70,12 +70,15 @@ const masterOf = (s) => rows(s).find((j) => j.recurrence);
 const has = (job, id) => !!job && (job.crewIds || []).includes(id);
 const flagged = (s) => selectConflictJobIds(s, rows(s));
 
-// Team › Time off (TimeOffCard): the entry, then — with "Also remove" left on, the
-// default — the exclusion that takes the person off the cleans already scheduled.
+// A booking from either screen (Team › Time off or HR › PTO, CS-054): ONE action — the entry,
+// and with "Also remove" left on (the default) removeFromCleans takes the person off the cleans
+// already scheduled.
 function bookOff(s, userId, startDate, { alsoRemove = true } = {}) {
-  let n = reducer(s, { type: ACTIONS.ADD_TIME_OFF, entry: { id: `to_t_${userId}_${startDate}`, userId, startDate, endDate: startDate, reason: 'Night off' } });
-  if (alsoRemove) n = reducer(n, { type: ACTIONS.APPLY_TIME_OFF_EXCLUSIONS, userId, startDate, endDate: startDate });
-  return n;
+  return reducer(s, {
+    type: ACTIONS.ADD_TIME_OFF,
+    entry: { id: `to_t_${userId}_${startDate}`, userId, startDate, endDate: startDate, reason: 'Night off' },
+    removeFromCleans: alsoRemove,
+  });
 }
 
 // JobDetail.save, "this & all future" on a weekly series: the editor opens on

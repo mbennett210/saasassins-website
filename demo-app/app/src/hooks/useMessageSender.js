@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast';
 import {
   selectIsTwilioSendReady, selectTwilioPhone, selectTwilioBlockers,
   selectConnectedInboxesForUser, selectDefaultConnectedInbox,
-  selectMessagingEmailBlockersForUser, selectEmailDefaultReplyTo,
+  selectMessagingEmailBlockersForUser,
 } from '../store/selectors';
 import { sendSMS, subscribeToDelivery } from '../lib/twilio';
 import { sendViaInbox } from '../lib/connectedInboxes';
@@ -47,7 +47,6 @@ export function useMessageSender() {
   const myConnectedInboxes = selectConnectedInboxesForUser(state, currentUser?.id);
   const myDefaultInbox = selectDefaultConnectedInbox(state, currentUser?.id);
   const emailBlockers = selectMessagingEmailBlockersForUser(state, currentUser?.id);
-  const emailDefaultReplyTo = selectEmailDefaultReplyTo(state);
 
   const sendMessage = (conversation, contact, messages, text, opts) => {
     if (!conversation) return;
@@ -155,12 +154,11 @@ export function useMessageSender() {
       }
       const inbox = myConnectedInboxes.find((i) => i.id === emailFromInboxId);
       const fromAddress = inbox?.displayName ? `${inbox.displayName} <${inbox.email}>` : inbox?.email;
-      // Reply-To: when the inbox supports inbound capture (Phase 4c), set
-      // it to a per-conversation address so replies thread back into the
-      // app. Otherwise omit (replies land in the user's actual mailbox).
-      const replyTo = inbox?.inboundEnabled
-        ? `reply+${conversation.id}@inbound.app.local`
-        : (emailDefaultReplyTo || undefined);
+      // NO Reply-To. The app reads this mailbox every minute (api/inbox/ingest) and threads a
+      // reply in by its In-Reply-To, so the customer's Reply must go to the mailbox that sent it.
+      // It used to point at the company email (a person's own mailbox the app doesn't read) or,
+      // with the old inboundEnabled flag, a made-up inbound.app.local address: either way no
+      // reply ever reached the thread (2026-11-02, test-messaging-reply-to.mjs).
       // Total-size guard — per-file size is capped at attach time; this catches
       // the sum blowing Gmail's whole-message limit. Picked files carry .size.
       const pickedFiles = Array.isArray(opts?.attachments) ? opts.attachments : [];
@@ -198,7 +196,6 @@ export function useMessageSender() {
             // Plain text shows in the thread; opts.sendBody is what actually
             // goes out — HTML with an inline image when the signature carries one.
             body: opts?.sendBody || text,
-            replyTo,
             headers: emailHeaders ? {
               'Message-ID': emailHeaders.messageId,
               ...(emailHeaders.inReplyTo ? { 'In-Reply-To': emailHeaders.inReplyTo } : {}),

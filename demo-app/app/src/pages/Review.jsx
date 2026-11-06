@@ -6,18 +6,21 @@ import { useToast } from '../components/Toast';
 import EmptyState from '../components/EmptyState';
 import { DECISIONS, DECISION_SECTION_BY_ID } from '../data/buildDecisions';
 import { EMAIL_DRAFTS } from '../data/emailDrafts';
-import { isDecisionAnswered, isDraftResolved } from '../lib/clientReview';
+import { isDecisionAnswered } from '../lib/clientReview';
 import ReviewHub from './review/ReviewHub';
 import ReviewFocus from './review/ReviewFocus';
-import { areaTitle } from './review/reviewShared';
+import ReviewWaiting from './review/ReviewWaiting';
+import { areaTitle, countOpen } from './review/reviewShared';
 
 // Review — the hub-plus-focus review section (Direction D). It holds the 39 email/SMS/document
-// drafts to sign off AND Matt's 123 build-decision questions, all on the shared clientReview
+// drafts to sign off AND Matt's 126 build-decision questions, all on the shared clientReview
 // slice. DESKTOP ONLY, like Pipeline and Quotes: on a phone it renders a short notice, no
 // phone layout (the sidebar/floating nav also hide it below 640px). The full UI runs at the
 // iPad width and up.
 //
-// URL model: ?area=<sectionId|drafts|new|open>&item=<id>. No area → the hub. Entering an area
+// URL model: ?area=<sectionId|drafts|new|open>&item=<id>. No area → the hub. ?area=waiting is the
+// Waiting on us list (CS-864), not a walk: its Open the draft PUSHES Drafts to sign off at that
+// draft, so the browser Back returns to the list. Entering an area
 // PUSHES (so the browser Back returns to the hub); Next/Back/Skip REPLACE (so the walk isn't a
 // wall of history entries). The new/open lists are dynamic, so they're snapshotted on entry
 // and stay stable while walking; on a refresh they recompute, and a vanished item starts at 0.
@@ -67,7 +70,7 @@ function ReviewDesktop() {
     }
     return [
       ...DECISIONS.filter((q) => !isDecisionAnswered(cr.review.decisions[q.id])).map((q) => q.id),
-      ...EMAIL_DRAFTS.filter((d) => !isDraftResolved(cr.review.drafts[d.id])).map((d) => d.id),
+      ...EMAIL_DRAFTS.filter((d) => cr.isDraftOpen(d.id)).map((d) => d.id),
     ];
   };
 
@@ -89,21 +92,28 @@ function ReviewDesktop() {
 
   const goHub = () => setParams({}, { replace: true });
   const walk = (nextIdx) => setParams({ area, item: ids[nextIdx] || '' }, { replace: true });
+  // Finish (or Skip on the last item) says what is still open: Next and Skip never answer, so a
+  // walk that only moved on is not "Done" (task #126: the hub still said 15 after one).
   const onNext = () => {
-    if (idx + 1 >= ids.length) { goHub(); toast.success(`Done with ${areaTitle(area)}.`); }
-    else walk(idx + 1);
+    if (idx + 1 >= ids.length) {
+      goHub();
+      const open = countOpen(ids, cr.review, cr.isDraftOpen);
+      if (open > 0) toast.info(`${open} of ${ids.length} still need an answer: Next and Skip move on without answering.`, { duration: 6000 });
+      else toast.success(`Done with ${areaTitle(area)}.`);
+    } else walk(idx + 1);
   };
   const onBack = () => { if (idx > 0) walk(idx - 1); };
 
   // Open an area from the hub: start at its first OPEN item (a section / drafts), else 0;
   // the new/open lists are already only open items, so they start at 0.
   const openArea = (a) => {
+    if (a === 'waiting') { setParams({ area: a }, { replace: false }); return; } // a list, not a walk
     const list = (a === 'new' || a === 'open') ? dynList(a) : staticAreaIds(a);
     if (!list.length) { toast.info('Nothing here right now.'); return; }
     let start = 0;
     if (a !== 'new' && a !== 'open') {
       const firstOpen = list.findIndex((id) => (a === 'drafts'
-        ? !isDraftResolved(cr.review.drafts[id])
+        ? cr.isDraftOpen(id)
         : !isDecisionAnswered(cr.review.decisions[id])));
       start = firstOpen >= 0 ? firstOpen : 0;
     }
@@ -111,6 +121,9 @@ function ReviewDesktop() {
   };
 
   if (!area) return <ReviewHub onOpenArea={openArea} />;
+  if (area === 'waiting') {
+    return <ReviewWaiting onExit={goHub} onOpenDraft={(id) => setParams({ area: 'drafts', item: id }, { replace: false })} />;
+  }
   return (
     <ReviewFocus
       area={area}

@@ -1,6 +1,7 @@
 // Service-role data layer for HR files (employee documents + reimbursement receipts).
 // These are employee PII (I-9s, contracts, receipts), so the route gates them like the app's
-// HR cards (api/hr-files: hr.view downloads, hr.edit uploads + deletes, owner/admin by role)
+// HR cards (api/hr-files: hr.view downloads, hr.edit uploads + deletes, owner/admin by role,
+// except under an incident report's folder, which gates like the report)
 // and bytes live in the PRIVATE 'hr-files' bucket, reached
 // only through short-lived signed URLs minted here (service role). The object path is
 // rebuilt from the ownerId (a user id or a reimbursement id), never trusted from the body
@@ -9,6 +10,7 @@
 import { getSupabase } from '../supabase.js';
 import { CLEANSPACE_ORG_ID } from '../constants.js';
 import { requireSafeSegment } from '../storagePaths.js';
+import { isIncidentFileOwner } from '../../../src/lib/hrIncidents.js';
 
 const BUCKET = 'hr-files';
 const ALLOWED_MIME = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
@@ -60,7 +62,11 @@ export async function signedDownloadUrl({ ownerId, storagePath }) {
   return { url: data?.signedUrl || null };
 }
 
-export async function removeObject({ ownerId, storagePath }) {
+export async function removeObject({ ownerId, storagePath, unheldIncidentFile = false }) {
+  // A file an incident report holds is never removed (task #258). Only api/hr-files passes
+  // `unheldIncidentFile`, after reading that the report does not hold this one; any other caller
+  // is refused under an incident's folder outright.
+  if (isIncidentFileOwner(ownerId) && !unheldIncidentFile) throw new Error('A file on an incident report is never removed');
   assertOwnedPath(ownerId, storagePath);
   const db = getSupabase();
   const { error } = await db.storage.from(BUCKET).remove([storagePath]);

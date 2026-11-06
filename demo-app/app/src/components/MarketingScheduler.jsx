@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Marketing scheduler — background dispatcher for email sequences.
 //
-// Mounted once at app root (next to ReminderScheduler / NotificationListener).
-// Mirrors ReminderScheduler.jsx mechanics:
+// Mounted once at app root (next to NotificationListener).
+// Mechanics (the pattern the retired client ReminderScheduler.jsx had):
 //   1. Re-evaluates due sends whenever the relevant state slices change.
 //   2. Ticks every 60 seconds to catch time-window changes when state is idle.
 //   3. Auto-enrolls contacts matched by sequence.enrollmentSources (auto mode).

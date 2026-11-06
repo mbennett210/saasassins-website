@@ -16,6 +16,7 @@
 // cannot fold (the URL is resolved at runtime), so the stub bodies would survive in prod.
 import { authHeaders } from './authHeader';
 import { markStub } from './demoMode';
+import { isQuoteDeletable, QUOTE_NOT_DELETABLE, QUOTE_NOT_EMAILED } from './quoteRules';
 
 // import.meta.env.MODE / .PROD / .VITE_QUOTES_STUB are PLAIN member reads so Vite inlines
 // them → STUB folds to a literal → the stub dead-code-eliminates from a production build.
@@ -68,9 +69,13 @@ export async function adminSignQuote(id, { signerName, signatureDataUrl }) {
   if (!STUB) return (await api(`/quotes/${id}/admin-sign`, { method: 'POST', body: { signerName, signatureDataUrl } })).quote;
   return stubUpdate(id, (q) => ({ ...q, admin_signed_at: nowIso(), admin_signer_name: signerName }));
 }
+// → { quote, emailed, why }. `emailed: false` means the quote IS sent (its signing link works) but
+// nothing reached the contact; `why` is lib/quoteRules QUOTE_NOT_EMAILED (CS-664). The editor
+// hands the office the link to send themselves. The demo never emails.
 export async function sendQuote(id) {
-  if (!STUB) return (await api(`/quotes/${id}/send`, { method: 'POST' })).quote;
-  return stubUpdate(id, (q) => ({ ...q, status: 'sent', sent_at: nowIso() }));
+  if (!STUB) { const r = await api(`/quotes/${id}/send`, { method: 'POST' }); return { quote: r.quote, emailed: !!r.emailed, why: r.emailed ? null : (r.why || null) }; }
+  const quote = stubUpdate(id, (q) => ({ ...q, status: 'sent', sent_at: nowIso() }));
+  return { quote, emailed: false, why: QUOTE_NOT_EMAILED.notSetUp };
 }
 export async function voidQuote(id) {
   if (!STUB) return (await api(`/quotes/${id}/void`, { method: 'POST' })).quote;
@@ -78,7 +83,11 @@ export async function voidQuote(id) {
 }
 export async function deleteQuote(id) {
   if (!STUB) return api(`/quotes/${id}/delete`, { method: 'POST' });
-  const db = loadStub(); db.quotes = db.quotes.filter((q) => q.id !== id); saveStub(db); return { ok: true };
+  // The route's rule (lib/quoteRules, CS-028): only a draft is deleted; anything sent is a record.
+  const db = loadStub();
+  const q = db.quotes.find((x) => x.id === id);
+  if (q && !isQuoteDeletable(q)) throw new Error(QUOTE_NOT_DELETABLE.error);
+  db.quotes = db.quotes.filter((x) => x.id !== id); saveStub(db); return { ok: true };
 }
 export async function getDownloadUrl(id) {
   if (!STUB) return (await api(`/quotes/${id}/download`)).url;
@@ -89,14 +98,16 @@ export async function getDownloadUrl(id) {
 export async function getPublicQuote(token) {
   if (!STUB) return (await api(`/public/pay/${token}`)).quote;
   const q = loadStub().quotes.find((x) => x.public_token === token);
-  return q ? { token: q.public_token, status: q.status, fields: q.fields, contact_name: q.contact_name, admin_signer_name: q.admin_signer_name, admin_signed: !!q.admin_signed_at } : null;
+  // copy_by_email: the demo never emails, so its signing page never promises a copy by email (CS-664).
+  return q ? { token: q.public_token, status: q.status, fields: q.fields, contact_name: q.contact_name, admin_signer_name: q.admin_signer_name, admin_signed: !!q.admin_signed_at, copy_by_email: false } : null;
 }
+// → { ok, status, emailed } — `emailed`: whether the signer's copy went (CS-664).
 export async function signPublicQuote(token, { signerName, signerEmail, signatureDataUrl }) {
   if (!STUB) return api(`/public/pay/${token}/sign`, { method: 'POST', body: { signerName, signerEmail, signatureDataUrl } });
   const db = loadStub();
   const q = db.quotes.find((x) => x.public_token === token);
   if (q) { q.status = 'signed'; q.client_signed_at = nowIso(); q.client_signer_name = signerName; saveStub(db); }
-  return { ok: true, status: 'signed' };
+  return { ok: true, status: 'signed', emailed: false };
 }
 
 // ── stub store (demo/dev only; dead-code-eliminated from a production build) ───

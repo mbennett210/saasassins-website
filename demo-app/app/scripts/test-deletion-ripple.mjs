@@ -47,10 +47,14 @@ ok(staleBaseline.length === 0, `RIPPLE baseline: no stale accepted entry — the
 
 // ── pinned regressions: the shipped LW fixes must stay green ──
 const byKey = Object.fromEntries(results.map((r) => [keyOf(r), r]));
-ok(byKey['DELETE_CLIENT×supplyItems[].clientId']?.pass, 'LW-01: DELETE_CLIENT still sweeps supplyItems (regression pin)');
-ok(byKey['DELETE_CLIENT×supplyRequests[].clientId']?.pass, 'LW-01: DELETE_CLIENT still sweeps supplyRequests (regression pin)');
+// (LW-01's supply pins retired with SUP-13: the supply rows left the blob, and a deleted customer's
+// list and requests are deleted from their tables by the org-state route — test-supplies-route.mjs.)
 ok(byKey['DELETE_TAG×marketingSequences[].replyTags']?.pass, 'LW-02: DELETE_TAG still scrubs marketingSequences.replyTags (regression pin)');
-ok(byKey['DELETE_CLIENT×keys[].clientId']?.verdict === 'NULLED', 'OQ-01: DELETE_CLIENT nulls keys.clientId (keys survive by design)');
+// CS-663 (Matt: "Never delete customers"): there is no customer delete to ripple — the archive
+// replaces it, so every cell that names a customer or its site has no delete path to fire.
+ok(!('DELETE_CLIENT' in store.ACTIONS), 'CS-663: customers are archived, never deleted (no DELETE_CLIENT)');
+ok(Object.values(manifest.fields).filter((s) => s.target === 'clients' || s.target === 'sites').every((s) => s.policy === 'NOT-EXERCISABLE'),
+  'CS-663: every customer and site reference cell is NOT-EXERCISABLE (nothing deletes either)');
 
 // ── coverage: every exercisable cell must be audited by some scenario ──
 // A cell is covered when a scenario verdicts it (by its target or its explicit cell list).

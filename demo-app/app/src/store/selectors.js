@@ -1,22 +1,26 @@
 // Selectors — read-only helpers over state. Kept pure; callers can memoize if hot.
 
-import { effectivePermissions } from '../lib/roles';
 import { REVIEW_KINDS } from '../lib/clientReview';
 import { getVisibleNotificationGroups } from '../lib/notifications';
 import { dayKey, todayKey, addDaysKey, startOfDayKey, startOfMonthKey, addMonthsKey } from '../lib/dates';
 import { isUserOffOn, timeOffEntryFor } from './timeOffRules';
 import { resolveJobCrewIds, isUserJobCrew } from '../lib/crewResolve';
+import { crewScopeFromJobs } from '../lib/crewScope';
+import { isOnTodayList } from '../lib/clockInWindow';
 import { DEFAULT_GEOFENCE_RADIUS_M } from '../lib/geo';
 import { CLOCK_RULE_KEYS, GEOFENCE_OFF_REASON, isClockRuleOff } from '../lib/clockRules';
 import { DEFAULT_SIGNATURE_IMAGE_WIDTH } from '../lib/signature';
-import { isOrphanedOpportunity } from '../lib/pipelines';
+import { isOrphanedOpportunity, boardOpportunities } from '../lib/pipelines';
 import { isOpenStatus } from '../lib/workOrders';
 import { isMissedClean } from '../lib/opsAlerts';
 import { normKeyCompany, makeKeyScope } from '../lib/keyScope';
+import { isArchivedCustomer, CUSTOMER_STATUS, CUSTOMER_STATUS_OVERRIDES } from '../lib/customerStatus';
+import { isOnboarding } from '../lib/onboarding';
+import { cleanersLinkedTo } from '../lib/worksAt';
 import {
   invoicePaid, invoiceBalance, deriveInvoiceStatus,
   clientLifetimeRevenue, clientBalance, agingBuckets, uninvoicedCompletedJobs,
-  clientCredit, clientCreditSources,
+  clientCredit, clientCreditSources, nextInvoiceNumber, receivablesTotal, pastDue30Total,
 } from '../lib/money';
 import { resolveCurrentUser } from './identity';
 
@@ -136,21 +140,29 @@ export const selectCurrentUserBlobRole = (s) => (s.users.find((u) => u.id === s.
 export const selectServices = (s) => s.services;
 export const selectFrequencies = (s) => s.frequencies;
 export const selectClients = (s) => s.clients;
-// Every client stays in the pickable book. Status is derived Lead/Active via
-// selectClientStatus, or a manual override (Lead/Active/Inactive) an operator sets;
-// an Inactive label does NOT hide a company here. So
-// this returns ALL clients: the pickable customer roster (invoice / payment /
-// complaint pickers, the new-business count). A Lead must be pickable or you
-// could never bill a brand-new customer. Kept as a named selector so those call
-// sites still read intentionally.
-export const selectActiveClients = (s) => s.clients;
+// The PICKABLE customer roster (new invoice, new request, new checklist, the hub preview, a
+// contract's buildings, the new-business count): every customer EXCEPT an ARCHIVED one (CS-663 —
+// archived customers leave the pickers; lib/customerStatus). A Lead stays pickable (you could never
+// bill a brand-new customer otherwise) and an Inactive label does not hide a company here. A page
+// that NAMES a customer by id reads the whole roster, which still holds the archived ones, so
+// history keeps its names. One list per `s.clients` (cached), so the screens' memos see a
+// stable reference, and the very same array while nothing is archived.
+const activeClientsCache = new WeakMap();
+export const selectActiveClients = (s) => {
+  const list = s.clients || EMPTY_ARRAY;
+  let out = activeClientsCache.get(list);
+  if (!out) {
+    out = list.some(isArchivedCustomer) ? list.filter((c) => !isArchivedCustomer(c)) : list;
+    activeClientsCache.set(list, out);
+  }
+  return out;
+};
 export const selectSites = (s) => s.sites;
 export const selectJobs = (s) => s.jobs;
 export const selectInvoices = (s) => s.invoices;
 export const selectConversations = (s) => s.conversations;
 export const selectMessages = (s) => s.messages;
 export const selectReminderTemplates = (s) => s.reminderTemplates;
-export const selectReminderEvents = (s) => s.reminderEvents;
 export const selectPermissions = (s) => s.permissions;
 
 // v2 additions
@@ -226,20 +238,9 @@ export const selectKeys = (s) => s.keys || [];
 // read async via qcApi, no longer a blob slice. Dashboard complaint KPIs are computed by
 // selectComplaintKpisFromWorkOrders (below) over the fetched work-order list.
 
-// ---------- Supplies (S58) ----------
-// Base selectors are reference-returning (EMPTY_ARRAY when the slice is absent) so a
-// useSelector default comparer stays correct; the sorted/filtered reads build a new
-// array each call, so their callers pass a shallow comparer or read via useStore.
-export const selectSupplyItems = (s) => s.supplyItems || EMPTY_ARRAY;
-export const selectSupplyItemsForClient = (s, clientId) => (s.supplyItems || EMPTY_ARRAY)
-  .filter((i) => i.clientId === clientId)
-  .slice()
-  .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-export const selectSupplyRequests = (s) => (s.supplyRequests || [])
-  .slice()
-  .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-export const selectOpenSupplyRequestCount = (s) => (s.supplyRequests || EMPTY_ARRAY).filter((r) => r.status === 'open').length;
-export const selectReviews = (s) => s.reviews || {};
+// ---------- Supplies ----------
+// No selectors: since SUP-13 (2026-10-05) the approved lists and the request queue are read
+// from /api/supplies (lib/suppliesApi), not from this store.
 // Day-over-day variance, computed on the fly from timestamped records (no daily
 // snapshot needed). Revenue/quotes-sent deltas are added once those carry dated
 // events; clients + complaints are available today.
@@ -400,6 +401,20 @@ export const selectSitesForClient = (s, clientId) =>
 
 export const selectJobsForClient = (s, clientId) =>
   s.jobs.filter((j) => j.clientId === clientId).sort((a, b) => (a.startAt < b.startAt ? 1 : -1));
+
+// A customer's cleans not done yet (upcoming or in progress), and the cleaners assigned to it: the
+// crew of those cleans (deduped), then the cleaners who work there (lib/worksAt, the "Works at"
+// link the office keeps — never access) and aren't on one of those cleans. ONE rule for the
+// Service setup card's list and the onboarding bar's Cleaners step (task 471), so they agree.
+export const selectUpcomingJobsForClient = (s, clientId) =>
+  selectJobsForClient(s, clientId).filter((j) => j.status === 'upcoming' || j.status === 'in_progress');
+export function selectAssignedCleanersForClient(s, clientId) {
+  const ids = [...new Set(selectUpcomingJobsForClient(s, clientId).flatMap((j) => j.crewIds || []))];
+  const onCleans = ids.map((id) => (s.users || []).find((u) => u.id === id)).filter(Boolean);
+  const seen = new Set(onCleans.map((u) => u.id));
+  const linked = cleanersLinkedTo(s.users, clientId).filter((u) => !seen.has(u.id));
+  return [...onCleans.map((user) => ({ user, onClean: true })), ...linked.map((user) => ({ user, onClean: false }))];
+}
 
 export const selectInvoicesForClient = (s, clientId) =>
   s.invoices.filter((inv) => inv.clientId === clientId).sort((a, b) => (a.issueDate < b.issueDate ? 1 : -1));
@@ -566,11 +581,22 @@ export function selectScheduleRowsByCleaner(s, jobs, users) {
   const crewByJob = new Map(jobs.map((j) => [j.id, effectiveCrewIdSet(s, j)]));
   const activeIds = new Set((users || []).map((u) => u.id));
   const mins = (j) => Math.max(0, Math.round((new Date(j.endAt).getTime() - new Date(j.startAt).getTime()) / 60000));
+  // ONE pass: each visit goes into its crew's buckets, in list order (CS-721). Filtering the
+  // whole week once per team member was 1,540 × 3,850 ≈ 5.9 million checks at Matt's size,
+  // ~0.7 s of the Cleaner view. Same rows (scripts/test-schedule-cleaner-rows.mjs).
+  const byUser = new Map();
+  for (const j of jobs) {
+    const set = crewByJob.get(j.id);
+    if (!set) continue;
+    for (const id of set) {
+      let bucket = byUser.get(id);
+      if (!bucket) { bucket = []; byUser.set(id, bucket); }
+      bucket.push(j);
+    }
+  }
   const rows = users
     .map((u) => {
-      const js = jobs
-        .filter((j) => crewByJob.get(j.id)?.has(u.id))
-        .sort((a, b) => a.startAt.localeCompare(b.startAt));
+      const js = (byUser.get(u.id) || EMPTY_ARRAY).slice().sort((a, b) => a.startAt.localeCompare(b.startAt));
       return { user: u, jobs: js, totalMinutes: js.reduce((sum, j) => sum + mins(j), 0) };
     })
     .filter((row) => row.jobs.length > 0)
@@ -600,10 +626,17 @@ export function selectScheduleRowsByCleaner(s, jobs, users) {
 // Today's (non-cancelled) cleans for a crew member, sorted by start — the scope of
 // the My Day hub. "Today" is the ORG's calendar day, so an off-site VA or a crew
 // member who has travelled still sees the business's today, not their device's.
+// CS-052: a clean from an EARLIER day stays on Today while it can still be clocked into
+// (lib/clockInWindow — until its end plus the auto-close grace) and isn't done: the 11 PM
+// clean a cleaner reaches at 00:30 used to vanish from My Day at midnight. The rule is
+// lib/clockInWindow `isOnTodayList`, which the server's scan reads too (QR Wave 2).
+// (A named predicate, not an inline block: test-selector-benefit reads each selector's
+// return expression up to its first `;`, and must still see the chain end in .sort().)
 export function selectTodayCleansForUser(s, userId, now = Date.now()) {
   const tk = dayKey(now);
+  const graceMins = s.opsSettings?.autoCloseGraceMins;
   return selectJobsForUser(s, userId)
-    .filter((j) => j.status !== 'cancelled' && dayKey(j.startAt) === tk)
+    .filter((j) => isOnTodayList(j, tk, now, graceMins))
     .sort((a, b) => a.startAt.localeCompare(b.startAt));
 }
 
@@ -820,73 +853,27 @@ export const selectTwilioBlockers = (s) => {
   return blockers;
 };
 
-// ---------- Integrations / Email Provider (Resend) ----------
-// System transactional sender — used for invitations, reminder emails, and
-// future billing. Per-user conversational email (Messaging suite) lives in
-// connectedInboxes (Phase 3) and has its own selectors.
-export const selectEmailIntegration = (s) => s.company?.integrations?.email || null;
-export const selectEmailConnected = (s) =>
-  Boolean(s.company?.integrations?.email?.connected);
-export const selectEmailVerifiedDomain = (s) =>
-  s.company?.integrations?.email?.verifiedDomain || null;
-
-// Default From for system transactional sends. Falls back to the company
-// email so the existing AddUserModal flow keeps working in stub/dev mode
-// before the provider is connected. Once connected, `email.defaultFrom`
-// must be on the verified domain (backend enforces this).
-export const selectEmailDefaultFrom = (s) =>
-  s.company?.integrations?.email?.defaultFrom || s.company?.email || null;
-
-export const selectEmailDefaultReplyTo = (s) =>
-  s.company?.integrations?.email?.defaultReplyTo || null;
-
-// Sending real transactional email requires both: the provider account is
-// connected AND the verified domain has cleared DKIM/SPF/DMARC checks.
-// In stub/dev mode we deliberately don't gate sends so the existing
-// invitation + reminder flows keep working without a connected provider —
-// the UI surfaces the "Dev mode" banner so it's clear what's happening.
-export const selectIsEmailSendReady = (s) => {
-  const em = s.company?.integrations?.email;
-  if (!em?.connected) return false;
-  if (!em.verifiedDomain) return false;
-  if (em.domain?.status !== 'verified') return false;
-  return true;
-};
-
-// Reasons a system email send would be blocked, in display order. Empty
-// array = ready. Mirrors selectTwilioBlockers shape so the Settings UI can
-// reuse the same blocker-list pattern.
-export const selectEmailBlockers = (s) => {
-  const em = s.company?.integrations?.email;
-  const blockers = [];
-  if (!em?.connected) {
-    blockers.push({ key: 'not_connected', label: 'Email provider not connected' });
-    return blockers;
-  }
-  if (!em.verifiedDomain) {
-    blockers.push({ key: 'no_domain', label: 'No sending domain configured' });
-  }
-  if (em.domain?.status !== 'verified') {
-    const status = em.domain?.status || 'not_started';
-    const map = {
-      not_started: 'Domain verification not started',
-      pending: 'Domain verification pending. DNS records propagating',
-      failed: 'Domain verification failed. Check DKIM/SPF/DMARC records',
-    };
-    blockers.push({ key: `domain_${status}`, label: map[status] || 'Domain not verified' });
-  }
-  if (!em.defaultFrom) {
-    blockers.push({ key: 'no_default_from', label: 'No default From address set' });
-  }
-  return blockers;
-};
+// ---------- System email (Google) ----------
+// The app's own transactional email — invitations, set-password links, quotes,
+// reminders, client mail — leaves as the connected Google mailbox marked SYSTEM SENDER
+// on the SERVER (app/api/_lib/systemSender.js). There is nothing about it in the shared
+// record, so there are no selectors for "is email connected" any more: Settings reads
+// /api/email/health. This replaced a block of eight selectors over
+// `company.integrations.email` — a Resend key's last 4, a "verified" sending domain and
+// a DKIM record set — which described a provider this build does not use (CS-012,
+// CS-039, CS-280, 2026-09-29).
+//
+// The ONE thing callers still need from the record is the address replies should go to.
+// Gmail sends as the mailbox, so a caller's "From" can only ever become a Reply-To
+// (api/_lib/email.js resolveFromAndReplyTo), and the office address is the right default.
+export const selectSystemEmailReplyTo = (s) => s.company?.email || null;
 
 // ---------- Connected Inboxes (per-user mailbox connections) ----------
-// Each user can connect one or more mailboxes (Gmail OAuth / Microsoft 365
-// OAuth / SMTP). Sending email from Messaging routes through the user's
-// default inbox so messages come from the rep's own address — not the
-// system "notifications@" sender. Tokens + SMTP passwords NEVER live in
-// state (backend holds them encrypted at rest).
+// Each user can connect one or more Gmail / Google Workspace mailboxes (the Microsoft and
+// SMTP connectors were deleted with their non-existent endpoints — CS-220, 2026-09-29).
+// Sending email from Messaging routes through the user's default inbox so messages come
+// from the rep's own address, not the app's own sending mailbox. OAuth tokens NEVER live
+// in state (the backend holds them encrypted at rest).
 export const selectConnectedInboxes = (s) =>
   Array.isArray(s.connectedInboxes) ? s.connectedInboxes : [];
 
@@ -1102,16 +1089,10 @@ export function selectSynthesizedActivityForContact(s, contactId) {
 export function selectVisibleClientIdsFor(s, user) {
   if (!user) return new Set();
   if (user.role !== 'crew') return new Set((s.clients || []).map((c) => c.id));
-  const ids = new Set();
-  const siteClient = {};
-  (s.sites || []).forEach((si) => { siteClient[si.id] = si.clientId; });
-  // Jobs the crew is on — resolve the account by clientId, else via the job's site.
-  (s.jobs || []).forEach((j) => {
-    if (!(j.crewIds || []).includes(user.id)) return;
-    const cid = j.clientId || (j.siteId ? siteClient[j.siteId] : null);
-    if (cid) ids.add(cid);
-  });
-  return ids;
+  // Jobs the crew is on — the account by clientId, else via the job's site. The SAME rule the
+  // server scopes a cleaner's QC reads and writes by (lib/crewScope, CS-005), so the customers
+  // a cleaner sees are exactly the ones whose checklists and work orders they may reach.
+  return crewScopeFromJobs({ jobs: s.jobs, sites: s.sites, userId: user.id }).clientIds;
 }
 
 export function selectVisibleClientsFor(s, user) {
@@ -1141,18 +1122,22 @@ export function selectVisibleKeysFor(s, user) {
 export const selectOpportunities = (s) => s.opportunities || EMPTY_ARRAY;
 export const selectOpportunitiesForClient = (s, clientId) =>
   (s.opportunities || []).filter((o) => o.clientId === clientId);
-// Opportunities on the active pipeline (the board's cards), in array order. A
+// EVERY deal placed on the active pipeline, open or closed, in array order. This is the
+// PLACEMENT set, not the board — the stage editor's in-use count reads it, so deleting a
+// stage that still holds won/lost deals stays blocked (they would orphan otherwise). A
 // vendor company never has one, so no extra vendor filter is needed here.
 export function selectPipelineOpportunities(s) {
   const pl = selectActivePipeline(s);
   if (!pl) return [];
   return (s.opportunities || []).filter((o) => o.pipelineId === pl.id && o.stage);
 }
-// Total value of OPEN opportunities on the active pipeline (won/lost excluded).
+// The BOARD's cards: the open deals among those (won/lost leave the board — MISC-1 /
+// CS-141, the rule lives in lib/pipelines).
+export const selectBoardOpportunities = (s) => boardOpportunities(selectPipelineOpportunities(s));
+// The "Open deals" headline — the sum of exactly the cards the board draws, so the figure
+// and the columns can never disagree (CS-141).
 export const selectOpenOpportunityValue = (s) =>
-  selectPipelineOpportunities(s)
-    .filter((o) => o.status === 'open')
-    .reduce((sum, o) => sum + (Number(o.value) || 0), 0);
+  selectBoardOpportunities(s).reduce((sum, o) => sum + (Number(o.value) || 0), 0);
 
 // Orphaned opportunities — deals that carry a stage (so they were placed on a board) but
 // whose placement is invalid: a stale stage key, or a pipeline that no longer exists. They
@@ -1161,12 +1146,6 @@ export const selectOpenOpportunityValue = (s) =>
 export function selectOrphanedOpportunities(s) {
   const pipelines = s.pipelines || [];
   return (s.opportunities || []).filter((o) => isOrphanedOpportunity(pipelines, o));
-}
-
-// Effective permissions for a specific user (for the overrides UI).
-export function selectEffectivePermissionsForUser(s, userId) {
-  const user = selectUserById(s, userId);
-  return effectivePermissions(user, s.permissions, s.userPermissionOverrides || []);
 }
 
 // ---------- Derived ----------
@@ -1183,14 +1162,13 @@ export const selectClientLifetimeRevenue = (s, clientId) => clientLifetimeRevenu
 export const selectClientBalance = (s, clientId) => clientBalance(s.invoices, clientId);
 
 // Derived customer status (Jobber-style), the ONE status we display + filter on:
-// Active (has any job or invoice) vs Lead (no work yet). Fully derived from real
-// work, so it can never drift and nothing is stored. There is deliberately NO
-// archive state: this build deletes customers it no longer wants, it does not
-// archive them (the "no archiving, only deletion" directive; see persist.js v21).
-const CLIENT_STATUS_OVERRIDES = new Set(['lead', 'active', 'inactive']);
+// Active (has any job or invoice) vs Lead (no work yet), unless an operator set one.
+// ARCHIVED is the fourth (CS-663, Matt's "Never delete customers", superseding the shell's old
+// "no archiving, only deletion" directive of persist.js v21): set only by ARCHIVE_CLIENT.
+const CLIENT_STATUS_OVERRIDES = new Set(CUSTOMER_STATUS_OVERRIDES);
 export const selectClientStatus = (s, client) => {
   if (!client) return 'lead';
-  // Manual override (Lead/Active/Inactive) wins when an operator has set one on the
+  // Manual override (Lead/Active/Inactive, or Archived) wins when one is set on the
   // company. Otherwise DERIVED: Active on the first real work OR a won deal
   // (CRM-MODEL §3: winning an opportunity is a conversion event), else a Lead.
   if (CLIENT_STATUS_OVERRIDES.has(client.statusOverride)) return client.statusOverride;
@@ -1220,28 +1198,35 @@ export const selectSalesContacts = (s) =>
 // The badge a company shows: Vendor Type wins (off the sales track, so no
 // Lead/Active), else the derived Lead/Active status. ONE source so the hub list,
 // the ClientDetail header, and the contact's Company section never disagree.
-export const selectClientBadgeStatus = (s, client) =>
-  client?.type === 'vendor' ? 'vendor' : selectClientStatus(s, client);
+// The badge, in order: Archived (CS-663), Vendor, Inactive set by hand, then ONBOARDING while a new
+// customer's onboarding isn't finished (task 471: "Onboarding" until every step is green, then it
+// moves on by itself), else Lead / Active. Only the badge changes: the reminders, pickers and
+// counts keep reading selectClientStatus, where an onboarding customer is a Lead as before.
+export const ONBOARDING_BADGE = 'onboarding';
+export const selectClientBadgeStatus = (s, client) => {
+  if (isArchivedCustomer(client)) return CUSTOMER_STATUS.archived;   // archived wins (CS-663)
+  if (client?.type === 'vendor') return 'vendor';
+  if (client?.statusOverride === CUSTOMER_STATUS.inactive) return CUSTOMER_STATUS.inactive;
+  if (isOnboarding(client)) return ONBOARDING_BADGE;
+  return selectClientStatus(s, client);
+};
 export const selectClientCredit = (s, clientId) => clientCredit(s.invoices, clientId);
 export const selectClientCreditSources = (s, clientId) => clientCreditSources(s.invoices, clientId);
 export const selectAgingBuckets = (s, now = new Date()) => agingBuckets(s.invoices, now);
 export const selectUninvoicedCompletedJobs = (s) => uninvoicedCompletedJobs(s.jobs, s.invoices);
+// Receivables = every dollar owed on a live invoice, current AND past due (CS-146). Both
+// read agingBuckets, the same helper the /invoices aging strip uses, so the Dashboard card
+// and that strip can never disagree.
+export const selectReceivables = (s, now = new Date()) => receivablesTotal(s.invoices, now);
+export const selectPastDue30 = (s, now = new Date()) => pastDue30Total(s.invoices, now);
 
-// Generate the next invoice id following `<prefix>-<n>`. Mirrors the
-// reducer's internal allocator so callers can pre-compute an id (needed when
-// the same dispatch chain creates an invoice and then references it — e.g.
-// the Record Payment flow auto-creates a stub invoice and immediately appends a
-// payment to it).
+// The next invoice id following `<prefix>-<n>`, so the Add Invoice form can show the
+// number it is about to use. There used to be THREE copies of this rule (here, the
+// reducer, and nothing shared); now there is one — lib/money.js nextInvoiceNumber — and
+// the reducer re-decides the number at reduce time anyway (resolveInvoiceNumber), because
+// a number computed in a form can go stale before the create lands (CS-098).
 export function nextInvoiceId(state) {
-  const prefix = state.company.invoicePrefix || 'INV';
-  const numbers = (state.invoices || [])
-    .map((inv) => {
-      const m = String(inv.id).match(new RegExp(`^${prefix}-(\\d+)$`));
-      return m ? Number(m[1]) : 0;
-    })
-    .filter(Boolean);
-  const next = (numbers.length ? Math.max(...numbers) : 1000) + 1;
-  return `${prefix}-${next}`;
+  return nextInvoiceNumber(state.invoices, state.company.invoicePrefix || 'INV');
 }
 
 // Dashboard summary stats
@@ -1291,19 +1276,16 @@ export function selectDashboardStats(s) {
   };
 }
 
-export const selectUnreadReminderCount = (s) =>
-  (s.reminderEvents || []).filter((e) => !e.readAt).length;
-export const selectFailedReminderCount = (s) =>
-  (s.reminderEvents || []).filter((e) => e.status === 'failed').length;
-
 // ─── Clean Space KPIs (per questionnaire Q17 + Q18) ─────────────────────────────
 // All windowed selectors use a rolling N-day lookback from "now" so the
 // dashboard auto-updates without bookkeeping. Complaint KPIs now come from Work Orders
 // (type:complaint) via selectComplaintKpisFromWorkOrders, not a blob slice. Missed cleans
-// are derived deterministically (lib/opsAlerts.isMissedClean): a scheduled clean whose
-// window fully passed with NO clock-in at all (done/cancelled/in-progress excluded). Same
-// rule as the shift-missed alert, so the KPI and the alert agree. It needs the covered
-// job-id set (from time entries) passed in (see selectMissedCleansThisMonth).
+// are derived deterministically (lib/opsAlerts.isMissedClean): a scheduled clean with NO
+// clock-in at all `opsSettings.missedAfterStartMins` after its scheduled start
+// (done/cancelled/in-progress excluded). THE SAME rule — and the same number — as the
+// missed-shift alert (ALR-11), so the KPI counts exactly the cleans the supervisor was
+// alerted about. It needs the covered job-id set (from time entries) passed in (see
+// selectMissedCleansThisMonth).
 
 // Org-tz start-of-day, n days ago — the rolling-window floor for the dashboard
 // metrics below. Anchored in the org zone so the window edge doesn't move with the
@@ -1311,17 +1293,17 @@ export const selectFailedReminderCount = (s) =>
 const daysAgoDate = (n) => startOfDayKey(addDaysKey(todayKey(), -n));
 
 // Q17: "missed cleans" — count + estimated revenue impact over the last 30 days.
-// A clean is missed when its window fully passed with no clock-in at all (deterministic,
-// lib/opsAlerts.isMissedClean, NOT a manual status). `coveredJobIds` is a Set of job ids
-// that have a real clock-in — the caller (Dashboard) fetches it complete from the server
-// (timeApi.coveredJobIds, the same read the late/missed alerts use). Revenue impact uses
+// A clean is missed when nobody clocked in by its start + the org's missed-shift mark
+// (deterministic, lib/opsAlerts.isMissedClean, NOT a manual status). `coveredJobIds` is a
+// Set of job ids that have a real clock-in — the caller (Dashboard) fetches it complete
+// from the server (timeApi.coveredJobIds, the same read the alert uses). Revenue impact uses
 // service.defaultDurationMins as a rough proxy ($150/hr).
 export function selectMissedCleansThisMonth(s, coveredJobIds, now = Date.now()) {
   const since = daysAgoDate(30).getTime();
   const services = s.services || [];
   const missed = (s.jobs || []).filter((j) => {
     const t = new Date(j.startAt).getTime();
-    return Number.isFinite(t) && t >= since && isMissedClean(j, coveredJobIds, now);
+    return Number.isFinite(t) && t >= since && isMissedClean(j, coveredJobIds, now, s.opsSettings || {});
   });
   const revenueImpact = missed.reduce((sum, j) => {
     const svc = services.find((sv) => sv.id === j.serviceId);
@@ -1450,8 +1432,8 @@ export function selectDashboardTrends(s, { jobsFullyLoaded = false, coveredJobId
   // Missed is deterministic and clock-in-aware (isMissedClean), so it needs BOTH the full
   // job set (the -60..-30 prior window reaches outside the boot range) AND the covered set
   // from fetched time entries. Missing either yields no arrow rather than a wrong one.
-  const missedCur = jobsBetween(s, d30, now).filter((j) => isMissedClean(j, coveredJobIds, now)).length;
-  const missedPrior = jobsBetween(s, d60, d30).filter((j) => isMissedClean(j, coveredJobIds, now)).length;
+  const missedCur = jobsBetween(s, d30, now).filter((j) => isMissedClean(j, coveredJobIds, now, s.opsSettings || {})).length;
+  const missedPrior = jobsBetween(s, d60, d30).filter((j) => isMissedClean(j, coveredJobIds, now, s.opsSettings || {})).length;
 
   const companiesNew30 = countCreatedBetween(s.clients, d30, now, isActive);
   const companiesNewPrior = countCreatedBetween(s.clients, d60, d30, isActive);
@@ -1475,6 +1457,10 @@ export function selectDashboardTrends(s, { jobsFullyLoaded = false, coveredJobId
 //   ratio          — complaints in the window per 100 completed cleans (same window)
 //   trend          — 30d vs prior 30d, 'decrease' is good (green)
 //   yesterdayDelta — org-day today-minus-yesterday, for the "Variance (vs yesterday)" card
+// 🔴 CS-640: `workOrders` must hold EVERY open complaint and EVERY complaint created since
+// complaintKpiWindowStartIso(days) — the Dashboard joins those two complete reads — or the open
+// count and the windows count a capped list (it was the newest 500 work orders of every status).
+export const complaintKpiWindowStartIso = (days = 30) => daysAgoDate(days * 2).toISOString();
 export function selectComplaintKpisFromWorkOrders(s, workOrders, days = 30) {
   const list = (Array.isArray(workOrders) ? workOrders : []).filter((w) => w.type === 'complaint');
   const at = (w) => new Date(w.created_at || w.createdAt).getTime();
@@ -1504,47 +1490,45 @@ export function selectComplaintKpisFromWorkOrders(s, workOrders, days = 30) {
   };
 }
 
-// Reminder stats (computed from events)
-export function selectReminderStats(s) {
-  const start = new Date(); start.setDate(start.getDate() - 30);
-  const recent = s.reminderEvents.filter((e) => new Date(e.sentAt) >= start);
-  const sent = recent.filter((e) => e.status === 'sent').length;
-  const failed = recent.filter((e) => e.status === 'failed').length;
-  const total = sent + failed;
-  const deliveryRate = total > 0 ? Math.round((sent / total) * 100) : 100;
-  return {
-    sentThisMonth: sent,
-    deliveryRate,
-    noShowsPrevented: Math.round(sent * 0.06), // synthetic heuristic for prototype
-  };
-}
-
 // Unread messages count per conversation. For DMs, "unread for me" means messages
 // authored by the *other* participant that I haven't read yet — not direction='in'
 // (DM messages all carry direction='internal').
 //
 // Muted threads (the current user is in `mutedByUserIds`) report zero unread —
 // muting silences both the in-app toast and the visible badge on the thread row.
-export function selectUnreadForConversation(s, conversationId) {
-  const conv = s.conversations.find((c) => c.id === conversationId);
-  if (!conv) return 0;
+//
+// 🔴 COUNTED ONCE PER CHANGE (CS-811). Every thread's count comes from ONE pass over the
+// messages, kept until the messages, the threads or the viewer change (one memo slot: there
+// is one signed-in store). It used to be a `conversations.find` plus a `messages.filter` PER
+// thread PER call, and the always-mounted Messages dock asked for three inbox totals on every
+// render — every address change and keystroke paid O(threads × messages), 123 of the ~155 ms
+// a key cost at the S128 flood's volume. Same rule, same numbers
+// (`scripts/test-messages-unread-memo.mjs`); a duplicate thread id counts by its FIRST record,
+// as `find` did.
+let _unreadMemo = null;
+function unreadByConversation(s) {
+  const conversations = s.conversations || EMPTY_ARRAY;
+  const messages = s.messages || EMPTY_ARRAY;
   const uid = s.currentUserId;
-  if (Array.isArray(conv.mutedByUserIds) && conv.mutedByUserIds.includes(uid)) return 0;
-  const isUnreadForViewer = (m) =>
-    m.authorUserId !== uid && !(m.readByUserIds || []).includes(uid);
-  if (conv.channel === 'dm') {
-    return s.messages.filter(
-      (m) => m.conversationId === conversationId && Boolean(m.authorUserId) && isUnreadForViewer(m)
-    ).length;
+  const memo = _unreadMemo;
+  if (memo && memo.conversations === conversations && memo.messages === messages && memo.uid === uid) return memo.counts;
+  const convById = new Map();
+  for (const c of conversations) if (!convById.has(c.id)) convById.set(c.id, c);
+  const counts = new Map();
+  for (const m of messages) {
+    const conv = convById.get(m.conversationId);
+    if (!conv || m.authorUserId === uid || (m.readByUserIds || []).includes(uid)) continue;
+    if (conv.channel === 'dm' ? !m.authorUserId : (conv.channel !== 'internal' && m.direction !== 'in')) continue;
+    counts.set(conv.id, (counts.get(conv.id) || 0) + 1);
   }
-  if (conv.channel === 'internal') {
-    return s.messages.filter(
-      (m) => m.conversationId === conversationId && isUnreadForViewer(m)
-    ).length;
+  for (const conv of convById.values()) {
+    if (Array.isArray(conv.mutedByUserIds) && conv.mutedByUserIds.includes(uid)) counts.delete(conv.id);
   }
-  return s.messages.filter(
-    (m) => m.conversationId === conversationId && m.direction === 'in' && isUnreadForViewer(m)
-  ).length;
+  _unreadMemo = { conversations, messages, uid, counts };
+  return counts;
+}
+export function selectUnreadForConversation(s, conversationId) {
+  return unreadByConversation(s).get(conversationId) || 0;
 }
 
 // ---------- Messaging inbox helpers (Phase 2a) ----------
@@ -1569,12 +1553,24 @@ export function sortConversationsByRecency(list) {
 //   'dm'       — 1:1 direct messages (channel === 'dm'). Visibility is gated to
 //                participants for ALL roles (owner/admin/crew) — admins do NOT
 //                see DMs they aren't party to.
+// Built once per (thread list, inbox, viewer) and handed back by reference until the thread
+// list changes (CS-811: the Messages dock and the Messaging page ask on every render). Read-only
+// to callers, like every selector result.
+const _inboxLists = new WeakMap();
 export function selectConversationsForInbox(s, inbox, currentUser) {
-  const convos = s.conversations || [];
+  const convos = s.conversations || EMPTY_ARRAY;
+  let byKey = _inboxLists.get(convos);
+  if (!byKey) { byKey = new Map(); _inboxLists.set(convos, byKey); }
+  const key = `${inbox}\u0001${currentUser?.id ?? ''}`;
+  let list = byKey.get(key);
+  if (!list) { list = buildInboxList(convos, inbox, currentUser); byKey.set(key, list); }
+  return list;
+}
+function buildInboxList(convos, inbox, currentUser) {
   const uid = currentUser?.id;
 
   if (inbox === 'internal') {
-    if (!uid) return [];
+    if (!uid) return EMPTY_ARRAY;
     const list = convos.filter(
       (c) => c.channel === 'internal' && (c.participantUserIds || []).includes(uid)
     );
@@ -1582,7 +1578,7 @@ export function selectConversationsForInbox(s, inbox, currentUser) {
   }
 
   if (inbox === 'dm') {
-    if (!uid) return [];
+    if (!uid) return EMPTY_ARRAY;
     const list = convos.filter(
       (c) => c.channel === 'dm' && (c.participantUserIds || []).includes(uid)
     );
@@ -1669,10 +1665,13 @@ export function selectOtherParticipant(s, conv, currentUserId) {
   return selectUserById(s, otherId);
 }
 
-// Unread count for a whole inbox bucket (used by the rail badges).
+// Unread count for a whole inbox bucket (used by the rail badges and the Messages dock): the
+// memoized thread list over the memoized counts — no message is read unless one changed.
 export function selectUnreadCountForInbox(s, inbox, currentUser) {
-  const convos = selectConversationsForInbox(s, inbox, currentUser);
-  return convos.reduce((acc, c) => acc + selectUnreadForConversation(s, c.id), 0);
+  const counts = unreadByConversation(s);
+  let n = 0;
+  for (const c of selectConversationsForInbox(s, inbox, currentUser)) n += counts.get(c.id) || 0;
+  return n;
 }
 
 // ---------- Marketing (v37) ----------

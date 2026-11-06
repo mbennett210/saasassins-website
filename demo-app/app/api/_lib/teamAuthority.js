@@ -26,29 +26,72 @@
 //                                                    leaves another); never a Super Admin;
 //                                                    never while they may be owed pay (EVERY
 //                                                    role, as in the app)
-//   reset link    owner+admin | staff.resetPassword  never a Super Admin's password
+//   reset link    owner+admin | staff.resetPassword  never a Super Admin's password; never a
+//                                                    customer's login (Customer logins sends it)
 //   orphan list   owner+admin | settings.team.edit
+//   sign-ins      owner+admin | settings.team.edit   who never signed in (the Team list)
 // "A role only if you hold all it carries" is lib/roles canGiveRole: it is the GIVER who
 // must hold everything the role carries in the matrix; a Super Admin may give any role.
 // And a Super Admin never leaves the org without one: no disabling or removing their own
 // login unless another Super Admin can still sign in, and no roster left without one.
-import { can, canGiveRole, canEndAccess, ROLE_LABELS } from '../../src/lib/roles.js';
+//
+// HANDING OVER A SET-PASSWORD LINK (CS-661, S128). With no sending mailbox, an invite or a reset
+// answers the one-time link to the caller, who sends it to the member themselves. That link
+// signs in AS the member, so it goes only to someone who already holds everything the member
+// holds — their permission column (an Operations Manager's own, CS-858) AND their own overrides
+// (linkHandoverRefusal). Otherwise an Admin with the reset key could open a Manager's account and
+// reach the money and HR keys Q24 keeps from Admins.
+import { can, canGiveRole, canGiveColumn, canEndAccess, levelVariants, ROLE_LABELS, PERMISSIONS, ALWAYS_GRANTED } from '../../src/lib/roles.js';
+import { managerLevelIn } from '../../src/lib/teamScope.js';
 import { owedPayBlock, payCutoffKey } from '../../src/lib/deleteCascade.js';
+import { LINK_WITHHELD } from '../../src/lib/signInLink.js';
 import { matrixForCan, overridesForCan } from './permissionSlices.js';
 
-// What the caller may do through the matrix: holds(key) and mayGive(role), both from the
-// COMMITTED state (a save must not grant itself the key it needs). `role` and `selfId` are
-// the JWT claim's. A null role holds nothing outside ALWAYS_GRANTED and gives no role. The
-// slices are read the way jobsGuard reads them (permissionSlices.js): a malformed stored
+// What the caller may do through the matrix: holds(key), mayGive(role), mayGiveColumn(column) and
+// holdsAllOf(member), all from the COMMITTED state (a save must not grant itself the key it needs).
+// `role` and `selfId` are the JWT claim's. A null role holds nothing outside ALWAYS_GRANTED and gives
+// no role. The slices are read the way jobsGuard reads them (permissionSlices.js): a malformed stored
 // row reads as a missing one, so it can never throw inside can() and 500 every save.
+// Each person is read at their permission COLUMN (CS-858): a manager's level comes off the committed
+// roster (`committed.users`, lib/teamScope managerLevelIn), and rows that disagree on it fail closed
+// — the caller then holds only what BOTH manager columns hold, and a member counts as holding what
+// EITHER does (lib/roles levelVariants).
 export function matrixAuthority(committed, role, selfId) {
   const permissions = matrixForCan(committed?.permissions);
   const overrides = overridesForCan(committed?.userPermissionOverrides);
-  const me = { id: selfId ?? null, role: role ?? null };
+  const users = committed?.users;
+  const at = (id, r) => levelVariants({ id: id ?? null, role: r ?? null, managerLevel: managerLevelIn(users, { id, role: r }) });
+  const me = at(selfId, role);
+  const holds = (key) => me.every((u) => can(u, key, permissions, overrides));
   return {
-    holds: (key) => can(me, key, permissions, overrides),
-    mayGive: (r) => canGiveRole(me, r, permissions, overrides),
+    holds,
+    mayGive: (r) => me.every((u) => canGiveRole(u, r, permissions, overrides)),
+    mayGiveColumn: (column) => me.every((u) => canGiveColumn(u, column, permissions, overrides)),
+    // Whether the caller holds every permission `member` ({ id, role }) holds — their column's
+    // matrix row AND their own per-user overrides. A Super Admin holds everything.
+    holdsAllOf: (member) => role === 'owner' || at(member?.id, member?.role).every((m) => Object.keys(PERMISSIONS).every((key) => ALWAYS_GRANTED.has(key)
+      || !can(m, key, permissions, overrides)
+      || holds(key))),
   };
+}
+
+/**
+ * Whether the caller may be HANDED a member's one-time set-password link (CS-661). The link
+ * signs in as the member, so the caller must already hold everything the member holds: a Super
+ * Admin always; anyone else every permission the member's role and their own overrides give
+ * them, for EVERY identity the member is known by (their claimed id and each roster row).
+ *
+ * @param f.authority  { holdsAllOf } from matrixAuthority(committed, callerRole, callerId)
+ * @param f.callerRole the caller's claim role
+ * @param f.member     { role, ids: [u_* ids] } — the member as they will sign in
+ * @returns null when allowed, else { status: 409, error, code: 'link-withheld' }
+ */
+export function linkHandoverRefusal({ authority, callerRole, member } = {}) {
+  if (callerRole === 'owner') return null;
+  const ids = (member?.ids || []).filter((id) => typeof id === 'string' && id);
+  const as = ids.length ? ids.map((id) => ({ id, role: member?.role ?? null })) : [{ id: null, role: member?.role ?? null }];
+  const holds = typeof authority?.holdsAllOf === 'function' && as.every((m) => authority.holdsAllOf(m) === true);
+  return holds ? null : refuse(409, "Email isn't set up, so the link couldn't be emailed, and it can't be shown to you: this member's access includes permissions you don't have. Ask a Super Admin.", LINK_WITHHELD);
 }
 
 const rows = (v) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
@@ -97,6 +140,7 @@ export const LOGIN_ACTIONS = {
   remove: { roles: ['owner'], key: 'settings.team.edit', denied: 'remove logins' },
   reset: { roles: ['owner', 'admin'], key: 'staff.resetPassword', denied: 'send password-reset links' },
   orphans: { roles: ['owner', 'admin'], key: 'settings.team.edit', denied: 'see logins with no team record' },
+  signIns: { roles: ['owner', 'admin'], key: 'settings.team.edit', denied: 'see who has signed in' },
 };
 
 const emailKey = (e) => (typeof e === 'string' ? e.trim().toLowerCase() : '');
@@ -113,10 +157,11 @@ const lastOwnerWords = (what) => `You're the only Super Admin who can sign in, s
  *                    id is a well-formed claim too. The matrix path needs it: overrides and
  *                    "yourself" key on that id, and the blob's email → id map is writable.
  * @param f.authority { holds, mayGive } from matrixAuthority(committed, role, orgUserId)
- * @param f.target    { email, claimRole, claimOrgUserId, authoritativeRole, rows }: the
+ * @param f.target    { email, claimRole, claimOrgUserId, authoritativeRole, isClient, rows }: the
  *                    member's login claims, and every roster row with their email or their
  *                    claimed id ({ id, role, email }). authoritativeRole (reset) = the claim, else
- *                    the roster's (users.getAuthoritativeRoleByEmail).
+ *                    the roster's (users.getAuthoritativeRoleByEmail). isClient = the login at that
+ *                    address is a customer's (role 'client').
  * @param f.newRole          invite / role: the role asked for (validated by the route)
  * @param f.orgUserId        role: the u_* id asked to be stamped, or null
  * @param f.disabled         status: false re-enables, anything else disables
@@ -137,7 +182,7 @@ export function loginRefusal(action, f = {}) {
   const byRole = rule.roles.includes(caller.role);
   const byMatrix = caller.claimIdentity === true && typeof authority.holds === 'function' && authority.holds(rule.key) === true;
   if (!byRole && !byMatrix) return refuse(403, `Your access level doesn't allow you to ${rule.denied}.`, 'not-allowed');
-  if (action === 'orphans') return null;
+  if (action === 'orphans' || action === 'signIns') return null;
 
   const members = rows(target.rows);
   const me = typeof caller.orgUserId === 'string' && caller.orgUserId ? caller.orgUserId : null;
@@ -235,6 +280,9 @@ export function loginRefusal(action, f = {}) {
   }
 
   // reset
+  // A customer's login is not a team member's: its link is sent from Customer logins, and the
+  // team route never makes one (with no mailbox it would be handed to the caller — CS-661).
+  if (target.isClient === true) return refuse(409, "That login belongs to a customer contact. Send them a new link from Customer logins.", 'client-login');
   if (!isOwner && target.authoritativeRole === 'owner') return refuse(403, "Only a Super Admin can reset a Super Admin's password.", 'owner-target');
   return null;
 }

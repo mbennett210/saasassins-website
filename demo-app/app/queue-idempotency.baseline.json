@@ -3,14 +3,15 @@
   "generatedAt": "2026-09-19T16:08:52.279Z",
   "note": "Frozen enumeration of reducer cases that mint their own id without a dedupe guard (playbook II.7). Ratchets DOWN only: remove an entry by adding the guard + caller minting, never by re-running --update-baseline on a regression. Raising requires --detector-changed with a written reason, logged below.",
   "totals": {
-    "reducerCases": 173,
-    "minting": 47,
-    "undeduped": 36,
-    "deduped": 11
+    "reducerCases": 184,
+    "minting": 50,
+    "undeduped": 35,
+    "deduped": 15
   },
   "detectorChanges": [],
   "guarded": [
-    "ADD_CLIENT_REVIEW_NOTE"
+    "ADD_CLIENT_REVIEW_NOTE",
+    "ADD_INVOICE"
   ],
   "minting": {
     "ADD_SERVICE": {
@@ -153,16 +154,6 @@
       "mints": [
         "j"
       ],
-      "callerIdSupported": false,
-      "appends": true,
-      "tier": "untriaged"
-    },
-    "ADD_INVOICE": {
-      "line": 1774,
-      "minters": [
-        "nextInvoiceId"
-      ],
-      "mints": [],
       "callerIdSupported": false,
       "appends": true,
       "tier": "untriaged"

@@ -7,13 +7,19 @@ import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from './Toast';
-import { ROLE_LABELS } from '../lib/roles';
+import PickerCapNote from './PickerCapNote';
+import { roleLabel, compareUsersByName } from '../lib/roles';
+import { capOptions, PICKER_MAX_VISIBLE } from '../lib/pickerOptions';
+import { useT } from '../i18n/react';
 import { selectActiveUsers, selectDmConversationBetween } from '../store/selectors';
 import { newId } from '../lib/ids';
 
 // 1:1 direct-message starter. Pick another user; if a DM thread already exists between
 // the current user and the picked user, route to it instead of spawning a duplicate.
+// The team by name, never all of it at once (UI_RULES §127; CS-722: 1,541 rows, 7,706 nodes):
+// typing narrows first, then the first PICKER_MAX_VISIBLE show with the footnote.
 export default function NewDmModal({ open, onClose }) {
+  const t = useT();
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
@@ -27,7 +33,7 @@ export default function NewDmModal({ open, onClose }) {
   }, [open]);
 
   const candidates = useMemo(() => {
-    const others = selectActiveUsers(state).filter((u) => u.id !== currentUser?.id);
+    const others = selectActiveUsers(state).filter((u) => u.id !== currentUser?.id).sort(compareUsersByName);
     const q = search.trim().toLowerCase();
     if (!q) return others;
     return others.filter((u) =>
@@ -35,6 +41,7 @@ export default function NewDmModal({ open, onClose }) {
       (u.email || '').toLowerCase().includes(q)
     );
   }, [state, currentUser, search]);
+  const { shown, noteMsg } = useMemo(() => capOptions(candidates, PICKER_MAX_VISIBLE), [candidates]);
 
   if (!currentUser) return null;
 
@@ -55,14 +62,14 @@ export default function NewDmModal({ open, onClose }) {
       participantUserIds: [currentUser.id, otherId],
     });
     onClose();
-    toast.success(`DM with ${other?.name || 'user'} opened`);
+    toast.success(t('messages.dmOpened', { name: other?.name || t('messages.someone') }));
     navigate(`/messaging/${id}?inbox=dm`);
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="New direct message">
+    <Modal open={open} onClose={onClose} title={t('messages.newDmModalTitle')}>
       <div className="text-xs text-muted" style={{ marginBottom: 8 }}>
-        Pick a teammate to start a private 1:1 conversation. Only the two of you can see it.
+        {t('messages.newDmIntro')}
       </div>
 
       <div className="thread-list-search" style={{ marginBottom: 8 }}>
@@ -72,28 +79,29 @@ export default function NewDmModal({ open, onClose }) {
           autoFocus
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search teammates by name or email…"
+          placeholder={t('messages.searchTeammates')}
         />
       </div>
 
+      <PickerCapNote note={noteMsg} />
       <div className="dm-picker-list">
         {candidates.length === 0 ? (
           <div className="text-xs text-muted" style={{ padding: '8px 0' }}>
-            No matching teammates.
+            {t('messages.noMatchingTeammates')}
           </div>
         ) : (
-          candidates.map((u) => (
+          shown.map((u) => (
             <button
               key={u.id}
               type="button"
               className="dm-picker-row"
               onClick={() => handlePick(u.id)}
             >
-              <Avatar initials={u.initials} variant={u.avatar} size="sm" />
+              <Avatar user={u} size="sm" />
               <div className="dm-picker-row-body">
                 <div className="dm-picker-row-name">{u.name}</div>
                 <div className="dm-picker-row-sub text-xs text-muted">
-                  {ROLE_LABELS[u.role] || u.role}{u.email ? ` · ${u.email}` : ''}
+                  {roleLabel(t, u.role)}{u.email ? ` · ${u.email}` : ''}
                 </div>
               </div>
             </button>
@@ -102,7 +110,7 @@ export default function NewDmModal({ open, onClose }) {
       </div>
 
       <div className="modal-actions">
-        <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn btn-outline" onClick={onClose}>{t('common.cancel')}</button>
       </div>
     </Modal>
   );

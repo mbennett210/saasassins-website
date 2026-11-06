@@ -184,7 +184,10 @@ const clientMax = Number((supportApi.match(/TICKET_ATTACHMENT_MAX_COUNT = (\d+)/
 ok('client and server agree on the attachment cap', clientMax === ATTACHMENT_MAX_COUNT);
 
 const sidebar = read('src/components/Sidebar.jsx');
-ok('sidebar mounts the button + modal', sidebar.includes('sidebar-report-btn') && sidebar.includes('<ReportIssueModal'));
+// The Cleaner Hub (brief A): the one modal lives in ReportIssueHost, which AppLayout mounts for every
+// role; the sidebar's button asks it (cs:open-report), as the phone menu and the cleaner's Home do.
+ok('sidebar mounts the button + modal', sidebar.includes('sidebar-report-btn') && sidebar.includes("new CustomEvent('cs:open-report')")
+  && read('src/components/ReportIssueHost.jsx').includes('<ReportIssueModal') && read('src/layouts/AppLayout.jsx').includes('<ReportIssueHost'));
 const main = read('src/main.jsx');
 ok('error ring buffer installs at app root', main.includes('installErrorBuffer()'));
 const modal = read('src/components/ReportIssueModal.jsx');

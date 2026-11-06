@@ -10,7 +10,7 @@
 //
 // Drives the REAL api/state/org-state.js handler through the REAL supabase-js client against a
 // loopback fake of GoTrue + PostgREST (scripts/fake-supabase-server.mjs). Nothing leaves
-// 127.0.0.1: a fetch guard refuses every other host and the Resend key is removed.
+// 127.0.0.1: a fetch guard refuses every other host and no system sender is configured.
 //
 //   node app/scripts/test-org-state-raw-removal-ban.mjs
 //
@@ -37,7 +37,7 @@ Object.assign(process.env, {
   FORMS_ORG_ID: ORG,
   CLEANSPACE_ORG_ID: ORG,
 });
-for (const k of ['RESEND_API_KEY', 'ALERT_WEBHOOK_URL', 'RESEND_AUTH_FROM']) delete process.env[k];
+for (const k of ['SYSTEM_SENDER_EMAIL', 'ALERT_WEBHOOK_URL']) delete process.env[k];
 const realFetch = globalThis.fetch;
 globalThis.fetch = (input, init) => {
   const u = String(typeof input === 'string' ? input : input?.url ?? input);

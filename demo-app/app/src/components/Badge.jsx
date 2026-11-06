@@ -26,5 +26,8 @@ export function clientStatusLabel(status) {
 //   - lead / active  -> derived STATUS (no work yet / has a job or invoice)
 //   - vendor         -> manual TYPE (a company you buy from; off the sales track,
 //                       so it has no Lead/Active). Neutral slate.
-// The value comes from selectClientBadgeStatus (Type wins over derived status).
-export const DERIVED_STATUS_VARIANTS = { lead: 'amber', active: 'green', inactive: 'slate', vendor: 'slate' };
+//   - archived       -> ARCHIVED (CS-663: never deleted, out of every working surface). Slate.
+//   - onboarding     -> a new customer whose onboarding bar isn't all green yet (task 471). Amber.
+// The value comes from selectClientBadgeStatus (archived wins, then Type, a hand-set Inactive,
+// onboarding, then the derived status).
+export const DERIVED_STATUS_VARIANTS = { onboarding: 'amber', lead: 'amber', active: 'green', inactive: 'slate', vendor: 'slate', archived: 'slate' };

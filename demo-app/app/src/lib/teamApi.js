@@ -37,8 +37,11 @@ async function api(path, { method = 'GET', body } = {}) {
   });
   if (!res.ok) {
     let m = `Request failed (${res.status})`;
-    try { m = (await res.json()).error || m; } catch { /* non-JSON */ }
-    throw new Error(m);
+    let code = null;
+    try { const j = await res.json(); m = j.error || m; code = j.code || null; } catch { /* non-JSON */ }
+    // The refusal's code rides on the error, so a screen can say its own words for a known one
+    // (e.g. 'link-withheld', lib/signInLink) and fall back to the server's sentence otherwise.
+    throw Object.assign(new Error(m), { status: res.status, code });
   }
   return res.json();
 }
@@ -48,6 +51,9 @@ async function api(path, { method = 'GET', body } = {}) {
 // authoritative: on an adopt it is the id already stamped into that login's JWT,
 // and the caller MUST use it for the roster row rather than its own minted id,
 // or the trust root ends up pointing at a member who doesn't exist.
+// `invited:false` means the set-password email didn't go (CS-661): the answer then carries `why`
+// and either the one-time `link` for the office to send, or `linkWithheld` (components/
+// SignInLinkPanel.jsx shows it; never store it). The link is emailed only, never texted.
 export async function createTeamLogin(email, role, orgUserId) {
   if (!STUB) return api('/settings/users', { method: 'POST', body: { email, role, orgUserId } });
   return { id: `stub_${Math.random().toString(36).slice(2, 10)}`, invited: true, adopted: false, orgUserId };
@@ -70,6 +76,13 @@ export function bindRosterId(result, mintedId) {
 export async function listOrphanLogins() {
   if (!STUB) return api('/settings/users/orphans');
   return { orphans: [] };
+}
+// Which members' logins have never signed in, and which members have no login at all, by address
+// (lower-cased) — Team shows "Hasn't signed in" instead of Active (CS-661). Stub mode has no auth
+// backend: nobody to report.
+export async function listTeamSignIns() {
+  if (!STUB) return api('/settings/users/sign-ins');
+  return { neverSignedIn: [], noLogin: [] };
 }
 // Re-stamps the server-side JWT trust root (app_metadata role / org user id) so
 // it can never drift from the store record. Called whenever a member's role
@@ -141,13 +154,15 @@ export async function setTeamLoginDisabled(email, disabled) {
   if (!STUB) return api('/settings/users/disable', { method: 'POST', body: { email, disabled } });
   return { ok: true };
 }
-// Emails the member a Supabase password-reset link via Resend (gated by
-// staff.resetPassword — Super Admin, Admin and Manager by default; only a Super Admin
-// can target a Super Admin). The link goes to the member's inbox — the caller never
-// sees the password.
+// A member's Supabase password-reset link (gated by staff.resetPassword — Super Admin, Admin and
+// Manager by default; only a Super Admin can target a Super Admin). Emailed through the Google
+// system sender when one is connected → { ok, emailed: true }. Otherwise (CS-661) the caller is
+// HANDED the one-time link to send → { ok, emailed: false, why, link } — only a caller who holds
+// everything the member holds; anyone else gets a refusal whose `code` is 'link-withheld'. The
+// caller never sees or sets a password; the link lives in the screen's state only.
 export async function sendTeamPasswordReset(email) {
   if (!STUB) return api('/settings/users/reset-link', { method: 'POST', body: { email } });
-  return { ok: true };
+  return { ok: true, emailed: true };
 }
 
 // Fleet build telemetry for the Settings → Team "App versions" card (Sept 1

@@ -15,7 +15,9 @@ import { newId } from '../lib/ids';
 const companyInitials = (name) =>
   (name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
 
-export default function AddContactsToStageModal({ open, onClose, pipelineId, stageKey, stageLabel }) {
+// `onAdded(ids, stageKey)` hears which deals were made, so the board can ask for a walkthrough's
+// date when one is added straight into "Walkthrough Scheduled" (PipelineBoard).
+export default function AddContactsToStageModal({ open, onClose, pipelineId, stageKey, stageLabel, onAdded }) {
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
@@ -49,12 +51,15 @@ export default function AddContactsToStageModal({ open, onClose, pipelineId, sta
 
   const handleAdd = () => {
     if (selected.size === 0) return;
+    const ids = [];
     selected.forEach((clientId) => {
       const cl = clients.find((c) => c.id === clientId);
+      const id = newId('opp');
+      ids.push(id);
       dispatch({
         type: ACTIONS.ADD_OPPORTUNITY,
         opportunity: {
-          id: newId('opp'),
+          id,
           clientId,
           primaryContactId: cl?.primaryContactId || null,
           pipelineId,
@@ -64,6 +69,7 @@ export default function AddContactsToStageModal({ open, onClose, pipelineId, sta
     });
     toast.success(`${selected.size} deal${selected.size === 1 ? '' : 's'} added to ${stageLabel}`);
     onClose();
+    onAdded?.(ids, stageKey);
   };
 
   return (
@@ -97,7 +103,7 @@ export default function AddContactsToStageModal({ open, onClose, pipelineId, sta
               <div className="add-contacts-info">
                 <div className="add-contacts-name">{c.name}</div>
                 <div className="add-contacts-meta text-xs text-muted">
-                  {c.contactNumber ? `#${c.contactNumber}` : ''}
+                  {c.customerNumber || ''}
                   {openCount > 0 && <span className="add-contacts-loc"> · {openCount} open deal{openCount === 1 ? '' : 's'}</span>}
                 </div>
               </div>

@@ -9,7 +9,7 @@ There is no Button component. Buttons are plain elements styled by `components/b
 | Class | Fill | Use it for |
 |---|---|---|
 | `btn-primary` | brand black (`primary`), white label | The default CTA and record-state actions: Save Changes, Edit, Mark Done, Add Customer. |
-| `btn-gold` | gold (`color-brand-secondary-500`), ink label at 600 | The affirmative or co-primary CTA. Prefer it in new code: Import CSV, Message, Start. |
+| `btn-gold` | gold (`color-brand-secondary-500`), ink label at 600 | The affirmative or co-primary CTA. Prefer it in new code: Import customers, Message, Start. |
 | `btn-success` | identical to `btn-gold` | Legacy name for the same gold button. **There are no green buttons.** |
 | `btn-danger` | `color-semantic-error-500`, white label | Destructive or irreversible: Delete, Cancel Job, Reject. |
 | `btn-secondary` | white `card-bg` with a `card-border` hairline | A neutral filled action, for a low-stakes negative such as No-show. |

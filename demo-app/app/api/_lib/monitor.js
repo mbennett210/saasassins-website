@@ -1,8 +1,8 @@
 // Provider-agnostic error/alert sink for the serverless side.
 //
 // WHY THIS EXISTS: the app emits excellent, DELIBERATE alarms — org_state
-// baseline-integrity mismatch, crew_assignments sync failure, the pre-1e direct-write
-// fallback — but every one of them only `console.error`s into Vercel function logs,
+// baseline-integrity mismatch, crew_assignments sync failure, a login ban that didn't
+// reconcile — but every one of them only `console.error`s into Vercel function logs,
 // which are ephemeral and unalerted. Nobody sees them until users complain (that is
 // exactly how the 2026-08-03 timezone/lockout incident stayed invisible). This routes
 // those alarms somewhere a human is actually paged.

@@ -6,25 +6,32 @@ import Badge from '../components/Badge';
 import { usePermission } from '../hooks/usePermission';
 import { useToast } from '../components/Toast';
 import { fmtDate } from '../lib/dates';
-import { listQuotes, getDownloadUrl, deleteQuote } from '../lib/quotesApi';
+import { listQuotes, getDownloadUrl, deleteQuote, voidQuote } from '../lib/quotesApi';
+import { isQuoteDeletable, isQuoteVoidable, QUOTE_STATUS } from '../lib/quoteRules';
+import { appLink } from '../lib/appLink';
 import CreateQuoteModal from '../components/CreateQuoteModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { usePagedRows } from '../hooks/usePagedRows';
 import ListPager from '../components/ListPager';
+import { useT } from '../i18n/react';
 
 const EMPTY = [];
 
 const STATUS_BADGE = { draft: 'slate', sent: 'blue', signed: 'green', void: 'slate' };
 
 export default function Quotes() {
+  const t = useT();
   const navigate = useNavigate();
   const toast = useToast();
   const canCreate = usePermission('quotes.create');
+  // `quotes.delete` ("Void quotes") is the key the route asks for BOTH a draft's delete and a
+  // sent quote's void (CS-028: only a draft is ever deleted — a sent quote is a record).
   const canDelete = usePermission('quotes.delete');
   const [quotes, setQuotes] = useState(null);
   const [error, setError] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [confirmVoid, setConfirmVoid] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   // Global search "New quote" deep-link: ?new=1 opens the create-quote modal once, then
   // strips the param. Gated on canCreate.
@@ -48,7 +55,8 @@ export default function Quotes() {
     return () => { alive = false; };
   }, []);
 
-  const publicUrl = (q) => `${window.location.origin}/quote/${q.public_token}`;
+  // the link the office pastes into an email: the app's own address (lib/appLink.js)
+  const publicUrl = (q) => appLink(`/quote/${q.public_token}`);
   async function download(q) {
     try { const url = await getDownloadUrl(q.id); if (url) window.open(url, '_blank'); }
     catch (e) { toast.error(e.message || 'No document yet'); }
@@ -89,7 +97,13 @@ export default function Quotes() {
                     <button className="btn btn-link btn-sm" onClick={() => navigate(`/quotes/${q.id}`)}>Open</button>
                     {q.status !== 'draft' && <button className="btn btn-link btn-sm" onClick={() => { navigator.clipboard?.writeText(publicUrl(q)); toast.success('Link copied'); }}>Copy link</button>}
                     {(q.status === 'signed' || q.admin_signed_at) && <button className="btn btn-link btn-sm" onClick={() => download(q)}>Download</button>}
-                    {canDelete && <button className="btn btn-link btn-sm" style={{ color: 'var(--danger)' }} onClick={() => setConfirmDelete(q)}>Delete</button>}
+                    {/* CS-028: a draft is deleted; a sent or signed quote is voided and kept. */}
+                    {canDelete && isQuoteDeletable(q) && (
+                      <button className="btn btn-link btn-sm" style={{ color: 'var(--danger)' }} onClick={() => setConfirmDelete(q)}>{t('quoteList.delete')}</button>
+                    )}
+                    {canDelete && isQuoteVoidable(q) && (
+                      <button className="btn btn-link btn-sm" style={{ color: 'var(--danger)' }} onClick={() => setConfirmVoid(q)}>{t('quoteList.void')}</button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -103,12 +117,21 @@ export default function Quotes() {
 
       <ConfirmDialog
         open={!!confirmDelete}
-        title="Delete quote?"
-        message={confirmDelete?.status === 'signed' ? 'This permanently deletes the signed document and its PDF. This cannot be undone.' : 'This permanently deletes this quote and its files.'}
-        confirmLabel="Delete"
+        title={t('quoteList.deleteTitle')}
+        message={t('quoteList.deleteMessage')}
+        confirmLabel={t('quoteList.delete')}
         variant="danger"
-        onConfirm={async () => { try { await deleteQuote(confirmDelete.id); toast.success('Quote deleted'); load(); } catch (e) { toast.error(e.message || 'Delete failed'); } setConfirmDelete(null); }}
+        onConfirm={async () => { try { await deleteQuote(confirmDelete.id); toast.success(t('quoteList.deleted')); load(); } catch (e) { toast.error(e.message || t('quoteList.deleteFailed')); } setConfirmDelete(null); }}
         onClose={() => setConfirmDelete(null)}
+      />
+      <ConfirmDialog
+        open={!!confirmVoid}
+        title={t('quoteList.voidTitle')}
+        message={confirmVoid?.status === QUOTE_STATUS.signed ? t('quoteList.voidSigned') : t('quoteList.voidSent')}
+        confirmLabel={t('quoteList.voidConfirm')}
+        variant="danger"
+        onConfirm={async () => { try { await voidQuote(confirmVoid.id); toast.success(t('quoteList.voided')); load(); } catch (e) { toast.error(e.message || t('quoteList.voidFailed')); } setConfirmVoid(null); }}
+        onClose={() => setConfirmVoid(null)}
       />
     </div>
   );

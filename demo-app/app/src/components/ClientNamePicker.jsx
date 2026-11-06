@@ -10,10 +10,16 @@
 //
 // Value model: the Keys store groups by clientName (string) with an optional
 // clientId link, so onChange emits { name, clientId }.
+//
+// The two sections share ONE cap (UI_RULES §127; CS-723 — each cut at 25 in silence): the
+// first PICKER_MAX_VISIBLE matches, key holders first, and a footnote says how many more
+// there are. Typing narrows both before the cap.
 import { useMemo, useRef, useState } from 'react';
 import PopMenu from './PopMenu';
+import PickerCapNote from './PickerCapNote';
 import { useStore } from '../store';
 import { selectClients, selectKeys } from '../store/selectors';
+import { capOptions, PICKER_MAX_VISIBLE } from '../lib/pickerOptions';
 import Avatar from './Avatar';
 
 const initialsOf = (name) =>
@@ -56,8 +62,10 @@ export default function ClientNamePicker({ value, onChange, placeholder = 'Searc
 
   const q = query.trim().toLowerCase();
   const match = (name) => !q || name.toLowerCase().includes(q);
-  const keyedResults = keyed.filter((g) => match(g.name)).slice(0, 25);
-  const freshResults = fresh.filter((c) => match(c.name)).slice(0, 25);
+  const keyedMatches = keyed.filter((g) => match(g.name));
+  const { shown, noteMsg } = capOptions([...keyedMatches, ...fresh.filter((c) => match(c.name))], PICKER_MAX_VISIBLE);
+  const keyedResults = shown.slice(0, Math.min(keyedMatches.length, shown.length));
+  const freshResults = shown.slice(keyedResults.length);
   const exactExists = [...keyed.map((g) => g.name), ...fresh.map((c) => c.name)]
     .some((n) => n.toLowerCase() === q);
 
@@ -135,6 +143,7 @@ export default function ClientNamePicker({ value, onChange, placeholder = 'Searc
             <div className="contact-picker-empty">No companies yet. Type a name</div>
           )}
         </div>
+        <PickerCapNote note={noteMsg} />
       </PopMenu>
     </div>
   );

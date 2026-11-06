@@ -6,13 +6,12 @@ import {
   isDecisionAnswered,
   isSignedOff,
   isLocked,
-  newSitting,
   reviewSummary,
+  isDraftCurrent,
+  isDraftResolved,
   readLegacyReview,
   clearLegacyReview,
   mergeReview,
-  SECTION_IN_REVIEW,
-  SECTION_APPROVED,
   DRAFT_PENDING,
   DRAFT_ACCEPTED,
   DRAFT_CHANGES,
@@ -20,7 +19,7 @@ import {
   PICK_CHOSEN,
   PICK_CHANGES,
 } from '../lib/clientReview';
-import { EMAIL_DRAFT_IDS, EMAIL_DRAFT_ADDED } from '../data/emailDraftIds';
+import { EMAIL_DRAFT_IDS, EMAIL_DRAFT_ADDED, EMAIL_DRAFT_CHANGED } from '../data/emailDraftIds';
 import { BUILD_DECISION_INDEX } from '../data/buildDecisionIds';
 import { newId } from '../lib/ids';
 
@@ -61,6 +60,7 @@ export function ClientReviewProvider({ children }) {
       type: ACTIONS.UPDATE_CLIENT_REVIEW, kind, id, patch,
       sitting: opts.sitting ?? null,
       confirm: opts.confirm === true,
+      recheck: opts.recheck ?? null,
     }),
     [dispatch],
   );
@@ -75,11 +75,12 @@ export function ClientReviewProvider({ children }) {
 
   const api = useMemo(() => {
     // One shared summary drives the hub hero, the section tiles and the nav count. It counts
-    // from the heavy-import-free indexes (BUILD_DECISION_INDEX / EMAIL_DRAFT_IDS + _ADDED), so
-    // the full question and template text never enters the common chunk.
-    const summary = reviewSummary(review, BUILD_DECISION_INDEX, EMAIL_DRAFT_IDS, EMAIL_DRAFT_ADDED);
+    // from the heavy-import-free indexes (BUILD_DECISION_INDEX / EMAIL_DRAFT_IDS + _ADDED +
+    // _CHANGED), so the full question and template text never enters the common chunk.
+    const summary = reviewSummary(review, BUILD_DECISION_INDEX, EMAIL_DRAFT_IDS, EMAIL_DRAFT_ADDED, EMAIL_DRAFT_CHANGED);
     const newDecisionSet = new Set(summary.newDecisionIds);
     const newDraftSet = new Set(summary.newDraftIds);
+    const waitingDraftSet = new Set(summary.waitingDraftIds);
 
     return {
       review,
@@ -90,10 +91,18 @@ export function ClientReviewProvider({ children }) {
       pendingDrafts: summary.pendingDrafts,
       openDecisions: summary.openDecisions,
       reviewAttention: summary.attention,        // open questions + pending drafts
+      waitingDrafts: summary.waitingDrafts,       // sent back to us; never in reviewAttention (CS-864)
+      waitingDraftIds: summary.waitingDraftIds,
       reviewNewCount: summary.newCount,           // new from the latest update, still open
       latestUpdate: summary.latestUpdate,         // 'YYYY-MM-DD' or null
       isNewDecision: (id) => newDecisionSet.has(id),
       isNewDraft: (id) => newDraftSet.has(id),
+      // A draft still owes a look: unresolved, or answered before it last changed (its answer
+      // stays attached). The hub's count and the open list ask this, never isDraftResolved alone.
+      isDraftOpen: (id) => !isDraftCurrent(review.drafts[id], EMAIL_DRAFT_CHANGED[id] || null),
+      draftChangedOn: (id) => EMAIL_DRAFT_CHANGED[id] || null,
+      // Sent back with a note on its current words, not accepted: waiting on us to change them.
+      isDraftWaiting: (id) => waitingDraftSet.has(id),
     };
   }, [review, updateEntry, addNote]);
 
@@ -106,29 +115,17 @@ export function useClientReview() {
   return ctx;
 }
 
-// Convenience hook for a single nav section's marker (§97). Approving is one click (a fresh
-// sign-off is never locked); un-approving is a signed-off change from a NEW sitting, so it
-// carries confirm — the marker gates it behind ConfirmDialog. One sitting per click.
-export function useSectionReview(route) {
-  const { review, updateEntry } = useClientReview();
-  const entry = review.sections[route] || {};
-  const status = entry.status || SECTION_IN_REVIEW;
-  return {
-    status,
-    approved: status === SECTION_APPROVED,
-    at: entry.at || null,
-    approve: () => updateEntry('sections', route, { status: SECTION_APPROVED }, { sitting: newSitting() }),
-    unapprove: () => updateEntry('sections', route, { status: SECTION_IN_REVIEW }, { sitting: newSitting(), confirm: true }),
-  };
-}
-
 // Convenience hook for a single draft's review controls (§98). `sitting` is created by the
 // focus card on mount. Accept / Request changes NO LONGER toggle back to pending — a verdict
 // once given is a sign-off; changing it from a later sitting needs `{ confirm: true }` and the
 // reducer keeps the prior verdict in `history`. Notes are add-only.
 export function useDraftReview(draftId, sitting) {
-  const { review, updateEntry, addNote, isNewDraft } = useClientReview();
+  const { review, updateEntry, addNote, isNewDraft, isDraftOpen, isDraftWaiting, draftChangedOn } = useClientReview();
   const entry = review.drafts[draftId] || {};
+  // Answered before the draft last changed: the answer stays, and the card says it changed since
+  // ('YYYY-MM-DD', else null). A verdict with no note counts as an answer here too.
+  const changedSince = (isDraftResolved(entry) || isSignedOff('drafts', entry)) && isDraftOpen(draftId)
+    ? draftChangedOn(draftId) : null;
   return {
     entry,
     status: entry.status || DRAFT_PENDING,
@@ -139,8 +136,13 @@ export function useDraftReview(draftId, sitting) {
     signedOff: isSignedOff('drafts', entry),
     locked: isLocked('drafts', entry, sitting),
     isNew: isNewDraft(draftId),
-    accept: (opts = {}) => updateEntry('drafts', draftId, { status: DRAFT_ACCEPTED }, { sitting, confirm: opts.confirm }),
-    requestChanges: (opts = {}) => updateEntry('drafts', draftId, { status: DRAFT_CHANGES }, { sitting, confirm: opts.confirm }),
+    waiting: isDraftWaiting(draftId),
+    changedSince,
+    // On an UPDATED draft the old verdict was on the old words, so a fresh one needs no confirm
+    // (task #126): it is sent confirmed, with the change day as `recheck` so the reducer records
+    // it even when the status is the same, and keeps the old verdict in history.
+    accept: (opts = {}) => updateEntry('drafts', draftId, { status: DRAFT_ACCEPTED }, { sitting, confirm: opts.confirm === true || !!changedSince, recheck: changedSince }),
+    requestChanges: (opts = {}) => updateEntry('drafts', draftId, { status: DRAFT_CHANGES }, { sitting, confirm: opts.confirm === true || !!changedSince }),
     addNote: (text) => addNote('drafts', draftId, text, sitting),
   };
 }

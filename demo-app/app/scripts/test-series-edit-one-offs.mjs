@@ -199,8 +199,7 @@ const same = (blocks) => blocks;
 // ── 8. A re-crew still respects booked time off (the S75 rule, one-offs or not) ──
 {
   let s = withSeries([LAT, MIS]);
-  s = reducer(s, { type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t1_off', userId: LAT, startDate: week(1), endDate: week(1), reason: 'Night off' } });
-  s = reducer(s, { type: ACTIONS.APPLY_TIME_OFF_EXCLUSIONS, userId: LAT, startDate: week(1), endDate: week(1) });
+  s = reducer(s, { type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t1_off', userId: LAT, startDate: week(1), endDate: week(1), reason: 'Night off' }, removeFromCleans: true });
   s = blockSave(s, masterOf(s), recrew([LAT, MIS, KEI]));
   ok(crewOf(onDay(s, week(1))) === [KEI, MIS].sort().join('+'), `8a: Keisha joins the night off, Latisha is not put back (${crewOf(onDay(s, week(1)))})`);
   ok(allLater(s, week(1), (j) => crewOf(j) === [KEI, LAT, MIS].sort().join('+')), '8b: every other visit gets the new crew');
@@ -293,8 +292,7 @@ const firstOnOrAfter = (key, dow) => addDaysKey(key, (dow - dayOfWeekKey(key) + 
 {
   // a. The first visit deleted; the heir (week 1) had Latisha taken off for time off.
   let s = withSeries([LAT, MIS]);
-  s = reducer(s, { type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t1_r3', userId: LAT, startDate: week(1), endDate: week(1), reason: 'off' } });
-  s = reducer(s, { type: ACTIONS.APPLY_TIME_OFF_EXCLUSIONS, userId: LAT, startDate: week(1), endDate: week(1) });
+  s = reducer(s, { type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t1_r3', userId: LAT, startDate: week(1), endDate: week(1), reason: 'off' }, removeFromCleans: true });
   s = reducer(s, { type: ACTIONS.DELETE_JOB, id: masterOf(s).id });
   ok(dayKey(masterOf(s)?.startAt || '') === week(1) && crewOf(masterOf(s)) === MIS, 'SETUP 17a: the recurrence re-homed onto week 1 (Latisha off it)');
   let minted;
@@ -465,8 +463,7 @@ const topUpTo = (s, days) => {
   const added = () => oneOffCover(withSeries(), week(1), [LAT, MIS]); // Misty ADDED to Latisha's visit
   let s = added();
   ok(onDay(s, week(1)).oneOff?.crew === true, 'SETUP 27: the added helper marks the visit');
-  s = reducer(s, { type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t1_r27', userId: MIS, startDate: week(1), endDate: week(1), reason: 'off' } });
-  s = reducer(s, { type: ACTIONS.APPLY_TIME_OFF_EXCLUSIONS, userId: MIS, startDate: week(1), endDate: week(1) });
+  s = reducer(s, { type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t1_r27', userId: MIS, startDate: week(1), endDate: week(1), reason: 'off' }, removeFromCleans: true });
   ok(crewOf(onDay(s, week(1))) === LAT && !onDay(s, week(1)).oneOff, '🔴 27a: she books that night off ("Also remove") → back to Latisha, mark gone');
   s = popup(s, masterOf(s), { crewIds: [KEI] });
   ok(crewOf(onDay(s, week(1))) === KEI, '🔴 27b: a later series crew change reaches it');
@@ -482,8 +479,7 @@ const topUpTo = (s, days) => {
   e = popup(e, masterOf(e), { crewIds: [KEI] });
   ok(crewOf(onDay(e, week(1))) === KEI, '🔴 27f: the series change fills it');
   let f = replaced();
-  f = reducer(f, { type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t1_r27f', userId: MIS, startDate: week(1), endDate: week(1), reason: 'off' } });
-  f = reducer(f, { type: ACTIONS.APPLY_TIME_OFF_EXCLUSIONS, userId: MIS, startDate: week(1), endDate: week(1) });
+  f = reducer(f, { type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t1_r27f', userId: MIS, startDate: week(1), endDate: week(1), reason: 'off' }, removeFromCleans: true });
   f = popup(f, masterOf(f), { crewIds: [KEI] });
   ok(crewOf(onDay(f, week(1))) === KEI, '🔴 27g: same when the cover books that night off');
 }

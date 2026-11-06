@@ -3,6 +3,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useSelector } from '../store';
 import { selectCurrentUserBlobRole } from '../store/selectors';
 import { supabase } from '../lib/supabaseClient';
+import { useT } from '../i18n/react';
+import { roleLabel } from '../lib/roles';
 
 // Canary + self-heal for a claim-vs-roster role split. Since 2026-08-03 the app
 // resolves identity + role CLAIMS-FIRST (the UI trusts the claim, matching the
@@ -22,6 +24,7 @@ import { supabase } from '../lib/supabaseClient';
 // We compare against selectCurrentUserBlobRole — NOT currentUser.role, which now
 // reflects the claim and so could never disagree.
 export default function RoleSyncBanner() {
+  const t = useT();
   const { claimRole, authConfigured } = useAuth();
   const blobRole = useSelector(selectCurrentUserBlobRole);
   const split = !!(authConfigured && claimRole && claimRole !== blobRole);
@@ -45,8 +48,7 @@ export default function RoleSyncBanner() {
         padding: '6px 16px', fontSize: 13, fontWeight: 600, textAlign: 'center',
       }}
     >
-      Your team roster is being updated (roster shows “{blobRole || 'none'}”, your access is “{claimRole}”).
-      Your access is correct; the roster will catch up shortly, or an owner can re-save your role in Settings → Team.
+      {t('roleSync.banner', { rosterRole: blobRole ? roleLabel(t, blobRole) : t('roleSync.none'), accessRole: roleLabel(t, claimRole) })}
     </div>
   );
 }

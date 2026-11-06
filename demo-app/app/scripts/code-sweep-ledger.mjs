@@ -99,7 +99,6 @@ export const LIB_P4 = new Set([
   'app/src/lib/recurrence.js',        // recurrence/date expansion (time)
   'app/src/lib/reminderScheduler.js', // pure fire-window walkers over state+time
   'app/src/lib/reports/calledOut.js', // called-out report over time-off + crew (data/time)
-  'app/src/lib/reviewsApi.js',        // GBP backend adapter
   'app/src/lib/securityApi.js',       // encrypted site-code adapter (data/secrets)
   'app/src/lib/signatureApi.js',      // signature Storage upload (blob size / CAS)
   'app/src/lib/stateApi.js',          // the org_state server-mediated write path (sync core)

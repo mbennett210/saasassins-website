@@ -32,7 +32,15 @@ async function api(path, { method = 'GET', body } = {}) {
     method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...auth },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) { let m = `Request failed (${res.status})`; try { m = (await res.json()).error || m; } catch { /* */ } throw new Error(m); }
+  // The STATUS rides on the error, not just the message: a caller that polls has to tell a
+  // transient failure (retry) from a refusal (stop) — see SnapshotSync, CS-019.
+  if (!res.ok) {
+    let m = `Request failed (${res.status})`;
+    try { m = (await res.json()).error || m; } catch { /* */ }
+    const err = new Error(m);
+    err.status = res.status;
+    throw err;
+  }
   if (res.status === 204) return null;
   return res.json();
 }
@@ -92,4 +100,13 @@ export async function deleteOutbound(id) {
 export async function getSnapshot() {
   if (!STUB) return (await api('/settings/snapshot')).snapshot;
   return load().snapshot;
+}
+
+// ── the alert-text channel's REAL state (NTF-1 / CS-069) ──
+// The server's own answer about its Twilio environment — presence only, never a value. In a
+// demo/dev build there is no server, so the honest answer is "not configured": the stub must
+// NOT claim a texting channel exists (CS-038's whole lesson).
+export async function smsStatus() {
+  if (!STUB) return api('/settings/sms-status');
+  return { configured: false, senderKind: null, missing: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER'], stub: true };
 }

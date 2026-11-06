@@ -56,9 +56,11 @@ ok('every authority edit still yields 64-char hex',
 
 // ── B. ALGORITHM: exactly SHA-256 over the canonical authority payload ───────
 // Known answers built from the DOCUMENTED projection, not by calling the module's
-// internals: the 12-tuple [users, permissions??null, overrides??null, assign(sites),
+// internals: the 13-tuple [users, permissions??null, overrides??null, assign(sites),
 // assign(clients), clientIds, parentage, timezone??null, timeOff??null, payrollLines,
-// reimbursements, payConfig] — users projected to [id, role, status, email??null],
+// reimbursements, payConfig, supervisors] — the 13th (MTA W1-G) the sorted
+// [clientId, supervisorId??null] set, so a supervisor-only change moves the digest and the
+// guard fires; users projected to [id, role, status, email??null],
 // clientIds the sorted account-id existence set (S85), and the three MONEY slices (S87)
 // projected to their pay-affecting fields only: a payroll line to [id,[userId,periodKey,
 // kind,category,amount,taxable]] (sorted by id), a reimbursement to [id,[userId,amount,
@@ -76,8 +78,22 @@ const canon = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' &&
 // guard judges it and the digest must move. name/phone/prefs stay OUT.)
 const urow = (id, role, status, email = null, pay = null, hr = null, disabledAt = null, clockRules = null) =>
   [id, role, status, email, canon(pay), canon(hr), disabledAt, canon(clockRules)];
-// The tail = [payrollLines, reimbursements, opsSettings-canonical] for a state carrying none.
-const TAIL0 = [[], [], canon(null)];
+// The tail = [payrollLines, reimbursements, opsSettings-canonical, supervisors,
+// retiredSupplySlices, supplyClientSettings, invoices] for a state carrying none — supervisors
+// (MTA W1-G) is the sorted [clientId, supervisorId??null] set, empty when there are no customers
+// (the `reviews` slice that followed it, MISC-4's Indeed count, left with Google reviews on
+// 2026-10-20), then SUP-13 (2026-10-05): the two RETIRED supply slices, WHOLE and canonical
+// ([canon(supplyItems ?? null), canon(supplyRequests ?? null)] — a save that changes them must
+// reach the deep read, where the route puts them back), and SUP-7: the sorted [id, budget,
+// orderDay] set of the customers that carry supply settings. A state with neither contributes
+// [canon(null), canon(null)] and [].
+// `invoices` (CS-003, 2026-10-03) is the sorted [id, money] set of invoices: who and what it
+// bills, the tax rate, the issue and due dates, its stored status and its payments. `contacts`
+// (2026-10-03, the Customers import) is the sorted set of each contact's details — [id,
+// firstName, lastName, email (lower case), phone, title, companyId], blanks as '' — so adding a
+// contact or changing who they are is judged, and a flag, a tag or a note is not.
+const RETIRED0 = [canon(null), canon(null)];
+const TAIL0 = [[], [], canon(null), [], RETIRED0, [], [], []];
 ok('empty state IS sha256(canonical empty payload)',
   fp({}) === sha256hex(JSON.stringify([[], null, null, [], [], [], [], null, null, ...TAIL0])));
 ok('a one-user state IS sha256(canonical payload) — pins the tuple, drops name',
@@ -94,18 +110,40 @@ ok('clockRules are pinned in the user tuple, canonical (the per-cleaner clock ex
     === sha256hex(JSON.stringify([[urow('u1', 'crew', 'active', null, null, null, null, { geofenceOff: true, checklistBlockOff: true })], null, null, [], [], [], [], null, null, ...TAIL0])));
 ok('the clientIds set pins account EXISTENCE (id only, sorted)',
   fp({ clients: [{ id: 'c2', name: 'B' }, { id: 'c1', name: 'A' }] })
-    === sha256hex(JSON.stringify([[], null, null, [], [], ['c1', 'c2'], [], null, null, ...TAIL0])));
+    === sha256hex(JSON.stringify([[], null, null, [], [], ['c1', 'c2'], [], null, null, [], [], canon(null), [['c1', null], ['c2', null]], RETIRED0, [], [], []])));
 // S87 money slices: the projection pins the pay-affecting fields and DROPS display /
 // provenance (label, note, description, userName), so a userName stamp never moves it.
 ok('a payroll line pins its MONEY projection, dropping label/note/userName',
   fp({ payrollLines: [{ id: 'pl1', userId: 'u1', periodKey: 'p1', kind: 'earning', category: 'bonus', amount: 50, taxable: true, label: 'x', note: 'y', userName: 'z' }] })
-    === sha256hex(JSON.stringify([[], null, null, [], [], [], [], null, null, [['pl1', ['u1', 'p1', 'earning', 'bonus', 50, true]]], [], canon(null)])));
+    === sha256hex(JSON.stringify([[], null, null, [], [], [], [], null, null, [['pl1', ['u1', 'p1', 'earning', 'bonus', 50, true]]], [], canon(null), [], RETIRED0, [], [], []])));
 ok('a reimbursement pins its MONEY projection, dropping description/userName',
   fp({ reimbursements: [{ id: 'r1', userId: 'u1', amount: 25, status: 'pending', periodKey: 'p1', description: 'd', userName: 'z' }] })
-    === sha256hex(JSON.stringify([[], null, null, [], [], [], [], null, null, [], [['r1', ['u1', 25, 'pending', 'p1']]], canon(null)])));
+    === sha256hex(JSON.stringify([[], null, null, [], [], [], [], null, null, [], [['r1', ['u1', 25, 'pending', 'p1']]], canon(null), [], RETIRED0, [], [], []])));
 ok('the WHOLE opsSettings is pinned, canonical — pay-run config + geofence/variance (2026-09-23)',
   fp({ opsSettings: { otMultiplier: 2, payPeriodCadence: 'weekly', defaultGeofenceRadiusM: 300 } })
-    === sha256hex(JSON.stringify([[], null, null, [], [], [], [], null, null, [], [], canon({ otMultiplier: 2, payPeriodCadence: 'weekly', defaultGeofenceRadiusM: 300 })])));
+    === sha256hex(JSON.stringify([[], null, null, [], [], [], [], null, null, [], [], canon({ otMultiplier: 2, payPeriodCadence: 'weekly', defaultGeofenceRadiusM: 300 }), [], RETIRED0, [], [], []])));
+ok('a location supervisor is pinned in the supervisors set ([clientId, supervisorId], sorted)',
+  fp({ clients: [{ id: 'c1', supervisorId: 'u_mgr', name: 'A' }, { id: 'c2', name: 'B' }] })
+    === sha256hex(JSON.stringify([[], null, null, [], [], ['c1', 'c2'], [], null, null, ...TAIL0.slice(0, 3), [['c1', 'u_mgr'], ['c2', null]], RETIRED0, [], [], []])));
+
+// CS-003: an invoice pins its MONEY projection — [clientId, canon(lineItems), taxRate, issueDate,
+// dueDate, status, canon(payments)] — and DROPS display / provenance (notes, the PO number, the
+// linked cleans a job delete prunes, the cron's overdue stamp), so those never pay the deep read.
+{
+  const inv = { id: 'INV-1', clientId: 'c1', lineItems: [{ id: 'li', qty: 2, unitPrice: 10 }], taxRate: 7, issueDate: '2026-10-01', dueDate: '2026-10-31', status: 'pending', payments: [{ id: 'p1', amount: 5 }] };
+  const money = ['c1', canon([{ id: 'li', qty: 2, unitPrice: 10 }]), 7, '2026-10-01', '2026-10-31', 'pending', canon([{ id: 'p1', amount: 5 }])];
+  ok('an invoice pins its MONEY projection, dropping notes / PO / linked cleans / the overdue stamp (CS-003)',
+    fp({ invoices: [{ ...inv, notes: 'n', poNumber: 'PO', jobIds: ['j1'], overdueNotifiedAt: '2026-10-02T00:00:00Z' }] })
+      === sha256hex(JSON.stringify([[], null, null, [], [], [], [], null, null, ...TAIL0.slice(0, 6), [['INV-1', money]], []])));
+}
+
+// 2026-10-03 (the Customers import): a contact pins its DETAILS — [id, firstName, lastName, email
+// in lower case, phone, title, companyId], trimmed, blanks as '' — and DROPS the do-not-contact
+// flag, tags, notes and timestamps, so a marketing reply's tag or a cron's stamp never pays the
+// deep read while adding a person, or changing who they are, is judged.
+ok('a contact pins its DETAILS, dropping flags / tags / notes / timestamps (2026-10-03)',
+  fp({ contacts: [{ id: 'p1', firstName: ' Pat ', lastName: 'Lee', email: 'PAT@X.CO', phone: '555', title: '', companyId: 'c1', doNotContact: true, tagIds: ['t'], notes: 'n', updatedAt: 'x' }] })
+    === sha256hex(JSON.stringify([[], null, null, [], [], [], [], null, null, ...TAIL0.slice(0, 7), [['p1', 'Pat', 'Lee', 'pat@x.co', '555', '', 'c1']]])));
 
 // ── C. DETERMINISM: the same state always digests the same ───────────────────
 ok('stable across two fresh builds of the same state', fp(base()) === fp(base()));
@@ -134,9 +172,21 @@ moves('removing a member', (s) => { s.users = s.users.filter((u) => u.id !== 'u_
 // (a snapshot digest can't tell the two apart) — the accepted cost of the clientIds set.
 moves('removing a customer (even crew-less — the clientIds set)', (s) => { s.clients = []; });
 moves('adding a customer', (s) => { s.clients.push({ id: 'c2', standingCrewIds: [] }); });
+// MTA W1-G: a location's manager (client.supervisorId) is owner/admin-only authority, so a
+// supervisor set / change / clear must move the digest or the guard silently stops firing.
+moves("setting a location's manager (supervisorId)", (s) => { s.clients[0].supervisorId = 'u_crew'; });
 // S87 money slices — each must move the digest, or its guard check silently stops firing.
 moves('a payroll line (money on the pay run)', (s) => { s.payrollLines = [{ id: 'pl1', userId: 'u_crew', periodKey: 'p1', kind: 'earning', category: 'bonus', amount: 500, taxable: true }]; });
 moves('a reimbursement approval (mints a pay line)', (s) => { s.reimbursements = [{ id: 'r1', userId: 'u_crew', amount: 20, status: 'approved', periodKey: 'p1' }]; });
+// SUP-13 (2026-10-05): a save that touches the RETIRED supply slices — a stale bundle submitting
+// or deciding a request, or adding an item — must move the digest, so it reaches the deep read
+// where restoreRetiredSlices puts the committed value back. SUP-7: the monthly budget and order
+// day are judged by protectedFieldViolations, so each must move it too.
+moves('a stale bundle submitting a supply request into the blob', (s) => { s.supplyRequests = [{ id: 'sr1', clientId: 'c1', requestedByUserId: 'u_crew', status: 'open', lines: [{ name: 'TP', qty: 1, unitPrice: 4 }] }]; });
+moves('a stale bundle approving a request in the blob', (s) => { s.supplyRequests = [{ id: 'sr1', clientId: 'c1', requestedByUserId: 'u_crew', status: 'approved', lines: [{ name: 'TP', qty: 1, unitPrice: 4 }] }]; });
+moves('a stale bundle adding an approved item to the blob', (s) => { s.supplyItems = [{ id: 'si1', clientId: 'c1', name: 'TP' }]; });
+moves("a building's supply budget", (s) => { s.clients[0].supplyBudgetMonthly = 500; });
+moves("a building's supply order day", (s) => { s.clients[0].supplyOrderDayOfMonth = 12; });
 moves('the OT multiplier (scales the pay run)', (s) => { s.opsSettings = { otMultiplier: 5 }; });
 // Same-length substitution: a 5-char role swap ('owner'→'admin') must still move it —
 // the digest is over content, not length (the old length tag alone never caught this).
@@ -150,6 +200,10 @@ staysFor("a member's profile field (name)", (s) => { s.users[1].name = 'Renamed'
 staysFor('user array REORDERING (sorted by id)', (s) => { s.users.reverse(); });
 staysFor('standing-crew REORDERING (set-sorted)', (s) => { s.sites[0].standingCrewIds = ['u_b', 'u_a']; });
 staysFor('an entirely unrelated slice (jobs)', (s) => { s.jobs = [{ id: 'j1', crewIds: ['u_crew'] }]; });
+staysFor("a customer's name (supervisor + existence unchanged)", (s) => { s.clients[0].name = 'Renamed'; });
+// The `reviews` slice (MISC-4's Indeed count) left with Google reviews on 2026-10-20: no rule
+// judges it, so a committed blob still carrying it moves nothing.
+staysFor('the retired reviews slice (the Indeed count)', (s) => { s.reviews = { indeedActual: 12 }; });
 
 // ── F. COLLISION SMOKE: distinct authority states → distinct digests ─────────
 // A shared digest between two authority-differing states would skip the guard for one of
@@ -165,6 +219,7 @@ const sample = [
   edit((s) => { s.sites[0].clientId = 'c2'; }),
   edit((s) => { s.sites[0].standingCrewIds = ['u_a', 'u_b', 'u_crew']; }),
   edit((s) => { s.clients[0].standingCrewIds = ['u_crew']; }),
+  edit((s) => { s.clients[0].supervisorId = 'u_crew'; }),
   edit((s) => { s.company.timezone = 'America/New_York'; }),
   edit((s) => { s.timeOff = [{ id: 't1', userId: 'u_crew' }]; }),
   edit((s) => { s.payrollLines = [{ id: 'pl1', userId: 'u_crew', periodKey: 'p1', kind: 'earning', category: 'bonus', amount: 500, taxable: true }]; }),

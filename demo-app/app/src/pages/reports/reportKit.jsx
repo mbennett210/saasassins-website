@@ -6,7 +6,14 @@
 // they conform in size and behavior. Every report reads its data COMPLETELY for the
 // chosen window (timeApi.rollup / entriesAll, qcApi.*BySite) and shows a failed or
 // incomplete read as an error, never as an empty result.
+//
+// LANGUAGES (CS-193, UI_RULES §140): the kit's own words are catalog lines (`reportKit.*`), so a
+// report built on it reads its filters, Run / Export and states in the reader's language. A
+// caller's own words (a column, a title, an error) may be an English string or a msg(...) built
+// for the reader: RunSurface and RunActions render either.
 import { useMemo, useRef } from 'react';
+import { useT } from '../../i18n/react';
+import { msg, isMsg } from '../../i18n/core';
 import Icon from '../../components/Icon';
 import EmptyState from '../../components/EmptyState';
 import FormField from '../../components/FormField';
@@ -16,7 +23,9 @@ import usePagedRows from '../../hooks/usePagedRows';
 import { useStore } from '../../store';
 import { useAuth } from '../../hooks/useAuth';
 import { SUPERVISOR_ROLES } from '../../lib/roles';
+import { TEAM, isOpsManager, managerIdsMatch } from '../../lib/teamScope';
 import { todayKey, addDaysKey, diffDaysKey, startOfDayKey, startOfMonthKey } from '../../lib/dates';
+import { customerLabel } from '../../lib/customerNumber';
 
 // Shared scope for every report: the account supervisors (Manager filter), the
 // customers (Customer filter), the current user's default scope, and id→entity maps.
@@ -42,11 +51,11 @@ export function useReportScope() {
 //    use: device-local days made "today" disagree with the rest of the app for anyone
 //    whose device isn't in the company's zone. ──
 export const PERIODS = [
-  { value: '7d', label: '7 days' },
-  { value: '30d', label: '30 days' },
-  { value: '90d', label: '90 days' },
-  { value: 'mtd', label: 'Month' },
-  { value: 'custom', label: 'Custom' },
+  { value: '7d', labelKey: 'reportKit.period.7d' },
+  { value: '30d', labelKey: 'reportKit.period.30d' },
+  { value: '90d', labelKey: 'reportKit.period.90d' },
+  { value: 'mtd', labelKey: 'reportKit.period.month' },
+  { value: 'custom', labelKey: 'reportKit.period.custom' },
 ];
 
 const endOfDayMs = (key) => startOfDayKey(addDaysKey(key, 1)).getTime() - 1;
@@ -76,14 +85,17 @@ export function resolvePeriod(period, custom = {}, now = new Date()) {
 }
 
 // A custom range must name both days, run forward and fit the report's reach — a blank
-// "from" used to mean ALL TIME, a scan no report should start by accident.
+// "from" used to mean ALL TIME, a scan no report should start by accident. Returns a msg(...)
+// (rendered for the reader by RunSurface) or null.
 export function periodError(period, custom = {}, { maxDays = 366 } = {}) {
   if (period !== 'custom') return null;
-  if (!custom.from || !custom.to) return 'Pick both a start and an end date.';
-  if (custom.to < custom.from) return 'The end date is before the start date.';
-  if (diffDaysKey(custom.from, custom.to) + 1 > maxDays) return `Pick a range of ${maxDays} days or fewer.`;
+  if (!custom.from || !custom.to) return msg('reportKit.pickBothDates');
+  if (custom.to < custom.from) return msg('reportKit.endBeforeStart');
+  if (diffDaysKey(custom.from, custom.to) + 1 > maxDays) return msg('reportKit.rangeTooLong', { days: maxDays });
   return null;
 }
+// The title a date problem shows under (pair with periodError).
+export const PERIOD_ERROR_TITLE = msg('reportKit.checkDates');
 
 // What Custom starts on: the last 30 days, so it is never blank.
 export function defaultCustomRange() {
@@ -114,60 +126,78 @@ export const FilterRow = ({ children }) => <div className="filter-bar">{children
 
 // A segmented Today/Yesterday day picker (attendance).
 export function DayField({ dayOffset, onDay }) {
+  const t = useT();
   return (
-    <FormField label="Day">
-      <div className="tab-container-line reports-pills" role="group" aria-label="Day">
-        <button type="button" className={`tab-btn ${dayOffset === 0 ? 'active' : ''}`} onClick={() => onDay(0)}>Today</button>
-        <button type="button" className={`tab-btn ${dayOffset === -1 ? 'active' : ''}`} onClick={() => onDay(-1)}>Yesterday</button>
+    <FormField label={t('reportKit.day')}>
+      <div className="tab-container-line reports-pills" role="group" aria-label={t('reportKit.day')}>
+        <button type="button" className={`tab-btn ${dayOffset === 0 ? 'active' : ''}`} onClick={() => onDay(0)}>{t('reportKit.today')}</button>
+        <button type="button" className={`tab-btn ${dayOffset === -1 ? 'active' : ''}`} onClick={() => onDay(-1)}>{t('reportKit.yesterday')}</button>
       </div>
     </FormField>
   );
 }
 
 // The date-range period pills (range reports). Custom range renders via <DateRangeField>.
-export function PeriodField({ period, onPeriod }) {
+// `periods` lets a report offer its own set in the same shape (Supply usage adds 6 and 12 months).
+export function PeriodField({ period, onPeriod, periods = PERIODS }) {
+  const t = useT();
   return (
-    <FormField label="Period">
-      <div className="tab-container-line reports-pills" role="group" aria-label="Period">
-        {PERIODS.map((p) => (
-          <button key={p.value} type="button" className={`tab-btn ${period === p.value ? 'active' : ''}`} onClick={() => onPeriod(p.value)}>{p.label}</button>
+    <FormField label={t('reportKit.period')}>
+      <div className="tab-container-line reports-pills" role="group" aria-label={t('reportKit.period')}>
+        {periods.map((p) => (
+          <button key={p.value} type="button" className={`tab-btn ${period === p.value ? 'active' : ''}`} onClick={() => onPeriod(p.value)}>{t(p.labelKey)}</button>
         ))}
       </div>
     </FormField>
   );
 }
 
-export function DateRangeField({ custom, onCustom }) {
+// `min` / `max` (day keys) bound the pickers where a report's reach ends (Supply usage: the kept
+// history); the range check itself is still periodError's, since a typed date ignores them.
+export function DateRangeField({ custom, onCustom, min, max }) {
+  const t = useT();
   return (
-    <FormField label="Date range">
+    <FormField label={t('reportKit.dateRange')}>
       <div className="facet-daterange-custom reports-daterange">
-        <input type="date" className="input" aria-label="From" value={custom.from || ''} onChange={(e) => onCustom({ ...custom, from: e.target.value })} />
+        <input type="date" className="input" aria-label={t('reportKit.from')} min={min} max={max} value={custom.from || ''} onChange={(e) => onCustom({ ...custom, from: e.target.value })} />
         <span className="facet-daterange-sep" aria-hidden>–</span>
-        <input type="date" className="input" aria-label="To" value={custom.to || ''} onChange={(e) => onCustom({ ...custom, to: e.target.value })} />
+        <input type="date" className="input" aria-label={t('reportKit.to')} min={min} max={max} value={custom.to || ''} onChange={(e) => onCustom({ ...custom, to: e.target.value })} />
       </div>
     </FormField>
   );
 }
 
-// Searchable Manager (account-supervisor) filter — the app's FilterSelect.
-export function ManagerFilter({ managers, currentUser, value, onChange }) {
+// Searchable Manager (account-supervisor) filter — the app's FilterSelect. With `team`, an
+// Operations Manager also gets "My team" (S131): the value `team`, which the page resolves to their
+// team's managers (lib/managerFilter managerFilterIds) or a route resolves from their claim. Opt-in:
+// only a page that reads `team` passes it (Client Requests), so no report filters on a value it
+// cannot read. `teamLead` (S131 Wave 2): the Operations Manager whose team the owner opened from the
+// Operations view's tiles (lib/managerFilter teamPickLead) — the same `team`, named "{name}'s team".
+export function ManagerFilter({ managers, currentUser, value, onChange, team = false, teamLead = null }) {
+  const t = useT();
+  const om = team && isOpsManager(currentUser);
   const options = useMemo(() => [
-    { value: '', label: 'All managers' },
-    ...managers.map((m) => ({ value: m.id, label: m.id === currentUser?.id ? `${m.name} (me)` : m.name })),
-  ], [managers, currentUser]);
-  return <FormField label="Manager"><FilterSelect ariaLabel="Manager" value={value} onChange={onChange} options={options} /></FormField>;
+    { value: '', label: t('reportKit.allManagers') },
+    ...(om ? [{ value: TEAM, label: t('reportKit.myTeam') }] : []),
+    ...(!om && teamLead ? [{ value: TEAM, label: t('mgrTeam.teamOf', { name: teamLead.name || '—' }) }] : []),
+    ...managers.map((m) => ({ value: m.id, label: m.id === currentUser?.id ? t('reportKit.me', { name: m.name }) : m.name })),
+  ], [managers, currentUser, t, om, teamLead]);
+  return <FormField label={t('reportKit.manager')}><FilterSelect ariaLabel={t('reportKit.manager')} value={value} onChange={onChange} options={options} /></FormField>;
 }
 
-// Searchable Customer filter — clients, optionally narrowed to a manager's book.
+// Searchable Customer filter — clients, optionally narrowed to a manager's book. `managerScope`:
+// '' (everyone), one manager's id, or a list of them (an Operations Manager's team, S131 —
+// lib/managerFilter managerFilterIds turns the Manager filter's `team` into it).
 export function CustomerFilter({ clients, managerScope, value, onChange }) {
+  const t = useT();
   const options = useMemo(() => [
-    { value: '', label: 'All customers' },
+    { value: '', label: t('reportKit.allCustomers') },
     ...(clients || [])
-      .filter((c) => !managerScope || c.supervisorId === managerScope)
-      .map((c) => ({ value: c.id, label: c.name }))
+      .filter((c) => managerIdsMatch(managerScope, c.supervisorId))
+      .map((c) => ({ value: c.id, label: customerLabel(c) })) // GO-2: "0001 Ball Harbor Village"
       .sort((a, b) => a.label.localeCompare(b.label)),
-  ], [clients, managerScope]);
-  return <FormField label="Customer"><FilterSelect ariaLabel="Customer" value={value} onChange={onChange} options={options} /></FormField>;
+  ], [clients, managerScope, t]);
+  return <FormField label={t('reportKit.customer')}><FilterSelect ariaLabel={t('reportKit.customer')} value={value} onChange={onChange} options={options} /></FormField>;
 }
 
 // A plain searchable single-select filter (Result, Include, …).
@@ -178,13 +208,22 @@ export function SelectFilter({ label, value, onChange, options }) {
 // KPI tile row + actions row wrappers (shared spacing/markup).
 export const KpiRow = ({ children }) => <div className="stat-grid reports-stats">{children}</div>;
 
-// The run button + CSV export, shared across reports.
+// A caller's words: an English string as written, or a msg(...) rendered for the reader.
+const useText = () => {
+  const t = useT();
+  return (x) => (isMsg(x) ? t(x) : x);
+};
+
+// The run button + CSV export, shared across reports. A report whose figures follow its
+// filters live (Supplies → Usage) passes no `onRun`, and only Export shows.
 export function RunActions({ running, hasRows, onRun, onExport, note }) {
+  const t = useT();
+  const text = useText();
   return (
     <div className="reports-actions">
-      <button className="btn btn-primary" onClick={onRun} disabled={running}>{running ? 'Running…' : 'Run report'}</button>
-      {hasRows && <button className="btn btn-gold" onClick={onExport}><Icon name="upload" size={15} /> Export CSV</button>}
-      {note && <span className="hint reports-run-note">{note}</span>}
+      {onRun && <button className="btn btn-primary" onClick={onRun} disabled={running}>{running ? t('reportKit.running') : t('reportKit.run')}</button>}
+      {hasRows && <button className="btn btn-gold" onClick={onExport}><Icon name="upload" size={15} /> {t('reportKit.exportCsv')}</button>}
+      {note && <span className="text-sm text-muted reports-run-note">{text(note)}</span>}
     </div>
   );
 }
@@ -193,26 +232,29 @@ export function RunActions({ running, hasRows, onRun, onExport, note }) {
 // A failed or incomplete read is an ERROR with a retry, never an empty result — "no
 // inspections this period" and "we couldn't read the inspections" must not look alike.
 export function RunSurface({ rows, running, error, errorTitle, onRetry, empty, children }) {
-  if (running && rows === null) return <div className="card reports-body-card">Running…</div>;
+  const t = useT();
+  const text = useText();
+  if (running && rows === null) return <div className="card reports-body-card">{t('reportKit.running')}</div>;
   if (error) {
     return (
       <EmptyState
         icon={<Icon name="warning" size={28} />}
-        title={errorTitle || 'Couldn’t run this report'}
-        message={error}
-        action={onRetry ? <button type="button" className="btn btn-primary" onClick={onRetry}>Try again</button> : null}
+        title={text(errorTitle) || t('reportKit.couldNotRun')}
+        message={text(error)}
+        action={onRetry ? <button type="button" className="btn btn-primary" onClick={onRetry}>{t('reportKit.tryAgain')}</button> : null}
       />
     );
   }
-  if (rows === null) return <p className="text-muted text-sm reports-hint">Set the criteria above and click <b>Run report</b>.</p>;
+  if (rows === null) return <p className="text-muted text-sm reports-hint">{t.rich('reportKit.notRun')}</p>;
   if (rows.length === 0) return empty;
   return children;
 }
 
 // The message a thrown read error should show the manager, and whether "Try again" can
 // help: a 4xx is the server refusing the request (too wide a range, no permission) —
-// retrying can't change that — except 408 / 429, which are transient.
-export const reportErrorMessage = (e) => (e && e.message) || 'The report could not be loaded. Check your connection and try again.';
+// retrying can't change that — except 408 / 429, which are transient. The server's own
+// reason travels as written; the fallback is a catalog line.
+export const reportErrorMessage = (e) => (e && e.message) || msg('reportKit.loadFailed');
 export const canRetryError = (e) => !(e && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429);
 
 // Stale-run guard. A run takes seconds at full volume (several paged requests) and the
@@ -233,11 +275,14 @@ export function useRunGuard() {
 // (used for CSV + default cell), render?(row)->node (rich cell), nowrap? }. The first
 // column is the row's primary cell; the rest carry data-label for the mobile stack.
 export function ResultsTable({ columns, rows, keyOf }) {
+  const t = useT();
   // Cap the rendered rows at 20 (UI_RULES §50 / lint:tables): a report can return a
   // long period's worth of rows. CSV export uses the full `rows` separately, so it is
   // unaffected. resetKey is the rows reference, so a fresh Run snaps back to page 1.
+  // The pager sits AFTER the table's frame (§72), not inside it.
   const pager = usePagedRows(rows, { resetKey: rows });
   return (
+    <>
     <div className="table-wrap mobile-stack">
       <table>
         <thead><tr>{columns.map((c) => <th key={c.key}>{c.label}</th>)}</tr></thead>
@@ -258,8 +303,9 @@ export function ResultsTable({ columns, rows, keyOf }) {
           ))}
         </tbody>
       </table>
-      <ListPager pager={pager} noun="results" />
     </div>
+    <ListPager pager={pager} noun={t('pager.noun.results')} />
+    </>
   );
 }
 

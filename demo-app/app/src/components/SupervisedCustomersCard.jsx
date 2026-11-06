@@ -22,6 +22,14 @@ export default function SupervisedCustomersCard({ user, canEdit, currentUser }) 
   const [qLeft, setQLeft] = useState('');
   const [qRight, setQRight] = useState('');
 
+  // Assigning a location's manager (client.supervisorId) is a Super Admin or Admin call — it
+  // sets scope() for time approval (MTA §2), and the server (orgStateGuard) refuses it for
+  // anyone else whatever keys they hold, so the two-column mover is interactive only for a
+  // Super Admin or Admin. Role is claims-first (currentUser from selectCurrentUser). `canEdit`
+  // (ops.edit) still gates below it, so both must hold to move a customer.
+  const canAssignManager = currentUser?.role === 'owner' || currentUser?.role === 'admin';
+  const canAssign = canEdit && canAssignManager;
+
   const firstName = user.name.split(' ')[0];
   const serviceName = (c) => services.find((s) => s.id === c.serviceId)?.name || c.primaryContact || '';
   const byRevenue = (a, b) => (b.revenue || 0) - (a.revenue || 0) || a.name.localeCompare(b.name);
@@ -37,7 +45,7 @@ export default function SupervisedCustomersCard({ user, canEdit, currentUser }) 
   const poolTotal = needsTotal + othersTotal;
 
   const setSupervisor = (clientId, supervisorId) => {
-    if (!canEdit) return;
+    if (!canAssign) return;
     dispatch({
       type: ACTIONS.UPDATE_CLIENT_OPS,
       id: clientId,
@@ -49,17 +57,17 @@ export default function SupervisedCustomersCard({ user, canEdit, currentUser }) 
 
   const Row = (c, kind) => {
     const mgr = kind === 'other' ? selectUserById(state, c.supervisorId) : null;
-    const onClick = !canEdit ? undefined
+    const onClick = !canAssign ? undefined
       : kind === 'mine' ? () => setSupervisor(c.id, null)
         : () => setSupervisor(c.id, user.id);
     return (
       <div
         key={c.id}
         className="sup-row"
-        role={canEdit ? 'button' : undefined}
-        tabIndex={canEdit ? 0 : undefined}
+        role={canAssign ? 'button' : undefined}
+        tabIndex={canAssign ? 0 : undefined}
         onClick={onClick}
-        onKeyDown={canEdit ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+        onKeyDown={canAssign ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
       >
         <div className="sup-nm">
           <b>{c.name}</b>
@@ -67,10 +75,10 @@ export default function SupervisedCustomersCard({ user, canEdit, currentUser }) 
         </div>
         {kind === 'need' && <span className="sup-nomgr">Needs manager</span>}
         {kind === 'other' && mgr && (
-          <span className="sup-mgr"><Avatar initials={mgr.initials} variant={mgr.avatar} size="sm" />{mgr.name.split(' ')[0]}</span>
+          <span className="sup-mgr"><Avatar user={mgr} size="sm" />{mgr.name.split(' ')[0]}</span>
         )}
-        {canEdit && kind !== 'mine' && <span className="sup-move">Assign</span>}
-        {canEdit && kind === 'mine' && <span className="sup-remove">Remove</span>}
+        {canAssign && kind !== 'mine' && <span className="sup-move">Assign</span>}
+        {canAssign && kind === 'mine' && <span className="sup-remove">Remove</span>}
       </div>
     );
   };
@@ -83,6 +91,9 @@ export default function SupervisedCustomersCard({ user, canEdit, currentUser }) 
       <p className="text-xs text-muted sup-desc">
         Customers {firstName} supervises as the single point of contact. Accounts with no manager stay at the top of <strong>Current customers</strong>, so none are left uncovered.
       </p>
+      {!canAssignManager && (
+        <p className="text-xs text-muted sup-desc">Only a Super Admin or Admin assigns a location&#39;s manager.</p>
+      )}
 
       {needsTotal > 0
         ? <div className="sup-flag">{needsTotal} customer{needsTotal === 1 ? '' : 's'} still need a manager</div>
@@ -113,7 +124,7 @@ export default function SupervisedCustomersCard({ user, canEdit, currentUser }) 
           <div className="sup-body">
             {mine.length
               ? mine.map((c) => Row(c, 'mine'))
-              : <div className="sup-empty">{qRight ? 'No matches' : `No customers assigned to ${firstName} yet.${canEdit ? ' Click a customer on the left to add them.' : ''}`}</div>}
+              : <div className="sup-empty">{qRight ? 'No matches' : `No customers assigned to ${firstName} yet.${canAssign ? ' Click a customer on the left to add them.' : ''}`}</div>}
           </div>
         </div>
       </div>

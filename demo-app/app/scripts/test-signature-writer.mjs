@@ -76,7 +76,8 @@ const account = read('../src/pages/settings/Account.jsx');
   ok('  ...and save does not upload', !/save = async/.test(account));
   ok('a failed upload toasts and leaves the draft alone',
     /if \(!r\.ok\) \{ toast\.error\(r\.error\); return; \}/.test(account));
-  ok('the button reports progress', /uploading \? 'Uploading…' : 'Add image'/.test(account));
+  // CS-193: the words are catalog lines, rendered in the reader's language.
+  ok('the button reports progress', /uploading \? t\('account\.signature\.uploading'\) : t\('account\.signature\.addImage'\)/.test(account));
   ok('  ...and is disabled while it runs', /disabled=\{uploading\}/.test(account));
   ok('🔴 the reload key is bumped after a successful upload', /setImageReloadKey\(\(k\) => k \+ 1\)/.test(account));
   ok('  ...and passed to the hook', /useSignatureImageSrc\(\{ \.\.\.draft, enabled: true \}, imageReloadKey\)/.test(account));
@@ -112,7 +113,8 @@ const account = read('../src/pages/settings/Account.jsx');
 // toast a user got for a 500 KB file.
 {
   ok('the help text derives the limit from the constant',
-    /up to \{Math\.round\(SIGNATURE_MAX_IMAGE_BYTES \/ 1024\)\} KB/.test(account));
+    /t\('account\.signature\.imageHelp', \{ kb: Math\.round\(SIGNATURE_MAX_IMAGE_BYTES \/ 1024\) \}\)/.test(account)
+    && /up to \{kb\} KB/.test(read('../src/i18n/catalog/en.js')));
   ok('  ...and the stale "1 MB" copy is gone', !/up to 1 MB/.test(account));
   ok('the constant is still 36 KB', /SIGNATURE_MAX_IMAGE_BYTES = 36 \* 1024/.test(account));
 }

@@ -22,6 +22,12 @@ import { allow } from '../_lib/rateLimit.js';
 import { readOrgState } from '../_lib/orgState.js';
 import { clampPriority, sanitizeAttachments, buildContext, mapCrmFailure } from '../_lib/support/shape.js';
 
+// How long the CRM gets to accept a ticket. Filing one is a single small POST, so ten
+// seconds is generous; past that the reporter needs an answer more than they need this
+// attempt. Exported so test-support-timeout.mjs asserts against the constant, not a
+// literal (THE LAW II.3).
+export const CRM_TIMEOUT_MS = 10_000;
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const a = await requireAuthority(req, res);
@@ -78,6 +84,12 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      // BOUNDED (CS-049). This call had no timeout, so a CRM that accepted the connection
+      // and then stalled held the function open to the platform's own limit and the
+      // reporter watched a spinner with no outcome — worst on the crash screen, where
+      // filing the report is the only thing left to do. A timeout aborts into the catch
+      // below, which is already the "support is unreachable" answer.
+      signal: AbortSignal.timeout(CRM_TIMEOUT_MS),
     });
   } catch {
     console.error('[support/report] CRM unreachable');

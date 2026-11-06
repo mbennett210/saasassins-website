@@ -34,6 +34,9 @@ function mapRow(r) {
     overrideReason: r.override_reason ?? null,
     distanceM: r.clock_in_distance_m,
     approvalStatus: r.approval_status,
+    // Carried so the Variance drill's Approve/Correct can send the version the manager saw
+    // (the CAS, wave W1-A). Kept in lockstep with the twin mapper in src/lib/varianceApi.js.
+    rowVersion: r.row_version ?? null,
     editHistory: r.edit_history,
     // 🔴 `note` is where replayPunch records WHY a row was flagged ("[offline] clock-in
     // time asserted … outside the 12h replay window — server-stamped instead; offline

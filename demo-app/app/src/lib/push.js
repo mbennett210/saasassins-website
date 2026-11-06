@@ -96,7 +96,7 @@ export function urlBase64ToUint8Array(base64String) {
   return arr;
 }
 
-function deriveDeviceLabel() {
+export function deriveDeviceLabel() {
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
   if (/iPhone/.test(ua)) return 'iPhone';
   if (/iPad/.test(ua)) return 'iPad';
@@ -280,7 +280,7 @@ export async function sendTestPush({ userId } = {}) {
   if (!BACKEND) {
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
-        new Notification(`${IDENTITY.name}: Test push`, {
+        new Notification(`${IDENTITY.product.name}: Test push`, { // the app's own push: the software's name
           body: 'If you can read this, mobile push is wired correctly on this device.',
           icon: '/icon-192.png',
         });

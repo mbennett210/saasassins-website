@@ -9,14 +9,18 @@ import { ACTIONS, THREAD_TITLE_MAX } from '../store/reducer';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from './Toast';
 import { newId } from '../lib/ids';
+import PickerCapNote from './PickerCapNote';
 import { selectActiveUsers } from '../store/selectors';
-import { ROLE_LABELS } from '../lib/roles';
+import { roleLabel, compareUsersByName } from '../lib/roles';
+import { capOptions, PICKER_MAX_VISIBLE } from '../lib/pickerOptions';
+import { useT } from '../i18n/react';
 
 // New internal team thread starter. Permission gate (messaging.startInternalThread) is
 // enforced at the call site (only admin / super admin see the trigger). Members are
 // chosen explicitly at creation: pick a subset, or "Select all in org" — there's no
 // implicit "everyone" anymore. The creator is always included as a member regardless.
 export default function NewInternalThreadModal({ open, onClose }) {
+  const t = useT();
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
@@ -31,9 +35,11 @@ export default function NewInternalThreadModal({ open, onClose }) {
   const [pickedIds, setPickedIds] = useState(() => new Set());
 
   const allOtherUsers = useMemo(() => {
-    return selectActiveUsers(state).filter((u) => u.id !== currentUser?.id);
+    return selectActiveUsers(state).filter((u) => u.id !== currentUser?.id).sort(compareUsersByName);
   }, [state, currentUser]);
 
+  // The team by name, never all of it at once (UI_RULES §127; CS-722): typing narrows first, then
+  // the first PICKER_MAX_VISIBLE show with the footnote. "Select all" still picks everyone.
   const filteredUsers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase();
     if (!q) return allOtherUsers;
@@ -42,6 +48,7 @@ export default function NewInternalThreadModal({ open, onClose }) {
       (u.email || '').toLowerCase().includes(q)
     );
   }, [allOtherUsers, memberSearch]);
+  const { shown, noteMsg } = useMemo(() => capOptions(filteredUsers, PICKER_MAX_VISIBLE), [filteredUsers]);
 
   useEffect(() => {
     if (open) {
@@ -86,32 +93,31 @@ export default function NewInternalThreadModal({ open, onClose }) {
       participantUserIds: Array.from(pickedIds),
     });
     onClose();
-    toast.success(`Channel "${trimmedTitle}" created`);
+    toast.success(t('messages.channelCreated', { title: trimmedTitle }));
     navigate(`/messaging/${id}?inbox=internal`);
   };
 
   if (!currentUser) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="New channel">
+    <Modal open={open} onClose={onClose} title={t('messages.newChannel')}>
       <form onSubmit={handleSubmit}>
         <div className="text-xs text-muted" style={{ marginBottom: 12 }}>
-          Pick the teammates who should see this channel, or select everyone in the org. You're
-          included automatically.
+          {t('messages.newChannelIntro')}
         </div>
 
-        <FormField label="Title" required>
+        <FormField label={t('messages.channelTitle')} required>
           <input
             className="input"
             autoFocus
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Holiday schedule planning"
+            placeholder={t('messages.channelTitlePlaceholder')}
             maxLength={THREAD_TITLE_MAX}
           />
         </FormField>
 
-        <FormField label={`Members${pickedIds.size > 0 ? ` (${pickedIds.size} selected)` : ''}`} required>
+        <FormField label={pickedIds.size > 0 ? t('messages.membersSelected', { count: pickedIds.size }) : t('messages.members')} required>
           <div className="member-picker">
             <div className="member-picker-toolbar">
               <div className="thread-list-search" style={{ flex: 1 }}>
@@ -120,7 +126,7 @@ export default function NewInternalThreadModal({ open, onClose }) {
                   className="thread-list-input"
                   value={memberSearch}
                   onChange={(e) => setMemberSearch(e.target.value)}
-                  placeholder="Search teammates…"
+                  placeholder={t('messages.searchMembers')}
                 />
               </div>
               <button
@@ -128,19 +134,20 @@ export default function NewInternalThreadModal({ open, onClose }) {
                 className="btn btn-primary"
                 onClick={handleSelectAll}
                 disabled={allOtherUsers.length === 0}
-                title={allOthersSelected ? 'Clear member selection' : 'Select everyone in the org'}
+                title={allOthersSelected ? t('messages.clearMembers') : t('messages.selectEveryone')}
               >
-                {allOthersSelected ? 'Clear all' : 'Select All'}
+                {allOthersSelected ? t('messages.clearAll') : t('messages.selectAllMembers')}
               </button>
             </div>
 
-            <div className="member-picker-list" role="listbox" aria-label="Teammates">
+            <PickerCapNote note={noteMsg} />
+            <div className="member-picker-list" role="listbox" aria-label={t('messages.teammates')}>
               {filteredUsers.length === 0 ? (
                 <div className="text-xs text-muted" style={{ padding: '10px 4px' }}>
-                  {allOtherUsers.length === 0 ? 'No other teammates yet.' : 'No teammates match your search.'}
+                  {allOtherUsers.length === 0 ? t('messages.noTeammates') : t('messages.noTeammatesMatch')}
                 </div>
               ) : (
-                filteredUsers.map((u) => {
+                shown.map((u) => {
                   const checked = pickedIds.has(u.id);
                   return (
                     <label key={u.id} className={`member-picker-row ${checked ? 'is-checked' : ''}`}>
@@ -149,11 +156,11 @@ export default function NewInternalThreadModal({ open, onClose }) {
                         checked={checked}
                         onChange={() => togglePick(u.id)}
                       />
-                      <Avatar initials={u.initials} variant={u.avatar} size="sm" />
+                      <Avatar user={u} size="sm" />
                       <div className="member-picker-row-body">
                         <div className="member-picker-row-name">{u.name}</div>
                         <div className="member-picker-row-sub text-xs text-muted">
-                          {ROLE_LABELS[u.role] || u.role}{u.email ? ` · ${u.email}` : ''}
+                          {roleLabel(t, u.role)}{u.email ? ` · ${u.email}` : ''}
                         </div>
                       </div>
                     </label>
@@ -164,20 +171,20 @@ export default function NewInternalThreadModal({ open, onClose }) {
           </div>
         </FormField>
 
-        <FormField label="First message (optional)">
+        <FormField label={t('messages.firstMessage')}>
           <textarea
             className="input"
             rows={3}
             value={firstMessage}
             onChange={(e) => setFirstMessage(e.target.value)}
-            placeholder="Kick off the discussion…"
+            placeholder={t('messages.firstMessagePlaceholder')}
           />
         </FormField>
 
         <div className="modal-actions">
-          <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-outline" onClick={onClose}>{t('common.cancel')}</button>
           <button type="submit" className="btn btn-primary" disabled={!canCreate}>
-            Create channel
+            {t('messages.createChannel')}
           </button>
         </div>
       </form>

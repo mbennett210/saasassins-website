@@ -27,10 +27,41 @@ const GOOD = `${CLEANSPACE_ORG_ID}/${SITE}/abcdef0123456789.jpg`;
 ok('inspection is a ref scope', isRefScope('inspection'));
 ok('problem_report is a ref scope', isRefScope('problem_report'));
 ok('clean is a ref scope', isRefScope('clean'));
+ok('checklist is a ref scope', isRefScope('checklist'));             // CS-547
 ok('cleaning_instruction is NOT a ref scope', !isRefScope('cleaning_instruction'));
 ok('security is NOT a ref scope', !isRefScope('security'));
 ok('unknown scope is NOT a ref scope', !isRefScope('totally_made_up'));
-ok('the ref-scope map matches the account_media scope CHECK', Object.keys(REF_SCOPE_TABLES).length === 3);
+
+// 🔴 EVERY scope the DATABASE allows is classified here, read out of the migrations
+// themselves rather than counted. A new scope that nobody added to REF_SCOPE_TABLES and
+// nobody listed as site-level is the gap this catches: `resolveRefOwner` denies it (fails
+// closed), so the feature that shipped it just silently cannot attach media — and that
+// reads as a bug in the feature, not as a missed classification here. This replaced a bare
+// `Object.keys(REF_SCOPE_TABLES).length === 3`, which only ever said "somebody edited a
+// file" and had to be hand-bumped on every change.
+{
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const path = (await import('node:path')).default;
+  const HERE = path.dirname(fileURLToPath(import.meta.url));
+  const MIG = path.resolve(HERE, '..', '..', 'supabase', 'migrations');
+  // The LAST migration that redefines the constraint wins, as it does on the database.
+  let scopes = null;
+  for (const f of readdirSync(MIG).sort()) {
+    const src = readFileSync(path.join(MIG, f), 'utf8');
+    const m = /account_media_scope_check[\s\S]{0,200}?check\s*\(\s*scope\s+in\s*\(([^)]*)\)/i.exec(src);
+    if (m) scopes = [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+  }
+  ok('the account_media scope CHECK was found in the migrations', Array.isArray(scopes) && scopes.length > 0);
+  // Scopes that are SITE-LEVEL by design: they carry no owning record, so a refId with
+  // one is refused (the two cases asserted above).
+  const SITE_LEVEL = new Set(['cleaning_instruction', 'security']);
+  const unclassified = (scopes || []).filter((s) => !SITE_LEVEL.has(s) && !isRefScope(s));
+  ok(`every scope the DB allows is either site-level or a ref scope (unclassified: ${unclassified.join(', ') || 'none'})`,
+    unclassified.length === 0);
+  const phantom = Object.keys(REF_SCOPE_TABLES).filter((s) => !(scopes || []).includes(s));
+  ok(`no ref scope is missing from the DB CHECK (phantom: ${phantom.join(', ') || 'none'})`, phantom.length === 0);
+}
 
 // ── resolveRefOwner fails CLOSED before it ever reaches the DB ─────────────
 // Each of these must resolve without Supabase env configured; if any one of them

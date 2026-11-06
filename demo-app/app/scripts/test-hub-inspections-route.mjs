@@ -47,6 +47,9 @@ const db = fakeDb({
   inspection_records: ROWS,
   org_state: [{ organization_id: ORG, version: 1, state: { users: [], clients: [], sites: [{ id: 's_crew', clientId: 'c_mid' }, { id: 's_other', clientId: 'c_mid' }] } }],
   crew_assignments: [{ organization_id: ORG, user_id: 'u_crew', site_id: 's_crew', client_id: null }],
+  // The crew scope also reads the cleaner's cleans (CS-005); this one has none, so the scope is
+  // exactly the standing assignment above.
+  jobs: [],
 }, { maxRows: 1000 });
 
 // ── the fake: GoTrue's GET /auth/v1/user + PostgREST over the in-memory engine ────
@@ -59,6 +62,8 @@ function applyParam(q, key, raw) {
   if (op === 'not' && val === 'is.null') return q.not(key, 'is', null);
   if (op === 'in') return q.in(key, val.replace(/^\(|\)$/g, '').split(',').map((s) => s.replace(/^"|"$/g, '')));
   if (op === 'is') return q.is(key, val === 'null' ? null : val);
+  // JSONB containment: a cleaner's crew scope reads their cleans (CS-005, _lib/jobsTable getCrewJobs).
+  if (op === 'cs') return q.contains(key, JSON.parse(val));
   if (!['eq', 'neq', 'gte', 'lte', 'gt', 'lt'].includes(op)) throw new Error(`fake: op ${op} unsupported`);
   return q[op](key, val);
 }

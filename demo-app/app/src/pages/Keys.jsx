@@ -3,7 +3,7 @@
 // can check keys in/out (keys.checkout); admins manage the inventory (keys.manage).
 // Crew see only the keys currently checked out to them; managers see all.
 // Every action is timestamped + attributed to the acting user, with full history.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useDismissTap } from '../hooks/useDismissTap';
@@ -12,6 +12,7 @@ import Badge from '../components/Badge';
 import Modal from '../components/Modal';
 import MobileSheet from '../components/MobileSheet';
 import FormField from '../components/FormField';
+import FilterSelect from '../components/FilterSelect';
 import ClientNamePicker from '../components/ClientNamePicker';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -25,51 +26,47 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { savedMsg } from '../lib/offlineCopy';
 import { usePagedRows } from '../hooks/usePagedRows';
 import { makeKeyScope } from '../lib/keyScope';
+import { personOptions } from '../lib/pickerOptions';
 import ListPager from '../components/ListPager';
+import { useT } from '../i18n/react';
+import { timeAgoLong } from '../i18n/relative';
+import { fmtDate, fmtTime } from '../lib/dates';
 
+// LANGUAGES (CS-193): a key screen a cleaner works from — every word is a catalog line, in
+// their language. Key names, notes and holders' names are people's own words, shown as typed.
+//
 // Status → badge. `unknown` is the soft "whereabouts unclear" signal (yellow);
 // `lost` is the harder confirmed-gone signal (red). Any status not in this map
 // buckets as `unknown` everywhere it's read (counts/filter/menu).
 const STATUS = {
-  in: { variant: 'green', label: 'In' },
-  out: { variant: 'amber', label: 'Out' },
-  unknown: { variant: 'yellow', label: 'Unknown' },
-  lost: { variant: 'red', label: 'Lost' },
+  in: { variant: 'green', labelKey: 'keyPage.status.in' },
+  out: { variant: 'amber', labelKey: 'keyPage.status.out' },
+  unknown: { variant: 'yellow', labelKey: 'keyPage.status.unknown' },
+  lost: { variant: 'red', labelKey: 'keyPage.status.lost' },
 };
 
-function holderLabel(state, k) {
+function holderLabel(state, k, t) {
   // Fall back to the denormalized heldByName before "Unknown user" — a deleted
   // holder's name is exactly what an admin chasing a physical key needs.
-  if (k.heldByUserId) return selectUserById(state, k.heldByUserId)?.name || k.heldByName || 'Unknown user';
+  if (k.heldByUserId) return selectUserById(state, k.heldByUserId)?.name || k.heldByName || t('messages.unknownUser');
   if (k.heldByName) return k.heldByName;
   return '—';
 }
-const dt = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '');
-
-// Compact relative time for history rows — "12m ago", "3h ago", "6d ago".
-const ago = (iso) => {
-  if (!iso) return '';
-  const m = Math.floor((Date.now() - new Date(iso)) / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 365) return `${d}d ago`;
-  return `${Math.floor(d / 365)}y ago`;
-};
+// A moment in the ORG's zone and the reader's locale (lib/dates), e.g. "Oct 3, 2026, 9:30 PM".
+const dt = (iso) => (iso ? `${fmtDate(iso, { month: 'short', day: 'numeric', year: 'numeric' })}, ${fmtTime(iso)}` : '');
 
 // Human duration between a checkout and its check-in — "45 min", "3 hrs", "6 days".
-const heldFor = (ms) => {
+const heldFor = (ms, t) => {
   const m = Math.floor(ms / 60000);
-  if (m < 60) return `${Math.max(m, 1)} min`;
+  if (m < 60) return t('keyPage.held.min', { count: Math.max(m, 1) });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} hr${h === 1 ? '' : 's'}`;
+  if (h < 24) return t('keyPage.held.hr', { count: h });
   const d = Math.floor(h / 24);
-  return `${d} day${d === 1 ? '' : 's'}`;
+  return t('keyPage.held.day', { count: d });
 };
 
 export default function Keys() {
+  const t = useT();
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
@@ -137,7 +134,7 @@ export default function Keys() {
   const matches = (k, clientName) => {
     if (statusFilter !== 'all' && (STATUS[k.status] ? k.status : 'unknown') !== statusFilter) return false;
     if (!q) return true;
-    return [clientName, k.siteName, k.label, k.masterCode, k.notes, holderLabel(state, k)]
+    return [clientName, k.siteName, k.label, k.masterCode, k.notes, holderLabel(state, k, t)]
       .some((v) => (v || '').toLowerCase().includes(q));
   };
   const filteredGroups = groups
@@ -147,7 +144,7 @@ export default function Keys() {
   function doCheckin(k) {
     markRecent(k.id);
     dispatch({ type: ACTIONS.CHECKIN_KEY, keyId: k.id });
-    toast.success(savedMsg(online, `${k.label || 'Key'} checked in`));
+    toast.success(savedMsg(online, t('keyPage.checkedIn', { key: k.label || t('keyPage.aKey') }), t('offline.savedOnDevice')));
   }
 
   // Shared by the table row + mobile card: the status badge becomes a menu
@@ -172,10 +169,10 @@ export default function Keys() {
     <div className="page">
       <div className="page-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
-          <h1>Keys</h1>
+          <h1>{t('keyPage.title')}</h1>
         </div>
         {canManage && (
-          <button className="btn btn-primary" onClick={() => setEditKey({})}>Add key</button>
+          <button className="btn btn-primary" onClick={() => setEditKey({})}>{t('keyPage.addKey')}</button>
         )}
       </div>
 
@@ -183,19 +180,19 @@ export default function Keys() {
         <div className="keys-filter-bar">
           <input
             className="input keys-filter-search"
-            placeholder="Search company, location, key, master code, or holder…"
+            placeholder={t('keyPage.search')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
           <div className="keys-filter-chips">
-            {[['all', 'All'], ['in', 'In'], ['out', 'Out'], ['unknown', 'Unknown'], ['lost', 'Lost']].map(([key, label]) => (
+            {[['all', 'keyPage.status.all'], ['in', 'keyPage.status.in'], ['out', 'keyPage.status.out'], ['unknown', 'keyPage.status.unknown'], ['lost', 'keyPage.status.lost']].map(([key, labelKey]) => (
               <button
                 key={key}
                 type="button"
                 className={`chip ${statusFilter === key ? 'on' : ''}`}
                 onClick={() => setStatusFilter(key)}
               >
-                {label} <span className="control-count">{counts[key]}</span>
+                {t(labelKey)} <span className="control-count">{counts[key]}</span>
               </button>
             ))}
           </div>
@@ -204,13 +201,17 @@ export default function Keys() {
 
       {groups.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--color-neutral-500)' }}>
-          {isCrew
-            ? 'No keys for your companies yet. Keys appear here for the companies you’re scheduled at, plus any key checked out to you.'
-            : <>No keys yet.{canManage ? ' Click ' : ''}{canManage && <strong>Add key</strong>}{canManage ? ' to start, or import them from the sheet.' : ''}</>}
+          {isCrew ? t('keyPage.emptyCrew') : canManage ? t.rich('keyPage.emptyManage') : t('keyPage.empty')}
         </div>
       ) : filteredGroups.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--color-neutral-500)' }}>
-          No keys match{q ? <> “<strong>{query.trim()}</strong>”</> : ''}{statusFilter !== 'all' ? <> with status <strong>{STATUS[statusFilter]?.label || statusFilter}</strong></> : ''}.
+          {(() => {
+            const status = statusFilter !== 'all' ? (STATUS[statusFilter] ? t(STATUS[statusFilter].labelKey) : statusFilter) : null;
+            if (q && status) return t.rich('keyPage.noMatchBoth', { query: query.trim(), status });
+            if (q) return t.rich('keyPage.noMatchQuery', { query: query.trim() });
+            if (status) return t.rich('keyPage.noMatchStatus', { status });
+            return t('keyPage.noMatch');
+          })()}
         </div>
       ) : (
         filteredGroups.map((g) => (
@@ -241,14 +242,14 @@ export default function Keys() {
           onConfirm={({ holderUserId, holderName, note }) => {
             markRecent(checkoutKey.id);
             dispatch({ type: ACTIONS.CHECKOUT_KEY, keyId: checkoutKey.id, holderUserId, holderName, note });
-            toast.success(savedMsg(online, `${checkoutKey.label || 'Key'} checked out`));
+            toast.success(savedMsg(online, t('keyPage.checkedOut', { key: checkoutKey.label || t('keyPage.aKey') }), t('offline.savedOnDevice')));
             setCheckoutKey(null);
           }}
         />
       )}
 
       {historyKey && (
-        <Modal open onClose={() => setHistoryKey(null)} title={`History. ${historyKey.label || 'Key'}`}>
+        <Modal open onClose={() => setHistoryKey(null)} title={t('keyPage.historyTitle', { key: historyKey.label || t('keyPage.aKey') })}>
           <KeyHistory state={state} keyId={historyKey.id} />
         </Modal>
       )}
@@ -261,7 +262,7 @@ export default function Keys() {
           onConfirm={(note) => {
             markRecent(unknownKey.id);
             dispatch({ type: ACTIONS.MARK_KEY_UNKNOWN, keyId: unknownKey.id, note });
-            toast.success(savedMsg(online, `${unknownKey.label || 'Key'} marked Unknown`));
+            toast.success(savedMsg(online, t('keyPage.markedUnknown', { key: unknownKey.label || t('keyPage.aKey') }), t('offline.savedOnDevice')));
             setUnknownKey(null);
           }}
         />
@@ -275,7 +276,7 @@ export default function Keys() {
           onConfirm={(note) => {
             markRecent(lostKey.id);
             dispatch({ type: ACTIONS.MARK_KEY_LOST, keyId: lostKey.id, note });
-            toast.success(savedMsg(online, `${lostKey.label || 'Key'} reported lost`));
+            toast.success(savedMsg(online, t('keyPage.reportedLost', { key: lostKey.label || t('keyPage.aKey') }), t('offline.savedOnDevice')));
             setLostKey(null);
           }}
         />
@@ -287,14 +288,16 @@ export default function Keys() {
           onClose={() => setEditKey(null)}
           onSave={(patch) => {
             if (editKey.id) {
-              // Summarize what changed so the History entry is meaningful.
+              // Summarize what changed so the History entry is meaningful. The words are written INTO
+              // the key's record (its history note), so they stay English like the activity log.
+              // i18n-ok: stored record text, not screen words
               const labels = { clientName: 'company', siteName: 'location', label: 'key label', masterCode: 'master code', notes: 'notes' };
               const changed = Object.keys(labels).filter((f) => (patch[f] ?? '') !== (editKey[f] ?? '')).map((f) => labels[f]);
               dispatch({ type: ACTIONS.UPDATE_KEY, id: editKey.id, patch, note: changed.length ? `changed ${changed.join(', ')}` : null });
             } else {
               dispatch({ type: ACTIONS.ADD_KEY, key: patch });
             }
-            toast.success(savedMsg(online, editKey.id ? 'Key updated' : 'Key added'));
+            toast.success(savedMsg(online, editKey.id ? t('keyPage.updated') : t('keyPage.added'), t('offline.savedOnDevice')));
             setEditKey(null);
           }}
         />
@@ -302,13 +305,13 @@ export default function Keys() {
 
       <ConfirmDialog
         open={!!confirmDelete}
-        title={`Delete ${confirmDelete?.label || 'this key'}?`}
-        message="The key and its history will be removed."
-        confirmLabel="Delete"
+        title={t('keyPage.deleteTitle', { key: confirmDelete?.label || t('keyPage.thisKey') })}
+        message={t('keyPage.deleteMessage')}
+        confirmLabel={t('keyPage.delete')}
         variant="danger"
         onConfirm={() => {
           dispatch({ type: ACTIONS.DELETE_KEY, id: confirmDelete.id });
-          toast.success(savedMsg(online, `${confirmDelete.label || 'Key'} deleted`));
+          toast.success(savedMsg(online, t('keyPage.deletedToast', { key: confirmDelete.label || t('keyPage.aKey') }), t('offline.savedOnDevice')));
           setConfirmDelete(null);
         }}
         onClose={() => setConfirmDelete(null)}
@@ -326,13 +329,14 @@ function KeyGroup({
   group, state, canManage, canCheckout, statusMenu, lockedToOtherHolder,
   doCheckin, setCheckoutKey, setHistoryKey, setEditKey, setConfirmDelete, resetKey,
 }) {
+  const t = useT();
   const pager = usePagedRows(group.keys, { resetKey });
   return (
     // Container hygiene (UI Rule 1): no .card wrapper — the heading stands
     // alone and .table-wrap carries its own border/shadow/margin.
     <div className="keys-group">
       <h3 className="keys-group-title">
-        {group.clientName} <span className="keys-group-count">· {group.keys.length} key{group.keys.length === 1 ? '' : 's'}</span>
+        {group.clientName} <span className="keys-group-count">· {t('keyPage.groupCount', { count: group.keys.length })}</span>
       </h3>
       <div className="table-wrap">
         {/* Fixed column geometry (colgroup + .keys-table) so the Key /
@@ -347,23 +351,23 @@ function KeyGroup({
             <col style={{ width: 170 }} />
             <col style={{ width: 250 }} />
           </colgroup>
-          <thead><tr><th>Key</th><th>Location</th><th>Master</th><th>Status</th><th>Held by</th><th></th></tr></thead>
+          <thead><tr><th>{t('keyPage.col.key')}</th><th>{t('keyPage.col.location')}</th><th>{t('keyPage.col.master')}</th><th>{t('keyPage.col.status')}</th><th>{t('keyPage.col.heldBy')}</th><th></th></tr></thead>
           <tbody>
             {pager.pageRows.map((k) => {
               const addr = selectSiteById(state, k.siteId)?.address;
               return (
                 <tr key={k.id}>
                   <td style={{ fontWeight: 600 }}>{k.label || '—'}{k.notes ? <div className="text-xs text-muted" style={{ fontWeight: 400 }}>{k.notes}</div> : null}</td>
-                  <td>{addr || <span className="text-muted">Unassigned</span>}</td>
+                  <td>{addr || <span className="text-muted">{t('keyPage.unassigned')}</span>}</td>
                   <td>{k.masterCode || '—'}</td>
                   <td>{statusMenu(k)}</td>
-                  <td>{holderLabel(state, k)}</td>
+                  <td>{holderLabel(state, k, t)}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {canCheckout && k.status !== 'out' && <button className="btn btn-link btn-sm" onClick={() => setCheckoutKey(k)}>Check out</button>}
-                    {canCheckout && k.status === 'out' && !lockedToOtherHolder(k) && <button className="btn btn-link btn-sm" onClick={() => doCheckin(k)}>Check in</button>}
-                    <button className="btn btn-link btn-sm" onClick={() => setHistoryKey(k)}>History</button>
-                    {canManage && <button className="btn btn-link btn-sm" onClick={() => setEditKey(k)}>Edit</button>}
-                    {canManage && <button className="btn-icon keys-key-delete" title="Delete" onClick={() => setConfirmDelete(k)}><Icon name="trash" size={15} /></button>}
+                    {canCheckout && k.status !== 'out' && <button className="btn btn-link btn-sm" onClick={() => setCheckoutKey(k)}>{t('keyPage.checkOut')}</button>}
+                    {canCheckout && k.status === 'out' && !lockedToOtherHolder(k) && <button className="btn btn-link btn-sm" onClick={() => doCheckin(k)}>{t('keyPage.checkIn')}</button>}
+                    <button className="btn btn-link btn-sm" onClick={() => setHistoryKey(k)}>{t('keyPage.history')}</button>
+                    {canManage && <button className="btn btn-link btn-sm" onClick={() => setEditKey(k)}>{t('keyPage.edit')}</button>}
+                    {canManage && <button className="btn-icon keys-key-delete" title={t('keyPage.delete')} onClick={() => setConfirmDelete(k)}><Icon name="trash" size={15} /></button>}
                   </td>
                 </tr>
               );
@@ -381,24 +385,24 @@ function KeyGroup({
             <div key={k.id} className="mobile-card" style={{ cursor: 'default' }}>
               <div className="mc-name">{k.label || '—'}</div>
               <div className="mc-sub">
-                {addr || 'Unassigned'}
-                {k.masterCode ? ` · Master ${k.masterCode}` : ''}
+                {addr || t('keyPage.unassigned')}
+                {k.masterCode ? ` · ${t('keyPage.master', { code: k.masterCode })}` : ''}
                 {k.notes ? ` · ${k.notes}` : ''}
               </div>
               <div className="mc-meta">
                 {statusMenu(k)}
-                {k.status === 'out' && <span className="text-xs text-muted">Held by {holderLabel(state, k)}</span>}
-                {canCheckout && k.status !== 'out' && <button className="btn btn-link" onClick={() => setCheckoutKey(k)}>Check out</button>}
-                {canCheckout && k.status === 'out' && !lockedToOtherHolder(k) && <button className="btn btn-link" onClick={() => doCheckin(k)}>Check in</button>}
-                <button className="btn btn-link" onClick={() => setHistoryKey(k)}>History</button>
-                {canManage && <button className="btn btn-link" onClick={() => setEditKey(k)}>Edit</button>}
-                {canManage && <button className="btn-icon keys-key-delete" title="Delete" onClick={() => setConfirmDelete(k)}><Icon name="trash" size={15} /></button>}
+                {k.status === 'out' && <span className="text-xs text-muted">{t('keyPage.heldBy', { name: holderLabel(state, k, t) })}</span>}
+                {canCheckout && k.status !== 'out' && <button className="btn btn-link" onClick={() => setCheckoutKey(k)}>{t('keyPage.checkOut')}</button>}
+                {canCheckout && k.status === 'out' && !lockedToOtherHolder(k) && <button className="btn btn-link" onClick={() => doCheckin(k)}>{t('keyPage.checkIn')}</button>}
+                <button className="btn btn-link" onClick={() => setHistoryKey(k)}>{t('keyPage.history')}</button>
+                {canManage && <button className="btn btn-link" onClick={() => setEditKey(k)}>{t('keyPage.edit')}</button>}
+                {canManage && <button className="btn-icon keys-key-delete" title={t('keyPage.delete')} onClick={() => setConfirmDelete(k)}><Icon name="trash" size={15} /></button>}
               </div>
             </div>
           );
         })}
       </div>
-      <ListPager pager={pager} noun="keys" />
+      <ListPager pager={pager} noun={t('keyPage.noun')} />
     </div>
   );
 }
@@ -407,46 +411,49 @@ function KeyGroup({
 // building manager…) — the live data is full of external holders, so the
 // picker must be able to record them, not just the internal team. Re-used for
 // hand-offs while a key is already out (logs a fresh checkout event).
+// The team is the searchable, capped picker, by name (UI_RULES §127; CS-713: a plain select of
+// every login in the order added — 1,541 at Matt's size). "Someone else" is its FIRST row, which
+// the picker keeps on screen while typing, so an outside holder is always one tap away.
 const OTHER_HOLDER = '__other';
 
 function CheckOutModal({ keyRec, users, defaultUserId, onClose, onConfirm }) {
-  const [userId, setUserId] = useState(defaultUserId || (users[0]?.id ?? OTHER_HOLDER));
+  const t = useT();
+  const people = useMemo(() => personOptions(users), [users]);
+  const holderOptions = useMemo(() => [{ value: OTHER_HOLDER, label: t('keyPage.someoneElse') }, ...people], [people, t]);
+  // The opener when they are on the team, else the first name, else someone else — never an id
+  // the picker cannot show.
+  const [userId, setUserId] = useState(() => (people.some((o) => o.value === defaultUserId) ? defaultUserId : (people[0]?.value ?? OTHER_HOLDER)));
   const [otherName, setOtherName] = useState('');
   const [note, setNote] = useState('');
   const isOther = userId === OTHER_HOLDER;
   const valid = isOther ? otherName.trim().length > 0 : Boolean(userId);
   const handoff = keyRec.status === 'out';
   return (
-    <Modal open onClose={onClose} title={`${handoff ? 'Hand off' : 'Check out'}. ${keyRec.label || 'Key'}`}>
+    <Modal open onClose={onClose} title={t('keyPage.checkoutTitle', { action: handoff ? t('keyPage.handOff') : t('keyPage.checkOut'), key: keyRec.label || t('keyPage.aKey') })}>
       {handoff && (
         <p className="text-muted" style={{ marginTop: 0 }}>
-          Currently out. This records a new checkout to the next holder (no phantom check-in).
+          {t('keyPage.handoffNote')}
         </p>
       )}
-      <FormField
-        label="Who is taking the key?" as="select" value={userId}
-        onChange={(e) => setUserId(e.target.value)}
-        options={[
-          ...users.map((u) => ({ value: u.id, label: u.name })),
-          { value: OTHER_HOLDER, label: 'Someone else (client, contractor…)' },
-        ]}
-      />
+      <FormField label={t('keyPage.whoTakes')}>
+        <FilterSelect value={userId} onChange={setUserId} options={holderOptions} ariaLabel={t('keyPage.whoTakes')} />
+      </FormField>
       {isOther && (
         <FormField
-          label="Their name" required value={otherName}
-          onChange={(e) => setOtherName(e.target.value)} placeholder="e.g. Building manager. Bella Smiles"
+          label={t('keyPage.theirName')} required value={otherName}
+          onChange={(e) => setOtherName(e.target.value)} placeholder={t('keyPage.theirNamePlaceholder')}
         />
       )}
-      <FormField label="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. for Friday deep-clean" />
+      <FormField label={t('keyPage.noteOptional')} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('keyPage.notePlaceholder')} />
       <div className="modal-actions">
-        <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn btn-outline" onClick={onClose}>{t('common.cancel')}</button>
         <button
           type="button" className="btn btn-primary" disabled={!valid}
           onClick={() => onConfirm(isOther
             ? { holderUserId: null, holderName: otherName.trim(), note: note.trim() }
             : { holderUserId: userId, note: note.trim() })}
         >
-          {handoff ? 'Hand off' : 'Check out'}
+          {handoff ? t('keyPage.handOff') : t('keyPage.checkOut')}
         </button>
       </div>
     </Modal>
@@ -464,6 +471,7 @@ const MENU_W = 300; // keep in sync with .key-status-menu width in index.css
 const MENU_H = 160; // approx (4 items); used only to flip upward near the viewport bottom
 
 function KeyStatusMenu({ keyRec, canEdit, readOnly, onSetIn, onSetOut, onMarkUnknown, onMarkLost }) {
+  const t = useT();
   const isMobile = useIsMobile();
   const [pos, setPos] = useState(null); // desktop popover: {top,left} viewport coords; null = closed
   const [sheetOpen, setSheetOpen] = useState(false); // mobile bottom-sheet (R9)
@@ -491,7 +499,7 @@ function KeyStatusMenu({ keyRec, canEdit, readOnly, onSetIn, onSetOut, onMarkUnk
   // Read-only badge when the user can't check keys in/out at all, OR when the key
   // is out to another team member and this (crew) user isn't allowed to touch its
   // custody — the same guard that hides their Check-in button.
-  if (!canEdit || readOnly) return <Badge variant={st.variant}>{st.label}</Badge>;
+  if (!canEdit || readOnly) return <Badge variant={st.variant}>{t(st.labelKey)}</Badge>;
 
   const toggle = (e) => {
     // Mobile (R9): open the shared bottom-sheet instead of an anchored popover
@@ -511,16 +519,16 @@ function KeyStatusMenu({ keyRec, canEdit, readOnly, onSetIn, onSetOut, onMarkUnk
   const items = (
     <>
       <button type="button" className="menu-option" role="menuitem" disabled={keyRec.status === 'in'} onClick={choose(onSetIn)}>
-        <Badge variant="green">In</Badge> <span>Back in the lockbox</span>
+        <Badge variant="green">{t('keyPage.status.in')}</Badge> <span>{t('keyPage.backInLockbox')}</span>
       </button>
       <button type="button" className="menu-option" role="menuitem" onClick={choose(onSetOut)}>
-        <Badge variant="amber">Out</Badge> <span>{keyRec.status === 'out' ? 'Hand off to someone else…' : 'Check out to someone…'}</span>
+        <Badge variant="amber">{t('keyPage.status.out')}</Badge> <span>{keyRec.status === 'out' ? t('keyPage.handOffSomeone') : t('keyPage.checkOutSomeone')}</span>
       </button>
       <button type="button" className="menu-option" role="menuitem" disabled={keyRec.status === 'unknown'} onClick={choose(onMarkUnknown)}>
-        <Badge variant="yellow">Unknown</Badge> <span>Whereabouts unclear…</span>
+        <Badge variant="yellow">{t('keyPage.status.unknown')}</Badge> <span>{t('keyPage.whereaboutsUnclear')}</span>
       </button>
       <button type="button" className="menu-option" role="menuitem" disabled={keyRec.status === 'lost'} onClick={choose(onMarkLost)}>
-        <Badge variant="red">Lost</Badge> <span>Confirmed lost…</span>
+        <Badge variant="red">{t('keyPage.status.lost')}</Badge> <span>{t('keyPage.confirmedLost')}</span>
       </button>
     </>
   );
@@ -528,14 +536,14 @@ function KeyStatusMenu({ keyRec, canEdit, readOnly, onSetIn, onSetOut, onMarkUnk
   return (
     <span className="key-status-wrap" ref={wrapRef}>
       <button
-        type="button" className="badge-trigger" title="Set status"
+        type="button" className="badge-trigger" title={t('keyPage.setStatus')}
         aria-haspopup="menu" aria-expanded={open || sheetOpen} onClick={toggle}
       >
-        <Badge variant={st.variant}>{st.label}</Badge>
+        <Badge variant={st.variant}>{t(st.labelKey)}</Badge>
         <span className="key-status-caret" aria-hidden>▾</span>
       </button>
       {isMobile ? (
-        <MobileSheet open={sheetOpen} onClose={close} title={`Set status · ${keyRec.label || 'Key'}`}>
+        <MobileSheet open={sheetOpen} onClose={close} title={t('keyPage.setStatusTitle', { key: keyRec.label || t('keyPage.aKey') })}>
           <div className="key-status-sheet" role="menu">{items}</div>
         </MobileSheet>
       ) : (open && createPortal(
@@ -552,36 +560,28 @@ function KeyStatusMenu({ keyRec, canEdit, readOnly, onSetIn, onSetOut, onMarkUnk
 // recoverable) or 'lost' (confirmed gone). Both clear any holder and log the
 // change to the key's history; the copy + confirm label switch on which.
 const MARK_COPY = {
-  unknown: {
-    title: (name) => `Mark “${name}” as Unknown?`,
-    body: 'Use this when the key’s whereabouts are unclear. Missing from the lockbox or holder unconfirmed, but likely recoverable. Any current holder is cleared and the change is logged in the key’s history.',
-    placeholder: 'e.g. not in lockbox at Friday audit',
-    confirm: 'Mark Unknown',
-  },
-  lost: {
-    title: (name) => `Report “${name}” as Lost?`,
-    body: 'Use this when the key is confirmed lost. Any current holder is cleared, managers are alerted, and the change is logged in the key’s history. Recovering it later just means checking it back in.',
-    placeholder: 'e.g. dropped off-site, not recovered after search',
-    confirm: 'Report Lost',
-  },
+  unknown: { titleKey: 'keyPage.unknownTitle', bodyKey: 'keyPage.unknownBody', placeholderKey: 'keyPage.unknownPlaceholder', confirmKey: 'keyPage.unknownConfirm' },
+  lost: { titleKey: 'keyPage.lostTitle', bodyKey: 'keyPage.lostBody', placeholderKey: 'keyPage.lostPlaceholder', confirmKey: 'keyPage.lostConfirm' },
 };
 
 function MarkStatusModal({ keyRec, status, onClose, onConfirm }) {
+  const t = useT();
   const [note, setNote] = useState('');
   const copy = MARK_COPY[status] || MARK_COPY.unknown;
   return (
-    <Modal open onClose={onClose} title={copy.title(keyRec.label || 'Key')}>
-      <p className="text-muted" style={{ marginTop: 0 }}>{copy.body}</p>
-      <FormField label="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} placeholder={copy.placeholder} />
+    <Modal open onClose={onClose} title={t(copy.titleKey, { key: keyRec.label || t('keyPage.aKey') })}>
+      <p className="text-muted" style={{ marginTop: 0 }}>{t(copy.bodyKey)}</p>
+      <FormField label={t('keyPage.noteOptional')} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t(copy.placeholderKey)} />
       <div className="modal-actions">
-        <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn btn-primary" onClick={() => onConfirm(note.trim() || null)}>{copy.confirm}</button>
+        <button type="button" className="btn btn-outline" onClick={onClose}>{t('common.cancel')}</button>
+        <button type="button" className="btn btn-primary" onClick={() => onConfirm(note.trim() || null)}>{t(copy.confirmKey)}</button>
       </div>
     </Modal>
   );
 }
 
 function EditKeyModal({ keyRec, onClose, onSave }) {
+  const t = useT();
   const state = useStore();
   const [form, setForm] = useState({
     clientName: keyRec.clientName || '', clientId: keyRec.clientId || null,
@@ -593,9 +593,9 @@ function EditKeyModal({ keyRec, onClose, onSave }) {
   // location is required (no company-wide keys).
   const valid = form.clientName.trim() && form.label.trim() && !!form.siteId;
   return (
-    <Modal open onClose={onClose} title={keyRec.id ? 'Edit key' : 'Add key'}>
+    <Modal open onClose={onClose} title={keyRec.id ? t('keyPage.editTitle') : t('keyPage.addTitle')}>
       <div className="form-group">
-        <label className="form-label">Company <span className="form-required">*</span></label>
+        <label className="form-label">{t('keyPage.company')} <span className="form-required">*</span></label>
         <ClientNamePicker
           value={form.clientName}
           onChange={({ name, clientId }) => {
@@ -604,52 +604,53 @@ function EditKeyModal({ keyRec, onClose, onSave }) {
             setForm({ ...form, clientName: name, clientId, siteId: loc ? loc.id : null, siteName: loc ? loc.name : '' });
           }}
         />
-        <div className="form-help">Companies that already have keys are listed first. Pick one to file this key under the same group.</div>
+        <div className="form-help">{t('keyPage.companyHelp')}</div>
       </div>
       <div className="form-group">
-        <label className="form-label">Location</label>
+        <label className="form-label">{t('keyPage.location')}</label>
         <div className="form-help">{form.clientId
-          ? (form.siteId ? `This key files at ${selectSiteById(state, form.siteId)?.address || "the customer's location"}.` : "This company has no location yet. Add it on the account first; a key can't be saved without one.")
-          : 'Link the company to a customer (above) to file this key at its location.'}</div>
+          ? (form.siteId ? t('keyPage.filesAt', { place: selectSiteById(state, form.siteId)?.address || t('keyPage.theLocation') }) : t('keyPage.noLocation'))
+          : t('keyPage.linkCompany')}</div>
       </div>
       <div className="form-row">
-        <FormField label="Key label" required value={form.label} onChange={set('label')} placeholder="e.g. SU 9A" />
-        <FormField label="Master code" value={form.masterCode} onChange={set('masterCode')} placeholder="e.g. SU 9" />
+        <FormField label={t('keyPage.label')} required value={form.label} onChange={set('label')} placeholder={t('keyPage.labelPlaceholder')} />
+        <FormField label={t('keyPage.masterCode')} value={form.masterCode} onChange={set('masterCode')} placeholder={t('keyPage.masterPlaceholder')} />
       </div>
-      <FormField label="Notes" value={form.notes} onChange={set('notes')} placeholder="e.g. front door + alarm" />
+      <FormField label={t('keyPage.notes')} value={form.notes} onChange={set('notes')} placeholder={t('keyPage.notesPlaceholder')} />
       <div className="modal-actions">
-        <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn btn-primary" disabled={!valid} onClick={() => onSave({ ...form, clientName: form.clientName.trim(), label: form.label.trim() })}>{keyRec.id ? 'Save' : 'Add key'}</button>
+        <button type="button" className="btn btn-outline" onClick={onClose}>{t('common.cancel')}</button>
+        <button type="button" className="btn btn-primary" disabled={!valid} onClick={() => onSave({ ...form, clientName: form.clientName.trim(), label: form.label.trim() })}>{keyRec.id ? t('common.save') : t('keyPage.addKey')}</button>
       </div>
     </Modal>
   );
 }
 
 function KeyHistory({ state, keyId }) {
+  const t = useT();
   const keyRec = selectKeys(state).find((k) => k.id === keyId);
   const events = selectKeyEventsForKey(state, keyId); // newest first
   const st = STATUS[keyRec?.status] || STATUS.unknown;
-  const holder = keyRec ? holderLabel(state, keyRec) : '—';
+  const holder = keyRec ? holderLabel(state, keyRec, t) : '—';
   const since = events[0]?.occurredAt;
 
   return (
     <>
       {keyRec && (
         <div className="key-history-summary">
-          <Badge variant={st.variant}>{st.label}</Badge>
+          <Badge variant={st.variant}>{t(st.labelKey)}</Badge>
           <div>
             <div className="key-history-summary-main">
-              {keyRec.status === 'out' ? <>Out with <strong>{holder}</strong></>
-                : keyRec.status === 'in' ? 'In the lockbox'
-                : keyRec.status === 'lost' ? 'Reported lost'
-                : 'Whereabouts unknown'}
+              {keyRec.status === 'out' ? t.rich('keyPage.outWith', { name: holder })
+                : keyRec.status === 'in' ? t('keyPage.inLockbox')
+                : keyRec.status === 'lost' ? t('keyPage.lostSummary')
+                : t('keyPage.unknownSummary')}
             </div>
-            {since && <div className="text-xs text-muted">since {dt(since)} · {ago(since)}</div>}
+            {since && <div className="text-xs text-muted">{t('keyPage.since', { date: dt(since), ago: timeAgoLong(t, since) })}</div>}
           </div>
         </div>
       )}
       {events.length === 0 ? (
-        <p className="text-muted">No check-in/out history yet.</p>
+        <p className="text-muted">{t('keyPage.noHistory')}</p>
       ) : (
         <div className="key-history-list">
           {events.map((e, i) => {
@@ -658,32 +659,32 @@ function KeyHistory({ state, keyId }) {
             const by = (e.byUserId && selectUserById(state, e.byUserId)?.name) || e.byName || null;
             const evtHolder = (e.holderUserId && selectUserById(state, e.holderUserId)?.name) || e.holderName || null;
             const EVT = {
-              checkout: { variant: 'amber', label: 'Checked out' },
-              checkin: { variant: 'green', label: 'Checked in' },
-              unknown: { variant: 'yellow', label: 'Marked Unknown' },
-              lost: { variant: 'red', label: 'Reported Lost' },
-              created: { variant: 'slate', label: 'Added' },
-              edited: { variant: 'slate', label: 'Edited' },
+              checkout: { variant: 'amber', labelKey: 'keyPage.evt.checkout' },
+              checkin: { variant: 'green', labelKey: 'keyPage.evt.checkin' },
+              unknown: { variant: 'yellow', labelKey: 'keyPage.evt.unknown' },
+              lost: { variant: 'red', labelKey: 'keyPage.evt.lost' },
+              created: { variant: 'slate', labelKey: 'keyPage.evt.created' },
+              edited: { variant: 'slate', labelKey: 'keyPage.evt.edited' },
             };
-            const evtBadge = EVT[e.kind] || { variant: 'slate', label: e.kind };
+            const evtBadge = EVT[e.kind] || { variant: 'slate', labelKey: null };
             // How long the key was out: pair this check-in with the nearest
             // older checkout (events are newest-first).
             let held = null;
             if (e.kind === 'checkin') {
               const out = events.slice(i + 1).find((p) => p.kind === 'checkout');
               const ms = out ? new Date(e.occurredAt) - new Date(out.occurredAt) : 0;
-              if (ms > 0) held = heldFor(ms);
+              if (ms > 0) held = heldFor(ms, t);
             }
             return (
               <div key={e.id} className="key-history-item">
                 <div className="key-history-item-head">
                   <span className="key-history-item-what">
-                    <Badge variant={evtBadge.variant}>{evtBadge.label}</Badge>
-                    {e.kind === 'checkout' && evtHolder ? <> to <strong>{evtHolder}</strong></> : null}
-                    {by ? <> by <strong>{by}</strong></> : null}
-                    {held ? <span className="text-xs text-muted"> · out {held}</span> : null}
+                    <Badge variant={evtBadge.variant}>{evtBadge.labelKey ? t(evtBadge.labelKey) : e.kind}</Badge>
+                    {e.kind === 'checkout' && evtHolder ? <> {t.rich('keyPage.toWhom', { name: evtHolder })}</> : null}
+                    {by ? <> {t.rich('keyPage.byWhom', { name: by })}</> : null}
+                    {held ? <span className="text-xs text-muted"> · {t('keyPage.outFor', { held })}</span> : null}
                   </span>
-                  <span className="text-xs text-muted" style={{ whiteSpace: 'nowrap' }}>{dt(e.occurredAt)} · {ago(e.occurredAt)}</span>
+                  <span className="text-xs text-muted" style={{ whiteSpace: 'nowrap' }}>{dt(e.occurredAt)} · {timeAgoLong(t, e.occurredAt)}</span>
                 </div>
                 {e.note && <div className="key-history-item-meta text-xs text-muted">{e.note}</div>}
               </div>

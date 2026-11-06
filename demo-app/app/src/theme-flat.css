@@ -86,10 +86,9 @@
   --metric-cell-3-bg:  var(--color-neutral-100);
   --metric-top-bar:    var(--primary);
 
-  /* ── Login screen — solid backdrop, no orbs, single clean card shadow ── */
-  --login-bg:            var(--primary);
-  --login-orb-1:         none;
-  --login-orb-2:         none;
+  /* ── Login screen — the terrazzo floor's solid ground, single clean card shadow (its sheen and shimmer
+     are a deliberate exception in the client theme, UI_RULES §18) ── */
+  --login-bg:            var(--color-surface-base);
   --login-card-shadow:   var(--shadow-lg);
 
   /* ── Mobile header — solid brand bar, no gradient / shadow ── */

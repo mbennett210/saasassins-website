@@ -19,6 +19,8 @@ import { reportError } from '../_lib/monitor.js';
 import { writeJobsDelta, getJobsByIds } from '../_lib/jobsTable.js';
 import { guardJobsDelta } from '../_lib/jobsGuard.js';
 import { jobIdsWithPunches } from '../_lib/time/store.js';
+import { logActivities } from '../_lib/activityLog.js';
+import { jobActivityEvents } from '../../src/lib/activityLog.js';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
 
@@ -79,6 +81,8 @@ export default async function handler(req, res) {
     const s = await guardJobsDelta({
       role: a.role,
       selfId: a.orgUserId,
+      // their permission column's level, off the roster resolveAuthority already read (CS-858)
+      managerLevel: a.managerLevel,
       changed,
       removed,
       readAuthz: readAuthzSlices, // the COMMITTED matrix + overrides, never the body
@@ -125,7 +129,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const r = await writeJobsDelta({
+    const { prev: jobsBefore, written, ...r } = await writeJobsDelta({
       changed: toWrite.changed,
       removed: toWrite.removed,
       userId: a.user.id, // Auth UUID (see org-state.js) — never from the body
@@ -149,6 +153,22 @@ export default async function handler(req, res) {
         tab: typeof body.tab === 'string' ? body.tab.slice(0, 64) : null,
         build: Number.isFinite(Number(body.build)) ? Number(body.build) : 0,
       });
+    }
+    // ── ACTIVITY LOG (CS-379) — "who cancelled this clean?" ──────────────────
+    // Only the rows that actually LANDED are logged (`written`, i.e. after the equality
+    // guard dropped the echoes), so a stale tab re-posting a row it observed adds nothing to
+    // the trail. Best-effort: the write has committed, and a missing audit row must never
+    // turn a saved schedule change into an error the tab retries forever.
+    // No actor NAME is resolved here, deliberately: this is the app's hottest write path
+    // (every drag, every series edit) and a name lookup would add an org_state read to each
+    // one (test-jobs-delta-authz pins the read budget). The row keeps the actor's `u_*` id,
+    // which is the record; the screens and the exports resolve the name from the roster they
+    // already hold (src/lib/activityLog.js actorLabel).
+    const events = jobActivityEvents({ changed: written, removed: toWrite.removed, prev: jobsBefore });
+    if (events.length) {
+      await logActivities(events.map((e) => ({
+        ...e, actorUserId: a.orgUserId || null, actorRole: a.role || null,
+      })));
     }
     return res.status(200).json({ ok: true, ...r, ...(protectedIds.length ? { protected: protectedIds } : {}) });
   } catch (e) {

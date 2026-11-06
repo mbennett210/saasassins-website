@@ -1,5 +1,5 @@
 import { useClientReview } from '../../store/ClientReviewProvider';
-import { isDecisionAnswered, isDraftResolved } from '../../lib/clientReview';
+import { isDecisionAnswered } from '../../lib/clientReview';
 import { DECISION_SECTIONS } from '../../data/buildDecisions';
 import { EMAIL_DRAFTS } from '../../data/emailDrafts';
 import Icon from '../../components/Icon';
@@ -9,6 +9,9 @@ import { fmtAddedShort } from './reviewShared';
 // The hub: a hero that sums up what needs attention and what's new, then one tile per
 // decision section (in catalog order) plus a Drafts tile. A tile opens focus mode on that
 // area. Counts come from the shared review state, so every seat sees the same numbers.
+// After Drafts, a Waiting on us tile counts the drafts sent back with a note that we have not
+// changed yet (CS-864, Daniel's pick A from the mockup, 2026-10-23). It opens their list, it never
+// counts toward "need your attention", and it is not drawn at all while nothing waits.
 export default function ReviewHub({ onOpenArea }) {
   const cr = useClientReview();
 
@@ -20,9 +23,12 @@ export default function ReviewHub({ onOpenArea }) {
   });
 
   const draftTotal = EMAIL_DRAFTS.length;
-  const draftResolved = EMAIL_DRAFTS.filter((d) => isDraftResolved(cr.review.drafts[d.id])).length;
+  const draftResolved = EMAIL_DRAFTS.filter((d) => !cr.isDraftOpen(d.id)).length;
   const draftPending = draftTotal - draftResolved;
   const draftNew = EMAIL_DRAFTS.filter((d) => cr.isNewDraft(d.id)).length;
+
+  const waiting = cr.waitingDrafts;
+  const waitingLine = waiting > 0 ? <> · <b>{waiting} waiting on us</b></> : null;
 
   const attention = cr.reviewAttention;
   const newCount = cr.reviewNewCount;
@@ -47,7 +53,7 @@ export default function ReviewHub({ onOpenArea }) {
                 {newCount > 0 ? `${newCount} new from the latest update (${updated})` : 'Nothing new waiting'}
               </div>
               <div className="review-hero-sub">
-                {cr.openDecisions} questions unanswered · {draftPending} drafts pending
+                {cr.openDecisions} questions unanswered · {draftPending} drafts pending{waitingLine}
               </div>
             </div>
             <div className="review-hero-actions">
@@ -62,7 +68,7 @@ export default function ReviewHub({ onOpenArea }) {
             <span className="review-hero-caught-ic" aria-hidden="true"><Icon name="check" size={22} /></span>
             <div className="review-hero-mid">
               <div className="review-hero-lead">You’re all caught up</div>
-              <div className="review-hero-sub">Nothing needs your attention right now.</div>
+              <div className="review-hero-sub">Nothing needs your attention right now{waitingLine}.</div>
             </div>
           </div>
         )}
@@ -91,6 +97,15 @@ export default function ReviewHub({ onOpenArea }) {
             </span>
           </span>
         </button>
+        {waiting > 0 && (
+          <button type="button" className="review-tile is-waiting" onClick={() => onOpenArea('waiting')}>
+            <ProgressRing done={waiting} total={waiting} label={String(waiting)} tone="warn" />
+            <span className="review-tile-body">
+              <span className="review-tile-nm">Waiting on us</span>
+              <span className="review-tile-st">{waiting} sent back to us</span>
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

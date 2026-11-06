@@ -15,9 +15,13 @@
 //     assertedInAt, inLat, inLng, inAccuracyM,
 //     assertedOutAt, outLat, outLng,
 //     createdAt,
-//   }
+//     seq,                        // CS-666: the order the cleaner acted in (nextPunchSeq) — the
+//                                 // flush replays by it, never by `id`, which sorts at random
+//     clockInAt,                  // 'out': the clock-in it closes, so the card can show it
+//   }                             // closed offline even with no saved row (timeMerge)
 //
 // Same hand-rolled promise wrapper as lib/attachments.js / store/offlineCache.js.
+import { nextPunchSeqAfter } from './timeMerge.js';
 
 const DB_NAME = 'rfs-time-queue';
 const DB_VERSION = 1;
@@ -58,6 +62,21 @@ export function newPunchId() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) return `op_${crypto.randomUUID()}`;
   } catch { /* fall through */ }
   return `op_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// The ORDER stamp (CS-666): strictly increasing on this phone — across reloads, and when the
+// phone corrects its clock between two taps — so the flush can replay punches in the order
+// the cleaner made them (lib/timeMerge replayOrder). Kept beside the queue in localStorage;
+// without storage it still increases within this page.
+export const PUNCH_SEQ_KEY = 'cleanspace_punch_seq_v1';
+let lastSeq = 0;
+export function nextPunchSeq(now = Date.now()) {
+  let stored = 0;
+  try { stored = Number(localStorage.getItem(PUNCH_SEQ_KEY)) || 0; } catch { /* no storage: this page's counter */ }
+  const seq = nextPunchSeqAfter(Math.max(stored, lastSeq), now);
+  lastSeq = seq;
+  try { localStorage.setItem(PUNCH_SEQ_KEY, String(seq)); } catch { /* best effort */ }
+  return seq;
 }
 
 export async function addPunch(punch) {

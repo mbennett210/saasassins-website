@@ -1,3 +1,4 @@
+import { assetUrl } from '../lib/assetUrl.js'; // polishpoint-demo
 // The documents' letterhead mark (the quote and the inspection report): the monogram on an accent tile,
 // then the name, as an inline SVG data URI, so it renders the same in the browser and in the server's
 // chromium PDF (no asset paths to resolve). Its colours come from the document palette, so a re-skin
@@ -24,3 +25,14 @@ const MONOGRAM_LOGO = `data:image/svg+xml;utf8,${svg.replace(/#/g, '%23').replac
 
 // The brand pack's own logo for light backgrounds when it has one, else the generated monogram above.
 export const DOC_LOGO = DOC_LOGO_IMAGE || MONOGRAM_LOGO;
+
+// The logo for a light ground, which the login card shows: the brand pack's colour lockup, or its lockup in the
+// brand ink (gen-brand-images.mjs LIGHT_LOGO, written by `npm --prefix app run brand`). The sidebar's logo
+// (company.logoUrl) is made for the dark sidebar and doesn't read on a white card (CS-564).
+export const LIGHT_LOGO_URL = assetUrl('/logo-on-light.png');
+
+// The logo for the dark sidebar rail (the brand pack's lockup made for `--color-brand-primary-700`,
+// gen-brand-images.mjs LOGO_GROUND_TOKENS; `npm --prefix app run brand` writes it). The office's
+// sidebar reads it from company.logoUrl in the shared record; the customer hub has no shared
+// record (pages/hub/HubRoot.jsx), so its sidebar reads the file the brand step writes.
+export const SIDEBAR_LOGO_URL = assetUrl('/cleanspace-logo.png');

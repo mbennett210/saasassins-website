@@ -1,0 +1,24 @@
+{
+  "source": "Matt’s termination form (the picture in his email “Clean Corner - Termination”, 2026-11-05, 12:09 PM PT, for Super Clippy’s idea #513), read off the picture by eye: its two headings, and its sixteen tick boxes in his two columns, top to bottom. His email gives the other lines: “we would need the employee name, day of termination and direct manager”.",
+  "headings": ["Reason for Termination", "Direct Account Manager"],
+  "left": [
+    "Resignation",
+    "Job Abandonment",
+    "Absenteeism / Tardiness",
+    "Violation of Company Policy",
+    "Manager / Client Requested Change",
+    "Moved Out of State",
+    "Personal Reasons",
+    "Not Eligible for Rehire"
+  ],
+  "right": [
+    "Insubordination",
+    "Maternity Leave",
+    "Unsatisfactory Job Performance",
+    "Temporary Assignment Ended",
+    "Accepted Another Job",
+    "Health Reasons",
+    "Account Closure",
+    "Other:"
+  ]
+}

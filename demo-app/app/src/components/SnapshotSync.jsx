@@ -8,6 +8,12 @@ import { getSnapshot } from '../lib/integrationsApi';
 
 const POLL_MS = 60000;
 
+// A refusal is not a transient failure, so it must not be retried every 60 s for the life
+// of the tab (CS-019: /api/settings/snapshot now gates on `invoices.view`). App.jsx only
+// mounts this for holders, so reaching one of these means the permission was revoked
+// mid-session — stop cleanly and keep whatever figure is already in the store.
+const REFUSED_STATUSES = new Set([401, 403]);
+
 // Change detection for the poll. The snapshot is the same object shape every tick
 // (a server-serialized JSON), so string compare is a reliable "did it actually change".
 const serialize = (v) => { try { return JSON.stringify(v ?? null); } catch { return null; } };
@@ -22,6 +28,7 @@ export default function SnapshotSync() {
 
   useEffect(() => {
     let alive = true;
+    let stop = () => {};
     async function pull() {
       try {
         const snapshot = await getSnapshot();
@@ -34,13 +41,17 @@ export default function SnapshotSync() {
         // it at the source. (sync.js's flush content-guard is the systemic backstop.)
         if (serialize(next) === serialize(currentRef.current)) return;
         dispatch({ type: ACTIONS.SET_FINANCIAL_SNAPSHOT, snapshot: next });
-      } catch { /* network/stub miss — keep last value */ }
+      } catch (err) {
+        // A refusal stops the poll for good; anything else is transient — keep last value.
+        if (REFUSED_STATUSES.has(err?.status)) stop();
+      }
     }
     pull();
     const t = setInterval(pull, POLL_MS);
     const onFocus = () => pull();
     window.addEventListener('focus', onFocus);
-    return () => { alive = false; clearInterval(t); window.removeEventListener('focus', onFocus); };
+    stop = () => { clearInterval(t); window.removeEventListener('focus', onFocus); };
+    return () => { alive = false; stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return null;

@@ -1,4 +1,5 @@
 import Modal from './Modal';
+import { useT } from '../i18n/react';
 
 // Shared "apply to just this occurrence, or this and all future?" chooser for any
 // recurring-series edit or delete. ONE prompt: Cancel / X aborts entirely (no
@@ -16,18 +17,22 @@ import Modal from './Modal';
 // user who was ALREADY in the job's Edit. They clicked the only button left,
 // edited one occurrence, got a success toast, and concluded series edits are
 // broken. No error existed anywhere for anyone to see.
-//   'loading'   — the full jobs set hasn't hydrated yet (whole-series operations
-//                 against a partial window are forbidden — see JobDetail's gate
-//                 comment). Transient: the prompt re-renders when hydration lands,
-//                 so the option APPEARS while the modal is open. Say that.
+//   'loading'   — the series' occurrences are still loading (the app holds the jobs
+//                 window, not the table, and a whole-series operation needs every
+//                 occurrence — see JobDetail's gate comment). Transient: the prompt
+//                 re-renders when the series lands, so the option APPEARS while the
+//                 modal is open. Say that. (Catalog: seriesScope.loading.)
+//   'load-failed' — the series could not be loaded (Schedule's quick paths ask once,
+//                 before the prompt): series-wide changes wait for a retry.
+//                 (Catalog: seriesScope.loadFailed.)
 //   'no-master' — the series has no recurrence master (data needs repair);
 //                 permanent until an admin fixes it. Say that too.
 //   null        — the legacy multi-day quick-path reason (Schedule's flat
 //                 Reschedule form + drag-drop, where per-day crews/times can't be
 //                 edited safely without the block editor; the full Edit page IS
 //                 the remedy there, so that copy stays).
+const CATALOG_REASONS = { loading: 'seriesScope.loading', 'load-failed': 'seriesScope.loadFailed' };
 const DISABLED_COPY = {
-  loading: 'This job is part of a recurring series. The full schedule is still loading. The "all future" option appears here as soon as it’s ready (usually a few seconds). You can change just this occurrence now.',
   'no-master': 'This job is part of a recurring series whose recurrence record is missing, so series-wide changes are unavailable. You can change single occurrences. Ask your admin to repair the series.',
   // A series cleaned twice on the same day cannot be expressed by the recurrence
   // (dayOverrides holds one entry per weekday), so a series-wide edit would re-time
@@ -44,8 +49,12 @@ const DISABLED_COPY = {
 // and how many jobs. Hidden when the future option isn't offered — nothing would be
 // destroyed beyond this occurrence, so listing the series would misdescribe the act.
 export default function SeriesScopeModal({ open, intent = 'edit', onPick, onClose, disableFuture = false, disableReason = null, summary = null }) {
+  const t = useT();
   const isDelete = intent === 'delete';
   const variant = isDelete ? 'btn-danger' : 'btn-primary';
+  const disabledCopy = CATALOG_REASONS[disableReason]
+    ? t(CATALOG_REASONS[disableReason])
+    : (DISABLED_COPY[disableReason] || DISABLED_COPY.default);
   return (
     <Modal
       open={open}
@@ -55,7 +64,7 @@ export default function SeriesScopeModal({ open, intent = 'edit', onPick, onClos
     >
       <p className="confirm-message">
         {disableFuture
-          ? (DISABLED_COPY[disableReason] || DISABLED_COPY.default)
+          ? disabledCopy
           : 'This job is part of a recurring series. Apply to just this one, or this and all future jobs?'}
       </p>
       {summary && !disableFuture && summary}

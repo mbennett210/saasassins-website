@@ -1,0 +1,49 @@
+{
+  "source": "Matt's warning form (matt-warning-form.docx, sent 2026-10-05 as his HR-1 answer \"b\"): the English page, then his team's Spanish page. Extracted from word/document.xml as UTF-8: each line's words exactly, the blanks and the trailing colon dropped.",
+  "en": {
+    "title": "Warning Form",
+    "employeeName": "Employee’s Name",
+    "date": "Date",
+    "supervisorName": "Manager/Supervisor’s Name",
+    "previousMeeting": "If previous discipline meeting occurred, enter date",
+    "reasonsHeading": "Reasons for Warning",
+    "reasons": [
+      "Absenteeism",
+      "Failure to follow procedure",
+      "Rudeness",
+      "Tardiness",
+      "Failure to meet performance",
+      "Refusal to work overtime",
+      "Policy violation",
+      "Fighting",
+      "Language",
+      "Other"
+    ],
+    "details": "Details of actions that warranted this warning",
+    "corrective": "The following immediate and sustained corrective action must be taken by the employee. Failure to do so will result in further disciplinary action up to and including termination",
+    "note": "Note: Your signature on this form means that we have discussed the situation. It doesn’t necessarily mean you agree that the infraction occurred"
+  },
+  "es": {
+    "title": "Formulario de advertencia",
+    "employeeName": "Nombre del empleado",
+    "date": "Fecha",
+    "supervisorName": "Nombre del gerente / supervisor",
+    "previousMeeting": "Si ocurrió una reunión disciplinaria anterior, ingrese la fecha",
+    "reasonsHeading": "Razones para advertir",
+    "reasons": [
+      "Ausentismo",
+      "No seguir el procedimiento",
+      "Descortesía",
+      "Tardanza",
+      "No cumplir con el desempeño",
+      "Negarse a trabajar horas extras",
+      "Violación de la política",
+      "Peleas",
+      "Idioma",
+      "Otro"
+    ],
+    "details": "Detalles de las acciones que justificaron esta advertencia",
+    "corrective": "El empleado debe tomar la siguiente acción correctiva inmediata y sostenida. No hacerlo resultará en una acción disciplinaria adicional hasta e incluyendo el despido",
+    "note": "Nota: Su firma en este formulario significa que hemos discutido la situación. No significa necesariamente que esté de acuerdo con que ocurrió la infracción."
+  }
+}

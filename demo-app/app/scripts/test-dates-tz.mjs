@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import {
   setOrgTimezone, todayKey, dayKey, composeIso, splitIso, sameDay,
   dayOfWeekIso, addDaysKey, startOfWeekKey, startOfMonthKey, startOfDayKey, todayIso,
-  startOfYearKey, startOfQuarterKey, addMonthsKey,
+  startOfYearKey, startOfQuarterKey, addMonthsKey, DEFAULT_ORG_TIMEZONE,
 } from '../src/lib/dates.js';
 
 const ORG = 'America/Los_Angeles'; // the org's zone in every assertion below
@@ -141,11 +141,11 @@ eq(addMonthsKey('2026-03-31', -1), '2026-02-28', 'addMonthsKey: -1 clamps to Feb
 eq(addMonthsKey('2028-03-31', -1), '2028-02-29', 'addMonthsKey: -1 clamps to leap Feb 29');
 eq(addMonthsKey('2026-01-15', -13), '2024-12-15', 'addMonthsKey: -13 spans two years');
 
-// A blank org zone falls back to the LA default, NOT the device — "source of truth
-// is always Los Angeles" until a Super Admin saves an explicit zone. This is what
-// makes the fix take effect on the live blob (which predates company.timezone).
+// A blank org zone falls back to the pinned DEFAULT_ORG_TIMEZONE (Eastern, CS-029), NOT
+// the device — the business's zone is the source of truth until a Super Admin saves an
+// explicit zone. Asserted against the constant so it tracks the pinned default.
 setOrgTimezone(null);
-eq(todayKey(), dayKey(new Date(), 'America/Los_Angeles'), 'blank org tz: falls back to LA, not device');
+eq(todayKey(), dayKey(new Date(), DEFAULT_ORG_TIMEZONE), 'blank org tz: falls back to the pinned default, not device');
 setOrgTimezone('Not/AZone');
 ok(/^\d{4}-\d{2}-\d{2}$/.test(todayKey()), 'invalid org tz: degrades instead of throwing');
 setOrgTimezone(ORG);

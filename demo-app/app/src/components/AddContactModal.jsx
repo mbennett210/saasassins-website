@@ -12,6 +12,9 @@ import { useToast } from './Toast';
 import { newId } from '../lib/ids';
 import { fmtDate } from '../lib/dates';
 import { normalizeCompanyName } from '../lib/csv';
+import { capOptions, PICKER_MAX_VISIBLE } from '../lib/pickerOptions';
+import PickerCapNote from './PickerCapNote';
+import TextsOffNote from './TextsOffNote';
 
 // ── Phone helpers ────────────────────────────────────────────────────────
 // Storage shape: "+1 XXX-XXX-XXXX". Twilio (lib/twilio.js) needs E.164 with
@@ -105,7 +108,13 @@ function PhoneInput({ value, onChange, disabled }) {
 // the top, (3) matching existing clients below. Mutually-exclusive output:
 // either a `companyId` for an existing client OR a `newCompanyName` string
 // the parent will dedup + create at submit time.
+// The companies by name, never the whole book at once (UI_RULES §127; CS-722: 768 customers drew
+// 768 rows): typing narrows first, then the first PICKER_MAX_VISIBLE show, with the shared footnote
+// under the search field saying how many more there are.
 
+// `allowCreate`: adding a company is "Create / edit customers" — the server refuses a new
+// customer from anyone else (orgStateGuard: "add a customer") — so without it the picker offers
+// the existing companies only, and says why (UI_RULES §118).
 function CompanyPicker({
   clients,
   companyId,
@@ -114,6 +123,7 @@ function CompanyPicker({
   onCreateNew,
   onClear,
   disabled,
+  allowCreate = true,
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -140,9 +150,10 @@ function CompanyPicker({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return clients;
-    return clients.filter((c) => c.name.toLowerCase().includes(q));
+    const list = q ? clients.filter((c) => (c.name || '').toLowerCase().includes(q)) : clients;
+    return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [clients, search]);
+  const { shown, noteMsg } = useMemo(() => capOptions(filtered, PICKER_MAX_VISIBLE), [filtered]);
 
   const startCreate = () => {
     setCreating(true);
@@ -192,34 +203,38 @@ function CompanyPicker({
           {!creating && (
             <>
               <input
-                className="input"
+                className="input select-search"
                 placeholder="Search companies…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 autoFocus
-                style={{ marginBottom: 8 }}
               />
-              <button
-                type="button"
-                className="menu-option"
-                style={{
-                  borderBottom: '1px solid var(--border-light)',
-                  paddingBottom: 8,
-                  marginBottom: 6,
-                  fontWeight: 600,
-                  color: 'var(--primary)',
-                }}
-                onClick={startCreate}
-              >
-                Add new company{search.trim() ? ` "${search.trim()}"` : ''}
-              </button>
-              <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              {allowCreate ? (
+                <button
+                  type="button"
+                  className="menu-option"
+                  style={{
+                    borderBottom: '1px solid var(--border-light)',
+                    paddingBottom: 8,
+                    marginBottom: 6,
+                    fontWeight: 600,
+                    color: 'var(--primary)',
+                  }}
+                  onClick={startCreate}
+                >
+                  Add new company{search.trim() ? ` "${search.trim()}"` : ''}
+                </button>
+              ) : (
+                <div className="form-help">Adding a new company needs “Create / edit customers”.</div>
+              )}
+              <PickerCapNote note={noteMsg} />
+              <div className="select-search-list">
                 {filtered.length === 0 && (
                   <div className="text-sm text-muted" style={{ padding: '6px 8px' }}>
                     No matches.
                   </div>
                 )}
-                {filtered.map((c) => (
+                {shown.map((c) => (
                   <button
                     key={c.id}
                     type="button"
@@ -246,7 +261,8 @@ function CompanyPicker({
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { e.preventDefault(); commitCreate(); }
-                  if (e.key === 'Escape') { setCreating(false); }
+                  // Esc only backs out to the list; the dropdown and the pop-up stay (UI_RULES §181).
+                  if (e.key === 'Escape') { e.preventDefault(); setCreating(false); }
                 }}
                 style={{ marginBottom: 8 }}
               />
@@ -362,11 +378,15 @@ const EMPTY = {
   notes: '',
 };
 
-export default function AddContactModal({ open, onClose, mode = 'create', initialData = null, lockCompanyId = null, prefillName = '', onCreated = null }) {
+// `textsOffFor(phone)` (the customer page's hooks/useCustomerTextStatus): the date a number replied
+// STOP, shown read-only under the phone; absent elsewhere.
+export default function AddContactModal({ open, onClose, mode = 'create', initialData = null, lockCompanyId = null, prefillName = '', onCreated = null, textsOffFor = null }) {
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
   const clients = selectClients(state);
+  // A NEW company is a new customer: "Create / edit customers", as the server checks it.
+  const canAddCompany = usePermission('clients.edit');
 
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState('');
@@ -402,6 +422,7 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
   }, [open, initialData, mode, lockCompanyId, prefillName]);
 
   const set = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+  const phoneOffAt = textsOffFor ? textsOffFor(form.phone) : null;
 
   const submit = (e) => {
     e.preventDefault();
@@ -451,6 +472,9 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
       const existing = clients.find((c) => normalizeCompanyName(c.name) === target);
       if (existing) {
         resolvedCompanyId = existing.id;
+      } else if (!canAddCompany) {
+        setError('Adding a new company needs “Create / edit customers”. Pick an existing one.');
+        return;
       } else {
         const clientId = newId('cl');
         dispatch({
@@ -503,7 +527,7 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
 
         <div className="form-row">
           <FormField label="Title" value={form.title} onChange={(e) => set({ title: e.target.value })} placeholder="Office Manager, Facilities Director…" />
-          <FormField label="Phone">
+          <FormField label="Phone" help={phoneOffAt ? <TextsOffNote optedOutAt={phoneOffAt} className="" /> : undefined}>
             <PhoneInput value={form.phone} onChange={(v) => set({ phone: v })} />
           </FormField>
         </div>
@@ -519,6 +543,7 @@ export default function AddContactModal({ open, onClose, mode = 'create', initia
               onPickExisting={(id) => set({ companyId: id, newCompanyName: '' })}
               onCreateNew={(name) => set({ companyId: '', newCompanyName: name })}
               onClear={() => set({ companyId: '', newCompanyName: '' })}
+              allowCreate={canAddCompany}
             />
           </FormField>
         )}

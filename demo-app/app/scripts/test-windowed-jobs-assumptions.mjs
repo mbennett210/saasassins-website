@@ -1,20 +1,25 @@
-// Code that assumes `state.jobs` is the WHOLE table — it has not been since E6.
+// Code that assumes `state.jobs` is the WHOLE table — it has not been since E6, and since
+// CS-676 it never will be.
 //
 // ══ THE ROOT CAUSE ════════════════════════════════════════════════════════════
-// E6 made the app boot on a ~-45/+100 day WINDOW of jobs and backfill the rest
-// detached. That was correct for SCALE — it is what made the app interactive on mobile.
-// But it converted "state.jobs is everything" from true to false, and a lot of code
-// still assumes the old invariant. Three confirmed defects came from it:
+// E6 made the app boot on a ~-45/+100 day WINDOW of jobs and backfill the rest detached;
+// CS-676 (2026-10-13) dropped the backfill — every launch downloaded every clean ever, by
+// OFFSET pages — so the window IS the jobs baseline, and a screen that needs more loads
+// exactly that (a date range, one series by id, one customer's cleans, some ids). That
+// made "state.jobs is everything" permanently false, and code that assumes the old
+// invariant is wrong. Three confirmed defects came from it before:
 //
 //   1. JobDetail offered "this & all future" whenever the master was missing, and
 //      UPDATE_JOB_SERIES then patched the occurrences while SILENTLY SKIPPING the
 //      master's recurrence re-sync — so the edit was quietly undone at the next top-up.
 //   2. Schedule's isPerDaySeries / JobDetail's isWeeklySeries read false on a missing
 //      master and routed to the crew-flattening branch (fixed in dfaadfa).
-//   3. DELETE_CLIENT cascades with `state.jobs.filter(...)`, so deleting an account
+//   3. DELETE_CLIENT cascaded with `state.jobs.filter(...)`, so deleting an account
 //      during the windowed phase removed only its in-window jobs — and the backfill
 //      merge then RESURRECTED the rest, because rows that were never in windowSnapshot
-//      cannot be classified as locally-removed.
+//      cannot be classified as locally-removed. (Customers are archived, never deleted,
+//      since CS-663; the archive takes a customer's upcoming cleans off the same windowed
+//      `state.jobs`, so the screens offer it only once every clean has loaded.)
 //
 // The rule this suite enforces: a lookup over state.jobs that comes back empty means
 // NOT LOADED, never NOT EXISTS — and the safe response is to restrict, not to proceed.
@@ -29,12 +34,17 @@ const fails = [];
 const ok = (label, cond) => { if (cond) pass += 1; else fails.push(label); };
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 
-// ── the window is real ──────────────────────────────────────────────────
+// ── the window is real, and it is all a launch reads ────────────────────
 {
   const sync = read('../src/store/sync.js');
-  ok('boot loads a WINDOW, not the whole table', /function bootWindowRange\(\)/.test(sync));
-  ok('  ...and the full set backfills detached', /completeJobsHydration\(\)/.test(sync));
-  ok('  ...with jobsReady FALSE until it lands', /jobsReady stays FALSE/.test(sync));
+  const jobsSync = read('../src/store/jobsSync.js');
+  ok('boot loads the WINDOW (src/lib/jobsWindow.js), not the whole table',
+    /const \{ fromMs, toMs \} = jobsWindowBounds\(\);/.test(sync) && /fetchJobsInRange\(fromMs, toMs\)/.test(sync));
+  ok('  ...plus the series masters (TOP_UP mints from them)', /fetchSeriesMasters\(\)/.test(sync));
+  ok('🔴 ...and nothing reads the whole table any more', !/fetchAllJobs|completeJobsHydration/.test(sync + jobsSync));
+  ok('🔴 no jobs read pages by OFFSET (keyset only)', !/\.range\(/.test(jobsSync));
+  ok('more is loaded on demand: a range, a series, a customer, some ids',
+    ['ensureJobsRange', 'ensureSeries', 'ensureClientJobs', 'ensureJobsByIds'].every((f) => new RegExp(`async function ${f}\\(`).test(sync)));
 }
 
 // ── 🔴 1. no whole-series EDIT without the master ───────────────────────
@@ -52,14 +62,15 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
   // cleans reappear for a year, reaching crew and the customer reminder scheduler.
   //
   // The precondition is also broader than the master: even WITH it loaded, occurrences
-  // past +100 days are outside state.jobs, so both the delete set and the edit set are
-  // partial. Hence one gate for both operations, on FULL HYDRATION.
+  // past +100 days are outside the window, so both the delete set and the edit set are
+  // partial. Hence one gate for both operations, on THE SERIES BEING LOADED (every
+  // occurrence, by series id — useSeriesJobs).
   // Matched on SHAPE, not on the exact literal: further restrictions may be added after
-  // these two (a twice-in-a-day series closes the edit path, below), but `!jobsHydrated`
+  // these two (a twice-in-a-day series closes the edit path, below), but `!seriesLoad.ready`
   // and `!seriesMaster` must remain the LEADING, unconditional disjuncts — so neither
   // can be made intent-specific and quietly re-exempt delete.
-  ok('🔴 JobDetail gates "all future" on full hydration AND a visible master',
-    /disableFuture=\{!!job\?\.seriesId && \(\s*!jobsHydrated \|\| !seriesMaster\b/.test(jd));
+  ok('🔴 JobDetail gates "all future" on its series being loaded AND a visible master',
+    /disableFuture=\{!!job\?\.seriesId && \(\s*!seriesLoad\.ready \|\| !seriesMaster\b/.test(jd));
   ok('  🔴 ...covering DELETE too — the old delete exemption is gone',
     !/showSeriesChoice !== 'delete' && !!job\?\.seriesId/.test(jd));
   // 🔴 A series cleaned twice in one day is inexpressible in `dayOverrides` (one entry
@@ -72,7 +83,7 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
   ok('  ...and that restriction never reaches DELETE',
     !/showSeriesChoice === 'delete' && seriesRunsTwiceInADay/.test(jd));
   ok('  ...with copy that says why', /twice-in-a-day/.test(jd));
-  ok('  ...and jobsHydrated is actually sourced', /const jobsHydrated = useJobsHydrated\(\)/.test(jd));
+  ok('  ...and the series load is actually sourced', /const seriesLoad = useSeriesJobs\(job\?\.seriesId \|\| null\)/.test(jd));
 
   // The write-side reads that make the gate necessary.
   const red2 = read('../src/store/reducer.js');
@@ -84,8 +95,8 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 
   // Schedule's quick paths carry the same precondition.
   const sched2 = read('../src/pages/Schedule.jsx');
-  ok('🔴 Schedule also refuses the whole-series path before hydration',
-    /if \(!jobsHydrated\) return true;/.test(sched2));
+  ok('🔴 Schedule also refuses the whole-series path until the series is loaded',
+    /if \(!jobsLoader\.isSeriesLoaded\(job\.seriesId\)\) return true;/.test(sched2));
   const modal = read('../src/components/SeriesScopeModal.jsx');
   ok('the modal actually honours disableFuture', /disableFuture = false/.test(modal) && /\{!disableFuture && \(/.test(modal));
 
@@ -103,7 +114,7 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
   ok('Schedule treats an unknown master as per-day', /if \(!m\) return true;/.test(sched));
 }
 
-// ── 🔴 3. the backfill must not resurrect a deleted account's jobs ──────
+// ── 🔴 3. a read must not resurrect a deleted account's jobs ────────────
 {
   const sync = read('../src/store/sync.js');
   ok('🔴 orphaned jobs are filtered before the merge',
@@ -112,7 +123,9 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
     /liveClientIds\.size === 0\s*\n\s*\? all/.test(sync));
   ok('  🔴 ...and the baseline is the FILTERED set, so no bulk delete is triggered',
     /lastSyncedJobs = authoritative;/.test(sync));
-  ok('  ...while the cursor still comes from the real read', /jobsCursor = maxRv\(all\)/.test(sync));
+  ok('  ...while the cursor comes from the table\'s high-water, read before the window', /jobsCursor = floor;/.test(sync));
+  ok('  🔴 ...and rows fetched on demand are orphan-filtered the same way',
+    /function adoptFetchedJobs\(rows\) \{[\s\S]{0,700}?liveClientIds\.size === 0 \|\| liveClientIds\.has\(j\.clientId\)/.test(sync));
 
   // Simulate it.
   const all = [
@@ -132,31 +145,27 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
     filter([]).length === all.length);
 }
 
-// ── 🔴 4. a MISSING cache record is not a COMPLETE jobs set ─────────────
-// Same empty-baseline failure as 3f22431, reached through the offline door: with no
-// jobs record, `jobs` is [] and the old flag said "complete", so bootFromCache armed the
-// mirror against an empty baseline and the next save re-upserted the whole table.
-// IndexedDB evicts per-record under quota pressure, so doc-present/jobs-absent is a real
-// state, not a hypothetical.
+// ── 🔴 4. the device's cache is NEVER the jobs baseline ─────────────────
+// Same empty-baseline failure as 3f22431, reached through the offline door: with no jobs
+// record (IndexedDB evicts per record under quota pressure, so doc-present/jobs-absent is
+// real), an old flag read "complete", bootFromCache armed the mirror against [] and the
+// next save re-upserted the whole table. Since CS-676 no cache arms the mirror at all: it
+// is what to paint while the server answers, and the window from the table is the
+// baseline, merged onto it (edits made in the gap kept).
 {
-  const cache = read('../src/store/offlineCache.js');
-  ok('🔴 an absent jobs record reads as WINDOWED, not complete',
-    /jobsWindowed: !jobsRec \|\| jobsRec\.windowed === true/.test(cache));
-  ok('  ...the old collapse-to-false form is gone', !/jobsWindowed: jobsRec\?\.windowed === true/.test(cache));
-
-  // The consumer's safe direction, pinned so the flag's meaning cannot invert.
   const sync = read('../src/store/sync.js');
-  ok('windowed=true takes the ungated path (no mirroring yet)',
-    /if \(cached\.jobsWindowed\) \{[\s\S]{0,300}?jobsReady = false;/.test(sync));
-  ok('  ...and only a genuinely complete cache arms the mirror',
-    /\} else \{[\s\S]{0,200}?jobsReady = true; \/\/ baseline is the cache/.test(sync));
-
-  // Decision table.
-  const windowed = (rec) => !rec || rec.windowed === true;
-  ok('present + windowed:true  -> windowed', windowed({ windowed: true }) === true);
-  ok('present + windowed:false -> complete (legacy pre-windowing record)', windowed({ windowed: false }) === false);
-  ok('present + no flag        -> complete (legacy pre-windowing record)', windowed({}) === false);
-  ok('🔴 ABSENT                -> windowed (the safe direction)', windowed(undefined) === true);
+  const boot = (sync.match(/async function bootFromCache\([\s\S]*?\n  \}/) || [])[0] || '';
+  ok('bootFromCache found', boot.length > 0);
+  ok('🔴 a boot from the cache keeps the mirror gated and loads the window',
+    /jobsReady = false;[\s\S]{0,120}?loadJobsBaseline\(\);/.test(boot));
+  ok('🔴 ...and nothing in it arms the mirror', !/jobsReady = true/.test(boot) && !/signalJobsReady\(\)/.test(boot));
+  ok('  ...the cached cleans are the merge snapshot', /windowSnapshot = jobs;/.test(boot));
+  const cache = read('../src/store/offlineCache.js');
+  ok('the cache no longer reports a "complete" flag anyone could arm on', !/jobsWindowed/.test(cache));
+  // An OLDER bundle on the same device still reads its own flag: a record without it reads
+  // there as the complete table, so the write side keeps stamping it.
+  ok('🔴 ...but every jobs record is still WRITTEN windowed, for older bundles on the device',
+    /cacheJobs\(jobsInWindow\(jobs, from, to\), at, \{ windowed: true, from, to \}\)/.test(sync));
 }
 
 // ── 🔴 5. a trend must not be computed against half a prior period ──────
@@ -183,7 +192,8 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
     /laborHours: makeTrend\(/.test(sel) && /companies: makeTrend\(/.test(sel));
 
   const dash = read('../src/pages/Dashboard.jsx');
-  ok('Dashboard passes the real hydration flag', /jobsFullyLoaded: useJobsHydrated\(\)/.test(dash));
+  ok('Dashboard loads the 61 days the trend reads (CS-676) and passes THAT readiness',
+    /const trendDays = useJobsDays\(addDaysKey\(todayK, -61\), todayK\);/.test(dash) && /jobsFullyLoaded: trendDays\.ready/.test(dash));
   ok('🔴 ...and renders no arrow when the trend is null',
     /trendDirection=\{missedCleans && trends\.missedCleans \? trends\.missedCleans\.direction : undefined\}/.test(dash));
   ok('  ...while still showing the impact figure it CAN justify',
@@ -203,28 +213,32 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
     /if \(user && user\.status === 'active'\) out\.push/.test(sel2));
 }
 
-// ── 🔴 7. EVERY whole-series entry point is hydration-gated ─────────────
+// ── 🔴 7. EVERY whole-series entry point waits for ITS series ───────────
 // The reducer's target sets (UPDATE_JOB_SERIES eligibleIds, DELETE_JOB_SERIES removed)
-// are built from state.jobs and are therefore only correct when the FULL set is loaded.
-// Rather than rewrite the reducer, every UI path that can reach the 'future' scope is
-// gated on hydration. This asserts the closure holds — a new entry point that dispatches
-// UPDATE_JOB_SERIES / DELETE_JOB_SERIES without a gate reopens the hole.
+// are built from state.jobs and are therefore only correct when every occurrence of the
+// series is loaded. Rather than rewrite the reducer, every UI path that can reach the
+// 'future' scope loads the series first (by series id — never the table) and is gated on
+// it. This asserts the closure holds — a new entry point that dispatches
+// UPDATE_JOB_SERIES / DELETE_JOB_SERIES without that gate reopens the hole.
 {
   const jd = read('../src/pages/JobDetail.jsx');
   const sched = read('../src/pages/Schedule.jsx');
   const njm = read('../src/components/NewJobModal.jsx');
 
-  ok('JobDetail gates its scope modal on hydration', /!jobsHydrated \|\| !seriesMaster/.test(jd));
-  ok('Schedule gates its quick paths on hydration', /if \(!jobsHydrated\) return true;/.test(sched));
-  ok('  ...and feeds that into both prompt sites',
-    (sched.match(/disableFuture: isPerDaySeries\(job\)/g) || []).length === 2);
+  ok('JobDetail gates its scope modal on the series load', /!seriesLoad\.ready \|\| !seriesMaster/.test(jd));
+  ok('Schedule gates its quick paths on the series load', /if \(!jobsLoader\.isSeriesLoaded\(job\.seriesId\)\) return true;/.test(sched));
+  ok('  ...its one prompt loads the series before it asks',
+    /const promptSeriesScope = async \(job, prompt, single\) => \{[\s\S]{0,200}?await jobsLoader\.ensureSeries\(job\.seriesId\)/.test(sched)
+    && /disableFuture: !loaded \|\| isPerDaySeries\(job, s\)/.test(sched));
+  ok('  ...and both quick paths go through it (drag and reschedule)',
+    (sched.match(/promptSeriesScope\(job, \{ kind: '(drag|reschedule)'/g) || []).length === 2);
   // NewJobModal never decides scope itself — it receives it from Schedule's gated picker.
   ok('NewJobModal takes seriesScope as a PROP (it does not choose)', /seriesScope = null \}/.test(njm));
   ok('  ...supplied by Schedule\'s gated reschedule flow', /seriesScope=\{reschedule\.scope\}/.test(sched));
 
-  // Both hooks must actually be sourced, or the gates are undefined-and-falsy.
-  ok('JobDetail sources useJobsHydrated', /const jobsHydrated = useJobsHydrated\(\)/.test(jd));
-  ok('Schedule sources useJobsHydrated', /const jobsHydrated = useJobsHydrated\(\)/.test(sched));
+  // The hooks must actually be sourced, or the gates are undefined-and-falsy.
+  ok('JobDetail sources the series load', /const seriesLoad = useSeriesJobs\(/.test(jd));
+  ok('Schedule sources the jobs loader', /const jobsLoader = useJobsLoader\(\)/.test(sched));
 
   // The closure claim: no OTHER file dispatches a whole-series action.
   const dispatchers = ['src/pages/JobDetail.jsx', 'src/pages/Schedule.jsx', 'src/components/NewJobModal.jsx'];
@@ -252,8 +266,23 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
   ok('selectSeriesMaster searches state.jobs (so it CAN miss)',
     /export const selectSeriesMaster = \(s, seriesId\) =>\s*\n\s*seriesId \? s\.jobs\.find/.test(sel));
   const red = read('../src/store/reducer.js');
-  ok('DELETE_CLIENT still cascades over state.jobs (hence the merge-side filter)',
-    /jobs: \(state\.jobs \|\| \[\]\)\.filter\(\(j\) => j\.clientId !== id\)/.test(red));
+  ok('ARCHIVE_CLIENT plans over state.jobs (so it CAN miss an out-of-window clean)',
+    /archiveSchedulePlan\(state\.jobs \|\| \[\], client\.id/.test(red));
+  const detail = read('../src/pages/ClientDetail.jsx');
+  const list = read('../src/pages/Clients.jsx');
+  ok('…so the customer page and the Customers bulk bar offer it only once every clean has loaded',
+    /const canArchive = canArchiveClient && canEditJobs && jobsHydrated;/.test(detail)
+    && /const canBulkArchive = canArchiveClients && canEditJobs && jobsHydrated;/.test(list));
+}
+
+// ── a customer's history: loaded by customer, never called empty before it is asked ─────
+// The app holds the jobs window, so "this customer has no cleans in state" says nothing until
+// their history has been read (CS-676) — the same lie as the dead-link and the trend cases.
+{
+  const cd = read('../src/pages/ClientDetail.jsx');
+  ok('the customer page loads the customer\'s cleans by customer', /const historyLoad = useClientJobs\(client\?\.id \|\| null\);/.test(cd));
+  ok('🔴 ...and says "No service history" only once that history has been read',
+    /historyLoad\.ready \? <EmptyState icon=\{<Icon name="schedule" size=\{28\} \/>\} title="No service history"/.test(cd));
 }
 
 console.log(`\nwindowed jobs assumptions: ${pass}/${pass + fails.length} passed`);

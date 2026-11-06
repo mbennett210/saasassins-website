@@ -65,6 +65,8 @@
   /* the schedule's upcoming card (R7) */
   --sched-card-upcoming-bg: #f7fbff;
   --sched-card-upcoming-bd: #e2eaf4;
+  /* avatars: the initials on the brand ink, the accent (7.97:1; colors.avatarText unset, and the accent reads 7.97:1, at least 7:1) */
+  --avatar-text: var(--color-brand-secondary-500);
   /* ── end BRAND PALETTE ── */
 
   /* ── Mobile glass floating-nav material (components/FloatingNav.jsx) ──
@@ -144,7 +146,8 @@
 
   /* ── Alias overrides — avatars unified to BLACK bg + GOLD letters
      (Daniel 2026-08-16: "black & gold icon, black BG / gold lettering for all").
-     Letter color is set on `.avatar` in index.css → --color-brand-secondary-500. ── */
+     The letters read --avatar-text, which the BRAND PALETTE block sets from colors.avatarText (unset: the
+     accent where it reads 7:1 on the ink, else white; gold here, 12.5:1). ── */
   --color-avatar-1:  var(--color-brand-primary-500);
   --color-avatar-2:  var(--color-brand-primary-500);
   --color-avatar-3:  var(--color-brand-primary-500);
@@ -184,8 +187,12 @@
   /* ── Dashboard hero / login / dash switcher ── */
   --dash-hero-bg:      var(--card-bg);
   --dash-hero-border:  var(--card-border);
-  --login-bg:          var(--color-brand-primary-700);
+  --login-bg:          var(--color-surface-base);   /* the terrazzo floor's ground; the chips and the mark bring the colour */
   --login-card-shadow: var(--shadow-lg);
+  /* the floor's buffed sheen and its slight shimmer: a deliberate exception to the flat treatment for the one
+     pre-auth page (UI_RULES §18), so theme-flat.css leaves them alone, like the mobile glass nav above */
+  --login-sheen:       linear-gradient(118deg, transparent 0 30%, rgba(var(--color-white-rgb), .62) 43%, rgba(var(--color-white-rgb), .18) 50%, transparent 60%);
+  --login-shimmer:     linear-gradient(100deg, transparent, rgba(var(--color-white-rgb), .95) 50%, transparent);
 
   /* ── Input ── */
   --input-border-grad:        linear-gradient(var(--color-brand-primary-400), var(--color-brand-primary-400));

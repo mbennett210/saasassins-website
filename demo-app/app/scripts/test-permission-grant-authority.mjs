@@ -126,7 +126,7 @@ if (typeof canGrantPermission === 'function') {
   // (reach) AND canReduceAdminRole (canEndAccess on an Admin target).
   const pageAllowsAdminReduce = (actor, ov) => can(actor, 'settings.roles.edit', matrix, ov) && canEndAccess(actor.role, true);
   let disagree = 0; const firstD = [];
-  for (const actorRole of ['owner', 'admin', 'manager', 'crew']) {
+  for (const actorRole of ROLES) { // every role, the supply manager (S131) included
     const actor = { id: 'u_act', role: actorRole };
     // grant settings.roles.edit so the reach is satisfied (admins/crew lack it by default)
     const ov = can(actor, 'settings.roles.edit', matrix, []) ? [] : [{ userId: 'u_act', grants: ['settings.roles.edit'], revokes: [] }];
@@ -196,7 +196,7 @@ if (typeof canGrantPermission === 'function') {
     const pageAllowsOwnerReduce = (actor, ov, key) => can(actor, 'settings.roles.edit', matrix, ov)
       && (OWNER_CORE.has(key) || canReduceRole(actor.role, 'owner'));
     let disagree = 0; const firstD = [];
-    for (const actorRole of ['owner', 'admin', 'manager', 'crew']) {
+    for (const actorRole of ROLES) { // every role, the supply manager (S131) included
       const actor = { id: 'u_act', role: actorRole };
       const ov = can(actor, 'settings.roles.edit', matrix, []) ? [] : [{ userId: 'u_act', grants: ['settings.roles.edit'], revokes: [] }];
       for (const key of [OWNKEY, COREKEY]) {

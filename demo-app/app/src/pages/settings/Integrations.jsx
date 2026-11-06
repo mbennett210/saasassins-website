@@ -10,10 +10,17 @@
 //   4. Test SMS — send a test outbound (gated by full readiness).
 //   5. Simulate inbound — exercises the inbound routing path locally (dev only — hidden when backend is wired).
 //
-// Resend cards (Core email — system transactional):
-//   6. Connection — status, verified domain, default From, Connect/Disconnect.
-//   7. Domain Verification — DKIM/SPF/DMARC records to add to DNS, with status.
-//   8. Test Email — send a test email through the connected provider.
+// System email cards (the app's own mail, through Google):
+//   6. System Email — which connected Google mailbox the app sends as, its OAuth health,
+//      and (Super Admin only) the picker that marks it. There is NO key to paste and no
+//      domain for the app to verify: DKIM/SPF/DMARC belong to the Google Workspace and are
+//      set once in Google Admin, outside this product.
+//   7. Test Email — send a test through that mailbox.
+//
+// This replaced a Resend "Connect provider" modal + a Domain Verification card. The modal
+// kept only `apiKey.slice(-4)` in the shared record, never sent the key anywhere, and
+// reported "connected" (CS-039); the domain card showed DKIM records for a subdomain that
+// had none in public DNS (CS-280). Email goes through Google now (Daniel, 2026-09-29).
 //
 // Per-user conversational email lives at Settings → Connected Inboxes
 // (Phase 3) — NOT here. This page is for deployment-level provider
@@ -25,17 +32,13 @@
 // to integrations.manage holders; the Copy buttons follow what it sent). Both default to
 // Super Admin + Manager (lib/roles.js).
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useDispatch, useStore } from '../../store';
 import { ACTIONS } from '../../store/reducer';
 import {
   selectTwilioIntegration,
   selectIsTwilioSendReady,
   selectTwilioBlockers,
-  selectEmailIntegration,
-  selectIsEmailSendReady,
-  selectEmailBlockers,
-  selectEmailDefaultFrom,
 } from '../../store/selectors';
 import { useToast } from '../../components/Toast';
 import { usePermission } from '../../hooks/usePermission';
@@ -47,7 +50,6 @@ import FormField from '../../components/FormField';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import ConnectTwilioModal from '../../components/ConnectTwilioModal';
 import A2PRegistrationModal from '../../components/A2PRegistrationModal';
-import ConnectEmailProviderModal from '../../components/ConnectEmailProviderModal';
 import {
   disconnectTwilio,
   sendSMS,
@@ -57,8 +59,11 @@ import {
   TWILIO_STUB_ACTIVE,
   TWILIO_CONFIGURED,
 } from '../../lib/twilio';
-import { sendEmail, getEmailHealth } from '../../lib/email';
+import { sendEmail, getEmailHealth, getSystemSender, setSystemSender } from '../../lib/email';
+import { smsStatus } from '../../lib/integrationsApi';
+import { SMS_ALERT_EVENT_KEYS } from '../../lib/alertDelivery';
 import GoogleWorkspacesSection from '../../components/GoogleWorkspacesSection';
+import QuickBooksSection from '../../components/QuickBooksSection';
 
 const A2P_BADGE = {
   not_started: { variant: 'slate',  label: 'Not started' },
@@ -86,18 +91,20 @@ export default function SettingsIntegrations() {
   const sendReady = selectIsTwilioSendReady(state);
   const blockers = selectTwilioBlockers(state);
 
-  const email = selectEmailIntegration(state);
-  const emailSendReady = selectIsEmailSendReady(state);
-  const emailBlockers = selectEmailBlockers(state);
-  const emailDefaultFrom = selectEmailDefaultFrom(state);
+  // System email lives on the SERVER, not in the shared record: /api/email/health says
+  // which Google mailbox sends and whether its token is still good.
+  const isSuperAdmin = state.users?.find((u) => u.id === state.currentUserId)?.role === 'owner';
+  const [emailHealth, setEmailHealth] = useState(null);
+  const [emailHealthError, setEmailHealthError] = useState('');
+  const [senderOptions, setSenderOptions] = useState([]);
+  const [senderBusy, setSenderBusy] = useState(false);
+  const emailConfigured = emailHealth?.configured === true;
+  const emailDefaultFrom = emailHealth?.defaultFrom || emailHealth?.senderEmail || '';
 
   const [connectOpen, setConnectOpen] = useState(false);
   const [a2pOpen, setA2pOpen] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
-  const [emailConnectOpen, setEmailConnectOpen] = useState(false);
-  const [confirmEmailDisconnect, setConfirmEmailDisconnect] = useState(false);
-  const [domainBusy, setDomainBusy] = useState(false);
 
   // Test SMS local UI state.
   const [testTo, setTestTo] = useState('');
@@ -202,41 +209,55 @@ export default function SettingsIntegrations() {
     setSimBody('');
   };
 
-  // ---------- Email provider handlers ----------
-  const handleEmailDisconnect = async () => {
-    setConfirmEmailDisconnect(false);
-    try {
-      dispatch({ type: ACTIONS.DISCONNECT_EMAIL_PROVIDER });
-      toast.success('Email provider disconnected.');
-    } catch (err) {
-      toast.error(err.message || 'Disconnect failed.');
-    }
-  };
-
-  const handleCheckDomain = async () => {
-    setDomainBusy(true);
+  // ---------- System email (Google) handlers ----------
+  // One read on mount, and again after the owner changes the mailbox. The candidate list is
+  // owner-only on the server (api/email/system-sender.js), so a non-owner simply gets no
+  // picker rather than a 403 in the console.
+  const loadEmailState = useCallback(async () => {
     try {
       const health = await getEmailHealth();
-      dispatch({
-        type: ACTIONS.UPDATE_EMAIL_DOMAIN_STATUS,
-        status: health.status === 'verified' ? 'verified' : (health.status || 'pending'),
-        dkimRecords: health.dkimRecords || [],
-        spfStatus: health.spfStatus || null,
-        dmarcStatus: health.dmarcStatus || null,
-        failureReason: health.failureReason || null,
-      });
-      if (health.status === 'verified') {
-        toast.success('Domain verified.');
-      } else if (health.status === 'failed') {
-        toast.error(health.failureReason || 'Domain verification failed.');
-      } else {
-        toast.success('Status refreshed.');
-      }
+      setEmailHealth(health);
+      setEmailHealthError('');
     } catch (err) {
-      dispatch({ type: ACTIONS.UPDATE_EMAIL_ERROR, error: err.message || 'Health check failed' });
-      toast.error(err.message || 'Could not check domain status.');
+      setEmailHealthError(err.message || 'Could not read the email status.');
+    }
+    if (!isSuperAdmin) { setSenderOptions([]); return; }
+    try {
+      const { candidates } = await getSystemSender();
+      setSenderOptions(candidates || []);
+    } catch {
+      setSenderOptions([]); // not fatal: the status card still renders
+    }
+  }, [isSuperAdmin]);
+
+  useEffect(() => { loadEmailState(); }, [loadEmailState]);
+
+  // 🔴 NTF-1 / CS-069 / CS-038 — the ALERT-TEXT channel's REAL state, read from the SERVER.
+  // Alert texts do not go through the blob's `company.integrations.twilio` (which a stub could
+  // once set to "Connected" with a fake number, CS-038): they go through the deployment's own
+  // Twilio environment, and only the server can say whether that exists. Presence only — the
+  // route returns env NAMES and the kind of sender, never a value. A failed read is reported as
+  // unknown, never as configured.
+  const [smsState, setSmsState] = useState(null);       // { configured, senderKind, missing[] }
+  const [smsStateError, setSmsStateError] = useState('');
+  useEffect(() => {
+    let alive = true;
+    smsStatus()
+      .then((s) => { if (alive) { setSmsState(s); setSmsStateError(''); } })
+      .catch((err) => { if (alive) setSmsStateError(err.message || 'Could not read the texting status.'); });
+    return () => { alive = false; };
+  }, []);
+
+  const chooseSender = async (inboxId) => {
+    setSenderBusy(true);
+    try {
+      await setSystemSender(inboxId || null);
+      await loadEmailState();
+      toast.success(inboxId ? 'Sending mailbox updated.' : 'Sending mailbox cleared.');
+    } catch (err) {
+      toast.error(err.message || 'Could not set the sending mailbox.');
     } finally {
-      setDomainBusy(false);
+      setSenderBusy(false);
     }
   };
 
@@ -245,9 +266,9 @@ export default function SettingsIntegrations() {
     setEmailTestBusy(true);
     setEmailTestResult({ status: 'sending' });
     try {
+      // No `from`: Gmail sends as the system-sender mailbox (api/_lib/email.js).
       const result = await sendEmail({
         to: emailTestTo.trim(),
-        from: emailDefaultFrom || 'no-reply@example.com',
         subject: emailTestSubject,
         body: emailTestBody,
         tags: ['settings_test'],
@@ -255,18 +276,9 @@ export default function SettingsIntegrations() {
       setEmailTestResult({ id: result.id, status: result.status });
     } catch (err) {
       setEmailTestResult({ status: 'failed', failureReason: err.message || 'Unknown error' });
-      dispatch({ type: ACTIONS.UPDATE_EMAIL_ERROR, error: err.message || null });
+      loadEmailState(); // a failure usually means the mailbox needs reconnecting
     } finally {
       setEmailTestBusy(false);
-    }
-  };
-
-  const copyToClipboard = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success('Copied.');
-    } catch {
-      toast.error('Could not copy. Select the text and copy manually.');
     }
   };
 
@@ -294,16 +306,19 @@ export default function SettingsIntegrations() {
     return map[emailTestResult.status] || { variant: 'slate', label: emailTestResult.status };
   }, [emailTestResult]);
 
-  const emailDomainBadge = useMemo(() => {
-    const status = email?.domain?.status || 'not_started';
+  // The sending mailbox's own state. 'verified' = a live Google token; 'failed' = it expired
+  // and needs reconnecting; 'not_started' = no mailbox marked. There is no DNS state to
+  // report: Google owns DKIM/SPF for the Workspace domain.
+  const emailSenderBadge = useMemo(() => {
+    const status = emailHealth?.status || 'not_started';
     const map = {
-      not_started: { variant: 'slate', label: 'Not started' },
-      pending:     { variant: 'amber', label: 'Pending DNS' },
-      verified:    { variant: 'green', label: 'Verified' },
-      failed:      { variant: 'red',   label: 'Failed' },
+      not_started:   { variant: 'slate', label: "Email isn't set up" },
+      not_configured:{ variant: 'slate', label: 'Not configured' },
+      verified:      { variant: 'green', label: 'Sending' },
+      failed:        { variant: 'red',   label: 'Needs reconnecting' },
     };
     return map[status] || { variant: 'slate', label: status };
-  }, [email]);
+  }, [emailHealth]);
 
   return (
     <div>
@@ -313,6 +328,49 @@ export default function SettingsIntegrations() {
 
       {/* ───────── Google Workspaces (multi-Workspace OAuth registry) ───────── */}
       <GoogleWorkspacesSection canManage={canManage} />
+
+      {/* ───────── QuickBooks Online (property P&L feed) — owner-gated inside ───────── */}
+      <QuickBooksSection />
+
+      {/* ───────── Alert texts (NTF-1 / CS-069) — the SERVER's own state ───────── */}
+      <div className="card detail-card">
+        {/* The title row's own flex gap spaces the badge — no inline margin (lint:design). */}
+        <div className="dash-card-title-row">
+          <h3 className="dash-card-title">
+            <Icon name="bell" size={16} /> Alert texts
+          </h3>
+          {smsStateError
+            ? <Badge variant="amber">Unknown</Badge>
+            : smsState?.configured
+              ? <Badge variant="green">On</Badge>
+              : <Badge variant="slate">Off</Badge>}
+        </div>
+        <div className="text-sm text-muted">
+          Missed shifts and urgent tickets are texted as well as pushed, to the phone number on each person&rsquo;s profile. Everyone chooses for themselves under Your Account; it is off until they turn it on.
+        </div>
+        {smsStateError ? (
+          <div className="form-error">{smsStateError}</div>
+        ) : smsState === null ? (
+          <div className="text-sm text-muted">Checking…</div>
+        ) : smsState.configured ? (
+          <div className="text-sm text-muted">
+            Sending through {smsState.senderKind === 'messaging_service' ? 'a Twilio Messaging Service' : 'a Twilio number'}.
+            {' '}{SMS_ALERT_EVENT_KEYS.size} events text: a missed shift and an urgent ticket.
+          </div>
+        ) : (
+          // The honest not-configured state — the CS-038 lesson: never imply a texting channel
+          // exists. The env NAMES are safe to print; their values never are.
+          <div className="text-sm text-muted">
+            Texting is off: this deployment has no Twilio credentials.
+            {smsState.missing?.length ? (
+              <> Still needed: {smsState.missing.map((name, i) => (
+                <span key={name}>{i > 0 ? ', ' : ''}<code>{name}</code></span>
+              ))}.</>
+            ) : null}
+            {' '}Until then a missed shift and an urgent ticket are pushed only.
+          </div>
+        )}
+      </div>
 
       {/* ───────── Twilio Connection ───────── */}
       <div className="card detail-card" style={{ marginBottom: 16 }}>
@@ -533,161 +591,70 @@ export default function SettingsIntegrations() {
         </div>
       )}
 
-      {/* ───────── Email Provider (Resend) — Connection ───────── */}
+      {/* ───────── System Email (Google) ───────── */}
       <div className="card detail-card" style={{ marginBottom: 16, marginTop: 28 }}>
         <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
+          <div style={{ flex: 1 }}>
             <h3 className="dash-card-title">
-              <Icon name="mail" size={16} /> Email Provider
-              {email?.connected
-                ? <Badge variant="green" style={{ marginLeft: 8 }}>Connected</Badge>
-                : <Badge variant="slate" style={{ marginLeft: 8 }}>Not connected</Badge>}
-              {email?.connected && email.provider && (
-                <span className="text-xs text-muted" style={{ marginLeft: 8 }}>
-                  via {email.provider === 'resend' ? 'Resend' : email.provider}
-                </span>
-              )}
+              <Icon name="mail" size={16} /> System Email
+              <Badge variant={emailSenderBadge.variant} style={{ marginLeft: 8 }}>{emailSenderBadge.label}</Badge>
+              <span className="text-xs text-muted" style={{ marginLeft: 8 }}>via Google</span>
             </h3>
-            {email?.connected ? (
+            {emailConfigured ? (
               <div className="text-sm text-muted">
-                Domain <strong>{email.verifiedDomain}</strong>
-                {email.apiKeyLast4 && <> · Key ending <code>•••• {email.apiKeyLast4}</code></>}
-                {email.connectedAt && <> · Connected {new Date(email.connectedAt).toLocaleDateString()}</>}
+                Invitations, set-password links, quotes, reminders and customer email all send from{' '}
+                <code>{emailHealth.senderEmail}</code>.
                 <div style={{ marginTop: 4 }}>
-                  Default From: <code>{email.defaultFrom || '—'}</code>
+                  {emailHealth.pinned
+                    ? 'Pinned for this deployment (SYSTEM_SENDER_EMAIL), so it cannot be changed here.'
+                    : 'Chosen below. Google handles DKIM and SPF for this domain — there is nothing to add to DNS.'}
                 </div>
-                {email.defaultReplyTo && (
-                  <div>Reply-To: <code>{email.defaultReplyTo}</code></div>
-                )}
               </div>
             ) : (
               <div className="text-sm text-muted">
-                Connect a Resend account to send invitations, reminder emails, and (later) billing email
-                from a verified subdomain.
+                {emailHealth?.failureReason
+                  || 'No sending mailbox chosen yet. Connect a Google mailbox, then mark it here — until then the app sends no email.'}
               </div>
             )}
-            {email?.lastError && (
-              <div className="form-error" style={{ marginTop: 6 }}>
-                Last error: {email.lastError}
+            {emailHealthError && (
+              <div className="form-error" style={{ marginTop: 6 }}>{emailHealthError}</div>
+            )}
+            {emailHealth?.senderLastError && (
+              <div className="form-error" style={{ marginTop: 6 }}>Last error: {emailHealth.senderLastError}</div>
+            )}
+
+            {/* The picker is Super-Admin only, matching the server (requireRole owner). */}
+            {isSuperAdmin && !emailHealth?.pinned && (
+              <div style={{ marginTop: 12, maxWidth: 420 }}>
+                <FormField
+                  label="Sending mailbox"
+                  as="select"
+                  name="system-sender"
+                  value={emailHealth?.senderInboxId || ''}
+                  onChange={(e) => chooseSender(e.target.value)}
+                  disabled={senderBusy || senderOptions.length === 0}
+                  placeholder={senderOptions.length ? 'No mailbox — email is off' : 'No Google mailbox connected yet'}
+                  options={senderOptions.map((c) => ({
+                    value: c.id,
+                    label: c.status === 'active' ? c.email : `${c.email} (needs reconnecting)`,
+                  }))}
+                  help={senderOptions.length
+                    ? 'Any connected Google mailbox can send the app’s email. Only one at a time.'
+                    : 'Connect one under Settings → Connected Inboxes, or Marketing → Inboxes, then pick it here.'}
+                />
               </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {!email?.connected && canManage && (
-              <button className="btn btn-primary" onClick={() => setEmailConnectOpen(true)}>Connect</button>
-            )}
-            {email?.connected && canManage && (
-              <button className="btn btn-outline" onClick={() => setConfirmEmailDisconnect(true)}>Disconnect</button>
             )}
           </div>
         </div>
       </div>
 
-      {/* ───────── Domain Verification ───────── */}
-      {email?.connected && (
-        <div className="card detail-card" style={{ marginBottom: 16 }}>
-          <div className="flex-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <h3 className="dash-card-title">
-                <Icon name="lock" size={16} /> Domain Verification
-                <Badge variant={emailDomainBadge.variant} style={{ marginLeft: 8 }}>{emailDomainBadge.label}</Badge>
-              </h3>
-              <div className="text-sm text-muted">
-                Add these records to your DNS for <code>{email.verifiedDomain}</code> so recipient
-                inboxes accept email from this domain. Verification typically completes within an
-                hour but can take up to 48h depending on your registrar.
-              </div>
-
-              {Array.isArray(email.domain?.dkimRecords) && email.domain.dkimRecords.length > 0 ? (
-                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {email.domain.dkimRecords.map((rec, i) => (
-                    <div key={i} className="card" style={{ padding: '8px 12px', background: 'var(--inset-bg)' }}>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <Badge variant="slate">{rec.type || 'TXT'}</Badge>
-                        <code className="text-xs" style={{ flex: 1, wordBreak: 'break-all' }}>
-                          {rec.host}
-                        </code>
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          onClick={() => copyToClipboard(`${rec.host}\t${rec.type || 'TXT'}\t${rec.value}`)}
-                        >
-                          Copy row
-                        </button>
-                      </div>
-                      <div style={{ marginTop: 6 }}>
-                        <code className="text-xs text-muted" style={{ wordBreak: 'break-all' }}>
-                          {rec.value}
-                        </code>
-                      </div>
-                      {rec.status && (
-                        <div style={{ marginTop: 4 }}>
-                          <Badge variant={rec.status === 'verified' ? 'green' : rec.status === 'failed' ? 'red' : 'amber'}>
-                            {rec.status}
-                          </Badge>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-sm text-muted" style={{ marginTop: 8 }}>
-                  No DKIM records returned yet. Click Refresh to check Resend.
-                </div>
-              )}
-
-              <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '160px 1fr', gap: '4px 12px', fontSize: 13 }}>
-                <span className="text-muted">SPF</span>
-                <span>{email.domain?.spfStatus || '—'}</span>
-                <span className="text-muted">DMARC</span>
-                <span>{email.domain?.dmarcStatus || '—'}</span>
-                {email.domain?.lastCheckedAt && (
-                  <>
-                    <span className="text-muted">Last checked</span>
-                    <span>{new Date(email.domain.lastCheckedAt).toLocaleString()}</span>
-                  </>
-                )}
-                {email.domain?.failureReason && (
-                  <>
-                    <span className="text-muted">Failure</span>
-                    <span className="text-danger">{email.domain.failureReason}</span>
-                  </>
-                )}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexDirection: 'column', alignItems: 'flex-end' }}>
-              {canManage && (
-                <button
-                  className="btn btn-outline"
-                  onClick={handleCheckDomain}
-                  disabled={domainBusy}
-                >
-                  {domainBusy ? 'Checking…' : 'Refresh status'}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ───────── Email send-readiness blockers ───────── */}
-      {email?.connected && !emailSendReady && emailBlockers.length > 0 && (
-        <div className="card detail-card" style={{ marginBottom: 16, borderLeft: '3px solid var(--warning)' }}>
-          <h3 className="dash-card-title">Email sending is blocked</h3>
-          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 14 }}>
-            {emailBlockers.map((b) => (<li key={b.key}>{b.label}</li>))}
-          </ul>
-        </div>
-      )}
-
       {/* ───────── Test Email ───────── */}
-      {email?.connected && (
+      {emailConfigured && (
         <div className="card detail-card" style={{ marginBottom: 16 }}>
           <h3 className="dash-card-title"><Icon name="mail" size={16} /> Send a Test Email</h3>
           <div className="text-sm text-muted" style={{ marginBottom: 10 }}>
-            {emailSendReady
-              ? 'Verify outbound delivery without leaving Settings.'
-              : 'You can send a test even while domain verification is pending. Resend will queue it; deliverability depends on the receiving inbox.'}
+            Verify outbound delivery without leaving Settings. The message leaves from the sending
+            mailbox above, so a reply lands in that inbox.
           </div>
           <form onSubmit={sendEmailTest}>
             <div className="form-row">
@@ -702,9 +669,9 @@ export default function SettingsIntegrations() {
               />
               <FormField
                 label="From"
-                value={emailDefaultFrom || ''}
+                value={emailDefaultFrom}
                 disabled
-                help="Set in the Connection card above."
+                help="The sending mailbox above. Gmail always sends as the mailbox itself."
               />
             </div>
             <FormField
@@ -750,7 +717,6 @@ export default function SettingsIntegrations() {
 
       <ConnectTwilioModal open={connectOpen} onClose={() => setConnectOpen(false)} />
       <A2PRegistrationModal open={a2pOpen} onClose={() => setA2pOpen(false)} />
-      <ConnectEmailProviderModal open={emailConnectOpen} onClose={() => setEmailConnectOpen(false)} />
       <ConfirmDialog
         open={confirmDisconnect}
         title="Disconnect Twilio?"
@@ -759,15 +725,6 @@ export default function SettingsIntegrations() {
         variant="danger"
         onConfirm={handleDisconnect}
         onClose={() => setConfirmDisconnect(false)}
-      />
-      <ConfirmDialog
-        open={confirmEmailDisconnect}
-        title="Disconnect Email Provider?"
-        message="Invitations and reminder emails will fall back to local stub mode until reconnected. The verified domain stays in Resend (DNS records are unaffected); reconnecting later restores the live send path."
-        confirmLabel="Disconnect"
-        variant="danger"
-        onConfirm={handleEmailDisconnect}
-        onClose={() => setConfirmEmailDisconnect(false)}
       />
     </div>
   );

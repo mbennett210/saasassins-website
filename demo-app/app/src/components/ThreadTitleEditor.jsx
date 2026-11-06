@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 import { THREAD_TITLE_MAX } from '../store/reducer';
+import { useT } from '../i18n/react';
 
 // Inline rename for an internal team thread's name. Click the title (or its
 // pencil) to edit in place: commit on blur, Enter commits, Escape reverts, and
@@ -16,10 +17,11 @@ export default function ThreadTitleEditor({
   title,
   canEdit,
   onRename,
-  placeholder = 'Team discussion',
+  placeholder = null,
   className = '',
   inputClassName = '',
 }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title || '');
   const inputRef = useRef(null);
@@ -40,7 +42,7 @@ export default function ThreadTitleEditor({
   // reactivated) must not strand an open input.
   useEffect(() => { if (!canEdit) setEditing(false); }, [canEdit]);
 
-  const display = title || placeholder;
+  const display = title || placeholder || t('messages.teamDiscussion');
 
   if (!canEdit) return <span className={className}>{display}</span>;
 
@@ -58,14 +60,15 @@ export default function ThreadTitleEditor({
         className={`input thread-title-input ${inputClassName}`}
         value={draft}
         maxLength={THREAD_TITLE_MAX}
-        aria-label="Channel name"
+        aria-label={t('messages.channelName')}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
           // Revert the draft BEFORE unmounting the input: whether or not blur
-          // fires on unmount, commit() then sees an unchanged value and no-ops.
-          if (e.key === 'Escape') { setDraft(title || ''); setEditing(false); }
+          // fires on unmount, commit() then sees an unchanged value and no-ops. The field
+          // takes Esc, so the pop-up or dock around it stays (UI_RULES §181).
+          if (e.key === 'Escape') { e.preventDefault(); setDraft(title || ''); setEditing(false); }
         }}
       />
     );
@@ -76,7 +79,7 @@ export default function ThreadTitleEditor({
       type="button"
       className={`thread-title-btn ${className}`}
       onClick={() => setEditing(true)}
-      title="Rename this channel"
+      title={t('messages.rename')}
     >
       <span className="thread-title-text">{display}</span>
       <Icon name="edit" size={13} />

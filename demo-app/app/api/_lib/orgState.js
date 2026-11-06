@@ -7,6 +7,12 @@ import { getSupabase } from './supabase.js';
 import { cached, invalidate, ORG_STATE_KEY } from './requestCache.js';
 import { MAX_STATE_BYTES } from './blobBudget.js';
 import { protectedFingerprint } from './orgStateGuard.js';
+// Every server path that writes a bell row commits it through this module, so this is where
+// the Spanish and Creole catalogs are guaranteed loaded before any row is rendered for its
+// recipient (CS-193, LANG-4; see _lib/i18n.js) — and, since CS-851, the server's own lines for
+// what the bundle lacks: readOrgState awaits ensureStoredLines (below), because every renderer
+// reads the shared record (the recipient and their language) before it renders.
+import { ensureStoredLines } from './i18n.js';
 
 // Must match the client's org id (src/store/sync.js ORG_ID). Single-org
 // deployment, so the default UUID matches the client default; set CLEANSPACE_ORG_ID
@@ -14,11 +20,15 @@ import { protectedFingerprint } from './orgStateGuard.js';
 const ORG_ID = process.env.CLEANSPACE_ORG_ID || '00000000-0000-0000-0000-000000000001';
 
 async function readOrgStateUncached() {
+  // Beside the blob, not after it: one memoized read per process (none once every line is in),
+  // and it never throws — at worst the English shows (_lib/i18n.js).
+  const lines = ensureStoredLines();
   const { data, error } = await getSupabase()
     .from('org_state')
     .select('state, version')
     .eq('organization_id', ORG_ID)
     .maybeSingle();
+  await lines;
   if (error) throw new Error(`org_state read failed: ${error.message}`);
   return data || { state: {}, version: 0 };
 }
@@ -61,7 +71,8 @@ export async function readOrgStateWithControls() {
 // `<digest>@<version>/<updated_at in ms>`, written in the same UPDATE as the row's own
 // version and updated_at. It vouches for the committed protected content only while the
 // row is still that commit: every writer in this repo moves `updated_at` (the route,
-// writeOrgState, the operator scripts, the pre-1e fallback), so after any of them the tag
+// writeOrgState, the operator scripts; the browser's direct-write fallback did too until
+// CS-009 deleted it), so after any of them the tag
 // no longer matches and the org-state route takes the full check instead of matching
 // content the digest may not describe any more. Binding the time as well as the version
 // keeps that true when a version NUMBER comes back (a restore that rewound it, then a write
@@ -250,8 +261,8 @@ export async function writeOrgState(state, baseVersion, { prev } = {}) {
   // older content: a save putting that content back matched it and skipped the field
   // guard. But the digest of what this call commits must not be stored blindly either:
   // `state` is the caller's read plus its change, and if anything outside the server paths
-  // changed a protected field since the last server-stored digest (an operator script, the
-  // pre-1e fallback, a direct or Studio write, even one that kept `version` and
+  // changed a protected field since the last server-stored digest (an operator script, a
+  // direct SQL or Studio write, even one that kept `version` and
   // `updated_at`), stamping it would launder that change: no baseline alarm, no
   // crew-assignment sync. So the new digest is stored only when the stored one (one
   // ~100-byte read) still describes the row this write replaces: it equals the digest of the

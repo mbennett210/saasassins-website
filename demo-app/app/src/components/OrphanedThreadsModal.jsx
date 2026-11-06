@@ -11,7 +11,8 @@ import {
   selectMessagesForConversation, selectActiveUsers,
 } from '../store/selectors';
 import { CREATOR_STATE_REASON, threadCreatorLabel } from '../lib/threads';
-import { fmtRelative } from '../lib/dates';
+import { useT } from '../i18n/react';
+import { timeShort } from '../i18n/relative';
 
 // Super-Admin maintenance surface for ORPHANED internal threads — threads whose
 // creator was deleted or is no longer active.
@@ -28,6 +29,7 @@ import { fmtRelative } from '../lib/dates';
 // is ever rendered here — only the name, who made it, how many members remain,
 // and when it was last active.
 export default function OrphanedThreadsModal({ open, onClose }) {
+  const t = useT();
   const state = useStore();
   const dispatch = useDispatch();
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -155,7 +157,7 @@ export default function OrphanedThreadsModal({ open, onClose }) {
                         <span aria-hidden="true">·</span>
                         <span>{msgCount} message{msgCount === 1 ? '' : 's'}</span>
                         <span aria-hidden="true">·</span>
-                        <span>{lastAt ? `Active ${fmtRelative(lastAt)}` : 'Never active'}</span>
+                        <span>{lastAt ? t('messages.orphan.active', { when: timeShort(t, lastAt) }) : t('messages.orphan.neverActive')}</span>
                       </div>
                       {/* An INACTIVE creator's thread is still in daily use by whoever
                           is left. That has to be legible before the delete click,

@@ -13,6 +13,9 @@ export const SAVED_OFFLINE = 'Saved on this device. It’ll sync when you’re b
 // offline-parity reassurance when there's no signal. Fail-safe — only an explicit
 // `false` (navigator reported offline) swaps the copy; undefined/true keep the normal
 // message, so a surface that doesn't pass a flag never mis-reports "offline".
-export function savedMsg(online, onlineMsg) {
-  return online === false ? SAVED_OFFLINE : onlineMsg;
+//
+// LANGUAGES (CS-193): a translated screen passes its own sentence for the offline case as
+// the third argument (t('offline.savedOnDevice')); without one it is this English.
+export function savedMsg(online, onlineMsg, offlineMsg = SAVED_OFFLINE) {
+  return online === false ? offlineMsg : onlineMsg;
 }

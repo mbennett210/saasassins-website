@@ -239,10 +239,10 @@
       "note": "Prose only."
     },
     {
-      "id": "UI-18-login-screen-full",
+      "id": "UI-18-login-screen-the",
       "source": "UI_RULES.md",
       "ref": "§18",
-      "title": "Login screen — full-bleed brand backdrop, single centered card",
+      "title": "Login screen — the mark at page scale, single centered card",
       "area": "product",
       "status": "construction",
       "note": "One surface (Login.jsx with the `.login-*` classes)."
@@ -316,9 +316,10 @@
       "coverage": "partial",
       "checks": [
         "test-client-inspections.mjs",
+        "test-customer-status-cell.mjs",
         "lint:responsive"
       ],
-      "note": "`.mobile-stack` restacks an opted-in table at 640px and below. CI fails if the customer Inspections tab's two tables drop it (test-client-inspections.mjs). lint:responsive (not in CI) fails a route whose table rows are hidden at phone width with no card list shown. Other tables can skip the class."
+      "note": "`.mobile-stack` restacks an opted-in table at 640px and below. CI fails if the customer Inspections tab's two tables drop it (test-client-inspections.mjs), and if the Customers list's Status cell puts its badges side by side again instead of one per line in `.cell-chip-stack` (test-customer-status-cell.mjs, CS-965). lint:responsive (not in CI) fails a route whose table rows are hidden at phone width with no card list shown. Other tables can skip the class, and other cells with several badges are not held."
     },
     {
       "id": "UI-25-crew-scoped-surfaces",
@@ -352,10 +353,10 @@
       "status": "gated",
       "coverage": "partial",
       "checks": [
-        "test-csv-location-import.mjs",
+        "test-customer-import.mjs",
         "test-location-collapse.mjs"
       ],
-      "note": "Wherever a location is built (the ADD_CLIENT hook and the v53 collapse), the discrete street/city/state/zip fields and the composed address are pinned in CI. LocationCard's editor and the parseAddress back-fill are not tested."
+      "note": "Wherever a location is built (the ADD_CLIENT hook, which the Customers import drives row by row, and the v53 collapse), the discrete street/city/state/zip fields and the composed address are pinned in CI. LocationCard's editor and the parseAddress back-fill are not tested."
     },
     {
       "id": "UI-28-click-to-dial",
@@ -603,7 +604,7 @@
       "coverage": "partial",
       "checks": [
         "test-marketing-gates.mjs",
-        "test-reminder-cron.mjs"
+        "test-customer-messages-engine.mjs"
       ],
       "note": "The Do-Not-Contact and reminder opt-out gates in the pure walkers are tested; the card is not."
     },
@@ -843,8 +844,11 @@
       "ref": "§97",
       "title": "Client review markers live in the nav ONLY, on every page, and toggle in place",
       "area": "product",
-      "status": "review",
-      "note": "No check covers where the markers render or how they toggle. test-client-review-sync.mjs pins only the review layer's storage in the shared blob, which replaced per-browser localStorage on 2026-09-23."
+      "status": "superseded",
+      "supersededBy": [
+        "UI-185-the-menu-carries"
+      ],
+      "note": "Replaced by §185 (2026-10-31): the menu carries no review markers. The section approvals already given stay in the shared review record (test-client-review-sync.mjs pins its storage in the shared blob)."
     },
     {
       "id": "UI-98-a-draft-renders",
@@ -915,17 +919,18 @@
       "note": "A global rule on `input[type=date|time].input`."
     },
     {
-      "id": "UI-105-a-mobile-popup",
+      "id": "UI-105-a-mobile-pop",
       "source": "UI_RULES.md",
       "ref": "§105",
-      "title": "A mobile popup modal/sheet ALWAYS sits above the floating nav — portal it to `document.body`",
+      "title": "A mobile pop-up never sits under the floating menu bar: the bar slides away while one is open, and the pop-up portals to `document.body`",
       "area": "overlays",
       "status": "gated",
       "coverage": "partial",
       "checks": [
+        "test-popup-layers.mjs",
         "test-master-search-sources.mjs"
       ],
-      "note": "Modal and MobileSheet portal to document.body (construction; a bespoke overlay must do the same). test-master-search-sources.mjs pins only the phone search screen (.msearch-screen) as createPortal(…, document.body)."
+      "note": "2026-11-02 (Matt: the menu bar covered the work order panel's status buttons on his phone). test-popup-layers.mjs holds the POP-UP LIST rule in index.css (the bar slides away while any pop-up on it is open), fails a position: fixed layer in index.css that is on neither the list nor its NOT_POPUPS, accounts for every inline position: fixed in a component, and checks that SidePanel portals to document.body with the layers stacked #root < .side-panel-layer < .modal-overlay; 42 of its checks fail on the code before the fix (8608fa5e). test-master-search-sources.mjs pins the phone search screen as createPortal(..., document.body). What a finger meets is held by lint:responsive's pop-up pass, not CI: at 320, 390, 420 and 440 wide it opens the work order panel, the Payroll panel and the Filters sheet, and fails the bar still showing, a button not on top at its centre, or the bar not back once the x has closed it (all 16 checks fail before the fix). Partial: a pop-up drawn inside a page whose fixed position comes from neither index.css nor an inline style would pass both."
     },
     {
       "id": "UI-106-mobile-scrolls-without",
@@ -933,8 +938,12 @@
       "ref": "§106",
       "title": "Mobile scrolls WITHOUT a visible scrollbar — no bar on the side",
       "area": "mobile",
-      "status": "construction",
-      "note": "One global rule at 640px and below."
+      "status": "gated",
+      "note": "Two halves. No visible scrollbar: one global rule at 640px and below (construction; nothing fails if it is bypassed). Which box scrolls: test-phone-scroll-lock.mjs (CI) fails an html / body / :root / #root scroll lock not scoped to html.cs-app-shell (src/lib/appShell.js), a shell that lost its own lock (html and body hidden, #root at --cs-vh, .main the scroller), an AppLayout that stops setting the class in a layout effect or removing it on unmount, and a page that keeps its own scroller for it; lint:responsive's 390×844 pass (not in CI) drives it: every page outside the shell reaches its last element by scrolling the document, and an office route keeps a locked document with .main scrolling.",
+      "coverage": "partial",
+      "checks": [
+        "test-phone-scroll-lock.mjs"
+      ]
     },
     {
       "id": "UI-107-bulk-person-records",
@@ -979,7 +988,7 @@
       "title": "Nav-rail icons render on whole device pixels — unified size + non-scaling stroke",
       "area": "navigation",
       "status": "construction",
-      "note": "`.nav-btn svg` sets the size and the non-scaling stroke."
+      "note": "`.nav-btn svg` sets the size and the non-scaling stroke. Since §182 (2026-10-30) the Launcher's `.launcher-cat-tile`, `.launcher-tile-ic`, `.sidebar-util` and `.sidebar-icon-btn` carry the same stroke (20px rows and section tiles, 16px page tiles and the foot), which test-launcher-nav.mjs reads."
     },
     {
       "id": "UI-111-side-by-side",
@@ -1194,10 +1203,11 @@
       "title": "Menu options: one row",
       "area": "controls",
       "status": "gated",
-      "note": "test-control-parity.mjs (CI) fails the retired menu classes (register CS-364) and any stylesheet rule that dresses a bare button through a parent selector. Whether a picker row is a simple option or a rich row is a review call.",
+      "note": "test-control-parity.mjs (CI) fails the retired menu classes (register CS-364) and any stylesheet rule that dresses a bare button through a parent selector. test-picker-cap.mjs (CI) holds the render cap: lib/pickerOptions capOptions at 1,500 options, the pinned reset row surviving it, a narrowed search still reaching the last option, no cap meaning exactly the previous behaviour, and mechanically that FilterSelect reads the shared rule, that the footnote carries no option role, that the Assignments screen's large pickers pass PICKER_MAX_VISIBLE without retyping it, and that nobody else hand-rolls a cap. Since CS-722 (2026-10-13) it also holds that FilterSelect caps by default and no call site switches it off, lib/pickerOptions personOptions (active, by name, the office only where asked), every picker the S128 audit named, Keys' holder picker, the Inspections follow-up (the office only, its menu floating out of the table: lib/floatPlacement, PopMenu float), and by enumeration that every .jsx rendering choosable rows over the team or the book caps or is classified BOUNDED with its row markers counted, so a new uncapped picker fails. Whether a picker row is a simple option or a rich row, and whether a given list is long enough to deserve the cap, are review calls.",
       "coverage": "partial",
       "checks": [
-        "test-control-parity.mjs"
+        "test-control-parity.mjs",
+        "test-picker-cap.mjs"
       ]
     },
     {
@@ -1256,6 +1266,40 @@
         "test-clock-out-gate.mjs",
         "test-clock-out-checklist-route.mjs",
         "test-overnight-clockout.mjs"
+      ]
+    },
+    {
+      "id": "UI-132-the-approval-queue",
+      "source": "UI_RULES.md",
+      "ref": "§132",
+      "title": "The approval queue: a scoped read, tabs with counts, bulk-approve bar, row actions, delete-with-reason",
+      "area": "product",
+      "status": "gated",
+      "note": "The manager Approvals page (/approvals) and the shared time surfaces. Gated: test-time-approvals.mjs holds the pure row helpers (cleansForCleanerDay, approvableItems, canActOnPunch, punchFlags); test-app-routes.mjs + lint:search hold the route in App.jsx and the search registry; test-control-ledger.mjs holds that the bulk-select checkbox and row/bar actions add no new control family; lint:tables holds every table paged at 20; lint:design holds tokens-only; lint:responsive holds the new route at all 5 viewports. The bulk-select interaction and the delete-with-reason flow are exercised by the demo drive, not CI.",
+      "coverage": "partial",
+      "checks": [
+        "test-time-approvals.mjs",
+        "test-app-routes.mjs",
+        "test-control-ledger.mjs",
+        "lint:tables",
+        "lint:search"
+      ]
+    },
+    {
+      "id": "UI-133-closing-a-period",
+      "source": "UI_RULES.md",
+      "ref": "§133",
+      "title": "Closing a period: an Open/Closed run, a readiness gate, a confirming close-and-export, and a locked closed period",
+      "area": "product",
+      "status": "gated",
+      "note": "The manager Payroll run (/payroll) and the surfaces that feed it. The pay math is a thin read of the server run (usePayrollRun -> payrollApi.preview); the page adds an Open / Closed <date> by <name> chip, a readiness card, one payroll.edit-gated Close-and-export (enabled only when the server says closable) via ClosePeriodDialog, a -DRAFT vs final download, and a read-only closed period (drawer + HR pickers). Gated: test-payroll-period-lock.mjs holds the pure first-open-period / open-period / retarget / closed-lock / file-naming helpers; test-org-state-money-authz.mjs holds the closed-period drawer lock (mayEditLines); lint:design holds tokens-only; lint:tables holds every table paged; test-control-ledger.mjs holds that the chip/close/download add no new control family. The close flow, stale re-ask and closed-period lock are exercised by the demo drive + lint:responsive, not CI. The server (payroll.view/edit, closed_at-before-read, stale/period-order/period-closed/pending-blocks-close, closed-line + frozen-schedule guards) is the boundary.",
+      "coverage": "partial",
+      "checks": [
+        "test-payroll-period-lock.mjs",
+        "test-org-state-money-authz.mjs",
+        "test-control-ledger.mjs",
+        "lint:tables",
+        "lint:design"
       ]
     },
     {
@@ -1755,6 +1799,696 @@
         "lint:design#scaffold-inline"
       ],
       "note": "Implemented; in CI through test-design-lint.mjs (a new finding above the baseline fails)."
+    },
+    {
+      "id": "UI-134-a-book-sized",
+      "source": "UI_RULES.md",
+      "ref": "§134",
+      "title": "A book-sized assignment screen is problems-first over a search-one-record workspace, and the record view is ONE component wherever it appears",
+      "area": "product",
+      "status": "gated",
+      "note": "test-checklist-assignments.mjs (CI) holds the pure answer the whole screen reads — each of the four problems (a cover judged on the covered cleaner's checklist, progress from the latest partial, a holder with no upcoming clean there, both clock-rule kinds, inactive members excluded, a failed read claiming nothing rather than inventing or silencing a problem, and the two JOB-DERIVED counters answering \"not known\" while the store's jobs window is still filling), the one-checklist-per-cleaner-per-customer rule on assign and reassign, the selection rule (an explicit selection is never substituted for a visible one), the indexed Cleaners rail measured against the per-row walk it replaced, and MECHANICALLY (a grep over src) that the replaced pop-up organizer, its CSS and Service setup's own per-cleaner grid are gone, that the one customer panel is mounted in exactly two places, and that managing a checklist sits behind qc.templates.edit while assigning one sits behind ops.edit. test-checklist-location-route.mjs holds the server half of that split (templates/summary opens to EITHER office key, crew to neither). lint:tables holds the paging, test-control-ledger.mjs the .cka-rail-row family, test-control-parity.mjs the remove ×'s one phone size, lint:search the ?tab=assignments registry entry. NOT lint:responsive: the sweep drives the routes App.jsx declares, and a hub tab is a query, not a route — the five viewports are proved by the build's own puppeteer drive and recorded with the wave. Whether the two halves READ right at each width is a review call either way.",
+      "coverage": "partial",
+      "checks": [
+        "test-checklist-assignments.mjs",
+        "test-checklist-location-route.mjs",
+        "test-control-ledger.mjs",
+        "test-control-parity.mjs",
+        "lint:tables",
+        "lint:search"
+      ]
+    },
+    {
+      "id": "UI-138-a-qr-code",
+      "source": "UI_RULES.md",
+      "ref": "§138",
+      "title": "A QR code on a wall answers one question on a public page: when was this area last cleaned",
+      "area": "product",
+      "status": "gated",
+      "note": "The public scan page (/scan/:token), drawn by components/AreaScanCard (shared with the hub's area page, §173). test-area-scan.mjs (CI) holds the pure answer: the projection built key by key from PUBLIC_SCAN_KEYS with every server secret fed in and looked for in the output (no user ids or names, notes, result/customer/location ids, URL or internal_note; the job payloads behind nextCleanOn and the inspection rows behind lastInspectionOn reduced to two bare day keys, an instant refused), QR-28's no warning at any age (one calm 'Cleaned' state, the 24-hour rule's exports deleted) and the never state unchanged, the next clean's rule (the org's today, a not-done clean today, done / cancelled / missed passed over, the visit that already did the area — started at or before its last clean — passed over, the 45-day window, another location), the last inspection (drafts ignored, the org's day), QR-31's phone and its tel: href of digits and a leading +, the page's words, the time shown in the org zone, and MECHANICALLY that the page boots no store (it reads only the sign-in session, to send a signed-in person on, §172). test-area-scan-route.mjs (CI) holds the same on the wire through the real public handler: the allowlist, every dead code (unknown, replaced, malformed, orphaned, an archived customer's — QR-27) answering the same 404 sentence + code, one bounded read each for the next clean and the last inspection and a failed one left out, no-store, the photo only by token, the rate limit, a failure that leaks no provider text, the RPC's old shape answering as before, and Matt's QR-28 note: a checklist saved through the real /api/qc with no scan moves the code's last clean. lint:responsive (not in CI) sweeps the three demo answers through scripts/app-routes.mjs, missingRecord() fails a demo code that says it is no longer active, and its 390×844 pass scrolls each to its last line as a document (§106). Whether the card READS right on a phone is a review call (driven with puppeteer). 2026-10-16 (QR Wave 1): the one Sign-in line §172 adds is held by test-qr-scan-landing.mjs I1-I3 / W4. 2026-10-17 (QR Wave 2): QR-28 / QR-15 / QR-31 / QR-27 as above.",
+      "coverage": "partial",
+      "checks": [
+        "test-area-scan.mjs",
+        "test-area-scan-route.mjs",
+        "test-qr-scan-landing.mjs"
+      ]
+    },
+    {
+      "id": "UI-139-a-location-s",
+      "source": "UI_RULES.md",
+      "ref": "§139",
+      "title": "A location's QR codes live under its areas: one live code per area, Replace instead of delete, and one printable document everywhere",
+      "area": "product",
+      "status": "gated",
+      "note": "The codes panel on the location's Cleaning instructions card and the two prints. test-area-scan.mjs (CI) holds Avery's published geometry per format (labels per sheet, label size, every label on the US-letter page, none overlapping, the overflow page), the one-page grid, that each printed QR is the matrix of its own URL, escaping, the permission rule (sites.edit AND an office role, crew never), the idempotent mint plan, the remembered opsSettings key, the card mounting the panel through scanCodesAllowed, and that no host is written into the feature. test-area-scan-route.mjs (CI) holds the server half: crew refused even with a per-user grant, one code per area minted once, Replace revoking the old code for good, the URL base (the app's permanent address, api/_lib/appUrl appPublicUrl, whatever origin the office browses), and the PDF handed to Chromium with one label per area. test-bundle-stubs.mjs (CI) holds that the demo codes and the cs-stub:scanCodes sentinel are absent from a production build. test-button-lint.mjs holds the row actions at the standard .btn size. 2026-10-16 (QR Wave 1): the permanent address (appPublicUrl) in test-area-scan-route.mjs B4/B6 and test-app-links.mjs; Copy link, Download links and the all-buildings spreadsheet (EP-412) in test-qr-links-export.mjs (the builder, which buildings, the route per role, idempotence, the race, the rate limit, 750 x 5 past the 1,000-row cap). 2026-10-17 (QR Wave 2): test-qr-label-size.mjs holds QR-10's 1¼ in minimum (the symbol itself, the quiet zone extra; the 29-module floor proved with the real library; every LABEL_FORMATS entry and every sheetGrid grid computed from its own numbers, so a new one is checked the day it is added; Avery 22805 and the 5 x 5 grid removed) and QR-9's name directly under each code, never clipped (fitText and the document's own measuring pass); test-standard-areas.mjs holds QR-8's standard list in the areas editor (Matt's ten from his answered question, the matching, several at once, ids minted once); test-qr-label-print.mjs holds Print label (§177).",
+      "coverage": "partial",
+      "checks": [
+        "test-area-scan.mjs",
+        "test-area-scan-route.mjs",
+        "test-bundle-stubs.mjs",
+        "test-button-lint.mjs",
+        "test-qr-links-export.mjs",
+        "test-app-links.mjs",
+        "test-qr-label-size.mjs",
+        "test-standard-areas.mjs",
+        "test-qr-label-print.mjs"
+      ]
+    },
+    {
+      "id": "UI-140-words-on-screen",
+      "source": "UI_RULES.md",
+      "ref": "§140",
+      "title": "Words on screen come from the translation catalog, in the reader's language",
+      "area": "product",
+      "status": "gated",
+      "note": "CS-193 (Matt LANG-1..11). Gated: test-i18n-catalog.mjs holds every key the code names to the English catalog, no run-time-built keys, no orphan English, every placeholder documented and every translation keeping the English placeholders; test-i18n-coverage.mjs parses each converted screen (espree) and fails on hard-coded English a reader sees, and holds the nav and settings models' English labels to their keys; test-i18n-core / -crew-language / -alerts / -template-labels / -roundtrip hold the language rule and a cleaner's own switch, recipient-language alerts, the checked-only checklist translations and the translator spreadsheet. Screens not yet converted (the office's own) are listed as the next work, not checked; layout under a longer language is checked by eye on the pseudo-localized demo.",
+      "coverage": "partial",
+      "checks": [
+        "test-i18n-catalog.mjs",
+        "test-i18n-coverage.mjs",
+        "test-i18n-core.mjs",
+        "test-i18n-crew-language.mjs",
+        "test-i18n-alerts.mjs",
+        "test-i18n-template-labels.mjs",
+        "test-i18n-roundtrip.mjs"
+      ]
+    },
+    {
+      "id": "UI-141-a-team-member",
+      "source": "UI_RULES.md",
+      "ref": "§141",
+      "title": "A team member's photo sits over their initials: one Avatar, the initials underneath, the photo only once it loads",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-03, the client's team-photos ask. Gated: test-avatar-client.mjs holds the ledger (every <Avatar> passes user= or is a classified contact / customer / company / channel; none passes a member's initials and colour apart), the initials-under-photo shape of Avatar.jsx and its CSS (absolute, inset 0, cover, hidden until loaded, the disc clips it), the crop math and the link cache; test-user-photo-record.mjs the record's shape at every write point; test-avatar-route.mjs and test-avatar-cleanup.mjs the server. That nothing moves when a photo lands is checked by eye on the demo.",
+      "coverage": "partial",
+      "checks": [
+        "test-avatar-client.mjs",
+        "test-user-photo-record.mjs",
+        "test-avatar-route.mjs",
+        "test-avatar-cleanup.mjs"
+      ]
+    },
+    {
+      "id": "UI-142-a-module-s",
+      "source": "UI_RULES.md",
+      "ref": "§142",
+      "title": "A module's stylesheet block owns its class prefix: no other block, and no other screen, uses it",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-04, the Supplies rebuild (the .sup-row clash). Gated for the Supplies block only: test-supplies-page.mjs reads the block's prefix from the block, fails a prefixed rule anywhere outside it, a prefixed class a Supplies screen uses that the block lacks, and a screen outside the module wearing the prefix. Other module blocks are held by review until each is pointed at the same checks.",
+      "coverage": "partial",
+      "checks": [
+        "test-supplies-page.mjs"
+      ]
+    },
+    {
+      "id": "UI-143-a-long-form",
+      "source": "UI_RULES.md",
+      "ref": "§143",
+      "title": "A long form in a dialog keeps its total and its actions pinned to the dialog's bottom",
+      "area": "product",
+      "status": "checked",
+      "note": "2026-10-06, the Supplies request form (round 3). test-supplies-page.mjs C13 fails if the order sheet's .supply-sheet-foot loses position: sticky in the Supplies block. That it actually meets the card's bottom edge (bottom = minus --card-pad-lg) was measured in Chrome at 1440 and 375px, scrolled top, middle and bottom (delta 0px), and is held by review: no check renders the dialog.",
+      "coverage": "partial",
+      "checks": [
+        "test-supplies-page.mjs"
+      ]
+    },
+    {
+      "id": "UI-144-the-customer-hub",
+      "source": "UI_RULES.md",
+      "ref": "§144",
+      "title": "The customer hub's chrome reads ONE nav list and ONE slot list; a section page draws its own back arrow",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-08, the client hub redesign (Builder A). test-hub-shell.mjs reads the layout, Home, Today's Visit, the section pages, hubNav.js, hubSlots.js and App.jsx: the sidebar and the phone tabs come from HUB_NAV only, every section entry has its route, the action row and the bell come from hubSlots.js, no screen draws its own tel: link, every section page draws its own BackLink (so lint:backnav covers it). It fails every check on the pre-redesign tree.",
+      "coverage": "full",
+      "checks": [
+        "test-hub-shell.mjs"
+      ]
+    },
+    {
+      "id": "UI-151-the-office-s",
+      "source": "UI_RULES.md",
+      "ref": "§151",
+      "title": "The office's preview of a customer screen acts as that customer and says so in one sentence; with its switch off, every write control stays where the customer sees it, disabled, with the same words",
+      "area": "product",
+      "status": "checked",
+      "note": "2026-10-08, the client hub redesign's Preview as customer (Builder D); 2026-10-09 it acts as the building's customer (Daniel), with HUB_PREVIEW_ACTS_AS_CUSTOMER as the way back to read-only. test-hub-preview.mjs §10 reads HubLayout (readOnly derived from the switch, the banner, Exit preview), HubRoot, and the eight hub screens with write controls (HubTicket, HubNewTicket, HubRequests, HubHome, HubAccount, HubMessages, HubBell, HubEmailsCard: each decides its writes on readOnly, never on preview; Change password on noLogin); §2-§4 run the server half in both settings through the real route. lint:responsive sweeps four hub views with the preview flag set and fails one that shows no preview banner. A write control a later builder adds is held by review until a check names it.",
+      "coverage": "partial",
+      "checks": [
+        "test-hub-preview.mjs"
+      ]
+    },
+    {
+      "id": "UI-152-the-manager-s",
+      "source": "UI_RULES.md",
+      "ref": "§152",
+      "title": "The manager's shell is Matt's order by path, with every other page under More, and the bottom bar never moves; the manager Home is one tile per answered figure",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-09, the manager view redesign (Builder B, Wave A). test-manager-shell.mjs runs lib/navData's managerNav for a manager under three permission sets on both surfaces: Matt's order by path (absent leaves skipped, A's and C's slotting in when given), the relabels as catalog lines, nothing a manager could open before lost, nothing repeated or hidden, the line only between rows, the bottom bar pinned for every role, the bar and the owner's menu drawn as before; plus HomeRoute, /pnl (financials.view), its search entry and back-pill name. test-manager-home.mjs holds the Home's rules in lib/managerHome (scope, the inspection-due rule shared with the reminder walker, the trend, the pay period's last day, request and supplies counts, the tile gates). Wave B (2026-10-09): the band's five states, the today tiles, the count pills (nothing at zero), the board's glyphs on the manager's rows only and the phone-only \"+\" are in both suites; test-shared-read.mjs holds lib/sharedRead (a read in flight joined, a fresh answer reused, an answer kept through a failure) and that the today engine, the Home's tiles and the nav pills all read through it. The tile grammar's look (chip, facts, stretched link, phone rows, the band's calm state) is held by review and lint:responsive. Since §182 (2026-10-30) the desktop's More is the Launcher's sections (test-launcher-nav.mjs: none of the manager's rows repeated, none of their pages lost), and the count pills follow menuCountsFor, a manager's and the owner's and an admin's, on the desktop and in the phone's menu (test-manager-shell.mjs reads both menus).",
+      "coverage": "partial",
+      "checks": [
+        "test-manager-shell.mjs",
+        "test-manager-home.mjs",
+        "test-shared-read.mjs",
+        "test-launcher-nav.mjs"
+      ]
+    },
+    {
+      "id": "UI-153-a-master-list",
+      "source": "UI_RULES.md",
+      "ref": "§153",
+      "title": "A master list is edited once; a record takes from it by switches, grouped, each change saved as you go and said",
+      "area": "product",
+      "status": "checked",
+      "note": "2026-10-11, the master supply list (the Oct 6 call, plan 2026-10-11 §2, Builder A). test-supplies-page.mjs §D reads the Catalog tab (server page, filter bar, pager after its frame, the six columns, Modal, the ConfirmDialog naming the building count, the SKU clash naming its holder) and the switches (the whole-list read, grouping, master switches, search, count, saving / failed / Try again, offline, the empty catalog linking to the Catalog tab); test-supplies-route.mjs §13-§14 drives the route through the real handler (the SKU rule and the database 23505, the page and the complete all=1 read, On N buildings, every switch answered, off and back on keeping the history); test-supplies.mjs holds the pure rules. The look (the row label, the group head on a phone) is held by review and lint:responsive.",
+      "coverage": "partial",
+      "checks": [
+        "test-supplies-page.mjs",
+        "test-supplies-route.mjs",
+        "test-supplies.mjs"
+      ]
+    },
+    {
+      "id": "UI-154-a-long-form",
+      "source": "UI_RULES.md",
+      "ref": "§154",
+      "title": "A long form someone walks away from saves as they go, says so in one quiet line, and offers the open one back",
+      "area": "product",
+      "status": "checked",
+      "note": "2026-10-11, finish an inspection later (Matt's Oct 6 call; plan 2026-10-11 §3, Builder B). test-inspection-drafts.mjs holds the shared rules (lib/inspectionDrafts: what a draft stores, who may work it, 30-day retention, the device copy winning when newer), the server's draft branches through the real handler (409 on a submitted record, nothing of Submit's on a save, Continue → Submit = one ticket, Discard removing items and photos, the save / Submit race held both ways behind ONE locking write each — public.inspection_write, CS-650), every read that must exclude a draft, the demo stub, and reads InspectionFill / Inspections for the save line, Save and finish later, Continue the one you started, the In progress badge and Continue / Discard (E1–E9). test-client-hub-routes.mjs §15 drives the hub with a draft that has saved ticks. The line's placement, the badge and the prompt's look are held by review and lint:responsive.",
+      "coverage": "partial",
+      "checks": [
+        "test-inspection-drafts.mjs",
+        "test-client-hub-routes.mjs"
+      ]
+    },
+    {
+      "id": "UI-156-a-customer-s",
+      "source": "UI_RULES.md",
+      "ref": "§156",
+      "title": "A customer's message is not a request: requests are counted, timed and closed in Client Requests; a message waiting for a reply says how long it has waited where its thread lives, and has its own count",
+      "area": "product",
+      "status": "checked",
+      "note": "2026-10-12, messages apart from requests (Matt's HUB-24 c; plan 2026-10-12 §1, Builder C). test-waiting-messages.mjs holds the waiting rules (lib/hubMessages), drives the real /api/client-messages route (threads?waiting=1 complete past the row cap and gated; thread's waitingSince, ended by a reply and back when the customer writes), the demo's parity, that the one queue's message half stays gone (rules, page, work-order drawer, the Home's request figure, catalog), the Home's Customer messages tile, gate, read and the Messages pill, and reads the Waiting view and the waits on the rows and the thread. test-client-requests.mjs and test-manager-home.mjs hold the requests-only list and the separate figures. The look (the amber line, the third segment) is held by review and lint:responsive.",
+      "coverage": "partial",
+      "checks": [
+        "test-waiting-messages.mjs",
+        "test-client-requests.mjs",
+        "test-manager-home.mjs"
+      ]
+    },
+    {
+      "id": "UI-157-a-sign-in",
+      "source": "UI_RULES.md",
+      "ref": "§157",
+      "title": "A sign-in link the app couldn't email is handed to the office in one panel: why nothing went, the link to copy and when it stops working; only to someone who holds everything the person holds, and a new link says first that it voids the last",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-12, S128 fix wave 1 (CS-661, CS-709). test-client-logins-route.mjs drives the real /api/settings/users and /api/client-users handlers over fake-supabase.mjs: the link is answered only when nothing was emailed, no-store; it is withheld from a caller who lacks one of the member's permissions (role and overrides), and no link is made then; the team's reset never hands over a customer login's link; and it reads the four screens (AddUserModal, TeamDetail, ClientLogins, ClientLoginsCard) for SignInLinkPanel / SignInLinkModal, the withheld reason and the Re-invite confirm, and SIGN_IN_LINK_HOURS as the one number. The look is held by review.",
+      "coverage": "partial",
+      "checks": [
+        "test-client-logins-route.mjs"
+      ]
+    },
+    {
+      "id": "UI-160-until-the-company",
+      "source": "UI_RULES.md",
+      "ref": "§160",
+      "title": "Until the company's data has loaded, the app shows the boot screen and nothing else: a slow load says so, an unreachable one says so with Try again and Sign out, and it keeps trying",
+      "area": "product",
+      "status": "checked",
+      "note": "2026-10-12, the first load fails closed (CS-672; S128 fix wave 1, Builder B4). test-sync-first-load.mjs drives the real sync engine (src/store/sync.js) on the sync harness's fake Supabase and virtual clock: a failed or hung first read never ends the boot (no fail open onto INITIAL_STATE, the demo's book), says slow / unreachable, retries on a capped back-off and at once on Retry, a late answer still boots, realtime is wired only after the load, the crew projection behaves the same, a terminal 403 signs out, a stopped boot stops, and a sign-out from the boot screen posts nothing; it reads store/index.jsx (ready only from a resolved start, BootScreen until then) and BootScreen.jsx (catalog words, the brand's name). The screen's look is held by review: lint:responsive runs the demo, which never shows it.",
+      "coverage": "partial",
+      "checks": [
+        "test-sync-first-load.mjs"
+      ]
+    },
+    {
+      "id": "UI-163-a-customer-is",
+      "source": "UI_RULES.md",
+      "ref": "§163",
+      "title": "A customer is archived, never deleted: Archive takes it off every working surface and Restore brings it back; its page and history stay, marked Archived",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-13, S128 fix round 2 (CS-663). test-customer-archive.mjs runs the rule, the real store (archive keeps the record and its history, takes the upcoming cleans off, caps the never-ending series, leaves the pickers; UPDATE_CLIENT can neither archive nor restore; Restore puts the status back) and the real save route over fake-supabase.mjs (a customer removal refused for everyone, archive and restore clients.delete's by the committed matrix, the digest moves), and reads ClientDetail / Clients for ARCHIVE_CLIENT, RESTORE_CLIENT and no Delete. test-archive-consumers.mjs drives the real hub, client-messages and contracts handlers and the cron's contract walker (no hub access, no reply, out of Waiting, out of the book, reminders silent and read past), the request queue and Home count and the ticket walker. The look is held by review.",
+      "coverage": "partial",
+      "checks": [
+        "test-customer-archive.mjs",
+        "test-archive-consumers.mjs"
+      ]
+    },
+    {
+      "id": "UI-164-messages-shows-only",
+      "source": "UI_RULES.md",
+      "ref": "§164",
+      "title": "Messages shows only the panes that fit, keeps what a reader must tap in reach, and opens a conversation only when someone opens it",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-13, S128 fix round 2 (CS-704, CS-149; Builder R2-D). test-messaging-panes.mjs reads index.css at 22 widths (641–1920) and sums each tier's grid-track floors against the screen beside the sidebar (three panes from 1280, two from 1024, one below), holds the single pane's has-active switch and back arrow, the header's wrap below 1024, the contact pane only where a column exists, the Messages launcher's absence on /messaging, Client Requests' wrap below 1024, and that lint:responsive keeps its REACH pass (Send, a customer thread's Send and Respond at 820/1024/1180/1366: on screen, not cut off, on top; a drawn context pane inside the screen). test-messaging-open.mjs drives the real Messaging page (scripts/hooks-harness.mjs): landing and tab switches open and read nothing, a link opens exactly its thread beside its own inbox, an unknown or forbidden id says so. The pane's look is held by review.",
+      "coverage": "partial",
+      "checks": [
+        "test-messaging-panes.mjs",
+        "test-messaging-open.mjs"
+      ]
+    },
+    {
+      "id": "UI-165-a-cleaner-s",
+      "source": "UI_RULES.md",
+      "ref": "§165",
+      "title": "A cleaner's app is a phone app: the crew shell has no sidebar and no tray, every screen has a way back to Home, and Home leads with ONE action",
+      "area": "navigation",
+      "status": "gated",
+      "note": "2026-10-13, the Cleaner Hub (brief A). test-crew-shell.mjs reads the shell (the crew branch, what it leaves out and keeps, the one isCrewRole, the report host in both shells), the routes and the offline and catalog lists, the one clock (useClockActions the only screen code that punches), the preview's line, disabled writes and punch read, the position read, Home's links, no \"locked\" line, the D9 photos, the back pill's names and the old timeline gone; test-crew-home.mjs runs the pure rules (currentStop's five branches, the stops' order, tonight on the org's clock, the perimeter read against lib/geo, the where-line, the account manager). The look is held by review and the committed screenshots.",
+      "coverage": "partial",
+      "checks": [
+        "test-crew-shell.mjs",
+        "test-crew-home.mjs"
+      ]
+    },
+    {
+      "id": "UI-166-the-cleaner-s",
+      "source": "UI_RULES.md",
+      "ref": "§166",
+      "title": "The cleaner's checklist is a page: one row per task with its three actions, a reason for \"not completed\", saved on the phone as they go, one Save at the end",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-14, Cleaner Hub Brief B. test-checklist-not-completed.mjs runs the \"not completed\" count rule's edges and the stored-item sanitizer, the phone's queued gate, the REAL /api/qc submit then /api/time clock-out over fake-supabase.mjs (reasons -> 200, blank reasons -> 409), the office's result view, the area times and the QR answer, the customer hub's projection, the on-phone draft store (retention at the write point, a phone that refuses storage), and reads the page's wiring (route, gate, offline list, catalog, the shared count, one submission under the draft's id, the preview and lock switches, CleanChecklist opening the page). test-control-parity.mjs holds .crew-chk-tap as the page's one 44px sizing exception. The look is held by review and the 390 x 844 drive.",
+      "coverage": "partial",
+      "checks": [
+        "test-checklist-not-completed.mjs",
+        "test-control-parity.mjs"
+      ]
+    },
+    {
+      "id": "UI-167-a-site-s",
+      "source": "UI_RULES.md",
+      "ref": "§167",
+      "title": "A site's QR code is scanned by ONE scanner with the words passed in, and resolved by the server for the person holding the phone",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-13, the Cleaner Hub (Builder D, D5). test-qr-scan-resolve.mjs holds the one parser (scanTokenFromText: the /scan/<token> path on any origin or a bare token, the minter's alphabet and length; anything else null), where a code is (scanLocationOf: a removed location or area is nowhere) and which of today's cleans a scan opens (crewCleanAtLocation), both routes through the REAL handlers over fake-supabase.mjs per role (EP-386: a cleaner only at a location they clean, the office anywhere, a customer login refused; EP-387: a customer only at their buildings, the office's preview its one building; every dead code the public page's same 404; the per-login allowance), and the wiring: qr-scanner imported lazily and nowhere statically, the camera stopped on unmount and when the page is hidden, the words passed in as props, the routes, crewPaths, the hub's button and the service worker's kept scanner chunks. test-offline-shell.mjs §4 holds that a lazy library an offline screen needs is kept and one the build lacks fails the build. The camera itself (a real phone at a real wall) and the dark screen's look are held by review. 2026-10-16 (QR Wave 1): the resolvers also serve ?code= (§172), held by test-qr-scan-landing.mjs R1-R4 / W5-W12.",
+      "coverage": "partial",
+      "checks": [
+        "test-qr-scan-resolve.mjs",
+        "test-offline-shell.mjs",
+        "test-qr-scan-landing.mjs"
+      ]
+    },
+    {
+      "id": "UI-168-an-order-s",
+      "source": "UI_RULES.md",
+      "ref": "§168",
+      "title": "An order's lines each carry their own state and their own actions; a primary action that must wait stays in place, disabled, with ONE line saying how many are left and which",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-14, S131 (Builder S). test-supplies-page.mjs E4-E6 and G1-G9 read the order page's wiring: each line's modals (quantity defaulting to the rest, an ETA from today to a year out, a reason of 3-300) and their one fulfil call on the version the page read, Mark Completed disabled until progress.ready with its two reason lines, the history from supplyOrderHistory with every kind worded, the page's loading / error / not-found / offline states. test-supply-orders.mjs holds the line state, the completion gate and the history; test-supplies-route.mjs §16-§17 the per-line acts through the REAL handler (all or none, the CAS, lines_open). The look is held by review and the 390 x 844 / 1280 drive.",
+      "coverage": "partial",
+      "checks": [
+        "test-supplies-page.mjs",
+        "test-supply-orders.mjs",
+        "test-supplies-route.mjs"
+      ]
+    },
+    {
+      "id": "UI-169-an-operations-manager",
+      "source": "UI_RULES.md",
+      "ref": "§169",
+      "title": "An Operations Manager's team is built from their Team page with the two-column picker, and every manager screen reads it through ONE scope rule; the team pages are the owner's, an admin's and an OM's",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-14, S131 Builder R. test-team-scope.mjs holds the lib/teamScope contract (isOpsManager, teamMemberIds, teamClientIds, opsManagerOf and their edges), every scope site (timeScopeFor with the committed roster, homeScope and the today engine's one resolver, managerFilter, Client Requests, customer threads, the qc / client-messages / P&L / activity routes resolving `team` from the claim) and the REAL api/time approve over fake-supabase.mjs per caller; test-ops-manager-guard.mjs who may set the level and the pointer, pointer validity, the OM's building moves on the committed team, the cascades through the real reducer and the fingerprint golden; test-supply-manager-role.mjs the picker's six choices; test-manager-shell.mjs §2b the Accounts row (after Home for an OM, never an AM's, the owner's NAV and search with the team flag); test-manager-home.mjs the account managers' signals partitioned out of the Home's own reads. The two-column card's and the Accounts page's look are held by review and the 390 x 844 / 1280 drive. Wave 2 (the Supply Manager's app): test-supply-shell.mjs holds HomeRoute, supplyNav's order and More, the phone's own bar and menu, the owner's Supply view with lib/ownerViews run under node, the launchpad and each report's search gate. Since §182 (2026-10-30) the desktop's More is the Launcher's sections, a supply manager's two on the defaults (test-launcher-nav.mjs).",
+      "coverage": "partial",
+      "checks": [
+        "test-team-scope.mjs",
+        "test-ops-manager-guard.mjs",
+        "test-supply-manager-role.mjs",
+        "test-manager-shell.mjs",
+        "test-manager-home.mjs",
+        "test-supply-shell.mjs",
+        "test-launcher-nav.mjs"
+      ]
+    },
+    {
+      "id": "UI-171-awaiting-your-approval",
+      "source": "UI_RULES.md",
+      "ref": "§171",
+      "title": "\"Awaiting your approval\" lists only what THIS viewer may decide, by the bulk bar's own rule; Approve is one tap, Decline asks for a reason in the one dialog, and the list beside it still shows every waiting record and says whose it is",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-14, S131 Wave 2 (Builder A). test-supply-buildings.mjs F10-F14 hold the box's rows to the queue's own rule (lib/supplies supplyAwaitingApproval over maySupplyDecide: the account manager's, their operations manager's and the owner's waiting orders, never the Supply Manager's) and E11-E13 the wiring (the cards and the Pending approval tile from hooks/useSupplyRules, the hook the queue's bulk bar reads; Decline through the one SupplyDeclineModal, Approve one tap through useSupplyMoves; every order linked with its referrer); test-supplies-page.mjs G14 the decline dialog's 3+ characters and that every decline opens it, A1-A3 / G13 the class prefix and one value per labelled cell; test-supplies.mjs the reason at the write point; test-supplies-route.mjs §28 through the REAL handler. The box's look is held by review and the 390 x 844 / 1280 drive.",
+      "coverage": "partial",
+      "checks": [
+        "test-supply-buildings.mjs",
+        "test-supplies-page.mjs",
+        "test-supplies.mjs",
+        "test-supplies-route.mjs"
+      ]
+    },
+    {
+      "id": "UI-172-one-printed-code",
+      "source": "UI_RULES.md",
+      "ref": "§172",
+      "title": "One printed code, a view per person: whoever is not signed in sees the public page, a signed-in customer or staff member their own view, and the server still decides what each may open",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-16, QR Wave 1. test-qr-scan-landing.mjs holds the ONE router (lib/scanLanding scanLanding) on every session kind, ?view=public, the demo and a malformed token (S); the one Sign-in line and its state.from back to the code (I); every staff destination (staffScanDestination: a cleaner's checklist or, since QR Wave 2, the server's answer (§176), the office's area page since QR Wave 2 (§175; before it, the customer page on the Notes tab with ?area=), the public page without clients.view, View-as a cleaner) (D); the resolvers' answers composed with the rule through the REAL EP-386 / EP-387 handlers over fake-supabase.mjs (R); and the wiring: the public page reads the session and never the store, redirects with replace and makes no public read for a signed-in person; both scan pages take ?code= once, drop it, replace the page and offer the public page on a refusal; the office card's ?area= highlight in tokens (W). 57 of its 65 checks fail on 91805d09. The look is held by the 390 x 844 drive. 2026-10-17 (QR Wave 2): a customer's scan opens that area's own page (QR-16, §173) — test-qr-scan-landing.mjs W12 / R3 and test-hub-area-page.mjs D3 hold the destination; an archived customer's code is dead on both resolvers (test-qr-scan-resolve.mjs §F). Wave 2 (2026-10-17, QR-17..QR-21): test-qr-office-scan.mjs holds the camera road by the claim for every role (an office tier to the office's scanner, /areas/scan), every office tier's landing as the pages compute it (the area page; the Supply Manager's supply orders; the public page without the key; View-as a cleaner), that a scan writes nothing (the real EP-386 handler) and the Scan buttons' wiring; 75 of its 94 checks fail on 90d7ca9e.",
+      "coverage": "partial",
+      "checks": [
+        "test-qr-scan-landing.mjs",
+        "test-area-scan.mjs",
+        "test-qr-scan-resolve.mjs",
+        "test-hub-area-page.mjs",
+        "test-qr-office-scan.mjs"
+      ]
+    },
+    {
+      "id": "UI-173-an-area-s",
+      "source": "UI_RULES.md",
+      "ref": "§173",
+      "title": "An area's own page: the customer's scan opens the public card in the hub, with a request about that area under it",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-17, QR Wave 2 (Builder P; Matt's QR-16). test-hub-area-page.mjs holds the answer (lib/areaScan projectHubArea: EXACTLY the public projection plus the winning photo's signed thumbnail, every server secret fed in, no photo beside a never-recorded clean, no phone) (A); EP-421 GET /api/hub/area through the REAL hub handler over fake-supabase.mjs — the caller's scope (another customer's building and an area off the location a 404 naming nothing, an archived building gone, the office's preview its one building, a cleaner with the preview header refused), the next clean and the last inspection as dates, failed extras left out, the scan's areaId opening the page (B); the request button — a request carrying siteAreaId is created while the server ignores the key, the form's prefill (C); and the wiring: the route with KeyedByParam, the scan's destination, ONE AreaScanCard for both homes, Back, the read-only preview's disabled button, the demo twin, the sweeps' demo paths (D). 44 of its 86 checks fail on 90d7ca9e. test-qr-scan-resolve.mjs B7 / D3 / E17 and test-qr-scan-landing.mjs W12 hold the destination. The look is held by review and the 390 x 844 / 1280 x 800 drive.",
+      "coverage": "partial",
+      "checks": [
+        "test-hub-area-page.mjs",
+        "test-qr-scan-resolve.mjs",
+        "test-qr-scan-landing.mjs"
+      ]
+    },
+    {
+      "id": "UI-175-the-area-page",
+      "source": "UI_RULES.md",
+      "ref": "§175",
+      "title": "The area page: one area of one location, where an office scan lands — its last clean, its photo, the open requests and who is on site, under two buttons",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-17, QR Wave 2 (Matt's QR-17, QR-20). test-qr-office-scan.mjs holds the page's sections from a fixture through the real area rule (siteAreaStatus): the last clean with its cleaner, checklist, clean and items, none yet, an area whose task was not completed records none, not completed with its reason, the public projection never carrying the clean's id, the photo only beside a clean; open requests only unresolved and only this location, newest first, with requestClock's own clock; on site only open punches here, never a deleted or no-show one, one row a person, inside the read's window; the New request prefill (A); the routes, the reads, the two buttons (Open customer went 2026-11-03, task 467; the row only with a button), the drawer in place, the words (W). 75 of its 94 checks fail on 90d7ca9e; the two W13 checks for Open customer gone fail on bce5b43d. test-control-ledger.mjs classifies .areapg-req and .areapg-photo-btn. The look and the gaps are held by the 390 x 844 / 1280 x 800 drive (every gap 16px, no sideways scroll).",
+      "coverage": "partial",
+      "checks": [
+        "test-qr-office-scan.mjs",
+        "test-control-ledger.mjs",
+        "test-i18n-coverage.mjs",
+        "test-app-routes.mjs"
+      ]
+    },
+    {
+      "id": "UI-176-filling-in-from",
+      "source": "UI_RULES.md",
+      "ref": "§176",
+      "title": "Filling in from a scan: a cleaner who isn't on today's clean at a building may fill in for someone who hasn't come, from the code on the wall; with no checklist there, the scan shows the building's last inspection and open tickets",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-17, QR Wave 2 (builder C). test-qr-fill-in.mjs holds the pure rules (lib/scanFillIn fillInPlan in every state, fillInDecision's refusals and repeat, applyFillIn's R8 swap and one-off mark, checklistFor giving the covered cleaner's checklist; lib/clockInWindow isOnTodayList as My Day's one rule) (P); EP-386 answering a cleaner outside their schedule, EP-420 (crew-only, the preview, each state, both allowlists: a visitor's name and contact never reach a cleaner) and EP-419 (each refusal, the repeat, the server's own CAS write, the race re-decided, the job.filled_in row, the account manager's scanFillIn bell, the rate limits) through the REAL handler over fake-supabase.mjs (R); lib/scanLanding staffScanDestination + crewAreaDestination (D); no time data written (T); the page's, adapters' and store's wiring (W). 112 of its 129 checks fail on 90d7ca9e. test-qr-scan-resolve.mjs and test-qr-scan-landing.mjs hold the resolve and the router. The look is held by the 390 x 844 drive.",
+      "coverage": "partial",
+      "checks": [
+        "test-qr-fill-in.mjs",
+        "test-qr-scan-resolve.mjs",
+        "test-qr-scan-landing.mjs"
+      ]
+    },
+    {
+      "id": "UI-174-visitors-can-report",
+      "source": "UI_RULES.md",
+      "ref": "§174",
+      "title": "Visitors can report a problem and rate an area: two actions below the public card, a ticket and a vote the office alone reads, held by durable limits",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-17, QR Wave 2 (Matt's QR-22..QR-26 and QR-30). test-visitor-reports.mjs holds the rules: QR-24's choice -> type and category against lib/workOrders' deadline rule, every input refusal, the photo's data URL and BYTES, the durable limits' verdict and windows, the ticket a report opens, QR-26's ticket volume, a vote's input, limits, org day and memory, the office's by-building report, and the page's wiring (the two components mounted once after the ready card, no store, the adapters, the honeypot, the sheet, the pressed chips) — 136 of its 138 checks fail on 90d7ca9e. test-visitor-report-route.mjs drives EP-414 through the REAL handler over fake-supabase.mjs (the ticket at the code's location, area and customer, routed supervisor-first; every refusal a sentence and a code; the honeypot; the durable limits and the replay; the photo's path and scope; no secret and the database before its migration; QR-26 across every customer-hub reader, the email gate and the ticket volume; the area on both creates and the old database shape) — 104 of 128 fail on 90d7ca9e. test-area-ratings-route.mjs drives EP-415 and EP-416 per role. The look is held by the 390 x 844 and 1280 x 800 drives.",
+      "coverage": "partial",
+      "checks": [
+        "test-visitor-reports.mjs",
+        "test-visitor-report-route.mjs",
+        "test-area-ratings-route.mjs"
+      ]
+    },
+    {
+      "id": "UI-177-printing-one-label",
+      "source": "UI_RULES.md",
+      "ref": "§177",
+      "title": "Printing one label: ONE item of a printed sheet goes on the label the office picks on that sheet's own grid, through the same document and the same door as the whole sheet",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-17, QR Wave 2 (QR-9: one label for a damaged one). test-qr-label-print.mjs holds the builder at every position of every label format (labelPages' start, a print past the last label onto a new sheet), the strict position rule (labelPosition: a whole number on THAT sheet), the one label's place in the document and its own code; EP-262's areaId + position through the REAL handler over fake-supabase.mjs with Chromium faked (one label at its position with that area's live code and no other, the file named for the area, every refusal, crew refused even with a grant, a manager pared off sites.edit refused, one print allowance for every print); and the panel's Modal, its chip grid from LABEL_FORMATS, and the adapter's and demo's single label. 20 of its 70 checks pass on 90d7ca9e (the gate and status codes it keeps; one set per label format, three there, two now). The look is held by the 390 x 844 / 1280 x 800 drive.",
+      "coverage": "partial",
+      "checks": [
+        "test-qr-label-print.mjs"
+      ]
+    },
+    {
+      "id": "UI-178-the-home-screen",
+      "source": "UI_RULES.md",
+      "ref": "§178",
+      "title": "The Home Screen welcome: a phone's browser shows, full screen, how to put the app on its Home Screen, with the steps for that phone and browser, until it's added",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-21, task #127 (Clean Corner's queue). test-install-welcome.mjs holds the decision over real user agents (Safari 27 as the iOS 27 simulator sent it, 26 and 18, an iPad as a Mac, Chrome / Edge / Firefox on iOS, Android Chrome with and without the install offer, Edge, Samsung Internet, Firefox, Facebook / Instagram / a bare web view on both phones; a Mac and Windows get nothing), the Home Screen app, installed, never and later-this-visit giving nothing, every step a catalog line and every glyph in the Icon registry, and the wiring (main.jsx loads lib/installApp first; the sign-in form mounts it, its new-password screen doesn't; the office shell and the customer hub in English; no public page; MobilePushGate's hold; the manifest's related_applications). 4 of its 52 checks pass on aaf0538f. The look and motion are held by the iOS 27 simulator drive (the Safari path from its accessibility tree, a fresh visit stepped at 33ms) and a WebKit / Chromium drive at phone size.",
+      "coverage": "partial",
+      "checks": [
+        "test-install-welcome.mjs"
+      ]
+    },
+    {
+      "id": "UI-179-a-design-choice",
+      "source": "UI_RULES.md",
+      "ref": "§179",
+      "title": "A design choice in Review: the question draws its mockup, every view is an answer, and the pick is saved and shown like every answer",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-23, Daniel's ask for the menu directions (DES-1). test-review-mockups.mjs holds the registry to the templates (every template registered, every file there, views in order, the as-it-is-now view one of them), each template (each placeholder once and /*THEME*/ inside its <style>, no colour and no name of its own through the colour and name ledgers' own scanners, shown to catch both, the postMessage contract both ways, the body's height, the views in one grid cell), every design question (single, an answer per view, a keep answer on the as-it-is-now view, exactly one viewless another-way answer that asks for a note) and the card and frame (the chosen line, messages only from its own iframe). Each fails when broken by hand; the suite can't load on cf847624. test-build-decisions.mjs pins DES-1, test-review-additive.mjs its manifest entry. The look and the save are held by a 1440 x 900 / 1280 x 800 drive.",
+      "coverage": "partial",
+      "checks": [
+        "test-review-mockups.mjs",
+        "test-build-decisions.mjs",
+        "test-review-additive.mjs"
+      ]
+    },
+    {
+      "id": "UI-180-the-supply-catalog",
+      "source": "UI_RULES.md",
+      "ref": "§180",
+      "title": "The supply catalog comes in from a spreadsheet: six columns starting with the photo, a picture in the cell or its link, and a row already in the catalog updates it, filled cells replacing and blank ones leaving",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-27, task #257 (Clean Corner's queue). test-supply-catalog-import.mjs holds every rule of lib/supplyCatalogImport (the columns, prices, the dry run and its matching order, file wins and blanks leave, the photo's order, the batches, the server's write plan over the live rows, the problems file's formula guard, 500 rows timed); test-xlsx-read.mjs the workbook reader over spec-built files (cells, in-cell and floating pictures, IMAGE(), web images, hyperlinks, EMF, the template read back, deflated and stored); test-supplies-route.mjs §30 both doors (EP-427, EP-428) through the REAL handler per role, the CAS and SKU races, and the link guard against private, loopback, metadata and mapped addresses, redirects, sizes and the rate limit. Each guard fails when broken by hand. The look is held by a WebKit drive at 1440 x 900, 390 x 844 and 844 x 390.",
+      "coverage": "partial",
+      "checks": [
+        "test-supply-catalog-import.mjs",
+        "test-xlsx-read.mjs",
+        "test-supplies-route.mjs"
+      ]
+    },
+    {
+      "id": "UI-181-esc-closes-only",
+      "source": "UI_RULES.md",
+      "ref": "§181",
+      "title": "Esc closes only the newest layer: a dropdown, sheet or pop-up opened inside another takes Esc first, and a field that handles Esc keeps it",
+      "area": "overlays",
+      "status": "gated",
+      "note": "2026-10-28, task #265 (Clean Corner's queue, Forge flag #21). test-escape-layers.mjs runs lib/escapeLayers under node (the newest layer closes first, a field's preventDefault closes nothing, a layer leaving out of order, other keys, the listener going with the last layer), reads that Modal, MobileSheet, useDismissTap, MessagesDock and ConversationThreadList join the stack and PopMenu dismisses through useDismissTap, fails any file but the stack (and MasterSearch) that adds a keydown listener closing on Esc, and fails a `key === 'Escape'` branch with no preventDefault. 22 of its checks fail on the code before the fix. What a layer does on Esc in the browser is held by the demo drive at 1280 x 800 and 390 x 844, not by CI.",
+      "coverage": "partial",
+      "checks": [
+        "test-escape-layers.mjs"
+      ]
+    },
+    {
+      "id": "UI-182-the-desktop-menu",
+      "source": "UI_RULES.md",
+      "ref": "§182",
+      "title": "The desktop menu is the Launcher: a few rows, then sections that open a panel of their pages, each named and described; Settings and Review sit at its foot beside the account",
+      "area": "navigation",
+      "status": "gated",
+      "note": "2026-10-30, Matt's email of that day (Option D on DES-1, picked in Review on 10-27), Daniel's picks: everyone, the counts for the owner and an admin too, DES-1 marked built in Review. test-launcher-nav.mjs (50 checks) holds lib/navData's table (five sections in order, no path twice, every path a NAV page, every office page placed, QR codes under Service quality and in the phone's menu), who sees what through launcherSections (the owner's sections with nothing lost, a manager's More as sections with none of their rows repeated or pages lost, a supply manager's two), every section's line (its own line, one named group) and every page's description in the catalog, and reads Sidebar's Launcher: the dialog, its ways out, the switch through the row, the panel after its row, the focus back to the row, the pop-up spared, the scroll, phone-width and focus closes, its turn-round, the foot's wrap, the marker's 24px press, the column gap, the strokes, Icon's ICON_CENTER worked out from the shapes, the old groups' clip gone, and Quick start's directions. 32 of its first 35 checks fail on the code before it, and 16 of the 50 on its first build (b17daf4c). test-manager-shell.mjs holds the rows above the sections, Option D's glyphs and menuCountsFor on both menus; test-supply-shell.mjs the supply manager's rows. The motion and the panel's place are held by the demo drive at 1440 x 900, 1280 x 640 and 820 x 1180, not by CI.",
+      "coverage": "partial",
+      "checks": [
+        "test-launcher-nav.mjs",
+        "test-manager-shell.mjs",
+        "test-supply-shell.mjs"
+      ]
+    },
+    {
+      "id": "UI-183-qr-codes-have",
+      "source": "UI_RULES.md",
+      "ref": "§183",
+      "title": "QR codes have a page in the menu, and a location with no areas says its codes start there",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-30, Matt's email of that day, Daniel's pick: a menu page plus the location's card. test-qr-codes-page.mjs (32 checks) holds the route and its gate, the menu row and the search result, the page's gate (scanCodesAllowed), its rows (no vendor, no archived customer), the ONE card it opens, straight on its editor from Add areas, the question before unsaved (or ticked) areas go, Save Changes saving ticked areas with the rest, its buttons and their names, the phone's card, back-link, paging and URL filters; the empty card's catalog words, Add areas, startEditing and onDirtyChange; scanCodesMissing under node and the codes panel's re-read once the save lands (CS-952); one download hook behind both buttons. All 24 first checks fail on the code before it, 9 of the 29 on its first build, and 4 of the 32 on the code before the ticks fix; test-standard-areas.mjs holds pendingStandardAreas and the editor's held ticks (6 new checks, all failing before that fix). test-sync-status-armed.mjs drives the real sync engine against the real save route offline: the status never says synced while a save waits to be sent (armSave), 5 of its 10 checks failing on the first fix's sync.js. test-launcher-nav.mjs holds the phone's menu row, test-qr-links-export.mjs W6-W7 the hook, test-i18n-coverage.mjs the page's and the card's words. The look is held by the demo drive at 1440 x 900 and 390 x 844.",
+      "coverage": "partial",
+      "checks": [
+        "test-qr-codes-page.mjs",
+        "test-standard-areas.mjs",
+        "test-qr-links-export.mjs",
+        "test-i18n-coverage.mjs",
+        "test-sync-status-armed.mjs",
+        "test-launcher-nav.mjs"
+      ]
+    },
+    {
+      "id": "UI-184-more-answers-than",
+      "source": "UI_RULES.md",
+      "ref": "§184",
+      "title": "More answers than a strip holds are wrapping chips; a segment never draws its word over its neighbour's",
+      "area": "controls",
+      "status": "gated",
+      "note": "2026-10-30, CS-955 (Matt's email \"Need to fix the options\") and CS-956 (the final review: Supplies' status tabs, HR's tabs and a customer's Activity tabs cut at a laptop's or an iPad's width; Daniel's pick, one shared fix). test-wo-category-chips.mjs (11 checks) holds the New work order's Category as wrapping chips (never a strip), its group and pressed states, .chip-picker wrapping, Type and Priority as strips of four answers or fewer while Category is past that (read from lib/workOrders), every form's even gaps (.form-group > .tab-container-line), the kit strip's column floored at its words (minmax(max-content, 1fr)) with its row scrolling in place inside its own width, and the phone's two-column grid of Supplies' status tabs keeping its words in at 320px (padding-inline: var(--space-2), white-space: normal); 5 of its first 8 checks fail on the code before the fix, and 4 of the 11 on its first build's CSS. test-control-parity.mjs holds the three §7 tracks (.tab-container-line, .segmented, .messaging-inbox-toggle) to that one floor and scroll-in-place; its three new checks fail on the code before the fix. lint:responsive (responsive-sweep.mjs) fails a tab or segment whose words run past its edge on either side at any of its widths (each text line's and child's box against the tab's, so a centred overflow counts in full), and a strip that scrolls while its row's neighbours could give up the room (Quick start's Admin | Crew beside its search, flex-shrink: 0 since). The look is held by the demo drive at 320 x 740, 820 x 1180, 1024 x 768, 1280 x 800 and 1440 x 900.",
+      "coverage": "partial",
+      "checks": [
+        "test-wo-category-chips.mjs",
+        "test-control-parity.mjs",
+        "lint:responsive"
+      ]
+    },
+    {
+      "id": "UI-185-the-menu-carries",
+      "source": "UI_RULES.md",
+      "ref": "§185",
+      "title": "The menu carries no review markers: a page's row, tile and Settings button show no \"In Review\" or \"Approved\"",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-launcher-nav.mjs"
+      ],
+      "note": "test-launcher-nav.mjs (CI) fails on any marker component, hook, class or catalog line left in the menu, and on the Review count or NEW pill going; that the drawn menu shows none is review-browser-check.mjs step M (driven, not in CI)."
+    },
+    {
+      "id": "UI-186-a-page-opens",
+      "source": "UI_RULES.md",
+      "ref": "§186",
+      "title": "A page opens at its top; Back and Forward put it where it was; a tab or a filter leaves it where it is",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-page-scroll.mjs",
+        "lint:responsive"
+      ],
+      "note": "2026-11-02, CS-960 (Daniel's pick after the before-and-after pictures). test-page-scroll.mjs (CI) runs lib/pageScroll.js placeFor on its cases (another page at its top, even one seen before; Back and Forward by history entry; the page's own Back by its address, moving with BACK_STATE, referrer or not (Settings' Back has none); a menu link to the page you came from at its top; the same page with another query or hash left alone; the first page of a load the browser's), and reads components/PageScroll.jsx (a layout effect, behavior 'instant', places kept from .main and the window by entry and by address, the browser's own restore off while it runs and back as the page goes, a page put back held at most a second with scroll anchoring off and let go on a scroll, tap or key) and both AppLayout shells mounting it before the page; on 2c5ea06c it fails 27 checks and passes one, and the decision's 21 cases can't run there; on 919be3e5 (as first released) it fails 7, Settings' Back with no referrer putting Settings at its top (found live). lint:responsive --pages logs every frame at 390 x 844 and 1280 x 800 (a customer opened from the scrolled Customers list and a section from scrolled Settings at its top; Back, Forward and the page's Back where each was) and fails at both sizes on 2c5ea06c's shell; its Settings check fails at both sizes with 919be3e5's back controls. Measured too in WebKit at both sizes and on the iOS 27 simulator, recorded and stepped through at 33ms; not in CI."
+    },
+    {
+      "id": "UI-187-crew-on-the",
+      "source": "UI_RULES.md",
+      "ref": "§187",
+      "title": "Crew on the way reaches the customer hub: one notice in the bell, an alert on the phones that turned it on, and a row on Home that offers it until it is on or closed",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-crew-on-the-way.mjs",
+        "test-client-push-subscriptions-migration.mjs",
+        "test-on-my-way.mjs",
+        "test-hub-preview.mjs"
+      ],
+      "note": "2026-11-03, Crew on the way (Daniel's Oct 28 call; his picks 'A · Row on Home + Account' and 'When someone can be told'). test-crew-on-the-way.mjs (CI) drives the real api/time and api/hub handlers over the fake Supabase with the push service caught at https.request: the button's canTell, one bell row and one ring per active login's phone per clean, a dead phone pruned, the push keys unset never stopping the bell, the text kept, nobody to tell a 409, the bell line for the building's logins only, the hub sign-up's own row, a bad sign-up refused whole, a staff login and a preview refused, the rate, the rules and the screens' wiring; on 872893a5 it fails 28. test-client-push-subscriptions-migration.mjs holds the table under the house law. test-hub-preview.mjs walks the push branches (a preview never signs a phone up). The row's first paint and its way out (fade, then a paid-back glide, no jump) were measured on the demo by hand, not in CI."
+    },
+    {
+      "id": "UI-188-the-team-comes",
+      "source": "UI_RULES.md",
+      "ref": "§188",
+      "title": "The team comes in from a spreadsheet: a dry run first, each new person's sign-in made and emailed as it runs, and each cleaner linked to the customers they work at",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-team-import.mjs",
+        "test-team-import-guard.mjs",
+        "test-team-import-logins.mjs"
+      ],
+      "note": "2026-11-03, task #466 from Clean Corner's queue (Daniel's picks 'Link them; schedule decides' and 'Email on every row, invite at import'). test-team-import.mjs (CI, 108) runs the engine through the real reducer: file quirks, header guesses and private columns, every row rule, fill-blank and a re-run unchanged, replay safety, the size refusal, the run with a fake login maker (bound ids, an adopted orphan, a refused login left off, 25 to a run as one action), 1,000 people timed and measured, and the screens' wiring (the pop-up's ×, buttons and counts centred by code, components/Centred, the paste box's hold while typing, and the preview's columns and the row's role and pay, N11 and N12). test-team-import-guard.mjs drives the real save handler (a holder's import accepted; pay without payroll.rates.edit, a level they can't give, a duplicate employee ID refused; a cleaner's own worksAt dropped and never served to crew). test-team-import-logins.mjs drives the real /api/settings/users and save over the fake GoTrue and PostgREST. On bce5b43d the first two stop at their first check and the third fails 8 of 10. The preview's columns (Daniel's pick 'A · Each fact in its own column', 2026-11-03 evening: the role, employee ID, pay and Works at each in a column, the notes on a line each under the row) are measured by Forge's styling_check with the pop-up's steps, not in CI."
+    },
+    {
+      "id": "UI-189-add-team-member",
+      "source": "UI_RULES.md",
+      "ref": "§189",
+      "title": "Add Team Member sets a cleaner up in one step: Works at, Access and pay",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-add-member-setup.mjs",
+        "test-team-limits.mjs"
+      ],
+      "note": "2026-11-03, task #470 from Clean Corner's queue (Daniel's picks 'Pay type and rate' and 'Crew only'; the access was 'Can request supplies switch' until that evening's pick 'B · Crew's switches up front': every permission the Crew column holds as a switch, and 'Give another permission' in the kit's picker for the rest the viewer holds). test-add-member-setup.mjs (CI, 45) runs lib/newMemberSetup on each pay type, a blank and a bad rate, Crew only, the switches against a crew column with and without a key, several keys at once, a key given only by a holder (the rest kept), the four everyone has and the Super Admin's own never written, an adopted login's row and what the picker offers; the pop-up's own ADD_USER and SET_USER_PERMISSION_OVERRIDE through the real reducer; and the real save handler over the fake Supabase (a holder's add accepted in one save and in two; pay without payroll.rates.edit, Access without staff.editOverrides and a key given by a caller without it refused, each left out by the rule first), plus the pop-up's wiring. On e9564d16 it failed 32 of 39; on 8f265a15 it fails 17 of 45. test-team-limits.mjs classifies the pop-up's dispatches. The pop-up with Crew picked is measured by Forge's styling_check, not in CI."
+    },
+    {
+      "id": "UI-190-a-new-customer",
+      "source": "UI_RULES.md",
+      "ref": "§190",
+      "title": "A new customer is onboarded from its own page: the onboarding bar",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-onboarding.mjs",
+        "test-team-limits.mjs",
+        "test-team-import.mjs"
+      ],
+      "note": "2026-11-03, task 471 from Clean Corner's queue (Matt's list in his email 'clean corner', 10:46 AM PT; Daniel's picks 'Customer page with an onboarding bar', 'Stays open until filled in', 'Every step but Company, fixed; tracked as outstanding', 'Signed contract on file' and 'Onboarding'). test-onboarding.mjs (CI, 54) runs lib/onboarding on each step's done test (a partial contact, a contract with no file, an ended one), skip and undo, done winning over a skip, Company refusing one, a blank note, the cap, the finish stamped once and never while a read is out; the store through the real reducer and selectors (Add customer's record, the badge order, the derived status staying Lead, an existing customer untouched); and the screens' wiring (no Customer / Vendor switch, the address required, the list's filter, the bar never on an archived customer, the contracts read lasting while the bar is drawn, one cleaners selector, the words and × centred by code, every word in the catalog). On bd4572d0 it fails all 16 checks it reaches. test-team-limits.mjs classifies the cleaners pop-up's dispatch; test-team-import.mjs N6 follows the Service setup card into the shared selector. Add customer, the bar and its two pop-ups are measured by Forge's styling_check, not in CI. 2026-11-04, task 507 added Special services as the bar's seventh step (§192)."
+    },
+    {
+      "id": "UI-191-settings-team-each",
+      "source": "UI_RULES.md",
+      "ref": "§191",
+      "title": "Settings → Team: each person's email sits under their name, so a name never drops under the photo",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-team-import.mjs"
+      ],
+      "note": "2026-11-03, Daniel's pick 'B · Name with email under it' after a picture of names wrapped under their photos (the name link was the wrapping .flex-row). test-team-import.mjs N13 and N14 (CI) hold the cell: the email under the name in .team-person (flex-wrap: nowrap, the text min-width 0), never .flex-row, no Email column; the avatars centred by code (<Avatar centred>) and the Name column's 330px and the preview's cell fill a computer's only (Forge's styling_check found the page 361px wide at 320). N13 fails on 8f265a15, N14 on 98a6f510. Measured by hand at 1280×800 and 390×844: every name beside its photo, its email under it, no sideways scroll; the Team page is in .claude/styling.json, so Forge's styling_check measures it."
+    },
+    {
+      "id": "UI-193-hr-terminations-matt",
+      "source": "UI_RULES.md",
+      "ref": "§193",
+      "title": "HR → Terminations: Matt's form, and the person's login turns off on the termination day",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-hr-terminations.mjs",
+        "test-hr-terminations-route.mjs",
+        "test-hr-terminations-migration.mjs",
+        "test-team-limits.mjs"
+      ],
+      "note": "2026-11-05, Super Clippy's idea #513 from Clean Corner's queue (Matt's email 'Clean Corner - Termination', 2026-11-05 12:09 PM PT; Daniel's picks 'On the termination date', 'HR and Team editors', 'Locked; a void undoes it', 'Access only, list what's left' and 'Account Managers only'). test-hr-terminations.mjs (CI, 67) holds his sixteen reasons word for word and in his two columns to scripts/fixtures/hr-termination-form.json, every line used by the form, the read view and the printout, and runs lib/hrTerminations (the draft's refusals, the targets, the manager picker, the standing, the roster changes) and the printout. test-hr-terminations-route.mjs (CI, 66) drives the real route and runTerminationAccess over fake-supabase.mjs: the gates, the login banned and the member Disabled at filing and on its day, pending then finished, a half-finished run finished, already off, the void's give-back, a void before the day, kept, no edit or delete route. test-hr-terminations-migration.mjs (CI, 35) pins the table and its triggers. On 6004c8d7 all three fail. test-team-limits.mjs classifies the demo's stand-in for the server's roster write. The tab, the card, the form and the read view are measured by Forge's styling_check, not in CI."
+    },
+    {
+      "id": "UI-192-a-building-s",
+      "source": "UI_RULES.md",
+      "ref": "§192",
+      "title": "A building's special services: listed on its Overview, reminded before each date, the onboarding bar's seventh step",
+      "area": "product",
+      "status": "gated",
+      "coverage": "partial",
+      "checks": [
+        "test-special-services.mjs",
+        "test-onboarding.mjs",
+        "test-picker-cap.mjs",
+        "test-deletion-enumerator.mjs"
+      ],
+      "note": "2026-11-04, task 507 from Clean Corner's queue (Matt's email 'clean corner', 2026-11-03 10:46 AM PT; Daniel's picks 'Build the reminders too', '7th part, None here counts', 'Six fixed + every N months' and 'Mark done moves it on'). test-special-services.mjs (CI, 68) runs lib/specialServices (the frequencies, the form's problems, the stored row, Mark done's date at month ends and long overdue, the due states at 14 and 15 days, a damaged row never shown, the suggestions and their cap); the store through the real reducer (add, change, remove, the cap, Mark done once, 'none' and its Undo, two adds both landing on replay, the onboarding step); the reminder (office hours, the 14 days, once per date, a moved date told again, who hears, archived / Inactive / vendor buildings left out, the run's cap, the words); the whole raise through the cron's run() and its real computeDue over fake-supabase.mjs; and the screens' wiring (the card on the Overview, the bar's seventh part, seven columns and three on a phone, every word a catalog line, the switch and its icon, kit Modals with their words centred). On aa3c72f4 it fails 11 of the 12 checks it reaches. test-onboarding.mjs follows the bar to seven steps; test-picker-cap.mjs bounds the pop-up's type list; test-deletion-enumerator.mjs classifies REMOVE_SPECIAL_SERVICE. The card, its pop-ups and the bar's step are measured by Forge's styling_check, not in CI."
+    },
+    {
+      "id": "UI-170-a-cleaner-orders",
+      "source": "UI_RULES.md",
+      "ref": "§170",
+      "title": "A cleaner orders by quantity from the building's approved list, with no prices, and reads back their own orders line by line in their own words",
+      "area": "product",
+      "status": "gated",
+      "note": "2026-10-14, S131 Builder C. test-crew-supplies.mjs §4-§8 holds the crew allowlists (SUPPLY_CREW_ITEM_KEYS gains only imageUrl; SUPPLY_CREW_ORDER_KEYS / SUPPLY_CREW_LINE_KEYS carry no money, note, comment, invoice, photo or SKU), the cleaner's own orders newest first and capped at 10, crewSupplyQty's 0-20 and crewSupplySendBlock without \"Other\", the deleted words in en / es / ht, and reads the page's wiring (the stepper's two locks, the photo, Submit's reason and the board's line, the last-order card through CrewOrderLines, the history's links with their referrer, the success line) and the order page's (one read, its states, its route, Back to Request Supplies, no money, invoice, comment or photo); the stop line per line. test-crew-shell.mjs 3.6-3.7, 7.14-7.17, 9.5 the Home tile's one shared read and words, the paths, the offline copy and the back pill. test-supplies-route.mjs §18, §20, §27 drive the crew doors (onsite per line, crew-list, crew-order EP-400, crew-orders EP-401) through the REAL handler over fake-supabase.mjs per role. The look is held by review and the 390 x 844 drive.",
+      "coverage": "partial",
+      "checks": [
+        "test-crew-supplies.mjs",
+        "test-crew-shell.mjs",
+        "test-supplies-route.mjs"
+      ]
     },
     {
       "id": "STRUCTURE-LINT-input-font-16-mobile",

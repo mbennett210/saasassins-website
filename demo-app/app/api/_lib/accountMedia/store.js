@@ -175,6 +175,45 @@ export async function listMediaRaw({ siteId, refId, scope, areaId } = {}) {
   return data || [];
 }
 
+// Raw metadata for media owned by SEVERAL records at once — the area-status read (QR-1)
+// needs one query across a building's recent checklist submissions, not one per
+// submission. NO signed URLs: only the handful of rows that win their area get signed
+// (signMediaRow below), so a 25-submission scan never mints 200 URLs nobody fetches.
+// `refIds` rides a PostgREST `in()` string, so the caller bounds it (AREA_STATUS_RESULT_SCAN).
+// Not for browser use — `storage_path` is a private key.
+export async function listMediaRawByRefs({ refIds = [], scope } = {}) {
+  const ids = (Array.isArray(refIds) ? refIds : []).filter((v) => typeof v === 'string' && v);
+  if (!ids.length) return [];
+  const db = getSupabase();
+  let q = db.from('account_media')
+    .select('id, kind, mime_type, caption, area_id, ref_id, storage_path, thumb_path, created_at')
+    .eq('organization_id', CLEANSPACE_ORG_ID)
+    .in('ref_id', ids)
+    .order('created_at', { ascending: false });
+  if (scope) q = q.eq('scope', scope);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
+// Short-lived playback URLs for ONE raw row, in the shape listMedia projects. Best-effort
+// per URL: a missing object leaves `url` null and the caller renders the row without it,
+// exactly as listMedia already does.
+export async function signMediaRow(row) {
+  if (!row) return null;
+  const db = getSupabase();
+  const sign = async (path) => {
+    if (!path) return null;
+    try { const s = await db.storage.from(BUCKET).createSignedUrl(path, 600); return s.data?.signedUrl || null; }
+    catch { return null; }
+  };
+  return {
+    id: row.id, kind: row.kind, mimeType: row.mime_type, caption: row.caption,
+    areaId: row.area_id, refId: row.ref_id, createdAt: row.created_at,
+    url: await sign(row.storage_path), thumbUrl: await sign(row.thumb_path),
+  };
+}
+
 // The owning SITE of a media row, org-pinned. Null when no such row exists in this org
 // (a cross-org id included, exactly as removeMedia is pinned). The caption route re-gates
 // on this site — the site the row was authorized under on confirm — never a caller-supplied
@@ -186,6 +225,18 @@ export async function mediaOwnerSite({ id }) {
     .eq('organization_id', CLEANSPACE_ORG_ID).eq('id', id).maybeSingle();
   if (error) throw error;
   return data ? { id: data.id, siteId: data.site_id || null } : null;
+}
+
+// The SCOPE of a media row, org-pinned, or null when no such row exists in this org — the delete
+// route picks its key by it (S131: a supply order's photo is supplies.manage's, not ops.edit's).
+export async function mediaScopeOf({ id }) {
+  if (!id || typeof id !== 'string') return null;
+  const db = getSupabase();
+  const { data, error } = await db.from('account_media')
+    .select('id, scope')
+    .eq('organization_id', CLEANSPACE_ORG_ID).eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data ? data.scope || null : null;
 }
 
 // Set (or clear, with an empty string) a media row's caption. Org-pinned + id-pinned like
@@ -201,6 +252,27 @@ export async function updateCaption({ id, caption }) {
     .select('id').maybeSingle();
   if (error) throw error;
   return data ? { ok: true } : { notFound: true };
+}
+
+// Every photo / video SEVERAL records own at one scope, hard-deleted: the Storage objects
+// (the original and its thumbnail), then the metadata rows. For a record that is itself
+// being deleted — an inspection DRAFT discarded or past its 30 days (lib/inspectionDrafts,
+// D9) — so its photos never outlive it. Org-pinned on every statement; `scope` is required
+// (the scope names the owning table, and a ref id alone could match another table's media).
+// The object removal is best-effort, as removeMedia's is: a missing object never keeps a row.
+// `refIds` ride a PostgREST in() string, so the caller bounds them. → { removed: rows deleted }.
+export async function removeMediaForRefs({ refIds = [], scope } = {}) {
+  const ids = (Array.isArray(refIds) ? refIds : []).filter((v) => typeof v === 'string' && v);
+  if (!ids.length || !scope) return { removed: 0 };
+  const db = getSupabase();
+  const rows = await listMediaRawByRefs({ refIds: ids, scope });
+  const paths = rows.flatMap((r) => [r.storage_path, r.thumb_path]).filter(Boolean);
+  if (paths.length) { try { await db.storage.from(BUCKET).remove(paths); } catch { /* best-effort */ } }
+  if (!rows.length) return { removed: 0 };
+  const { error } = await db.from('account_media').delete()
+    .eq('organization_id', CLEANSPACE_ORG_ID).eq('scope', scope).in('ref_id', ids);
+  if (error) throw error;
+  return { removed: rows.length };
 }
 
 // Hard-delete: remove the Storage object, then the metadata row.

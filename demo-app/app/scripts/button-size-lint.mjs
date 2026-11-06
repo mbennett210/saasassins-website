@@ -40,8 +40,6 @@ const ALLOW = new Map([
   ['components/BulkActionBar.jsx', 'the bulk-selection action bar — a dense strip of compact actions'],
   ['components/ConversationMessagePanel.jsx', 'the Reply/Reply-All/Forward segmented mode toggle + the compose Send (own 48px rule)'],
   ['components/SignatureCapture.jsx', 'the signature mode / font segmented pickers'],
-  ['components/CsvImportModal.jsx', 'the create-&-update / update-only segmented import-mode toggle'],
-  ['components/AddCompanyModal.jsx', 'the customer / vendor segmented type toggle'],
   ['pages/Schedule.jsx', 'the schedule nav cluster — Today matches the 28px prev/next arrows (.schedule-nav-controls)'],
   ['components/ClockControl.jsx', 'crew clock field buttons (min-height 42px; btn-sm only trims padding/font)'],
 ]);
@@ -51,7 +49,7 @@ const VARIANTS = ['btn-primary', 'btn-secondary', 'btn-success', 'btn-gold', 'bt
 // file:line → why this `.btn` may carry a bespoke colour instead of a variant. The same bar as
 // ALLOW: a design decision to defend, and each entry is an open question for the owner.
 const VARIANT_ALLOW = new Map([
-  ['components/WorkOrdersPanel.jsx#Escalate', 'Escalate uses a soft-danger tint (.wo-btn-danger); no kit variant matches. Owner call: solid .btn-danger, or a new kit variant'],
+  ['components/WorkOrderDrawer.jsx#Escalate', 'Escalate uses a soft-danger tint (.wo-btn-danger); no kit variant matches. Owner call: solid .btn-danger, or a new kit variant'],
 ]);
 // file#marker → why a plus may sit inside this labelled button (§12).
 const PLUS_ALLOW = new Map([

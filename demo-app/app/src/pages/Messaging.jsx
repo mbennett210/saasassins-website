@@ -24,6 +24,7 @@ import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
 import { useAuth } from '../hooks/useAuth';
 import { usePermission } from '../hooks/usePermission';
+import { areNotificationsMandatory } from '../lib/roles';
 import {
   selectContactById, selectConversationById, selectMessagesForConversation,
   selectUnreadForConversation, selectConversationsForInbox, selectUnreadCountForInbox,
@@ -33,6 +34,9 @@ import {
 } from '../store/selectors';
 import { useToast } from '../components/Toast';
 import { useMessageSender } from '../hooks/useMessageSender';
+import { useT } from '../i18n/react';
+import CustomerMessagesInbox from '../components/CustomerMessagesInbox';
+import { listCustomerThreads } from '../lib/clientMessagesApi';
 
 const DATE_WINDOW_MS = {
   '24h': 24 * 60 * 60 * 1000,
@@ -166,6 +170,7 @@ function matchesSearch(conv, q, state) {
 }
 
 export default function Messaging() {
+  const t = useT();
   const state = useStore();
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -179,11 +184,20 @@ export default function Messaging() {
   const canStartInternalThread = usePermission('messaging.startInternalThread');
   const canBulk = usePermission('messaging.bulkActions');
   const canViewExternalInbox = usePermission('messaging.startConversation');
+  // The client hub redesign (plan §3.4, D5): every building's conversation with its customers,
+  // for holders of hub.messages.view (the server gates /api/client-messages/* on the same key).
+  const canViewCustomers = usePermission('hub.messages.view');
   const isSuperAdmin = currentUser?.role === 'owner';
   // CS-002: star / mute (snooze) are per-conversation flags the crew WRITE MERGE drops, so a
   // crew tab would see a dead toggle. Hide them for a non-office role (owner/admin/manager keep
   // them). Passed as undefined → ConversationThreadList / ConversationMessagePanel omit the button.
   const canStarMute = currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  // NTF-3 (Matt, 2026-09-29: "No — cleaners can't mute"; CS-291). Snoozing follows the
+  // NOTIFICATION POLICY as well as the CS-002 role list, so a role that is later added to
+  // lib/roles.js NOTIFICATIONS_MANDATORY_ROLES loses the button without anyone remembering
+  // to edit a hardcoded trio here. The reducer refuses the mute either way — org_state is
+  // browser-writable, so this is the affordance, not the boundary.
+  const canSnooze = canStarMute && !areNotificationsMandatory(currentUser);
 
   const toast = useToast();
 
@@ -203,6 +217,8 @@ export default function Messaging() {
       const sp = new URLSearchParams(window.location.search);
       const v = sp.get('inbox');
       if (v === 'inbox' || v === 'internal' || v === 'dm') return v;
+      // A customer-message bell row links to ?inbox=customers&b=<building>.
+      if (v === 'customers' && canViewCustomers) return v;
     } catch { /* ignore */ }
     return canViewExternalInbox ? 'inbox' : 'internal';
   })();
@@ -213,7 +229,8 @@ export default function Messaging() {
   useEffect(() => {
     const v = new URLSearchParams(location.search).get('inbox');
     if (v === 'inbox' || v === 'internal' || v === 'dm') setSelectedInbox(v);
-  }, [location.key, location.search]);
+    if (v === 'customers' && canViewCustomers) setSelectedInbox(v);
+  }, [location.key, location.search]); // eslint-disable-line react-hooks/exhaustive-deps
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [search, setSearch] = useState('');
   const [activeId, setActiveId] = useState(paramId || null);
@@ -245,9 +262,11 @@ export default function Messaging() {
   const panes = usePaneSizes(paneContainerRef);
 
   // Base inbox list (no filters/search applied yet) — also used for totals in rail counts.
+  // The Customers tab is not a store inbox (its threads are server-read), so it lists none here.
+  const showingCustomers = selectedInbox === 'customers' && canViewCustomers;
   const inboxConversations = useMemo(
-    () => selectConversationsForInbox(state, selectedInbox, currentUser),
-    [state, selectedInbox, currentUser]
+    () => (showingCustomers ? [] : selectConversationsForInbox(state, selectedInbox, currentUser)),
+    [state, selectedInbox, currentUser, showingCustomers]
   );
 
   // Apply filters + search on top of the inbox slice.
@@ -269,78 +288,107 @@ export default function Messaging() {
   // Close the panel if the last orphan is cleaned up (or stops being one).
   useEffect(() => { if (orphanCount === 0) setOrphansOpen(false); }, [orphanCount]);
 
+  // The Customers tab's badge: how many buildings hold a customer line this person has not read.
+  // One small server read (a page of one), on mount, every minute while visible, and whenever the
+  // Customers pane reads or answers a thread.
+  const [customersUnread, setCustomersUnread] = useState(0);
+  const refreshCustomersUnread = useCallback(() => {
+    if (!canViewCustomers) return;
+    listCustomerThreads({ limit: 1 }, { user: currentUser })
+      .then((r) => setCustomersUnread(r?.unreadThreads || 0))
+      .catch(() => { /* the badge is a hint; the tab itself says what failed */ });
+  }, [canViewCustomers, currentUser]);
+  useEffect(() => {
+    refreshCustomersUnread();
+    if (!canViewCustomers) return undefined;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshCustomersUnread();
+    }, 60000);
+    return () => clearInterval(id);
+  }, [canViewCustomers, refreshCustomersUnread]);
+
   const inboxUnread = useMemo(() => ({
     inbox:    selectUnreadCountForInbox(state, 'inbox',    currentUser),
     internal: selectUnreadCountForInbox(state, 'internal', currentUser),
     dm:       selectUnreadCountForInbox(state, 'dm',       currentUser),
-  }), [state, currentUser]);
+    customers: customersUnread,
+  }), [state, currentUser, customersUnread]);
 
-  const visibleInboxes = canViewExternalInbox
-    ? [
-        { key: 'inbox',    label: 'Inbox' },
-        { key: 'internal', label: 'Channels' },
-        { key: 'dm',       label: 'DMs' },
-      ]
-    : [
-        { key: 'internal', label: 'Channels' },
-        { key: 'dm',       label: 'DMs' },
-      ];
+  const visibleInboxes = [
+    ...(canViewExternalInbox
+      ? [
+          { key: 'inbox',    labelKey: 'messages.inbox' },
+          { key: 'internal', labelKey: 'messages.channels' },
+          { key: 'dm',       labelKey: 'messages.dms' },
+        ]
+      : [
+          { key: 'internal', labelKey: 'messages.channels' },
+          { key: 'dm',       labelKey: 'messages.dms' },
+        ]),
+    ...(canViewCustomers ? [{ key: 'customers', labelKey: 'custMsg.tab' }] : []),
+  ];
 
   // Force crew into Channels when they can't see the external inbox.
   useEffect(() => {
-    if (!canViewExternalInbox && selectedInbox !== 'internal') {
+    if (!canViewExternalInbox && selectedInbox !== 'internal' && !(selectedInbox === 'customers' && canViewCustomers)) {
       setSelectedInbox('internal');
     }
   }, [canViewExternalInbox]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keep activeId in sync with URL + visible-set membership.
+  // 🔴 A conversation opens only when someone opens it (CS-149): a row picked in the list, or a
+  // link that names it (`/messaging/:id` — a bell, the dock, a customer page). Landing here opens
+  // nothing and switching tabs opens nothing; the pane says "Select a conversation". On a computer
+  // the page used to open the list's top thread by itself — and opening a thread marks it read, so
+  // landing marked customers' messages read that nobody had seen (Inbox 7 → 5).
+  // The URL is the truth: a link sets the open thread, and /messaging with none clears it.
   useEffect(() => {
     if (paramId && paramId !== activeId) setActiveId(paramId);
-    if (!paramId && activeId && window.matchMedia('(max-width: 768px)').matches) setActiveId(null);
+    if (!paramId && activeId) setActiveId(null);
   }, [paramId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!visibleConversations.length) return;
-    // On mobile, don't auto-select — user should see the inbox first and choose.
-    if (window.matchMedia('(max-width: 768px)').matches && !paramId) return;
-    if (!activeId || !visibleConversations.find((c) => c.id === activeId)) {
-      setActiveId(visibleConversations[0].id);
-    }
-  }, [visibleConversations, activeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Direct-URL guard: the conversations the user is allowed to OPEN — the union of their visible,
+  // participant-scoped inboxes — and which inbox each lives in. The thread LIST is already scoped,
+  // but activeConversation resolves by id straight from the URL, so without this a crew member with
+  // a shared link to an external (sms/email) thread — or an internal thread they're not a
+  // participant of — would render it (and could hit the context-panel null-lifecycle crash).
+  // Managers can view every inbox → no change.
+  const inboxByConvId = useMemo(() => {
+    const keys = canViewExternalInbox ? ['inbox', 'internal', 'dm'] : ['internal', 'dm'];
+    const byId = new Map();
+    for (const k of keys) for (const c of selectConversationsForInbox(state, k, currentUser)) if (!byId.has(c.id)) byId.set(c.id, k);
+    return byId;
+  }, [state, currentUser, canViewExternalInbox]);
 
-  // If the user switches inbox, pick the first conversation in the new set
-  // and clear any lingering bulk selection (selections don't cross inboxes).
+  // A link names a thread but not its tab (a bell row carries no ?inbox): show that thread's own
+  // inbox beside it. It used to keep the default tab, and the old auto-pick then swapped a linked
+  // direct message for the Inbox tab's top thread.
+  useEffect(() => {
+    const k = paramId ? inboxByConvId.get(paramId) : null;
+    if (k && k !== selectedInbox) setSelectedInbox(k);
+  }, [paramId, inboxByConvId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Selections don't cross inboxes.
   useEffect(() => {
     setSelectedIds(new Set());
     setBulkMode(false);
-    if (!visibleConversations.length) {
-      setActiveId(null);
-      return;
-    }
-    if (window.matchMedia('(max-width: 768px)').matches) {
-      setActiveId(null);
-      return;
-    }
-    if (!visibleConversations.find((c) => c.id === activeId)) {
-      setActiveId(visibleConversations[0].id);
-    }
-  }, [selectedInbox]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedInbox]);
 
-  // Direct-URL guard: the set of conversation ids the user is allowed to OPEN — the
-  // union of their visible, participant-scoped inboxes. The thread LIST is already
-  // scoped, but activeConversation resolves by id straight from the URL, so without
-  // this a crew member with a shared link to an external (sms/email) thread — or an
-  // internal thread they're not a participant of — would render it (and could hit the
-  // context-panel null-lifecycle crash). Managers can view every inbox → no change.
-  const allowedConvIds = useMemo(() => {
-    const keys = canViewExternalInbox ? ['inbox', 'internal', 'dm'] : ['internal', 'dm'];
-    const ids = new Set();
-    for (const k of keys) for (const c of selectConversationsForInbox(state, k, currentUser)) ids.add(c.id);
-    return ids;
-  }, [state, currentUser, canViewExternalInbox]);
+  // The inbox tabs: a switch shows that inbox and opens nothing in it. A thread open from another
+  // inbox closes, and the address stops naming it.
+  const handleInboxChange = (k) => {
+    setSelectedInbox(k);
+    if (!activeId) return;
+    const stays = k !== 'customers' && selectConversationsForInbox(state, k, currentUser).some((c) => c.id === activeId);
+    if (stays) return;
+    setActiveId(null);
+    if (paramId) navigate(`/messaging${k !== 'inbox' ? `?inbox=${k}` : ''}`, { replace: true });
+  };
 
   const rawActive = activeId ? selectConversationById(state, activeId) : null;
-  const activeConversation = rawActive && allowedConvIds.has(rawActive.id) ? rawActive : null;
+  const activeConversation = rawActive && inboxByConvId.has(rawActive.id) ? rawActive : null;
+  // A link to a thread that does not exist, or that this person may not open: the pane says so and
+  // offers the way back — and nothing else opens, or is read, in its place.
+  const unavailable = !!activeId && !activeConversation && !showingCustomers;
   const activeContact = activeConversation?.contactId ? selectContactById(state, activeConversation.contactId) : null;
   const activeMessages = activeConversation ? selectMessagesForConversation(state, activeConversation.id) : [];
 
@@ -379,7 +427,7 @@ export default function Messaging() {
     const id = activeConversation.id;
     dispatch({ type: ACTIONS.DELETE_CONVERSATION, id });
     setConfirmDeleteOpen(false);
-    toast.success('Thread deleted for everyone');
+    toast.success(t('messages.deletedForEveryone'));
     setActiveId(null);
     navigate('/messaging' + (selectedInbox !== 'inbox' ? `?inbox=${selectedInbox}` : ''));
   };
@@ -423,11 +471,11 @@ export default function Messaging() {
   const handleSwitchChannel = (targetChannel) => {
     if (!activeConversation || !activeContact) return;
     if (targetChannel === 'sms' && !activeContact.phone) {
-      toast.error('Contact has no phone number on file.');
+      toast.error(t('messages.noPhone'));
       return;
     }
     if (targetChannel === 'email' && !activeContact.email) {
-      toast.error('Contact has no email address on file.');
+      toast.error(t('messages.noEmail'));
       return;
     }
     setComposeChannelOverride(targetChannel);
@@ -458,7 +506,7 @@ export default function Messaging() {
     if (!conv) return;
     const allowed = isSuperAdmin || (currentUser && conv.createdByUserId === currentUser.id);
     if (!allowed) {
-      toast.error("You can't delete this thread. Only its creator or a Super Admin can.");
+      toast.error(t('messages.cantDelete'));
       return;
     }
     setRowDeletePrompt({ id, count: selectMessagesForConversation(state, id).length });
@@ -473,7 +521,7 @@ export default function Messaging() {
     }
     setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
     setRowDeletePrompt(null);
-    toast.success('Thread deleted for everyone.');
+    toast.success(t('messages.deletedForEveryone'));
   };
 
   const handleBulkMarkRead = () => {
@@ -498,7 +546,7 @@ export default function Messaging() {
       if (allowed) eligible.push(id); else skipped.push(id);
     }
     if (eligible.length === 0) {
-      toast.error("You can't delete any of the selected threads. Only their creators or a Super Admin can.");
+      toast.error(t('messages.cantDeleteAny'));
       return;
     }
     setBulkDeletePrompt({ ids: eligible, skipped: skipped.length });
@@ -514,9 +562,9 @@ export default function Messaging() {
     setSelectedIds(new Set());
     setBulkDeletePrompt(null);
     if (skipped > 0) {
-      toast.success(`Deleted ${ids.length} thread${ids.length === 1 ? '' : 's'}; skipped ${skipped} you couldn't delete.`);
+      toast.success(t('messages.deletedSome', { count: ids.length, skipped }));
     } else {
-      toast.success(`Deleted ${ids.length} thread${ids.length === 1 ? '' : 's'} for everyone.`);
+      toast.success(t('messages.deletedAll', { count: ids.length }));
     }
   };
 
@@ -525,7 +573,7 @@ export default function Messaging() {
       <div className="messaging-wrap messaging-fullpage">
         <MessagingHeader
           selectedInbox={selectedInbox}
-          onInboxChange={setSelectedInbox}
+          onInboxChange={handleInboxChange}
           unread={inboxUnread}
           filters={filters}
           onFiltersChange={setFilters}
@@ -538,6 +586,9 @@ export default function Messaging() {
           orphanCount={orphanCount}
           onOpenOrphans={isSuperAdmin ? () => setOrphansOpen(true) : undefined}
         />
+        {showingCustomers ? (
+          <CustomerMessagesInbox panes={panes} paneRef={paneContainerRef} onActivity={refreshCustomersUnread} />
+        ) : (
         <div
           className={`msg-3pane ${activeId ? 'has-active' : ''}`}
           ref={paneContainerRef}
@@ -572,11 +623,12 @@ export default function Messaging() {
             onPointerDown={panes.onDragStart('left')}
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize thread list"
-            title="Drag to resize"
+            aria-label={t('messages.resizeList')}
+            title={t('messages.dragToResize')}
           />
           <ConversationMessagePanel
             conversation={activeConversation}
+            unavailable={unavailable}
             contact={activeContact}
             messages={activeMessages}
             currentUser={currentUser}
@@ -585,7 +637,7 @@ export default function Messaging() {
             onDeleteForever={() => setConfirmDeleteOpen(true)}
             onRename={handleRenameConversation}
             onToggleStar={canStarMute ? handleToggleStarActive : undefined}
-            onToggleMute={canStarMute ? handleToggleMute : undefined}
+            onToggleMute={canSnooze ? handleToggleMute : undefined}
             onBack={handleBackToInbox}
             connectedInboxes={myConnectedInboxes}
             defaultInboxId={myDefaultInbox?.id || null}
@@ -600,8 +652,8 @@ export default function Messaging() {
             onPointerDown={panes.onDragStart('right')}
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize context panel"
-            title="Drag to resize"
+            aria-label={t('messages.resizeContext')}
+            title={t('messages.dragToResize')}
           />
           <ConversationContextPanel
             conversation={activeConversation}
@@ -609,6 +661,7 @@ export default function Messaging() {
             onLinkContact={handleLinkContact}
           />
         </div>
+        )}
       </div>
 
       <NewConversationModal
@@ -637,13 +690,13 @@ export default function Messaging() {
 
       <ConfirmDialog
         open={confirmDeleteOpen}
-        title="Permanently delete this thread?"
+        title={t('messages.deleteTitle')}
         message={
           activeConversation
-            ? `This permanently deletes the thread and all ${activeMessages.length} message${activeMessages.length === 1 ? '' : 's'} for everyone. This cannot be undone.`
-            : 'This permanently deletes the thread and all of its messages for everyone. This cannot be undone.'
+            ? t('messages.deleteMessage', { count: activeMessages.length })
+            : t('messages.deleteMessageAny')
         }
-        confirmLabel="Delete forever"
+        confirmLabel={t('messages.deleteForever')}
         variant="danger"
         onConfirm={handleHardDeleteConversation}
         onClose={() => setConfirmDeleteOpen(false)}
@@ -653,15 +706,18 @@ export default function Messaging() {
         open={!!bulkDeletePrompt}
         title={
           bulkDeletePrompt
-            ? `Permanently delete ${bulkDeletePrompt.ids.length} thread${bulkDeletePrompt.ids.length === 1 ? '' : 's'}?`
-            : 'Permanently delete threads?'
+            ? t('messages.bulkDeleteTitle', { count: bulkDeletePrompt.ids.length })
+            : t('messages.bulkDeleteTitleAny')
         }
         message={
           bulkDeletePrompt
-            ? `This permanently deletes ${bulkDeletePrompt.ids.length} selected thread${bulkDeletePrompt.ids.length === 1 ? '' : 's'} and every message in them, for everyone. This cannot be undone.${bulkDeletePrompt.skipped ? ` ${bulkDeletePrompt.skipped} other thread${bulkDeletePrompt.skipped === 1 ? '' : 's'} you can't delete will be skipped.` : ''}`
+            ? [
+              t('messages.bulkDeleteMessage', { count: bulkDeletePrompt.ids.length }),
+              bulkDeletePrompt.skipped ? t('messages.bulkDeleteSkipped', { count: bulkDeletePrompt.skipped }) : '',
+            ].filter(Boolean).join(' ')
             : ''
         }
-        confirmLabel="Delete forever"
+        confirmLabel={t('messages.deleteForever')}
         variant="danger"
         onConfirm={handleBulkDeleteConfirm}
         onClose={() => setBulkDeletePrompt(null)}
@@ -669,13 +725,13 @@ export default function Messaging() {
 
       <ConfirmDialog
         open={!!rowDeletePrompt}
-        title="Permanently delete this thread?"
+        title={t('messages.deleteTitle')}
         message={
           rowDeletePrompt
-            ? `This permanently deletes the thread and all ${rowDeletePrompt.count} message${rowDeletePrompt.count === 1 ? '' : 's'} for everyone. This cannot be undone.`
+            ? t('messages.deleteMessage', { count: rowDeletePrompt.count })
             : ''
         }
-        confirmLabel="Delete forever"
+        confirmLabel={t('messages.deleteForever')}
         variant="danger"
         onConfirm={handleRowDeleteConfirm}
         onClose={() => setRowDeletePrompt(null)}

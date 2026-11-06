@@ -20,9 +20,9 @@
 
 // The 403 `code` values that mean "this login is done and must sign out". Anything
 // NOT in this set stays classified as before (a `violations` 403 is the field guard;
-// any other 403, and every 4xx/5xx/transport error, still falls back to the direct
-// write pre-1e). Keeping the set tiny is the guard against over-broadening: a generic
-// 403 must not sign anyone out.
+// any other 403, and every 4xx/5xx/transport error, is a failed save the sync manager
+// backs off and retries — there is no direct-write fallback since CS-009). Keeping the
+// set tiny is the guard against over-broadening: a generic 403 must not sign anyone out.
 export const TERMINAL_AUTH_CODES = new Set(['account-disabled', 'not-on-team']);
 
 // Pure classifier. Given an HTTP status and the parsed JSON body, return the terminal
@@ -38,12 +38,16 @@ export function terminalAuthCode(status, payload) {
 // The message shown on the sign-in screen after a terminal sign-out. One line per code;
 // the default covers `account-disabled` and any future terminal code without a blank
 // screen. Kept here so the code→message mapping has one home and is unit-testable.
-export const ACCOUNT_DISABLED_MESSAGE =
-  'This account has been disabled — contact an owner.';
-export const NOT_ON_TEAM_MESSAGE =
-  'This account is no longer on the team — contact an owner.';
+// LANGUAGES (CS-193): the sentence is a catalog line; the sign-in screen shows it in the
+// reader's language through terminalAuthKey, and these English constants are the same lines.
+import { english } from '../i18n/core.js';
+
+export function terminalAuthKey(code) {
+  return code === 'not-on-team' ? 'login.notOnTeam' : 'login.accountDisabled'; // any other terminal code reads as disabled
+}
+export const ACCOUNT_DISABLED_MESSAGE = english('login.accountDisabled');
+export const NOT_ON_TEAM_MESSAGE = english('login.notOnTeam');
 
 export function terminalAuthMessage(code) {
-  if (code === 'not-on-team') return NOT_ON_TEAM_MESSAGE;
-  return ACCOUNT_DISABLED_MESSAGE; // 'account-disabled' and any other terminal code
+  return english(terminalAuthKey(code));
 }

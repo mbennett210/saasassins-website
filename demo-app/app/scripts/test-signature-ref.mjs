@@ -130,15 +130,26 @@ ok('  ...but still appends the text', buildOutboundEmail('x', { enabled: true, t
     /from\(MARKETING_ATTACHMENT_BUCKET\)/.test(src));
 }
 
+// A raw-body spread AT THE performSend CALL. Anchored on the call so a comment that quotes
+// the old `{ ...req.body }` shape (both routes explain why it went) is not read as one.
+const RAW_BODY_SPREAD = /performSend\([^,]+,\s*\{\s*\.\.\.req\.body/;
+
 // ── 🔴 the route must not let the body supply the identity ──────────────
 {
   const route = readFileSync(new URL('../api/inbox/[id]/send.js', import.meta.url), 'utf8');
   ok('the route captures the authority object', /const authority = await requireInboxOwner/.test(route));
   ok('  ...and bails when it is null', /if \(!authority\) return;/.test(route));
   ok('🔴 orgUserId comes from the CLAIM and is spread LAST, overriding the body',
-    /\{ \.\.\.req\.body, orgUserId: authority\.orgUserId \}/.test(route));
+    /\{ \.\.\.sanitizeInboxSendBody\(req\.body\), orgUserId: authority\.orgUserId \}/.test(route));
   // The old form passed req.body straight through — that would let a caller inject it.
   ok('  ...the raw-body call form is gone', !/performSend\(req\.query\.id, req\.body\)/.test(route));
+  // 🔴 AND THE SPREAD ITSELF IS GONE (CS-017, 2026-09-29). Overriding orgUserId closed
+  // the signature hole this suite is about, but `{ ...req.body }` still handed the caller
+  // every OTHER performSend argument — arbitrary MIME headers, and `unsubscribe.enabled:
+  // false`, which switches off the CAN-SPAM footer. An allowlist is the only form that does
+  // not grow a new hole each time performSend grows a parameter.
+  ok('🔴 ...and the body is an ALLOWLIST, not a spread of req.body',
+    !RAW_BODY_SPREAD.test(route) && /sanitizeInboxSendBody\(req\.body\)/.test(route));
 
   const sender = readFileSync(new URL('../api/_lib/sender.js', import.meta.url), 'utf8');
   ok('performSend accepts orgUserId', /orgUserId \} = \{\}\)/.test(sender));
@@ -160,9 +171,14 @@ ok('  ...but still appends the text', buildOutboundEmail('x', { enabled: true, t
     return e.isDirectory() ? walk(p) : (p.endsWith('.js') ? [p] : []);
   });
   const files = walk(apiDir);
+  // ROUTES only. api/_lib/* modules name performSend in their headers (sender.js defines it;
+  // inboxOwnership.js, inboxSendBody.js and marketing/compliance.js each explain their part in
+  // its contract), and a header is not a call site. This `_lib` exclusion replaced a single
+  // sender.js one on 2026-09-29, when two more helpers started documenting the path.
   const callers = files.filter((f) => {
     const s = readFileSync(f, 'utf8');
-    return /\bperformSend\s*\(/.test(s) && !f.endsWith(join('_lib', 'sender.js'));
+    const inLib = relative(apiDir, f).split(/[\\/]/)[0] === '_lib';
+    return /\bperformSend\s*\(/.test(s) && !inLib;
   });
   ok(`performSend callers located by scan (${callers.length})`, callers.length >= 2);
 
@@ -173,8 +189,12 @@ ok('  ...but still appends the text', buildOutboundEmail('x', { enabled: true, t
     // overrides orgUserId from a verified authority afterwards.
     const passesRawBody = /performSend\([^,]+,\s*req\.body\s*\)/.test(s);
     const overrides = /orgUserId:\s*(authority|a)\.orgUserId/.test(s);
-    const spreadsBody = /performSend\([^,]+,\s*\{\s*\.\.\.req\.body/.test(s);
-    if (passesRawBody || (spreadsBody && !overrides)) unguarded.push(relative(apiDir, f).replace(/\\/g, '/'));
+    // Any spread of the raw body INTO performSend now counts as unguarded, overridden
+    // orgUserId or not (CS-017): the allowlist in _lib/inboxSendBody.js is the only accepted
+    // form. Matched at the CALL so a comment quoting the old shape is not a finding.
+    const spreadsBody = RAW_BODY_SPREAD.test(s);
+    const bodyDriven = /req\.body/.test(s);
+    if (passesRawBody || spreadsBody || (bodyDriven && !overrides)) unguarded.push(relative(apiDir, f).replace(/\\/g, '/'));
   }
   ok(`🔴 no performSend caller lets the BODY supply orgUserId (${unguarded.join(', ') || 'none'})`,
     unguarded.length === 0);
@@ -186,8 +206,8 @@ ok('  ...but still appends the text', buildOutboundEmail('x', { enabled: true, t
     ok(`inbox/[id]/${name} is a known caller`, Boolean(f));
     if (f) {
       const s = readFileSync(f, 'utf8');
-      ok(`  ...and spreads the CLAIM's orgUserId last`,
-        /\{ \.\.\.req\.body, orgUserId: authority\.orgUserId \}/.test(s));
+      ok(`  ...and spreads the CLAIM's orgUserId last, over an ALLOWLISTED body`,
+        /\{ \.\.\.sanitizeInboxSendBody\(req\.body\), orgUserId: authority\.orgUserId \}/.test(s));
       ok(`  ...capturing the authority rather than discarding it`,
         /const authority = await requireInboxOwner/.test(s));
     }

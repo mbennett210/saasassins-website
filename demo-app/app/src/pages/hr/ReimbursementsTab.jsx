@@ -2,7 +2,7 @@
 // description + receipt image), then Approve → it posts to the pay run as a NON-taxable
 // reimbursement line, or Reject. Receipt bytes live in the lib/hrFiles stub (never the
 // blob). (v1: crew "attach at clock-out" capture is a deferred fast-follow.)
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from '../../store';
 import { ACTIONS } from '../../store/reducer';
 import { selectReimbursements } from '../../store/selectors';
@@ -16,10 +16,12 @@ import Modal from '../../components/Modal';
 import { usePagedRows } from '../../hooks/usePagedRows';
 import ListPager from '../../components/ListPager';
 import { newId } from '../../lib/ids';
-import { money } from '../../lib/dates';
+import { money, DEFAULT_ORG_TIMEZONE } from '../../lib/dates';
 import { payPeriodRange } from '../../lib/payroll';
 import { compareUsersByName } from '../../lib/roles';
 import { saveHrFile, getHrFile, removeHrFile, HR_FILE_ALLOWED_MIME } from '../../lib/hrFiles';
+import * as payrollApi from '../../lib/payrollApi';
+import { openPeriods, retargetToOpenPeriodKey, reimbursementRemovable } from '../payroll/periodLock';
 
 const STATUS_VARIANT = { pending: 'amber', approved: 'green', rejected: 'slate' };
 const STATUS_LABEL = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' };
@@ -32,11 +34,12 @@ export default function ReimbursementsTab() {
   const reimbursements = useSelector(useCallback((s) => selectReimbursements(s), []));
   const users = useSelector(useCallback((s) => s.users, []));
   // Approving a reimbursement posts money to the pay run, so approving your OWN is a
-  // Super Admin's (owner/admin) call — the server refuses it for anyone else, and a
-  // refused save drops the whole pending batch (store/sync.js), so the button must not
-  // offer what the server won't take.
+  // Super Admin's call — OWNER ONLY (MTA W1-G, spec §8.6; was owner/admin). A manager or
+  // admin may submit their own but not approve it. The server (orgStateGuard) refuses it
+  // for anyone else, and a refused save drops the whole pending batch (store/sync.js), so
+  // the button must not offer what the server won't take.
   const myRole = useMemo(() => users.find((u) => u.id === currentUserId)?.role, [users, currentUserId]);
-  const canApproveOwn = myRole === 'owner' || myRole === 'admin';
+  const canApproveOwn = myRole === 'owner';
   const mayApprove = (r) => canEdit && (r.userId !== currentUserId || canApproveOwn);
   // Follow the ORG's pay cadence so a line's periodKey (= period fromKey) matches the
   // pay run's period; hardcoding biweekly here silently drops lines under semi-monthly.
@@ -44,13 +47,27 @@ export default function ReimbursementsTab() {
     const c = s.opsSettings?.payPeriodCadence;
     return c === 'weekly' || c === 'semimonthly' ? c : 'biweekly';
   }, []));
+  const tz = useSelector(useCallback((s) => s.company?.timezone || DEFAULT_ORG_TIMEZONE, []));
+  // PAY-19: and the ORG's workweek START, which decides where a weekly/biweekly period begins.
+  // A picker on Sunday weeks while the run is on Monday weeks produces a periodKey the run never
+  // matches, and the line silently drops.
+  const weekStartDay = useSelector(useCallback((s) => {
+    const d = s.opsSettings?.payWeekStartDay;
+    return Number.isInteger(d) && d >= 0 && d <= 6 ? d : 0;
+  }, []));
+  // A closed pay period is locked (spec §8.5), so the picker offers only OPEN periods, and a
+  // reimbursement whose chosen period has since closed is paid in the first open one on approve.
+  const [runs, setRuns] = useState([]);
+  useEffect(() => { let alive = true; payrollApi.runs().then((r) => { if (alive) setRuns(Array.isArray(r) ? r : []); }).catch(() => {}); return () => { alive = false; }; }, []);
 
-  const periods = useMemo(() => [0, -1, -2, -3].map((o) => payPeriodRange(cadence, o)), [cadence]);
+  const periods = useMemo(() => openPeriods(runs, cadence, { tz, weekStartDay }), [runs, cadence, tz, weekStartDay]);
   const nameById = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u.name])), [users]);
   const payableUsers = useMemo(() => users.filter((u) => u.status === 'active' && u.pay && u.pay.type && u.pay.type !== 'none').slice().sort(compareUsersByName), [users]);
   const rows = useMemo(() => reimbursements.slice().sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)), [reimbursements]);
   const pager = usePagedRows(rows, { param: 'page' });
-  const periodLabel = (key) => (periods.find((p) => p.fromKey === key) || {}).label || key;
+  // The period containing a key IS that period when the key is a period fromKey, so this labels
+  // any period — including a now-closed one on an old row — not just the offered open ones.
+  const periodLabel = useCallback((key) => (key ? payPeriodRange(cadence, 0, key, tz, weekStartDay).label : key), [cadence, tz, weekStartDay]);
 
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ userId: '', description: '', amount: '', periodKey: periods[0].fromKey });
@@ -92,10 +109,14 @@ export default function ReimbursementsTab() {
 
   const approve = (r) => {
     if (r.userId === currentUserId && !canApproveOwn) { toast.error('Only a Super Admin can approve your own reimbursement.'); return; }
+    // If the chosen period has closed since it was picked, pay it in the first OPEN period
+    // (spec §8.5) — the line's periodKey moves there and the reimbursement records where it paid.
+    const paidKey = retargetToOpenPeriodKey(r.periodKey, runs, cadence, { tz, weekStartDay });
+    const moved = paidKey !== r.periodKey;
     const plId = newId('pl');
-    dispatch({ type: ACTIONS.ADD_PAYROLL_LINE, line: { id: plId, userId: r.userId, periodKey: r.periodKey, kind: 'earning', category: 'reimbursement', label: r.description, amount: Math.abs(r.amount), taxable: false, createdBy: currentUserId, note: `reimbursement ${r.id}` } });
-    dispatch({ type: ACTIONS.UPDATE_REIMBURSEMENT, id: r.id, patch: { status: 'approved', payrollLineId: plId, decidedBy: currentUserId, decidedAt: new Date().toISOString() } });
-    toast.success('Approved — added to payroll');
+    dispatch({ type: ACTIONS.ADD_PAYROLL_LINE, line: { id: plId, userId: r.userId, periodKey: paidKey, kind: 'earning', category: 'reimbursement', label: r.description, amount: Math.abs(r.amount), taxable: false, createdBy: currentUserId, note: `reimbursement ${r.id}` } });
+    dispatch({ type: ACTIONS.UPDATE_REIMBURSEMENT, id: r.id, patch: { status: 'approved', payrollLineId: plId, periodKey: paidKey, decidedBy: currentUserId, decidedAt: new Date().toISOString() } });
+    toast.success(moved ? `Approved — the ${periodLabel(r.periodKey)} period had closed, so it's paid in ${periodLabel(paidKey)}.` : 'Approved — added to payroll');
   };
   const reject = (r) => dispatch({ type: ACTIONS.UPDATE_REIMBURSEMENT, id: r.id, patch: { status: 'rejected', decidedBy: currentUserId, decidedAt: new Date().toISOString() } });
   const del = async (r) => {
@@ -163,7 +184,9 @@ export default function ReimbursementsTab() {
                             : <span className="pay-muted" title="Only a Super Admin can approve your own reimbursement">Super Admin approves</span>}
                           <button className="btn btn-danger btn-sm" onClick={() => reject(r)} type="button">Reject</button>
                         </>}
-                        <button className="btn-icon btn-icon-danger" onClick={() => setConfirmId(r.id)} type="button" aria-label="Remove"><Icon name="trash" size={14} /></button>
+                        {reimbursementRemovable(runs, r)
+                          ? <button className="btn-icon btn-icon-danger" onClick={() => setConfirmId(r.id)} type="button" aria-label="Remove"><Icon name="trash" size={14} /></button>
+                          : <span className="pay-muted" title="This reimbursement was paid in a closed pay period — its line can't be removed. A correction is paid as arrears on the next payroll.">Period closed</span>}
                       </td>
                     )}
                   </tr>

@@ -160,6 +160,35 @@ export function applyDriveEstimates(segments, lookup, {
   });
 }
 
+// ── IS DRIVE TIME PAID AT ALL? (PAY-6, Matt 2026-09-29) ──────────────────────
+// "Should drive time between buildings be paid? — (b) No. we dont use this."
+//
+// 🔴 THIS SETTING USED TO BE DISPLAY-ONLY, AND THAT WAS A MONEY DEFECT. Nothing in the pay run
+// read `opsSettings.payDriveTime`, and `applyDriveOverrides` below defaults a leg's
+// `paidMinutes` to its `actualMinutes`, so with drive pay "off" every leg still folded into the
+// weekly 40 h walk and priced into Base pay — the office could turn drive pay off and keep
+// paying it, and buy overtime with it.
+//
+// The gate lives HERE, beside the minutes it governs, and is applied at ONE boundary: the
+// pricer, `lib/payRun.computePayRun`. Every caller of the pricer is therefore covered by
+// construction — the server preview, the close-period file and the demo stub all go through it.
+// It is deliberately NOT applied inside `segmentPaidMinutes` / `isSegmentPayable`: the drive
+// REPORT is about travel, not pay, so a leg keeps its recorded and paid minutes there whatever
+// the setting says. Nothing about the legs is stored, so flipping the setting back restores
+// the pay with no backfill.
+//
+// Only a LITERAL false turns it off. A truthy-but-wrong stored value ('false', 0, null) fails
+// to the PAYING side, which is the safe direction for a wage.
+export const OPS_SETTINGS_PAY_DRIVE_DEFAULT = true;
+export const drivePayEnabled = (settings = {}) => settings?.payDriveTime !== false;
+
+// The legs a PAY computation may see: all of them, or none. Callers pass the whole
+// `opsSettings` (or just `{ payDriveTime }`) so there is one reader of the field.
+export function payableDriveSegments(segments, settings = {}) {
+  if (!drivePayEnabled(settings)) return [];
+  return Array.isArray(segments) ? segments : [];
+}
+
 // ── manager overrides ─────────────────────────────────────────────────────────
 // A flagged leg is a conversation, not an automatic deduction: recorded travel
 // between job sites is compensable time, so nothing is docked silently. A manager

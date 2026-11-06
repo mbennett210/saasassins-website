@@ -6,7 +6,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useToast } from './Toast';
 import { selectSiteById, selectUserById } from '../store/selectors';
 import * as securityApi from '../lib/securityApi';
-import { fmtRelative } from '../lib/dates';
+import { useT } from '../i18n/react';
+import { timeShort } from '../i18n/relative';
 
 // Per-site door/alarm codes — set here, masked by default, revealed on demand. Codes
 // are AES-256-GCM at rest, set + revealed via /api/site-security (the key never
@@ -20,6 +21,7 @@ import { fmtRelative } from '../lib/dates';
 const noEnter = (e) => { if (e.key === 'Enter') e.preventDefault(); };
 
 function SecurityCard({ siteId, embedded = false, readOnly = false }, ref) {
+  const t = useT();
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
@@ -60,8 +62,13 @@ function SecurityCard({ siteId, embedded = false, readOnly = false }, ref) {
       // Standalone shows its own confirmation + closes; embedded stays quiet (the
       // parent's Save toast covers it) and leaves the fields for the parent to unmount.
       if (!embedded) { toast.success('Access codes updated'); setEditing(false); setRevealed({}); }
-    } catch (e) { toast.error(e.message || 'Could not save codes'); throw e; }
-    finally { setBusy(false); }
+    } catch (e) {
+      // EMBEDDED stays silent and rethrows: the parent (LocationCard) saves the rest of
+      // the location anyway and reports the codes failure in one combined message, so
+      // toasting here would double up (CS-037).
+      if (!embedded) toast.error(e.message || 'Could not save codes');
+      throw e;
+    } finally { setBusy(false); }
   };
 
   useImperativeHandle(ref, () => ({ save }));
@@ -130,7 +137,7 @@ function SecurityCard({ siteId, embedded = false, readOnly = false }, ref) {
               </>
             ) : <span className="text-muted text-sm">Not set</span>}
           </div>
-          {sec.updatedAt && <p className="text-muted text-xs" style={{ margin: '2px 0 0' }}>Updated {fmtRelative(sec.updatedAt)}{updatedByName ? ` by ${updatedByName}` : ''}</p>}
+          {sec.updatedAt && <p className="text-muted text-xs" style={{ margin: '2px 0 0' }}>{updatedByName ? t('ago.updatedBy', { when: timeShort(t, sec.updatedAt), name: updatedByName }) : t('ago.updated', { when: timeShort(t, sec.updatedAt) })}</p>}
           {canEdit && !readOnly && <button type="button" className="btn btn-link" style={{ paddingLeft: 0 }} onClick={() => { setForm({ doorCode: '', alarmCode: '', codeHint: sec.codeHint || '' }); setEditing(true); }}>Edit</button>}
         </div>
       ) : (

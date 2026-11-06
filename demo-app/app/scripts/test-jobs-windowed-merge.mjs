@@ -1,9 +1,9 @@
-// Node unit test for the windowed-boot jobs merge (mergeFullJobs) — the logic that
-// reconciles the full table set with the local array after a fast windowed first paint.
-// The load-bearing safety property: after hydration the app holds the COMPLETE set, and
-// the NEXT save (mirror baseline = the pristine table set `all`) must write EXACTLY the
-// edits/creates/deletes the user made during the window-only gap — and NOTHING on a clean
-// boot. A bug here would mass-rewrite or mass-delete the live public.jobs table.
+// Node unit test for the jobs baseline merge (mergeFullJobs) — the logic that reconciles the
+// table's answer (the jobs window and every series master since CS-676; the whole table
+// before it) with what was painted first from the device's cache. The load-bearing safety
+// property: the NEXT save (mirror baseline = the pristine table answer `all`) must write
+// EXACTLY the edits/creates/deletes the user made in the gap — and NOTHING on a clean boot.
+// A bug here would mass-rewrite or mass-delete the live public.jobs table.
 //
 // Models the reducer's ref discipline: SET_JOBS stores the passed objects by reference,
 // and an edit/create/delete produces a NEW object for the touched job while leaving the
@@ -18,7 +18,7 @@ const ids = (arr) => arr.map((j) => j.id).sort().join(',');
 const job = (id, extra = {}) => ({ id, startAt: `2026-07-${String((Number(id.replace(/\D/g, '')) % 28) + 1).padStart(2, '0')}T10:00:00.000Z`, status: 'upcoming', ...extra });
 
 // A fresh table read: same ids/content as the given jobs but DISTINCT object refs
-// (this is what fetchAllJobs returns — never the same refs the window painted).
+// (this is what the table read returns — never the same refs that were painted).
 const tableCopy = (arr) => arr.map((j) => ({ ...j }));
 
 // The full authoritative table set: two in-window ids (1,2) + two out-of-window (3,4).

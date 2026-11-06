@@ -33,16 +33,19 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 // ── 🔴 Schedule: an unknown master must fail SAFE ───────────────────────
 {
   const src = read('../src/pages/Schedule.jsx');
-  const fn = (src.match(/const isPerDaySeries = \(job\) => \{[\s\S]*?\n  \};/) || [])[0] || '';
+  const fn = (src.match(/const isPerDaySeries = \(job, s = state\) => \{[\s\S]*?\n  \};/) || [])[0] || '';
   ok('isPerDaySeries found', fn.length > 0);
-  ok('🔴 an unloaded/missing master is treated as per-day (the SAFE direction)',
-    /if \(!m\) return true;/.test(fn));
-  ok('  ...and that check precedes any recurrence read',
-    fn.indexOf('if (!m) return true') < fn.indexOf('m.recurrence'));
+  ok('🔴 an unloaded series or a missing master is treated as per-day (the SAFE direction)',
+    /if \(!jobsLoader\.isSeriesLoaded\(job\.seriesId\)\) return true;/.test(fn) && /if \(!m\) return true;/.test(fn));
+  ok('  ...and those checks precede any recurrence read',
+    fn.indexOf('isSeriesLoaded') < fn.indexOf('m.recurrence') && fn.indexOf('if (!m) return true') < fn.indexOf('m.recurrence'));
   ok('a job with no seriesId is still not per-day', /if \(!job\.seriesId\) return false;/.test(fn));
   // The old shape used optional chaining to swallow a missing master into `false`.
   ok('  ...the old swallow-into-false shape is gone', !/const r = m\?\.recurrence;/.test(fn));
-  ok('both prompt sites still pass the flag', (src.match(/disableFuture: isPerDaySeries\(job\)/g) || []).length === 2);
+  // Both quick paths (drag, reschedule) go through ONE prompt, which loads the series first.
+  ok('the one prompt both quick paths use still passes the flag',
+    /disableFuture: !loaded \|\| isPerDaySeries\(job, s\)/.test(src)
+    && (src.match(/promptSeriesScope\(job, \{ kind: '(drag|reschedule)'/g) || []).length === 2);
 }
 
 // ── 🔴 JobDetail: the fallback branch must not carry crewIds blindly ────

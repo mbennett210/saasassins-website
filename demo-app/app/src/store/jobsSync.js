@@ -1,12 +1,9 @@
 // Per-row jobs persistence for the B1 migration. Instead of rewriting the whole
 // ~52.9 MB jobs array (18,748 rows) inside the org_state blob on every change, we
-// write ONLY the jobs that changed to the dedicated public.jobs table.
-//
-// STAGE 1 (write-through mirror): the org_state blob is still the read source and
-// still carries jobs (so tabs on old code keep working); this module just keeps the
-// jobs table current from every write, so Stage 2 can safely flip reads to the table
-// and prune the blob. It is BEST-EFFORT — a failure here never blocks the org_state
-// save; the next change re-diffs and retries (lastSyncedJobs only advances on success).
+// write ONLY the jobs that changed to the dedicated public.jobs table, through the
+// server route (/api/state/jobs-delta) and nothing else. The org_state save never
+// waits on it; a failed delta leaves lastSyncedJobs where it was, so the next flush
+// re-diffs and re-sends it.
 import { supabase, supabaseRead } from '../lib/supabaseClient';
 import { diffJobs, splitDelta } from './jobsMerge'; // used by persistJobsDelta below
 import { writeStamp } from '../lib/appBuild';
@@ -19,25 +16,10 @@ const ORG_ID =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLEANSPACE_ORG_ID) ||
   '00000000-0000-0000-0000-000000000001';
 
-// Only accept a parseable ISO-ish date for the indexed start_at column; anything
-// else (blank/malformed) stays null. The full value always survives in `data`.
-const isoOrNull = (v) => {
-  if (!v) return null;
-  const s = String(v);
-  return /^\d{4}-\d{2}-\d{2}[T ]/.test(s) ? s : null;
-};
-
-// `_rv` is the sync layer's copy of the row's server-assigned row_version. It
-// rides ON the job object so the reducer's order guard can compare it, but it is
-// NOT domain data and must never be persisted into the `data` JSONB — otherwise
-// a stale version would be baked into the payload and re-served on every read.
-// Stripped here AND server-side in _lib/jobsTable.js (defence in depth: either
-// write path must produce clean data).
-export const stripRv = (job) => {
-  if (!job || job._rv === undefined) return job;
-  const { _rv, ...rest } = job;
-  return rest;
-};
+// `_rv` is the sync layer's copy of the row's server-assigned row_version. It rides ON
+// the job object so the reducer's order guard can compare it, and it is never domain
+// data: the server strips it before anything reaches the `data` JSONB
+// (api/_lib/jobsTable.js stripRv — the only write path since CS-009).
 
 // Attach the row's server version to the job payload as it comes off the wire.
 // NULL means "not written since row_version was added" — treated as 0, the
@@ -50,25 +32,6 @@ const withRv = (row) => ({ ...row.data, _rv: row.row_version ?? 0 });
 // rows we never actually received and they would be missed forever.
 export const maxRv = (jobs) => (jobs || []).reduce((m, j) => (j?._rv > m ? j._rv : m), 0);
 
-function toRow(job, userId, now) {
-  return {
-    id: job.id,
-    organization_id: ORG_ID,
-    data: stripRv(job),
-    start_at: isoOrNull(job.startAt),
-    status: job.status ?? null,
-    client_id: job.clientId ?? null,
-    site_id: job.siteId ?? null,
-    series_id: job.seriesId ?? null,
-    updated_at: now,
-    updated_by: userId ?? null,
-    // Build/tab provenance (Increment 0.3). updated_by_build feeds the prune-gate
-    // telemetry; updated_by_tab is what realtime echo suppression must key on, since
-    // keying on userId makes a user's OWN second tab drop the write and go stale.
-    ...writeStamp(),
-  };
-}
-
 // Rows per server request. A series operation can touch hundreds of occurrences,
 // and Vercel rejects bodies over ~4.5 MB at the PLATFORM layer — before the
 // handler runs — so an unchunked series edit would 413 with no useful error (the
@@ -79,14 +42,17 @@ const MAX_ROWS_PER_REQUEST = 200;
 // splitDelta lives in the dependency-free jobsMerge core so it is unit-testable
 // from a plain node script (this module imports Vite-resolved things).
 
-// Persist the delta between two jobs arrays to public.jobs. Throws on failure so the
-// caller can leave lastSyncedJobs unadvanced (→ retried on the next change).
+// Persist the delta between two jobs arrays to public.jobs. THROWS on any failure (the error
+// carries `kind` 'unreachable' | 'failed' and `status`), so the caller leaves lastSyncedJobs
+// unadvanced and the next flush re-sends the delta.
 //
-// Increment 1d: routes through the server endpoint, which stamps authorship from
-// the caller's JWT claim. Falls back to the direct client write only when the
-// server is unreachable — see lib/stateApi.js for why that fallback is loud and
-// temporary. Increment 1e revokes the browser policy and deletes the fallback.
-export async function persistJobsDelta(prevJobs, currJobs, userId) {
+// Through the server endpoint ONLY (Increment 1d), which stamps authorship from the caller's
+// JWT claim. There is no direct-write fallback any more (CS-009): since Increment 1e revoked
+// the browser's write policy, a direct upsert was refused and a direct DELETE matched nothing
+// and reported success — so a removal "landed", the baseline advanced, and the deleted clean
+// came back on the next load. A terminal answer (the login was disabled; the sign-out is
+// under way) ends the delta: nothing this login sends can land.
+export async function persistJobsDelta(prevJobs, currJobs) {
   if (!supabase) return { changed: 0, removed: 0 };
   const { changed, removed } = diffJobs(prevJobs, currJobs);
   if (!changed.length && !removed.length) return { changed: 0, removed: 0 };
@@ -94,150 +60,209 @@ export async function persistJobsDelta(prevJobs, currJobs, userId) {
   const stamp = writeStamp();
   const payload = { build: stamp.updated_by_build, tab: stamp.updated_by_tab };
 
-  let usedDirect = false;
   for (const chunk of splitDelta(changed, removed, MAX_ROWS_PER_REQUEST)) {
     const r = await postJobsDelta({ changed: chunk.changed, removed: chunk.removed, ...payload });
-    if (!r.ok && r.unavailable) {
-      usedDirect = true;
-      await directJobsDelta(chunk.changed, chunk.removed, userId);
-    }
+    if (!r.ok && r.terminal) break;
   }
-  if (usedDirect) console.warn('[sync] jobs delta persisted via the direct client write (server path unavailable)');
   return { changed: changed.length, removed: removed.length };
 }
 
-// Pre-1d direct write — the fallback path, and the one Increment 1e removes
-// along with the browser's insert/update/delete policy on public.jobs.
-async function directJobsDelta(changed, removed, userId) {
-  const now = new Date().toISOString();
-  const rows = changed.map((j) => toRow(j, userId, now));
-  for (let i = 0; i < rows.length; i += 500) {
-    const { error } = await supabase.from('jobs').upsert(rows.slice(i, i + 500), { onConflict: 'id' });
-    if (error) throw error;
-  }
-  for (let i = 0; i < removed.length; i += 500) {
-    const { error } = await supabase.from('jobs').delete().in('id', removed.slice(i, i + 500));
-    if (error) throw error;
+// ── READS: never the whole table (CS-676) ─────────────────────────────────────
+// public.jobs keeps every clean ever done (~16,000 a month at Matt's book, nothing pruned).
+// The app used to read ALL of it on every launch — a count, then OFFSET pages of 250 by id —
+// and OFFSET makes each page re-read every row before it, so the database work grew with the
+// SQUARE of the table. Now nothing reads it whole:
+//   · a launch reads the cleans that START inside the window (src/lib/jobsWindow.js) plus each
+//     series' master (store/sync.js loadJobsBaseline);
+//   · a screen that needs more asks for exactly that: a date range (fetchJobsInRange), one
+//     series (fetchSeriesJobs), one customer (fetchClientJobs), some ids (fetchJobsByIds);
+//   · every page is KEYSET — "after the last row I read", never OFFSET — so a page costs the
+//     rows it returns, wherever it sits.
+// Routed to supabaseRead (a nearer read replica when VITE_SUPABASE_LB_URL is set; the primary
+// client until then): every one of these is lag-tolerant, reconciled by the cursor poll.
+//
+// The resilience the old reader earned on slow links (Lauren / ZA, 2026-08-12) is kept for
+// every request: a 20 s abort (a supabase-js read has NO timeout of its own, so a stalled body
+// hung the whole load for ever), five retries with a capped backoff per request, and bounded
+// concurrency so wall-clock is about requests / 4 round trips.
+//
+// PAGE: PostgREST answers at most db-max-rows rows (Supabase's default 1,000 — the cap the app
+// assumes everywhere, api/_lib/pagedSelect.js), so a page of 1,000 is the most one request can
+// carry and a full page is the only sign that more may follow. A row is ~400 B of `data`
+// (production, 2026-10-12), so a page is ~½ MB: the body size the old 250-row pages of fatter
+// rows were tuned to.
+const PAGE = 1000;
+const CONCURRENCY = 4;
+const PAGE_RETRIES = 5;
+const PAGE_TIMEOUT_MS = 20000;
+const COLS = 'id, start_at, data, row_version';
+// A full page all at ONE start time can't move the cursor forward, so the next request drains
+// that instant by id; this is how far ahead it looks while it does.
+const MIN_SPAN_MS = 60000;
+// Ids per `in.(…)` request: keeps the URL short.
+const ID_CHUNK = 100;
+
+// Timeout + retry, shared by every request. build(signal) returns a query carrying the abort
+// signal; a stall or an error aborts, backs off and retries up to PAGE_RETRIES, then throws to
+// the caller (the sync manager's own retry owns it from there).
+async function runWithTimeout(build, attempt = 0) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS);
+  try {
+    const res = await build(controller.signal);
+    if (res.error) throw res.error;
+    return res;
+  } catch (e) {
+    if (attempt >= PAGE_RETRIES) throw e;
+    await new Promise((r) => setTimeout(r, Math.min(800 * (attempt + 1), 4000)));
+    return runWithTimeout(build, attempt + 1);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-// Load all jobs from the table (Stage 2 read path; also used to warm the cache).
-// Routed to supabaseRead: this is the single largest read in the app and it is
-// lag-tolerant — a detached backfill that reconciles through mergeFullJobs — so it
-// is the ideal candidate for a nearer read replica. Identical to the primary
-// client until VITE_SUPABASE_LB_URL is set.
-//
-// HARDENED (the hydration-gate fix): this fetch is what un-gates whole-series
-// edits (useJobsHydrated), and it used to be ~19 SEQUENTIAL unordered pages where
-// ANY page failure threw the whole hydrate away — completeJobsHydration then
-// restarted all ~19 pages from scratch. On a slow/flaky connection (the field
-// crew) hydration chronically never completed, "This & all future" stayed
-// silently disabled, and managers read that as "editing a job doesn't update the
-// future jobs". Three changes:
-//   · pages fetch CONCURRENTLY (bounded) — wall-clock ≈ pages/4 × RTT, not
-//     pages × RTT;
-//   · a failed page retries ITSELF (2×, short backoff) instead of surfacing and
-//     restarting the world;
-//   · `.order('id')` (the pkey — index-ordered, no sort cost) makes the page
-//     boundaries deterministic. The old unordered .range() left page membership
-//     to the planner while rows churned underneath, which could skip or
-//     duplicate rows across pages; with concurrent pages that hazard compounds.
-// Rows written after the count lands are picked up by the cursor poll — the same
-// freshness contract the serial version had (a paginated read was never atomic).
-// `applyFilter` narrows the count and every page query IDENTICALLY (e.g. the
-// boot window's start_at range); pass identity for the full-table read. Shared
-// so the boot window inherits the same three properties the backfill earned:
-// bounded concurrency, per-page retry, deterministic .order('id') boundaries.
-//
-// HARDENED AGAIN (Lauren / ZA slow-link, 2026-08-12): a manager on a slow, flaky
-// international link still never completed the backfill — so jobsReady never
-// flipped, her schedule edits no-op'd in the mirror (mirrorJobs returns early
-// while !jobsReady), and refresh lost them. Three failure modes were tightened:
-//   · PAGE 1000 → 250. Each page carries the FULL job JSONB, so a 1000-row page
-//     is a multi-MB response; on a weak mobile/intl link a single large body is
-//     what gets interrupted. 250 rows (~½ MB) completes far more reliably. More
-//     round-trips, but each is cheap and independently retried, and the bounded
-//     concurrency keeps wall-clock ≈ pages/4 × RTT.
-//   · per-page retry 2 → 5 with a longer capped backoff. A transient drop on one
-//     page previously exhausted its 2 tries and threw the WHOLE fetch away; the
-//     outer completeJobsHydration retry then restarted every page from scratch.
-//     Five tries absorbs the intermittent drops a slow link produces.
-//   · a 20s per-request abort timeout (the decisive one). A supabase-js read has NO
-//     built-in timeout, so a STALLED request (link drops mid-body: no response, no
-//     error) hangs the whole hydrate FOREVER — and the retry above only fires on a
-//     throw, so a stall never retried. Aborting turns a stall into a prompt retry
-//     AND cancels the dead request, freeing the one scarce thing on a starved link:
-//     bandwidth. The boot document read is already bounded this way (BOOT_FETCH_TIMEOUT_MS).
-// The outer completeJobsHydration also no longer gives up after 5 rounds — see
-// sync.js — so between the abort timeout, per-page retries, and an unbounded
-// (single-timer) outer retry, hydration now converges on links that used to wedge.
-async function fetchJobsPaged(applyFilter) {
-  const PAGE = 250;
-  const CONCURRENCY = 4;
-  const PAGE_RETRIES = 5;
-  const PAGE_TIMEOUT_MS = 20000;
+const jobsQuery = () => supabaseRead.from('jobs').select(COLS).eq('organization_id', ORG_ID);
 
-  // Timeout + retry wrapper shared by the count probe and every page. build(signal) returns
-  // a supabase query carrying the abort signal; a stall or error aborts + backs off + retries
-  // up to PAGE_RETRIES, then surfaces to the outer (now-unbounded) completeJobsHydration retry.
-  // The AbortController both makes a hung request throw (so the retry can fire) and cancels it.
-  const runWithTimeout = async (build, attempt = 0) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS);
-    try {
-      const res = await build(controller.signal);
-      if (res.error) throw res.error;
-      return res;
-    } catch (e) {
-      if (attempt >= PAGE_RETRIES) throw e; // genuinely unreachable — the outer retry chain owns it
-      await new Promise((r) => setTimeout(r, Math.min(800 * (attempt + 1), 4000)));
-      return runWithTimeout(build, attempt + 1);
-    } finally {
-      clearTimeout(timer);
+// Every row of one stretch of the time axis, [fromMs, toMs), in (start_at, id) order, keyset.
+// The first request asks for the whole stretch (a small table is one request). A full page
+// means the stretch holds more: the next request starts AT the last row read — the rest of
+// that start time by id, then everything after — and looks about two pages ahead, so whatever
+// plan the database picks, no request reads more than a bounded stretch (an index range on
+// (organization_id, start_at); proved by EXPLAIN in the migration 20261013120000). A short
+// page means the stretch is done; a sparse one widens the next.
+async function readStartRange(fromMs, toMs) {
+  const out = [];
+  let cursorMs = fromMs;
+  let cursorIso = new Date(fromMs).toISOString();
+  let afterId = null; // set while continuing inside a start time: rows AT cursorIso with a greater id
+  let span = toMs - fromMs;
+  while (cursorMs < toMs) {
+    const endMs = Math.min(toMs, cursorMs + span);
+    const fromIso = cursorIso;
+    const after = afterId;
+    // eslint-disable-next-line no-await-in-loop -- keyset: each page starts where the last ended
+    const { data } = await runWithTimeout((signal) => {
+      let q = jobsQuery().gte('start_at', fromIso).lt('start_at', new Date(endMs).toISOString());
+      if (after !== null) q = q.or(`start_at.gt."${fromIso}",id.gt."${after}"`);
+      return q.order('start_at', { ascending: true }).order('id', { ascending: true }).limit(PAGE).abortSignal(signal);
+    });
+    const rows = data || [];
+    for (const r of rows) out.push(r);
+    if (rows.length < PAGE) {
+      cursorMs = endMs;
+      cursorIso = new Date(endMs).toISOString();
+      afterId = null;
+      if (rows.length < PAGE / 4) span *= 2;
+      continue;
     }
-  };
-
-  const fetchPage = async (from) => {
-    const { data } = await runWithTimeout((signal) => applyFilter(
-      supabaseRead
-        .from('jobs')
-        .select('data, row_version')
-        .eq('organization_id', ORG_ID)
-    )
-      .order('id')
-      .range(from, from + PAGE - 1)
-      .abortSignal(signal));
-    return data || [];
-  };
-
-  // Count first so the full page set is known up front and can run concurrently.
-  const { count } = await runWithTimeout((signal) => applyFilter(
-    supabaseRead
-      .from('jobs')
-      .select('id', { count: 'exact', head: true })
-      .eq('organization_id', ORG_ID)
-  ).abortSignal(signal));
-  const pages = Math.max(1, Math.ceil((count || 0) / PAGE));
-  const results = new Array(pages);
-  let nextPage = 0;
-  const worker = async () => {
-    for (;;) {
-      const i = nextPage;
-      if (i >= pages) return;
-      nextPage += 1;
-      results[i] = await fetchPage(i * PAGE);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages) }, worker));
-
-  const all = [];
-  for (const page of results) for (const r of page) all.push(withRv(r));
-  return all;
+    const last = rows[rows.length - 1];
+    const lastMs = Date.parse(last.start_at);
+    span = Math.max(MIN_SPAN_MS, (lastMs - cursorMs) * 2);
+    cursorMs = lastMs;
+    cursorIso = last.start_at; // the stored value as PostgREST wrote it — exact, never re-rounded
+    afterId = last.id;
+  }
+  return out;
 }
 
-export async function fetchAllJobs() {
+// Every row a filter selects, in id order, keyset (`id > the last id read`). For sets that are
+// bounded by what they ask for — one series, one customer, a list of ids, the series masters.
+async function readById(scope) {
+  const out = [];
+  let afterId = null;
+  for (;;) {
+    const after = afterId;
+    // eslint-disable-next-line no-await-in-loop -- keyset: each page starts where the last ended
+    const { data } = await runWithTimeout((signal) => {
+      let q = scope(jobsQuery());
+      if (after !== null) q = q.gt('id', after);
+      return q.order('id', { ascending: true }).limit(PAGE).abortSignal(signal);
+    });
+    const rows = data || [];
+    for (const r of rows) out.push(r);
+    if (rows.length < PAGE) return out;
+    afterId = rows[rows.length - 1].id;
+  }
+}
+
+const toJobs = (rows) => {
+  const seen = new Set();
+  const out = [];
+  for (const r of rows) {
+    if (!r || !r.data || seen.has(r.id)) continue;
+    seen.add(r.id);
+    out.push(withRv(r));
+  }
+  return out;
+};
+
+// The cleans that start in [fromMs, toMs): the launch window and every on-demand range (a past
+// week on the Schedule, a report's day). Split into CONCURRENCY stretches read side by side.
+// Rows with no start_at are in no range — every occurrence carries one.
+export async function fetchJobsInRange(fromMs, toMs) {
+  if (!supabaseRead || !(toMs > fromMs)) return [];
+  const parts = CONCURRENCY;
+  const step = (toMs - fromMs) / parts;
+  const stretches = Array.from({ length: parts }, (_, i) => [
+    fromMs + Math.round(i * step),
+    i === parts - 1 ? toMs : fromMs + Math.round((i + 1) * step),
+  ]).filter(([a, b]) => b > a);
+  const results = await Promise.all(stretches.map(([a, b]) => readStartRange(a, b)));
+  return toJobs(results.flat());
+}
+
+// Every occurrence of one series — what a whole-series edit or delete needs (UPDATE_JOB_SERIES /
+// DELETE_JOB_SERIES build their target sets from the loaded rows). Indexed: (organization_id,
+// series_id).
+export async function fetchSeriesJobs(seriesId) {
+  if (!supabaseRead || !seriesId) return [];
+  return toJobs(await readById((q) => q.eq('series_id', seriesId)));
+}
+
+// Every series' MASTER — the row carrying `recurrence`, the template TOP_UP mints from — however
+// old. A series running for a year has its master a year back, far outside the window. Served by
+// the partial index jobs_org_series_master_idx (migration 20261013120000).
+export async function fetchSeriesMasters() {
   if (!supabaseRead) return [];
-  return fetchJobsPaged((q) => q);
+  return toJobs(await readById((q) => q.not('data->>recurrence', 'is', null)));
+}
+
+// Every clean of one customer — the customer page's history. Indexed: (organization_id, client_id).
+export async function fetchClientJobs(clientId) {
+  if (!supabaseRead || !clientId) return [];
+  return toJobs(await readById((q) => q.eq('client_id', clientId)));
+}
+
+// The cleans with these ids (a deep link, a notification's clean). Primary-key lookups.
+export async function fetchJobsByIds(ids) {
+  const list = [...new Set((ids || []).filter((id) => typeof id === 'string' && id))];
+  if (!supabaseRead || !list.length) return [];
+  const rows = [];
+  for (let i = 0; i < list.length; i += ID_CHUNK) {
+    const chunk = list.slice(i, i + ID_CHUNK);
+    // eslint-disable-next-line no-await-in-loop -- a handful of chunks at most
+    rows.push(...await readById((q) => q.in('id', chunk)));
+  }
+  return toJobs(rows);
+}
+
+// The highest row_version in the table — the cursor floor a launch starts the poll from. Read
+// BEFORE the window, so a row written while the window's pages are read is still above the
+// floor and the first poll fetches it. (A floor taken from the rows read instead — the old way
+// — skips a row whose page was read before its write when a later page saw an even newer one.)
+// NULL row_versions (rows not written since the column was added) are excluded: DESC puts them
+// first. Backward scan of jobs_org_row_version_idx: one row.
+export async function fetchJobsHighWater() {
+  if (!supabaseRead) return 0;
+  const { data } = await runWithTimeout((signal) => supabaseRead
+    .from('jobs').select('row_version')
+    .eq('organization_id', ORG_ID)
+    .not('row_version', 'is', null)
+    .order('row_version', { ascending: false })
+    .limit(1)
+    .abortSignal(signal));
+  const v = Number(data?.[0]?.row_version);
+  return Number.isFinite(v) && v > 0 ? v : 0;
 }
 
 // KEYSET CURSOR POLL (Increment 2) — the authoritative delivery guarantee.
@@ -355,20 +380,3 @@ export async function fetchJobDeletesByIds(ids) {
 // Supabase client, so nothing here can be unit-tested under plain node) and is
 // re-exported for existing callers, like the other merge helpers.
 export { nextJobsCursor, jobsInWindow } from './jobsMerge';
-
-// Load only the jobs whose start_at falls in [fromDate, toDate] (inclusive, ISO
-// date or datetime strings). This is the FAST first-paint window: the whole table
-// is a rolling year of recurrence occurrences (tens of thousands of rows / ~50 MB),
-// far more than boot needs to render today's Schedule + Dashboard. The sync manager
-// paints this window, flips the app interactive, then streams the full set in behind
-// it. Filtered on the indexed start_at column; rows with a null start_at are not in
-// any window and arrive only with the full set (there are none in practice — every
-// occurrence carries a date). See createSyncManager in sync.js.
-// The boot window blocks FIRST PAINT, so its pages must not run one RTT at a
-// time (the old serial loop was ~1 RTT per 1000 rows and, being unordered,
-// left page boundaries to the planner — the same skip/dup hazard the backfill
-// fixed). Same paged engine as fetchAllJobs, narrowed to the window.
-export async function fetchJobsWindow(fromDate, toDate) {
-  if (!supabaseRead) return [];
-  return fetchJobsPaged((q) => q.gte('start_at', fromDate).lte('start_at', toDate));
-}

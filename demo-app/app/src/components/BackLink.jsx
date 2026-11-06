@@ -10,7 +10,8 @@
 // See `useBackTarget` for the rule, and `useFromHere` for the sending half.
 import { useBackTarget } from '../hooks/useBackTarget';
 
-export default function BackLink({ to, label = 'Back', className = 'detail-back' }) {
+// `label` defaults to "Back" in the reader's language (useBackTarget).
+export default function BackLink({ to, label = null, className = 'detail-back' }) {
   const { href, label: text, goBack } = useBackTarget(to, label);
   return <a href={href} className={className} onClick={goBack}>← {text}</a>;
 }

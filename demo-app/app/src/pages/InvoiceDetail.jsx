@@ -8,7 +8,9 @@ import {
   selectServiceById, lineItemFromService, selectSnippets, selectConversationsForContact,
   invoiceTotal, invoicePaid, invoiceBalance, deriveInvoiceStatus,
 } from '../store/selectors';
+import { paymentTermLabel } from '../lib/money';
 import { usePermission } from '../hooks/usePermission';
+import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../components/Toast';
 import DetailHeader from '../components/DetailHeader';
 import Badge, { statusBadgeVariant } from '../components/Badge';
@@ -41,9 +43,14 @@ export default function InvoiceDetail() {
   const toast = useToast();
   const navigate = useNavigate();
   const nav = useFromHere();
+  const { currentUser } = useAuth();
   const canEdit = usePermission('invoices.edit');
   const canPay = usePermission('invoices.recordPayment');
   const canMessage = usePermission('messaging.startConversation');
+  // Void is the CORRECTION mechanism for a wrongly-issued invoice, so undoing one is a
+  // Super-Admin act, not an ordinary edit: it must never be reachable by the bulk action
+  // that once resurrected void invoices (see bulkMarkPaid in pages/Invoices.jsx).
+  const canUnvoid = canEdit && currentUser?.role === 'owner';
 
   const invoice = selectInvoiceById(state, invoiceId);
   const client = invoice ? selectClientById(state, invoice.clientId) : null;
@@ -53,6 +60,11 @@ export default function InvoiceDetail() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(invoice);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmVoid, setConfirmVoid] = useState(false);
+  const [confirmUnvoid, setConfirmUnvoid] = useState(false);
+  // The payment a Remove click is asking about — the dialog names its amount and date, so
+  // the confirm is about THAT money record and not a generic "are you sure".
+  const [confirmRemovePayment, setConfirmRemovePayment] = useState(null);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [payment, setPayment] = useState({ amount: '', method: 'ACH', note: '', date: todayKey() });
   const [attachmentBusy, setAttachmentBusy] = useState(false);
@@ -134,6 +146,11 @@ export default function InvoiceDetail() {
         taxRate: Number(currentForm.taxRate) || 0,
         siteId: currentForm.siteId || null,
         billingContactId: currentForm.billingContactId || null,
+        // ⚠️ THIS IS AN EXPLICIT WHITELIST — a field not named here silently never saves.
+        // poNumber is editable because the customer's AP department changes PO numbers per
+        // period; paymentTerms/taxExempt are NOT, because they record what the invoice was
+        // raised under (CS-044) and must not be rewritten after it went out.
+        poNumber: typeof currentForm.poNumber === 'string' ? currentForm.poNumber.trim() : (invoice.poNumber || ''),
         notes: typeof currentForm.notes === 'string' ? currentForm.notes : (invoice.notes || ''),
       },
     });
@@ -150,7 +167,13 @@ export default function InvoiceDetail() {
       // id minted HERE, not in the reducer: it is the dedupe key that makes this action
       // safe to replay after a save that committed but whose response was lost. See the
       // note on ADD_INVOICE_PAYMENT in store/reducer.js.
-      payment: { id: newId('pay'), amount: amt, method: payment.method, note: payment.note, date: payment.date },
+      //
+      // 🔴 composeIso, NOT the raw day key (CS-145). The <input type="date"> yields
+      // 'YYYY-MM-DD', which every reader parses as UTC MIDNIGHT — so in the org's
+      // negative-offset zone the payment read back as the day BEFORE, while the same
+      // payment logged from the Record Payment modal (which already composed an instant)
+      // read correctly. One payment, two dates, depending on which screen wrote it.
+      payment: { id: newId('pay'), amount: amt, method: payment.method, note: payment.note, date: composeIso(payment.date, '12:00') },
     });
     setPayment({ amount: '', method: 'ACH', note: '', date: todayKey() });
     setShowPaymentForm(false);
@@ -158,8 +181,17 @@ export default function InvoiceDetail() {
     toast.success('Payment recorded');
   };
 
-  const removePayment = (paymentId) => {
-    dispatch({ type: ACTIONS.REMOVE_INVOICE_PAYMENT, id: invoice.id, paymentId });
+  // 🔴 REMOVING A PAYMENT IS DELETING A MONEY RECORD (CS-058). It was one click on a
+  // trash glyph beside every row: a mis-click erased a recorded payment and reopened the
+  // balance, with nothing to undo it. It now goes through the kit ConfirmDialog naming the
+  // amount and the date, so the click that destroys money is never the same click as the
+  // one that opens the row.
+  const removePayment = () => {
+    const p = confirmRemovePayment;
+    setConfirmRemovePayment(null);
+    if (!p) return;
+    dispatch({ type: ACTIONS.REMOVE_INVOICE_PAYMENT, id: invoice.id, paymentId: p.id });
+    toast.success('Payment removed');
   };
 
   // Mark Paid is a fast-path of the Record Payment flow: pre-fill the form
@@ -183,7 +215,10 @@ export default function InvoiceDetail() {
     setPaymentDraft({
       amount: String(p.amount ?? ''),
       method: p.method || 'ACH',
-      date: p.date ? p.date.slice(0, 10) : todayKey(),
+      // splitIso reads the instant back in the ORG's zone, which is the zone composeIso
+      // wrote it in. A bare `.slice(0, 10)` reads the UTC day instead, so an evening
+      // payment round-tripped a day forward through the editor.
+      date: p.date ? splitIso(p.date).date : todayKey(),
       note: p.note || '',
     });
   };
@@ -204,7 +239,9 @@ export default function InvoiceDetail() {
       patch: {
         amount: amt,
         method: paymentDraft.method,
-        date: paymentDraft.date,
+        // Same one stored format as recordPayment above (CS-145): an edit must not turn a
+        // correctly-stored instant back into a bare day key.
+        date: composeIso(paymentDraft.date, '12:00'),
         note: paymentDraft.note,
       },
     });
@@ -213,8 +250,26 @@ export default function InvoiceDetail() {
     toast.success('Payment updated');
   };
 
+  // 🔴 VOID WAS ONE CLICK, STYLED btn-primary, NEXT TO Edit (CS-057). A mis-click voided a
+  // real invoice: the work returned to the uninvoiced pool, the balance stopped being
+  // collectable, and any payment on it turned into account credit — with nothing in the UI
+  // to put it back. It now takes a confirm that names the invoice and what it is worth,
+  // and it is styled as the destructive action it is.
   const voidInvoice = () => {
+    setConfirmVoid(false);
     dispatch({ type: ACTIONS.SET_INVOICE_STATUS, id: invoice.id, status: 'void' });
+    toast.success(`Invoice ${invoice.id} voided`);
+  };
+
+  // The undo the register asked for. The model allows it — `status` is an ordinary field
+  // and every other invoice figure is derived from balance + dates — so the only question
+  // was who may do it and with what warning. Super Admin only (canUnvoid), one invoice at
+  // a time, never a bulk action: `invoiceBalance` ignores void status, so a bulk path that
+  // un-voids would fabricate a full-balance payment (the bug fixed in da42b50).
+  const unvoidInvoice = () => {
+    setConfirmUnvoid(false);
+    dispatch({ type: ACTIONS.SET_INVOICE_STATUS, id: invoice.id, status: 'pending' });
+    toast.success(`Invoice ${invoice.id} restored`);
   };
 
   // One-click payment reminder: merge the invoice number / amount due / due date
@@ -230,7 +285,12 @@ export default function InvoiceDetail() {
       (sn) => sn.label === 'Past due notice' || String(sn.id).includes('past-due')
     );
     const base = snippet?.body || 'Hi. Your invoice is now past due. Could we set up a quick call to sort out payment?';
-    const draft = `${base}\n\nInvoice ${invoice.id}. Amount due ${money(balance)}, due ${fmtDate(invoice.dueDate)}.`;
+    // The PO rides on the customer-facing text (CS-044): a customer whose AP department
+    // requires a PO matches on it, so a reminder without it gets filed and not paid. This
+    // draft is the only customer-facing invoice document in this build — the emailed
+    // invoice itself is behind the Billing Suite lock above.
+    const po = invoice.poNumber ? ` PO ${invoice.poNumber}.` : '';
+    const draft = `${base}\n\nInvoice ${invoice.id}.${po} Amount due ${money(balance)}, due ${fmtDate(invoice.dueDate)} (${paymentTermLabel(invoice.paymentTerms)}).`;
 
     const existing = selectConversationsForContact(state, billingContact.id)
       .slice()
@@ -343,7 +403,10 @@ export default function InvoiceDetail() {
               <button className="btn btn-primary" onClick={markPaid}>Mark Paid</button>
             )}
             {canEdit && derivedStatus !== 'void' && (
-              <button className="btn btn-primary" onClick={voidInvoice}>Void</button>
+              <button className="btn btn-danger" onClick={() => setConfirmVoid(true)}>Void</button>
+            )}
+            {canUnvoid && derivedStatus === 'void' && (
+              <button className="btn btn-outline" onClick={() => setConfirmUnvoid(true)}>Undo Void</button>
             )}
             {canEdit && !editing && <button className="btn btn-primary" onClick={() => { setEditing(true); setForm(invoice); }}>Edit</button>}
             {canEdit && <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}>Delete</button>}
@@ -370,6 +433,24 @@ export default function InvoiceDetail() {
             </div>
             <div><dt>Issued</dt><dd>{fmtDateLong(invoice.issueDate)}</dd></div>
             <div><dt>Due</dt><dd>{fmtDateLong(invoice.dueDate)}</dd></div>
+            {/* The billing terms this invoice was RAISED under (CS-044): the customer's
+                settings used to be write-only, so nothing on the invoice — or on the
+                document a customer sees — said which terms, PO or tax treatment applied. */}
+            <div><dt>Terms</dt><dd>{paymentTermLabel(invoice.paymentTerms)}</dd></div>
+            <div>
+              <dt>PO number</dt>
+              <dd>
+                {editing ? (
+                  <input
+                    className="input"
+                    value={currentForm.poNumber || ''}
+                    onChange={(e) => setForm({ ...currentForm, poNumber: e.target.value })}
+                    placeholder="Customer PO"
+                  />
+                ) : (invoice.poNumber || '—')}
+              </dd>
+            </div>
+            {invoice.taxExempt && <div><dt>Tax</dt><dd>Tax exempt</dd></div>}
             <div><dt>Total</dt><dd className="money">{money(total)}</dd></div>
             <div><dt>Paid</dt><dd className="money">{money(paid)}</dd></div>
             <div><dt>Balance</dt><dd className="money">{balance > 0 ? <span className="text-danger">{money(balance)}</span> : money(0)}</dd></div>
@@ -628,7 +709,7 @@ export default function InvoiceDetail() {
                               <button type="button" className="btn-icon" aria-label="Edit" onClick={() => startEditPayment(p)} title="Edit">
                                 <Icon name="edit" size={14} />
                               </button>
-                              <button type="button" className="btn-icon btn-icon-danger" aria-label="Remove" onClick={() => removePayment(p.id)} title="Remove">
+                              <button type="button" className="btn-icon btn-icon-danger" aria-label="Remove" onClick={() => setConfirmRemovePayment(p)} title="Remove">
                                 <Icon name="trash" size={14} />
                               </button>
                             </div>
@@ -653,6 +734,36 @@ export default function InvoiceDetail() {
         variant="danger"
         onConfirm={del}
         onClose={() => setConfirmDelete(false)}
+      />
+      <ConfirmDialog
+        open={confirmVoid}
+        title={`Void invoice ${invoice.id}?`}
+        message={`${money(total)} will stop being collectable and its completed work returns to the uninvoiced pool.${
+          paid > 0 ? ` The ${money(paid)} already paid stays counted and becomes account credit for ${client?.name || 'this customer'}.` : ''
+        }`}
+        confirmLabel="Void Invoice"
+        variant="danger"
+        onConfirm={voidInvoice}
+        onClose={() => setConfirmVoid(false)}
+      />
+      <ConfirmDialog
+        open={confirmUnvoid}
+        title={`Restore invoice ${invoice.id}?`}
+        message={`It goes back to Pending and its ${money(total)} is collectable again. Any work it claims leaves the uninvoiced pool.`}
+        confirmLabel="Restore Invoice"
+        onConfirm={unvoidInvoice}
+        onClose={() => setConfirmUnvoid(false)}
+      />
+      <ConfirmDialog
+        open={!!confirmRemovePayment}
+        title="Remove this payment?"
+        message={confirmRemovePayment
+          ? `${moneyPrecise(confirmRemovePayment.amount)} recorded ${fmtDate(confirmRemovePayment.date)}${confirmRemovePayment.method ? ` by ${confirmRemovePayment.method}` : ''} will be deleted and the invoice balance reopens.`
+          : ''}
+        confirmLabel="Remove Payment"
+        variant="danger"
+        onConfirm={removePayment}
+        onClose={() => setConfirmRemovePayment(null)}
       />
       <ConfirmDialog
         open={confirmRemoveAttachment}

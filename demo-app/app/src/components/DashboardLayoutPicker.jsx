@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Modal from './Modal';
 import Icon from './Icon';
 import ConfirmDialog from './ConfirmDialog';
@@ -6,6 +6,7 @@ import ReviewNotes from '../pages/review/ReviewNotes';
 import { usePickReview } from '../store/ClientReviewProvider';
 import { newSitting } from '../lib/clientReview';
 import { RANGES } from '../data/dashboardLayoutPreview';
+import { buildPreviewBook } from '../lib/qboView';
 import {
   LAYOUT_VARIANTS, LAYOUT_NAME, RANGE_SHORT,
   VariantA, VariantB, VariantC, VariantD,
@@ -39,6 +40,9 @@ export default function DashboardLayoutPicker({ open, onClose }) {
   const [cSel, setCSel] = useState('0004');
   const [expanded, setExpanded] = useState(false);
   const editable = !pick.locked || confirmed;
+  // The preview renders the design-phase fictional accounts through the shared view model, so
+  // the live dashboard and this picker draw from one renderer (slice-2 decision 6).
+  const book = useMemo(() => buildPreviewBook(range), [range]);
 
   // Reset to the standard size on close so it always opens compact.
   const handleClose = () => { setExpanded(false); onClose(); };
@@ -76,10 +80,10 @@ export default function DashboardLayoutPicker({ open, onClose }) {
         </div>
 
         <div className="dlp-preview">
-          {tab === 'A' && <VariantA range={range} />}
-          {tab === 'B' && <VariantB range={range} />}
-          {tab === 'C' && <VariantC range={range} cSel={cSel} onSel={setCSel} />}
-          {tab === 'D' && <VariantD range={range} />}
+          {tab === 'A' && <VariantA book={book} />}
+          {tab === 'B' && <VariantB book={book} />}
+          {tab === 'C' && <VariantC book={book} cSel={cSel} onSel={setCSel} />}
+          {tab === 'D' && <VariantD book={book} />}
         </div>
         <div className="dlp-hint">{HINTS[tab]}</div>
 

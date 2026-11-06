@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Contact communication-consent helpers — pure, node-safe (no browser globals,
-// no relative imports) so both the SPA (reducer/selectors/pages) and the
-// tab-less Vercel crons (api/reminders/run, api/marketing/run) share ONE
-// definition of "may we contact this person?".
+// Contact communication-consent helpers — pure, node-safe (no browser globals; its one
+// relative import, the customer-message catalog, is import-free and carries its .js) so both
+// the SPA (reducer/selectors/pages) and the tab-less Vercel crons (api/reminders/run,
+// api/marketing/run) share ONE definition of "may we contact this person?".
 //
 // Two per-contact sparse flags (additive, default-safe — absence = may contact):
 //   contact.doNotContact  — hard Do-Not-Contact. Blocks ALL unattended
@@ -31,10 +31,18 @@
 //   • Forms resume-link + respondent-copy emails — sent because the respondent
 //     asked for them.
 //
-// SMS reality: there is NO inbound STOP/unsubscribe webhook wired yet, so the
-// marketing suppression list is email-only and cannot capture an SMS opt-out.
-// Per-contact doNotContact is currently the ONLY suppression an SMS send honors.
+// SMS (2026-10-28): a text's opt-out is keyed by the NUMBER, not the contact, as
+// the marketing list is keyed by email — one number that said STOP suppresses
+// every contact and hub login that shares it. It lives outside org_state, in
+// the `sms_opt_outs` table (api/_lib/sms/optOuts.js): a STOP reply to the
+// inbound text route (api/sms/inbound) records it, START / UNSTOP clears it,
+// and a text Twilio refuses with 21610 records it too. The ONE customer-message
+// send step (api/_lib/customerMessages/send.js) checks it before every text, so
+// no walker repeats it here; the per-contact flags above still gate a text as
+// they gate an email. The marketing suppression list stays email-only (texts
+// are never marketing), and email is never affected by a STOP.
 // ─────────────────────────────────────────────────────────────────────────────
+import { NON_TRANSACTIONAL_MESSAGE_KEYS } from './customerMessages.js';
 
 // Hard Do-Not-Contact flag — blocks all unattended automated communication.
 export function isDoNotContact(contact) {
@@ -59,7 +67,8 @@ export function buildSuppressedEmailSet(state) {
 }
 
 // Reminder templates that behave like marketing (a nudge, not a transactional
-// receipt) and therefore ALSO honor the email-keyed marketing suppression list.
-// booking_confirmation is intentionally NOT here — it's a transactional receipt,
-// exempt from the marketing list, but still gated by DNC + reminderOptOut.
-export const NON_TRANSACTIONAL_REMINDER_KEYS = new Set(['post_service', 'welcome_email']);
+// receipt) and therefore ALSO honor the email-keyed marketing suppression list and
+// carry an opt-out line. DERIVED from the catalog's `transactional: false` (the first-clean
+// check-in, the welcome email, the survey, the renewal offer, the upsell, the win-back) so the two can never disagree. A receipt (booking_confirmation…)
+// is exempt from the marketing list, but still gated by DNC + reminderOptOut.
+export const NON_TRANSACTIONAL_REMINDER_KEYS = new Set(NON_TRANSACTIONAL_MESSAGE_KEYS);

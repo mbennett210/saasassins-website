@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Avatar from './Avatar';
 import Icon from './Icon';
 import ConversationMessagePanel from './ConversationMessagePanel';
@@ -10,6 +10,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { usePermission } from '../hooks/usePermission';
 import { useMessageSender } from '../hooks/useMessageSender';
 import { useDismissTap } from '../hooks/useDismissTap';
+import { useEscapeLayer } from '../hooks/useEscapeLayer';
 import {
   selectContactById,
   selectConversationById,
@@ -19,7 +20,8 @@ import {
   selectConversationsForInbox,
   selectUnreadCountForInbox,
 } from '../store/selectors';
-import { fmtRelative } from '../lib/dates';
+import { useT } from '../i18n/react';
+import { timeShort } from '../i18n/relative';
 
 // DESKTOP-ONLY floating messages launcher — the desktop counterpart to the mobile
 // FloatingNav (which renders null on desktop). This renders null on mobile
@@ -41,9 +43,9 @@ import { fmtRelative } from '../lib/dates';
 // (selectConversationsForInbox); `label` is the launcher-facing name. NOTE: the
 // full Messaging page labels these Inbox / Channels / DMs — see MessagingHeader.
 const INBOX_TABS = [
-  { key: 'inbox', label: 'Messages' },
-  { key: 'internal', label: 'Channels' },
-  { key: 'dm', label: 'DM' },
+  { key: 'inbox', labelKey: 'messages.dock.messages' },
+  { key: 'internal', labelKey: 'messages.channels' },
+  { key: 'dm', labelKey: 'messages.dock.dm' },
 ];
 
 function initialsFromContact(contact) {
@@ -55,7 +57,7 @@ function initialsFromContact(contact) {
 
 // Build one conversation's row view-model. Mirrors ConversationThreadList.ThreadRow
 // so the dock's display (name / preview / time / unread) can't drift from the page.
-function deriveRow(state, conversation, currentUserId) {
+function deriveRow(state, conversation, currentUserId, t) {
   const isDm = conversation.channel === 'dm';
   const isInternal = conversation.channel === 'internal';
   const msgs = selectMessagesForConversation(state, conversation.id);
@@ -65,18 +67,20 @@ function deriveRow(state, conversation, currentUserId) {
   let displayName;
   let initials;
   let avatarVariant;
+  let avatarUser = null; // a DM's teammate: their photo shows (UI_RULES §141)
   if (isDm) {
     const other = selectOtherParticipant(state, conversation, currentUserId);
-    displayName = other ? other.name : 'Unknown user';
+    avatarUser = other || null;
+    displayName = other ? other.name : t('messages.unknownUser');
     initials = other?.initials || '?';
     avatarVariant = other?.avatar || 1;
   } else if (isInternal) {
-    displayName = conversation.title || 'Team discussion';
+    displayName = conversation.title || t('messages.teamDiscussion');
     initials = 'T';
     avatarVariant = 3;
   } else {
     const contact = conversation.contactId ? selectContactById(state, conversation.contactId) : null;
-    displayName = contact ? `${contact.firstName} ${contact.lastName}` : 'Unlinked';
+    displayName = contact ? `${contact.firstName} ${contact.lastName}` : t('messages.unlinked');
     initials = initialsFromContact(contact);
     avatarVariant = ((contact?.id?.length || 0) % 5) + 1;
   }
@@ -86,29 +90,32 @@ function deriveRow(state, conversation, currentUserId) {
     displayName,
     initials,
     avatarVariant,
-    preview: last && last.text ? last.text : 'No messages yet',
-    time: last ? fmtRelative(last.sentAt) : fmtRelative(conversation.createdAt),
+    avatarUser,
+    preview: last && last.text ? last.text : t('messages.noMessagesYet'),
+    time: timeShort(t, last ? last.sentAt : conversation.createdAt),
     unread,
   };
 }
 
 // A short one-liner under the mini-view name — enough context to know which
 // thread you're in without the full page's header.
-function subtitleFor(conversation, contact) {
-  if (conversation.channel === 'dm') return 'Direct message';
-  if (conversation.channel === 'internal') return 'Team channel';
-  return contact?.email || contact?.phone || (conversation.channel === 'email' ? 'Email' : 'Text');
+function subtitleFor(conversation, contact, t) {
+  if (conversation.channel === 'dm') return t('messages.dock.subDm');
+  if (conversation.channel === 'internal') return t('messages.dock.subChannel');
+  return contact?.email || contact?.phone || (conversation.channel === 'email' ? t('messages.dock.subEmail') : t('messages.dock.subText'));
 }
 
 const cap = (n) => (n > 99 ? '99+' : String(n));
 
 export default function MessagesDock() {
+  const t = useT();
   const isMobile = useIsMobile();
   const canUseMessaging = usePermission('messaging.use');
   const state = useStore();
   const dispatch = useDispatch();
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { sendMessage, retryMessage } = useMessageSender();
   const [open, setOpen] = useState(false);
   const [inbox, setInbox] = useState('inbox');
@@ -124,25 +131,27 @@ export default function MessagesDock() {
   // of the mini view first), so this hook's own Escape is disabled.
   useDismissTap({ open, ref: rootRef, escape: false, onDismiss: () => setOpen(false) });
 
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => {
-      if (e.key !== 'Escape') return;
-      setActiveConvId((cur) => {
-        if (cur) return null;      // first Escape: mini view → list
-        setOpen(false);            // already at the list: close the dock
-        return cur;
-      });
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  // The dock is a layer on the one Escape stack (UI_RULES §181), so a menu opened inside it takes
+  // Esc first and the dock stays where it was.
+  useEscapeLayer(open, () => {
+    if (activeConvId) setActiveConvId(null); // first Escape: mini view → list
+    else setOpen(false);                     // already at the list: close the dock
+  });
 
   // Reopening the dock always starts at the conversation list, never mid-thread.
   useEffect(() => { if (!open) setActiveConvId(null); }, [open]);
 
-  // Per-bucket unread (drives the segment pills + the launcher total). Plain
-  // selector calls — computed before the early returns so hook order is stable.
+  if (isMobile) return null;        // DESKTOP ONLY
+  if (!canUseMessaging) return null;
+  // Not on Messaging itself: the page IS the full inbox, and the floating launcher sat over its
+  // composer — over the input at an iPad's 820, over Send at 1024 and 1180 (CS-704, UI_RULES §164).
+  if (pathname === '/messaging' || pathname.startsWith('/messaging/')) return null;
+
+  // Per-bucket unread (drives the segment pills + the launcher total). Plain selector calls
+  // (no hooks), so they sit AFTER the early returns: a phone pays nothing. The counts are
+  // memoized in the store's selectors — one pass over the messages per change of the
+  // messages, threads or viewer (CS-811) — because this dock re-renders on every address
+  // change and every store change.
   const counts = {
     inbox: selectUnreadCountForInbox(state, 'inbox', currentUser),
     internal: selectUnreadCountForInbox(state, 'internal', currentUser),
@@ -150,20 +159,17 @@ export default function MessagesDock() {
   };
   const total = counts.inbox + counts.internal + counts.dm;
 
-  if (isMobile) return null;        // DESKTOP ONLY
-  if (!canUseMessaging) return null;
-
-  const rows = selectConversationsForInbox(state, inbox, currentUser)
-    .slice(0, 30)
-    .map((c) => deriveRow(state, c, currentUser?.id));
-
   // Mini-view thread. Only resolved when a row is open. The dock's inline composer
   // is SMS / channels / DMs only — email threads never open here (openConversation
   // routes them out), so no connected-inbox / email-blocker plumbing is needed.
   const activeConv = activeConvId ? selectConversationById(state, activeConvId) : null;
+  // The list's rows only while the list is on screen (each reads its thread's messages).
+  const rows = open && !activeConv
+    ? selectConversationsForInbox(state, inbox, currentUser).slice(0, 30).map((c) => deriveRow(state, c, currentUser?.id, t))
+    : [];
   const activeContact = activeConv?.contactId ? selectContactById(state, activeConv.contactId) : null;
   const activeMessages = activeConv ? selectMessagesForConversation(state, activeConv.id) : [];
-  const activeRow = activeConv ? deriveRow(state, activeConv, currentUser?.id) : null;
+  const activeRow = activeConv ? deriveRow(state, activeConv, currentUser?.id, t) : null;
 
   const openFull = () => { setOpen(false); navigate('/messaging'); };
   const openFullThread = (id) => { setOpen(false); navigate(`/messaging/${id}`); };
@@ -185,28 +191,28 @@ export default function MessagesDock() {
   return (
     <div ref={rootRef} className={`cs-msg-dock ${open ? 'is-open' : ''}`}>
       {open && activeConv && (
-        <div className="cs-msg-panel" role="dialog" aria-label={`Conversation with ${activeRow.displayName}`}>
+        <div className="cs-msg-panel" role="dialog" aria-label={t('messages.dock.conversationWith', { name: activeRow.displayName })}>
           <div className="cs-msg-panel-head cs-msg-mini-head">
             <button
               type="button"
               className="btn-icon btn-icon-ghost"
-              title="Back to messages"
-              aria-label="Back to messages"
+              title={t('messages.dock.back')}
+              aria-label={t('messages.dock.back')}
               onClick={() => setActiveConvId(null)}
             >
               <Icon name="chevronLeft" size={18} />
             </button>
-            <Avatar initials={activeRow.initials} variant={activeRow.avatarVariant} size="sm" />
+            <Avatar user={activeRow.avatarUser} initials={activeRow.initials} variant={activeRow.avatarVariant} size="sm" />
             <div className="cs-msg-mini-title">
               <div className="cs-msg-mini-name">{activeRow.displayName}</div>
-              <div className="cs-msg-mini-sub">{subtitleFor(activeConv, activeContact)}</div>
+              <div className="cs-msg-mini-sub">{subtitleFor(activeConv, activeContact, t)}</div>
             </div>
             <div className="cs-msg-panel-ctrls">
               <button
                 type="button"
                 className="btn-icon btn-icon-ghost"
-                title="Open in full Messaging"
-                aria-label="Open in full Messaging"
+                title={t('messages.dock.openFull')}
+                aria-label={t('messages.dock.openFull')}
                 onClick={() => openFullThread(activeConv.id)}
               >
                 <Icon name="expand" size={16} />
@@ -214,8 +220,8 @@ export default function MessagesDock() {
               <button
                 type="button"
                 className="btn-icon btn-icon-ghost"
-                title="Close"
-                aria-label="Close messages"
+                title={t('common.close')}
+                aria-label={t('messages.dock.close')}
                 onClick={() => setOpen(false)}
               >
                 <Icon name="x" size={16} />
@@ -240,20 +246,20 @@ export default function MessagesDock() {
       )}
 
       {open && !activeConv && (
-        <div className="cs-msg-panel" role="dialog" aria-label="Messages">
+        <div className="cs-msg-panel" role="dialog" aria-label={t('messages.dock.messages')}>
           <div className="cs-msg-panel-head">
-            <div className="messaging-inbox-toggle" role="tablist" aria-label="Inbox">
-              {INBOX_TABS.map((t) => (
+            <div className="messaging-inbox-toggle" role="tablist" aria-label={t('messages.inbox')}>
+              {INBOX_TABS.map((tb) => (
                 <button
-                  key={t.key}
+                  key={tb.key}
                   type="button"
                   role="tab"
-                  aria-selected={inbox === t.key}
-                  className={`inbox-toggle-btn ${inbox === t.key ? 'active' : ''}`}
-                  onClick={() => selectTab(t.key)}
+                  aria-selected={inbox === tb.key}
+                  className={`inbox-toggle-btn ${inbox === tb.key ? 'active' : ''}`}
+                  onClick={() => selectTab(tb.key)}
                 >
-                  <span>{t.label}</span>
-                  {counts[t.key] > 0 && <span className="inbox-toggle-unread">{cap(counts[t.key])}</span>}
+                  <span>{t(tb.labelKey)}</span>
+                  {counts[tb.key] > 0 && <span className="inbox-toggle-unread">{cap(counts[tb.key])}</span>}
                 </button>
               ))}
             </div>
@@ -261,8 +267,8 @@ export default function MessagesDock() {
               <button
                 type="button"
                 className="btn-icon btn-icon-ghost"
-                title="Open full Messaging"
-                aria-label="Open full Messaging"
+                title={t('messages.dock.openFullShort')}
+                aria-label={t('messages.dock.openFullShort')}
                 onClick={openFull}
               >
                 <Icon name="expand" size={16} />
@@ -270,8 +276,8 @@ export default function MessagesDock() {
               <button
                 type="button"
                 className="btn-icon btn-icon-ghost"
-                title="Close"
-                aria-label="Close messages"
+                title={t('common.close')}
+                aria-label={t('messages.dock.close')}
                 onClick={() => setOpen(false)}
               >
                 <Icon name="x" size={16} />
@@ -281,7 +287,7 @@ export default function MessagesDock() {
 
           <div className="cs-msg-list">
             {rows.length === 0 ? (
-              <div className="cs-msg-empty">No conversations here yet.</div>
+              <div className="cs-msg-empty">{t('messages.dock.empty')}</div>
             ) : (
               rows.map((r) => (
                 <button
@@ -291,8 +297,8 @@ export default function MessagesDock() {
                   onClick={() => openConversation(r.id)}
                 >
                   <span className="cs-msg-conv-av">
-                    <Avatar initials={r.initials} variant={r.avatarVariant} size="sm" />
-                    {r.unread > 0 && <span className="cs-msg-conv-dot" aria-label={`${r.unread} unread`} />}
+                    <Avatar user={r.avatarUser} initials={r.initials} variant={r.avatarVariant} size="sm" />
+                    {r.unread > 0 && <span className="cs-msg-conv-dot" aria-label={t('messages.unreadCount', { count: r.unread })} />}
                   </span>
                   <div className="cs-msg-conv-body">
                     <div className="cs-msg-conv-name">{r.displayName}</div>
@@ -311,7 +317,7 @@ export default function MessagesDock() {
       <button
         type="button"
         className="cs-msg-launcher"
-        aria-label={total > 0 ? `Messages, ${total} unread` : 'Messages'}
+        aria-label={total > 0 ? t('messages.dock.launcherAria', { count: total }) : t('messages.dock.messages')}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
@@ -319,7 +325,7 @@ export default function MessagesDock() {
           <Icon name="messagingSolid" size={33} />
           {total > 0 && <span className="cs-msg-launcher-badge">{cap(total)}</span>}
         </span>
-        <span className="cs-msg-launcher-label">Messages</span>
+        <span className="cs-msg-launcher-label">{t('messages.dock.messages')}</span>
       </button>
     </div>
   );

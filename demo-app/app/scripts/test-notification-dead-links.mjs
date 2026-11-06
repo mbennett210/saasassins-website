@@ -17,12 +17,12 @@
 // not always go through the app. The read side has to cope. That is what this pins.
 //
 // ══ THE TRAP THIS GUARDS ══════════════════════════════════════════════════════
-// "Not in state.jobs" does NOT mean "deleted". Since E6 that array is only a
-// ~-45/+100-day WINDOW until the detached backfill lands, so judging liveness against
-// it marks every out-of-window job dead and strips working links off notifications for
-// real future cleans. The first count of this very bug was wrong by 20 for exactly
-// that reason. The check MUST be gated on full hydration and MUST fail safe
-// (un-hydrated → treat every link as live).
+// "Not in state.jobs" does NOT mean "deleted". That array is the jobs WINDOW (−45/+100
+// days) — and since CS-676 it never grows into the whole table — so judging liveness
+// against it marks every out-of-window job dead and strips working links off
+// notifications for real future cleans. The first count of this very bug was wrong by 20
+// for exactly that reason. The check MUST ask the table about the rows' cleans (by id)
+// first, and MUST fail safe until it has answered (every link treated as live).
 //
 //   node scripts/test-notification-dead-links.mjs
 import { readFileSync } from 'node:fs';
@@ -33,15 +33,15 @@ const ok = (label, cond) => { if (cond) pass += 1; else fails.push(label); };
 const src = readFileSync(new URL('../src/components/NotificationsBell.jsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
 
-// ── 🔴 the hydration gate ───────────────────────────────────────────────
-ok('the bell reads the hydration flag', /useJobsHydrated/.test(src));
-ok('🔴 liveness is judged ONLY when the full job set is loaded',
-  /!open \|\| !jobsHydrated \? '' :/.test(src));
-ok('  ...so an un-hydrated store yields NO dead links (fails safe)',
-  /!jobsHydrated \? ''/.test(src));
+// ── 🔴 the gate: the table has answered for these cleans ────────────────
+ok('the bell asks the table for its rows\' cleans by id', /jobsLoader\.ensureIds\(linkedKey\.split\(','\)\)/.test(src));
+ok('🔴 liveness is judged ONLY once the table has answered for exactly these cleans',
+  /const judged = open && !!linkedKey && askedKey === linkedKey;/.test(src));
+ok('  ...so an unanswered ask yields NO dead links (fails safe)',
+  /!judged \? ''/.test(src) && /\.then\(\(\) => \{ if \(alive\) setAskedKey\(linkedKey\); \}, \(\) => \{\}\)/.test(src));
 // If the panel is shut there is nothing to judge, and this component is mounted for
 // the whole session — touching s.jobs on every dispatch would undo the useSelector work.
-ok('  ...and the job set is only touched while the panel is open', /!open \|\|/.test(src));
+ok('  ...and the job set is only touched while the panel is open', /const judged = open &&/.test(src));
 
 // ── the selector stays cheap ───────────────────────────────────────────
 // Returning a Set/array would be a fresh reference every call and re-render the bell
@@ -61,8 +61,11 @@ ok('a url with no job id is never treated as dead', /return !!id && deadIds\.has
 ok('🔴 a dead link does NOT navigate', /if \(n\.url && !isDeadLink\(n\)\) navigate/.test(src));
 ok('  ...but still marks read', /if \(!n\.readAt\) dispatch\(\{ type: ACTIONS\.MARK_NOTIFICATION_READ/.test(src));
 // The row is real history — the clean WAS assigned. Hiding it would be a second lie.
-ok('  ...and the row is labelled rather than hidden', /clean removed/.test(src));
-ok('  ...with an explanatory tooltip', /This clean was removed from the schedule/.test(src));
+// CS-193: the label is the catalog's line, in the reader's language.
+ok('  ...and the row is labelled rather than hidden', /t\('notif\.cleanRemoved'\)/.test(src)
+  && /'notif\.cleanRemoved': 'clean removed',/.test(readFileSync(new URL('../src/i18n/catalog/en.js', import.meta.url), 'utf8')));
+ok('  ...with an explanatory tooltip', /t\('notif\.removedTitle'\)/.test(src)
+  && /'notif\.removedTitle': 'This clean was removed from the schedule',/.test(readFileSync(new URL('../src/i18n/catalog/en.js', import.meta.url), 'utf8')));
 ok('the row carries a dead-link class for styling', /dead-link/.test(src));
 
 // ── styling ────────────────────────────────────────────────────────────

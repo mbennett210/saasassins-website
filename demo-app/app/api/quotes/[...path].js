@@ -4,9 +4,12 @@
 //   GET  /:id                                          → one quote
 //   POST /:id/save          { fields }                 → merge edits
 //   POST /:id/admin-sign    { signerName, signatureDataUrl } → store admin sig
-//   POST /:id/send                                     → status 'sent' (+ email stub)
+//   POST /:id/send                                     → status 'sent' + the signing email;
+//                                                        { quote, emailed, why? } (CS-664)
 //   GET  /:id/download                                 → { url } signed PDF
 //   POST /:id/void                                     → status 'void'
+//   POST /:id/delete                                   → a DRAFT only; 409 for a sent, signed or
+//                                                        void quote, which is a record (CS-028)
 import {
   createFromTemplate, listQuotes, getQuoteById, saveFields,
   recordAdminSignature, markSent, voidQuote, deleteQuote,
@@ -14,11 +17,13 @@ import {
 } from '../_lib/quotes/store.js';
 import { renderQuotePdf, pngFromDataUrl } from '../_lib/quotes/render.js';
 import { sendEmail } from '../_lib/email.js';
-import { signRequestEmail } from '../_lib/quotes/emails.js';
+import { signRequestEmail } from '../../src/lib/quoteEmails.js';
 import { requirePermission } from '../_lib/authz.js';
 import { readOrgState } from '../_lib/orgState.js';
 import { isDoNotContact } from '../../src/lib/contactConsent.js';
 import { IDENTITY } from '../../src/brand/identity.generated.js';
+import { appPublicUrl } from '../_lib/appUrl.js';
+import { QUOTE_NOT_DELETABLE, QUOTE_NOT_EMAILED } from '../../src/lib/quoteRules.js';
 
 // maxDuration: chromium cold-start + PDF render on admin-sign can exceed the
 // default function timeout. bodyParser sizeLimit: signature PNGs — set to 4mb
@@ -156,20 +161,32 @@ export default async function handler(req, res) {
       } catch (e) { console.warn('[api/quotes] DNC gate read failed, allowing send:', e?.message || e); }
       const quote = await markSent(id);
       const merged = { ...existing, ...quote };
-      // Email the contact a link to review & sign — server-side via Resend so it
-      // doesn't depend on the admin keeping a tab open. Best-effort: a delivery
-      // failure does not fail the send (the link is also shown/copyable in-app).
+      // Email the contact a link to review & sign — server-side through the Google system sender so it
+      // doesn't depend on the admin keeping a tab open. Best-effort: a delivery failure does not fail
+      // the send — the quote is sent and its link works — but the answer SAYS so (CS-664): `emailed`
+      // plus `why` (lib/quoteRules QUOTE_NOT_EMAILED), and the editor hands the office the link.
       let emailed = false;
+      let why = null;
       try {
-        const base = (process.env.APP_PUBLIC_URL || `https://${req.headers.host || ''}`).replace(/\/$/, '');
-        const link = `${base}/quote/${merged.public_token}`;
-        const msg = signRequestEmail({ quote: merged, link });
-        const replyTo = process.env.QUOTE_REPLY_TO || IDENTITY.company.email;
-        const r = await sendEmail({ to: merged.contact_email, subject: msg.subject, html: msg.html, replyTo });
-        emailed = !!r.ok;
-        if (!r.ok && !r.skipped) console.warn('[api/quotes] sign-request email not delivered:', r.status, r.error);
-      } catch (e) { console.warn('[api/quotes] sign-request email failed:', e?.message || e); }
-      return res.status(200).json({ quote: await withSigUrls(quote), emailed });
+        const to = String(merged.contact_email || '').trim();
+        if (!to) {
+          why = QUOTE_NOT_EMAILED.noRecipient;
+        } else {
+          // the app's own address, never this request's Host (DEV_PLAYBOOK 3.4.18; _lib/appUrl.js)
+          const link = `${appPublicUrl()}/quote/${merged.public_token}`;
+          const msg = signRequestEmail({ quote: merged, link });
+          const replyTo = process.env.QUOTE_REPLY_TO || IDENTITY.company.email;
+          const r = await sendEmail({ to, subject: msg.subject, html: msg.html, replyTo });
+          emailed = !!r.ok;
+          // skipped = no sending mailbox (or it needs reconnecting); anything else is a failed send
+          if (!r.ok) why = r.skipped ? QUOTE_NOT_EMAILED.notSetUp : QUOTE_NOT_EMAILED.failed;
+          if (!r.ok && !r.skipped) console.warn('[api/quotes] sign-request email not delivered:', r.status, r.error);
+        }
+      } catch (e) {
+        why = QUOTE_NOT_EMAILED.failed;
+        console.warn('[api/quotes] sign-request email failed:', e?.message || e);
+      }
+      return res.status(200).json({ quote: await withSigUrls(quote), emailed, ...(emailed ? {} : { why }) });
     }
     if (action === 'download' && req.method === 'GET') {
       const quote = await getQuoteById(id);
@@ -181,7 +198,10 @@ export default async function handler(req, res) {
       return res.status(200).json({ quote: await withSigUrls(await voidQuote(id)) });
     }
     if (action === 'delete' && req.method === 'POST') {
-      await deleteQuote(id);
+      // CS-028: only a DRAFT is deleted; a sent, signed or void quote is a record (409, void it).
+      const r = await deleteQuote(id);
+      if (r.notFound) return res.status(404).json({ error: 'Quote not found' });
+      if (!r.ok) return res.status(409).json({ error: QUOTE_NOT_DELETABLE.error, code: QUOTE_NOT_DELETABLE.code });
       return res.status(200).json({ ok: true });
     }
 

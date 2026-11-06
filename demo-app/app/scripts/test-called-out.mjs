@@ -1,6 +1,6 @@
 // Reports › Called out (Reports fix #2, 2026-09-22). Drives the REAL reducer the way
-// Team › Time off books a same-day call-out — ADD_TIME_OFF carrying the cleans it pulls
-// the person off, then APPLY_TIME_OFF_EXCLUSIONS (on by default) — and asserts the
+// both booking screens book a same-day call-out — ONE ADD_TIME_OFF carrying the cleans it
+// covers and `removeFromCleans` ("Also remove", on by default; CS-054) — and asserts the
 // report still names the clean they called out of, under every filter. Before the fix
 // the report found cleans only through the crew list, which that same booking empties:
 // the cleaner showed "—, 0 cleans", and vanished under a Manager or Customer filter.
@@ -19,7 +19,7 @@ const { reducer, ACTIONS, INITIAL_STATE } = await loadStore();
 
 const HOUR = 3600 * 1000;
 // The report day: two org-days ahead, so its evening cleans are always still ahead of
-// the clock (APPLY_TIME_OFF_EXCLUSIONS only pulls people off cleans not yet started) and
+// the clock (removeFromCleans only pulls people off cleans not yet started) and
 // never straddle midnight whatever time the suite runs.
 const D = addDaysKey(todayKey(), 2);
 const startMs = new Date(composeIso(D, '18:00')).getTime();
@@ -42,12 +42,11 @@ const dispatch = (action) => { state = reducer(state, action); };
 dispatch({ type: ACTIONS.ADD_JOB, job: baseJob('j_t_tonight', clientA.id, ['u_t_luis'], startMs) });
 dispatch({ type: ACTIONS.ADD_JOB, job: baseJob('j_t_other', clientB.id, ['u_t_ana', 'u_t_luis'], startMs + HOUR) });
 
-// Exactly what TimeOffCard dispatches for "Luis can't make tonight" with the default
-// "Also remove Luis from the 2 cleans already scheduled" box checked: the entry records
-// every clean it covers (scheduledJobIds), then the exclusion takes him off them.
+// Exactly what both booking screens dispatch for "Luis can't make tonight" with the default
+// "Also remove Luis from the 2 cleans already scheduled" box checked: ONE action, whose entry
+// records every clean it covers (scheduledJobIds) and whose removeFromCleans takes him off them.
 const affected = ['j_t_tonight', 'j_t_other'];
-dispatch({ type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t_luis', userId: 'u_t_luis', startDate: D, endDate: D, reason: 'Car trouble', kind: 'callout', scheduledJobIds: affected } });
-dispatch({ type: ACTIONS.APPLY_TIME_OFF_EXCLUSIONS, userId: 'u_t_luis', startDate: D, endDate: D });
+dispatch({ type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t_luis', userId: 'u_t_luis', startDate: D, endDate: D, reason: 'Car trouble', kind: 'callout', scheduledJobIds: affected }, removeFromCleans: true });
 
 const tonight = state.jobs.find((j) => j.id === 'j_t_tonight');
 const other = state.jobs.find((j) => j.id === 'j_t_other');
@@ -105,10 +104,11 @@ dispatch({ type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t_ana', userId: 'u_t_ana
   ok(luis[0]?.reason === 'Sick; Still sick', 'M3: reasons are combined');
 }
 
-// HR › PTO books a call-out WITHOUT taking the person off the clean; the office then
-// swaps cover in by hand. The booking recorded the clean it covered, so the report still
-// names it — and the clean has someone available again. (Review finding B1: this path lost
-// the clean — "0 cleans" and gone under a filter — because only Team › Time off recorded.)
+// A call-out booked WITHOUT taking the person off the clean ("Also remove" unticked, or a
+// booker who may not edit the schedule); the office then swaps cover in by hand. The booking
+// recorded the clean it covered, so the report still names it — and the clean has someone
+// available again. (Review finding B1: HR › PTO lost the clean — "0 cleans" and gone under a
+// filter — because only Team › Time off recorded; both book through timeOffBooking now.)
 {
   let s = state;
   const step = (a) => { s = reducer(s, a); };
@@ -124,8 +124,8 @@ dispatch({ type: ACTIONS.ADD_TIME_OFF, entry: { id: 'to_t_ana', userId: 'u_t_ana
   ok(calledOutOn({ ...ctxHr, clientId: clientA.id }).some((r) => r.userId === 'u_t_luis'), 'P3: …and he stays listed under the customer filter');
 }
 
-// Nobody available: the only person left on the clean is booked off too (an HR › PTO
-// call-out leaves them on the crew). The crew list isn't empty, but no one is coming.
+// Nobody available: the only person left on the clean is booked off too (a call-out with
+// "Also remove" unticked leaves them on the crew). The crew list isn't empty, but no one is coming.
 {
   const job = baseJob('j_t_alone', clientA.id, ['u_t_ana'], startMs + 3 * HOUR);
   const timeOff = [{ id: 'to_alone', userId: 'u_t_ana', startDate: D, endDate: D, reason: 'Sick', kind: 'callout', scheduledJobIds: ['j_t_alone'] }];

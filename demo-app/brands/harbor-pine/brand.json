@@ -26,7 +26,6 @@
     }
   },
   "email": {
-    "quotesFrom": "Harbor & Pine <quotes@mail.harborpine.example>",
     "authFrom": "Harbor & Pine <login@mail.harborpine.example>"
   },
   "colors": {

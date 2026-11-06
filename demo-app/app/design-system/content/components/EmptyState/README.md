@@ -6,7 +6,7 @@ What a list, tab or panel shows when it has nothing in it: an icon disc, a title
 
 - `icon`: usually `<Icon name="…" size={28} />`, the list's own icon.
 - `title`: what is missing: "No customers yet", "No contacts yet", "No matches".
-- `message`: one sentence with the next step: "Add your first customer, or Import CSV to bring in your whole book."
+- `message`: one sentence with the next step: "Add your first customer, or import your buildings from a spreadsheet."
 - `action`: optional, a filled button ("New Job").
 
 ## Look

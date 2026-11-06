@@ -7,21 +7,24 @@ import Avatar from '../components/Avatar';
 import EmptyState from '../components/EmptyState';
 import Icon from '../components/Icon';
 import DashboardLayoutReview from '../components/DashboardLayoutReview';
-import { useStore, useDispatch, useJobsHydrated } from '../store';
-import { ACTIONS } from '../store/reducer';
+import { useStore, useJobsDays } from '../store';
 import { useAuth } from '../hooks/useAuth';
 import { usePermission, useCanEditJobs } from '../hooks/usePermission';
 import {
   selectCompany, selectActiveUsers, selectActiveClients, selectInvoices, selectJobs,
   selectClientById, selectServiceById, selectContactById,
-  selectAgingBuckets,
+  selectReceivables, selectPastDue30,
   selectDashboardStats, selectJobsForUser, selectStaleLeads, selectUnansweredThreads,
-  selectOutstandingQuotes, selectRevenueThisMonth, selectVarianceYesterday, selectReviews,
+  selectOutstandingQuotes, selectRevenueThisMonth, selectVarianceYesterday,
   selectMissedCleansThisMonth, selectLaborHoursThisWeek, selectDashboardTrends, selectComplaintKpisFromWorkOrders,
+  complaintKpiWindowStartIso,
 } from '../store/selectors';
-import { listProblems } from '../lib/qcApi';
+import { listOpenProblems, listProblemsSince } from '../lib/qcApi';
+import { mergeWorkOrderRows } from '../lib/workOrders';
 import * as timeApi from '../lib/timeApi';
-import { fmtRelative, fmtTime, fmtTimeRange, fmtDate, fmtDateLong, money, sameDay, todayIso, dayKey, addDaysKey, startOfWeekKey, dayOfWeekKey } from '../lib/dates';
+import { english } from '../i18n/core';
+import { timeShort } from '../i18n/relative';
+import { fmtTime, fmtTimeRange, fmtDate, fmtDateLong, money, sameDay, todayIso, dayKey, addDaysKey, startOfWeekKey, dayOfWeekKey } from '../lib/dates';
 
 const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -40,7 +43,6 @@ function formattedToday() {
 
 export default function Dashboard() {
   const state = useStore();
-  const dispatch = useDispatch();
   const navigate = useNavigate();
   const nav = useFromHere();
   const { currentUser } = useAuth();
@@ -50,18 +52,22 @@ export default function Dashboard() {
   // list view; otherwise it renders as the plain presentational card.
   const canScheduleView = usePermission('schedule.view');
   const canVariance = usePermission('variance.view');
-  const canQuotes = usePermission('quotes.view');
+  // The Proposals Out tile measures pipeline opportunity value, so it drills into the
+  // board — gated on the board's own permission, not on quotes.view (CS-146).
+  const canPipeline = usePermission('pipeline.view');
   // Complaints are now Work Orders (Quality hub) — the "Open Complaints" tile drills into
   // the Work Orders queue, gated by qc.view (the same perm that reveals the Quality nav).
   const canWorkOrders = usePermission('qc.view');
   const canContacts = usePermission('contacts.view');
 
-  // Time-driven overdue sweep: 'overdue' is a derived invoice status no action
-  // persists, so detect + notify newly-overdue invoices on mount. Idempotent
-  // (one-shot per invoice via overdueNotifiedAt), mirroring the Schedule page's
-  // TOP_UP_RECURRING_SERIES. The push-dispatch cron then carries these to phones.
-  useEffect(() => { dispatch({ type: ACTIONS.MARK_INVOICES_OVERDUE }); }, [dispatch]);
-
+  // 🔴 NO OVERDUE SWEEP ON MOUNT ANY MORE (CS-288). This page dispatched
+  // MARK_INVOICES_OVERDUE, which meant: an ADMIN — who by Q24 holds no `invoices.view` at
+  // all and cannot see a single figure below — was the one writing invoice stamps and
+  // invoice bells into the shared blob, simply by opening the operational dashboard. And
+  // an owner or manager, whose home renders AccountDashboard instead, never ran it, so
+  // nobody was told at all. The sweep now runs server-side on /api/cron/ops-alerts every
+  // five minutes (lib/invoiceSweep.js is the shared rule), tab-independently; the STATUS
+  // shown on this page was always derived and needs no write.
   const company = selectCompany(state);
   const team = selectActiveUsers(state);
   const clients = selectActiveClients(state);
@@ -79,32 +85,29 @@ export default function Dashboard() {
   // Age-split receivables — the "Past Due 30+" card needs the 30+ slice specifically,
   // not every overdue balance. Same helper the AR aging panel on /invoices uses, so the
   // two surfaces cannot disagree.
-  const aging = selectAgingBuckets(state);
+  const receivables = selectReceivables(state);
+  const pastDue30 = selectPastDue30(state);
 
   const outstandingQuotes = selectOutstandingQuotes(state);
   const revenueMonth = selectRevenueThisMonth(state);
 
-  // Live Google review count + rating (Places API via /api/settings/google-reviews).
-  const [googleReviews, setGoogleReviews] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    fetch('/api/settings/google-reviews')
-      .then((r) => r.json())
-      .then((d) => { if (alive && d && d.count != null) setGoogleReviews(d); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
-
   // Open-complaints KPI is sourced from Work Orders (type:complaint) — relational, fetched
   // via qcApi, not the blob. null = still loading (tile shows "—"). Only the non-crew
   // layout renders the complaint tiles, so crew skip the fetch entirely.
+  // 🔴 CS-640: two COMPLETE reads, joined — every OPEN complaint (the tile) and every complaint
+  // created in the 30-day window and the 30 days before it (the ratio, the trend, yesterday's
+  // delta). It was the newest 500 work orders, so past 500 tickets an old open complaint went
+  // uncounted. A failed read leaves the tile on "—", never a made-up 0.
   const [complaintWorkOrders, setComplaintWorkOrders] = useState(null);
   useEffect(() => {
     if (isCrew) return undefined;
     let alive = true;
-    listProblems({ type: 'complaint' })
-      .then((rows) => { if (alive) setComplaintWorkOrders(Array.isArray(rows) ? rows : []); })
-      .catch(() => { if (alive) setComplaintWorkOrders([]); });
+    Promise.all([
+      listOpenProblems({ type: 'complaint' }),
+      listProblemsSince({ type: 'complaint', sinceIso: complaintKpiWindowStartIso() }),
+    ])
+      .then(([open, recent]) => { if (alive) setComplaintWorkOrders(mergeWorkOrderRows(open, recent)); })
+      .catch(() => { if (alive) setComplaintWorkOrders(null); });
     return () => { alive = false; };
   }, [isCrew]);
 
@@ -124,7 +127,7 @@ export default function Dashboard() {
   const cents = (v) => (typeof v === 'number' ? v / 100 : null);
   const num = (v) => (typeof v === 'number' ? v : null);
   const pick = (snapCents, computed) => (snap && snapCents != null ? cents(snapCents) : computed);
-  const snapAgo = snap?.updated_at ? fmtRelative(snap.updated_at) : null;
+  const snapAgo = snap?.updated_at ? timeShort(english, snap.updated_at) : null;
   const sheetSource = snap ? (
     <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: 'var(--color-neutral-500)' }}>Source: Google Sheet{snapAgo ? ` · updated ${snapAgo}` : ''}</span>
   ) : null;
@@ -132,22 +135,26 @@ export default function Dashboard() {
   // Goals — actual + target from the sheet; targets fall back to the agreed values.
   const goals = [
     { label: 'New business (30d)', actual: newClients30d, target: num(snap?.new_business_goal_count) ?? 10, fmt: (n) => `${Math.round(n)}` },
-    { label: 'Google reviews', actual: googleReviews?.count ?? (num(snap?.google_reviews_actual) ?? 0), target: num(snap?.google_reviews_goal) ?? 100, fmt: (n) => String(Math.round(n)), rating: googleReviews?.rating },
-    { label: 'Indeed reviews', actual: num(selectReviews(state).indeedActual) ?? 0, target: num(snap?.indeed_reviews_goal) ?? 50, fmt: (n) => String(Math.round(n)) },
   ];
   // Financial — from the sheet; computed fallback until the sheet is wired.
   const fin = {
     revenue: pick(snap?.revenue_current_month_cents, revenueMonth),
     mrr: cents(snap?.mrr_cents),
     quotes: pick(snap?.outstanding_quotes_cents, outstandingQuotes.value),
-    ar: pick(snap?.ar_cents, stats.outstanding),
+    // 🔴 AR IS EVERY DOLLAR OWED, PAST DUE INCLUDED (CS-146). The fallback was
+    // `stats.outstanding`, the PENDING-only figure, so an invoice slipping past its due
+    // date LEFT the receivables number — the one figure a reader uses to size what is
+    // owed, shrinking exactly as collection got harder. receivablesTotal reads
+    // agingBuckets, the same helper the /invoices aging strip uses, so the Dashboard
+    // card and that strip cannot disagree.
+    ar: pick(snap?.ar_cents, receivables),
     // 🔴 THE LABEL SAYS "30+", SO THE NUMBER MUST MEAN 30+. The server snapshot field is
     // correctly past_due_30_cents, but the local fallback was `stats.overdue` — EVERY
     // overdue balance, including an invoice one day late. So whenever the snapshot was
     // absent (local/demo, or before it is first computed) the card overstated the 30-day
     // figure, silently, on the Dashboard someone reads to decide who to chase.
-    // agingBuckets already splits this correctly; 30+ is d31_60 + d61plus.
-    pastDue: pick(snap?.past_due_30_cents, aging.d31_60.amount + aging.d61plus.amount),
+    // agingBuckets already splits this correctly; 30+ is d31_60 + d61plus (pastDue30Total).
+    pastDue: pick(snap?.past_due_30_cents, pastDue30),
   };
   const variance = selectVarianceYesterday(state);
   // Complaint KPIs (open count, per-100 ratio, trend, yesterday-delta) computed over the
@@ -182,10 +189,13 @@ export default function Dashboard() {
   // that replace the old hardcoded arrows. See selectors §"WS-A".
   const missedCleans = coveredJobIds ? selectMissedCleansThisMonth(state, coveredJobIds) : null;
   const laborHours = selectLaborHoursThisWeek(state);
-  // The missed-cleans trend compares against -60..-30 days (outside the boot window) and
-  // needs the punch history, so it is omitted until the full job set AND the entries have
-  // landed rather than computed against a partial basis (UI_RULES §40).
-  const trends = selectDashboardTrends(state, { jobsFullyLoaded: useJobsHydrated(), coveredJobIds, entriesLoaded: !!coveredJobIds });
+  // The missed-cleans trend compares against -60..-30 days (outside the jobs window the app
+  // holds, −45 days back) and needs the punch history, so it loads those days (CS-676) and is
+  // omitted until they AND the entries have landed rather than computed against a partial
+  // basis (UI_RULES §40).
+  const todayK = dayKey(new Date());
+  const trendDays = useJobsDays(addDaysKey(todayK, -61), todayK);
+  const trends = selectDashboardTrends(state, { jobsFullyLoaded: trendDays.ready, coveredJobIds, entriesLoaded: !!coveredJobIds });
 
   // Short "vs prior period" trend-line text for a stat card. Color (up/down) is
   // carried separately by trendDirection; this is the numeric delta in words.
@@ -260,7 +270,7 @@ export default function Dashboard() {
 
       {/* Client-review affordance: choose the Account-Manager Dashboard layout
           (self-gates to owner/admin; collapses to a quiet line once chosen). */}
-      <DashboardLayoutReview />
+      {/* polishpoint-demo: no layout review banner */}
 
       <div className="dash-hero">
             <h1>{greeting()}, {currentUser?.name?.split(' ')[0] || company.owner}</h1>
@@ -272,10 +282,14 @@ export default function Dashboard() {
               </div>
               {!isCrew && (
                 <>
-                  <div className="dash-hero-stat">
-                    <div className="val">{money(stats.collected)}</div>
-                    <div className="lbl">Collected</div>
-                  </div>
+                  {/* Q24 / CS-020: collected revenue is money — an invoices.view holder's (owner +
+                      manager by default), never the admin's, as the Financial Snapshot below. */}
+                  {canInvoices && (
+                    <div className="dash-hero-stat">
+                      <div className="val">{money(stats.collected)}</div>
+                      <div className="lbl">Collected</div>
+                    </div>
+                  )}
                   <div className="dash-hero-stat">
                     <div className="val">{stats.activeClients}</div>
                     <div className="lbl">Active Companies</div>
@@ -299,7 +313,7 @@ export default function Dashboard() {
                     <div key={g.label} className="card" style={{ padding: '16px 18px' }}>
                       <div className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>{g.label}</div>
                       <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-body)', marginTop: 4 }}>
-                        {g.fmt(g.actual)}{g.rating ? <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--rating-star)', marginLeft: 6 }}>★{g.rating}</span> : null} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-neutral-500)' }}>/ {g.fmt(g.target)}</span>
+                        {g.fmt(g.actual)} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-neutral-500)' }}>/ {g.fmt(g.target)}</span>
                       </div>
                       <div style={{ height: 6, background: 'var(--color-neutral-100)', borderRadius: 99, marginTop: 10, overflow: 'hidden' }}>
                         <div style={{ width: `${pct}%`, height: '100%', background: pct >= 100 ? 'var(--color-semantic-success-500)' : 'var(--color-link)' }} />
@@ -394,8 +408,13 @@ export default function Dashboard() {
                     rather than a fabricated one (see UI_RULES §39). */}
                 <StatCard value={money(fin.revenue)} label="Collected (this month)" trend={collectedTrendText} trendDirection={trends.collected.direction} to="/invoices?status=paid" navState={nav} />
                 <StatCard value={fin.mrr != null ? money(fin.mrr) : '—'} label="MRR / Recurring" to="/invoices" navState={nav} />
-                <StatCard value={money(fin.quotes)} label="Open Quotes ($)" to={canQuotes ? '/quotes' : undefined} navState={nav} />
-                <StatCard value={money(fin.ar)} label="Accounts Receivable" to="/invoices?status=pending" navState={nav} />
+                {/* 🔴 THE LABEL NAMES WHAT IS MEASURED (CS-146). This said "Open Quotes ($)"
+                    and linked to /quotes, but it reads selectOutstandingQuotes — the value of
+                    OPPORTUNITIES sitting in Proposal Sent or Negotiation on the pipeline
+                    board, which is not the quote documents /quotes lists. Same number,
+                    honest name, and it drills into the board it actually comes from. */}
+                <StatCard value={money(fin.quotes)} label="Proposals Out ($)" trend={`${outstandingQuotes.count} on the board`} to={canPipeline ? '/pipeline' : undefined} navState={nav} />
+                <StatCard value={money(fin.ar)} label="Accounts Receivable" trend="Unpaid, past due included" to="/invoices?status=open" navState={nav} />
                 <StatCard value={money(fin.pastDue)} label="Past Due 30+" to="/invoices?status=overdue" navState={nav} />
               </div>
             </>
@@ -481,7 +500,7 @@ export default function Dashboard() {
                                 ? `"${item.preview.slice(0, 60)}${item.preview.length > 60 ? '…' : ''}"`
                                 : item.subtitle}
                               {' · '}
-                              <span>{fmtRelative(item.at)}</span>
+                              <span>{timeShort(english, item.at)}</span>
                             </span>
                           </span>
                           <Icon name="chevronRight" size={12} />
@@ -491,7 +510,8 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
-              {!isCrew && (
+              {/* Q24 / CS-020: the week's paid revenue is money — invoices.view, never the admin. */}
+              {!isCrew && canInvoices && (
                 <div className="card dash-card">
                   <div className="dash-card-title">Weekly Revenue (Paid)</div>
                   <div className="rev-chart">
@@ -522,7 +542,7 @@ export default function Dashboard() {
                   <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                     {team.slice(0, 5).map((t) => (
                       <div key={t.id} style={{ textAlign: 'center' }}>
-                        <Avatar initials={t.initials} variant={t.avatar} size="md" />
+                        <Avatar user={t} size="md" />
                         <div className="text-xs" style={{ marginTop: 4 }}>{t.name.split(' ')[0]}</div>
                         <div className="text-xs text-muted">{t.status}</div>
                       </div>

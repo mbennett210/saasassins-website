@@ -13,7 +13,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { can, PERMISSIONS } from '../src/lib/roles.js';
+import { can, PERMISSIONS, ROLES } from '../src/lib/roles.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
@@ -27,7 +27,11 @@ const ok = (label, cond) => { if (cond) pass += 1; else fails.push(label); };
 // widening (e.g. admin onto an owner/manager-only financial gate, or crew onto a
 // manager gate), because those roles stay out of the baselines below.
 const MANAGER = ['owner', 'admin', 'manager'];
-const VIEW = ['owner', 'admin', 'manager', 'crew'];
+// Every role there is (lib/roles ROLES): a gate the old requireRole opened to every signed-in tier.
+// The supply manager (S131) is a role like the rest — a key of theirs reaching such a gate widens
+// nothing — while the narrower baselines above and below leave it out: none of its keys (the
+// supply ones, dashboard.view, reports.view) is a converted MANAGER or OWNER gate's key.
+const VIEW = [...ROLES];
 const OWNER = ['owner', 'manager'];
 
 // Every gate converted from requireRole(oldRoles) → requirePermission(key).
@@ -60,9 +64,6 @@ const CONVERSIONS = [
   { where: 'qc/templates.edit', key: 'qc.templates.edit', old: MANAGER },
   { where: 'qc/inspections.create|submit', key: 'qc.inspect', old: MANAGER },
   { where: 'qc/checklists.submit', key: 'qc.checklist.perform', old: VIEW },
-  // reviews
-  { where: 'reviews/read', key: 'reviews.view', old: MANAGER },
-  { where: 'reviews/manage', key: 'reviews.manage', old: MANAGER },
   // Role list kept AND the key added (requireRoleOrPermission / a bypass key, 2026-09-23 —
   // the old lists refused the manager tier). The role list still passes on its own, so the
   // subset rule here guards the KEY half: its defaults must not reach past the old roles.
@@ -90,17 +91,19 @@ ok('🔴 crew WITH a per-user grant is ALLOWED (the whole point)',
   can(U('crew'), 'marketing.connectInbox', null, [{ userId: 'u1', grants: ['marketing.connectInbox'] }]) === true);
 ok('🔴 admin WITH a per-user revoke is DENIED (admin minus a view)',
   can(U('admin'), 'quotes.delete', null, [{ userId: 'u1', revokes: ['quotes.delete'] }]) === false);
-ok('revoke beats grant for the same key', can(U('crew'), 'reviews.manage', null, [{ userId: 'u1', grants: ['reviews.manage'], revokes: ['reviews.manage'] }]) === false);
-ok('admin gets an owner+admin default key with no override', can(U('admin'), 'reviews.view', null, []) === true);
-ok('crew does NOT get an owner+admin default key with no override', can(U('crew'), 'reviews.view', null, []) === false);
+ok('revoke beats grant for the same key', can(U('crew'), 'marketing.manage', null, [{ userId: 'u1', grants: ['marketing.manage'], revokes: ['marketing.manage'] }]) === false);
+ok('admin gets an owner+admin default key with no override', can(U('admin'), 'marketing.view', null, []) === true);
+ok('crew does NOT get an owner+admin default key with no override', can(U('crew'), 'marketing.view', null, []) === false);
 ok('crew keeps a crew-inclusive key by default', can(U('crew'), 'qc.checklist.perform', null, []) === true);
 ok('a grant is scoped to the RIGHT user id (not another)',
   can(U('crew'), 'time.approve', null, [{ userId: 'someone-else', grants: ['time.approve'] }]) === false);
 
 // ── 3. source-shape ──────────────────────────────────────────────────────────
 const authz = read('api/_lib/authz.js');
-ok('permissionChecker runs can() on the claim role + claim id + the committed slices',
-  /export async function permissionChecker[\s\S]{0,300}const me = \{ id: a\?\.orgUserId, role: a\?\.role \};[\s\S]{0,200}canCommitted\(me, permKey, slices\)/.test(authz));
+// CS-858: at the caller's permission column — the level off the committed roster, both manager
+// columns when it can't be known (levelVariants, fail closed).
+ok('permissionChecker runs can() on the claim role + claim id + their column\'s level + the committed slices',
+  /export async function permissionChecker[\s\S]{0,700}const me = \{ id: a\?\.orgUserId, role: a\?\.role, managerLevel: await callerLevel\(a\) \};[\s\S]{0,80}const as = levelVariants\(me\);[\s\S]{0,120}as\.every\(\(u\) => canCommitted\(u, permKey, slices\)\)/.test(authz));
 ok('  canCommitted is the app\'s can() on the raw rows, and a row it can\'t read denies',
   /export function canCommitted\(user, permKey, \{ permissions, overrides \}\) \{\s*try \{\s*return can\(user, permKey, permissions, overrides\) === true;\s*\} catch \{\s*return false;/.test(authz));
 ok('  requirePermission and requireRoleOrPermission both decide through it',
@@ -114,7 +117,7 @@ const ROUTE_FILES = [
   'api/variance/[...path].js', 'api/inbox/connect/start.js', 'api/inbox/[id]/disconnect.js',
   'api/state/heartbeat.js', 'api/workspaces/[...path].js', 'api/site-security/[...path].js',
   'api/account-media/[...path].js', 'api/quotes/[...path].js',
-  'api/qc/[...path].js', 'api/reviews/[...path].js', 'api/time/[...path].js',
+  'api/qc/[...path].js', 'api/time/[...path].js',
   'api/hr-files/[...path].js',
 ];
 for (const f of ROUTE_FILES) {
@@ -127,8 +130,8 @@ for (const f of ROUTE_FILES) {
 // own limits; jobsGuard also must not answer 403 (a 403 on the jobs path wedges tabs).
 ok('🔴 orgStateGuard does not call requirePermission', !/requirePermission\(/.test(read('api/_lib/orgStateGuard.js')));
 ok('🔴 jobsGuard does not call requirePermission (it sanitizes, never rejects)', !/requirePermission\(/.test(read('api/_lib/jobsGuard.js')));
-ok('🔴 jobsGuard reads the matrix only through can() on the committed slices',
-  /can\(\{ id: selfId, role \}, SCHEDULE_EDIT, matrixForCan\(permissions\), overridesForCan\(overrides\)\)/.test(read('api/_lib/jobsGuard.js')));
+ok('🔴 jobsGuard reads the matrix only through can() on the committed slices, at the caller\'s column (CS-858)',
+  /const matrix = matrixForCan\(permissions\);\s*const ov = overridesForCan\(overrides\);\s*return levelVariants\(\{ id: selfId, role, managerLevel \}\)\.every\(\(u\) => can\(u, SCHEDULE_EDIT, matrix, ov\)\);/.test(read('api/_lib/jobsGuard.js')));
 // The settings users routes consult the matrix since 2026-09-23, but only through
 // teamAuthority.loginRefusal, next to limits held by role and identity: never a bare
 // requirePermission gate, and still claim-backed authority only.

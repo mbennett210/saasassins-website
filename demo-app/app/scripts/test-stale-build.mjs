@@ -7,7 +7,8 @@
 //   1. vercel.json — a missing /assets/* file is a real 404, never the app's HTML
 //   2. lib/staleBuild — a COOLDOWN loop guard, not once-per-session (executed, fresh module
 //      instance per case, against a stand-in window/sessionStorage)
-//   3. the recovery is wired into every on-demand chunk (lazyRoute + vite:preloadError)
+//   3. the recovery is wired into every on-demand chunk (lazyRoute + vite:preloadError), through
+//      the offline-aware door (no signal → no reload: CS-665, test-offline-shell.mjs)
 //   4. AutoUpdater checks for a new build the moment the app returns to the foreground,
 //      and a tapped tab lights up while its page loads
 //
@@ -77,12 +78,15 @@ delete globalThis.window;
 delete globalThis.sessionStorage;
 
 // ── 3. wired into every on-demand chunk ───────────────────────────────────────────────────
+// Through ONE door, lib/staleBuild onChunkLoadFailure, which reloads only when the server
+// answers — with no signal it keeps the app on screen instead (CS-665, test-offline-shell.mjs).
 const app = src('../src/App.jsx');
-ok('lazyRoute recovers through lib/staleBuild', /factory\(\)\.catch\(\(err\) => \{\s*if \(recoverFromStaleBuild\(\)\) return new Promise\(\(\) => \{\}\);/.test(app));
+ok('lazyRoute recovers through lib/staleBuild', /factory\(\)\.catch\(async \(err\) => \{\s*const action = await onChunkLoadFailure\(\);/.test(app)
+  && /if \(action === CHUNK_FAILURE\.RELOAD\) return new Promise\(\(\) => \{\}\);/.test(app));
 ok('the once-per-session guard is gone', !/!sessionStorage\.getItem\(KEY\)/.test(app));
 const main = src('../src/main.jsx');
 ok('any failed on-demand chunk recovers (vite:preloadError), without swallowing the rejection',
-  /addEventListener\('vite:preloadError', \(\) => \{ recoverFromStaleBuild\(\) \}\)/.test(main) && !/preloadError[\s\S]{0,80}preventDefault/.test(main));
+  /addEventListener\('vite:preloadError', \(\) => \{ onChunkLoadFailure\(\) \}\)/.test(main) && !/preloadError[\s\S]{0,80}preventDefault/.test(main));
 
 // ── 4. resume check + tap feedback ────────────────────────────────────────────────────────
 const au = src('../src/components/AutoUpdater.jsx');
@@ -90,8 +94,11 @@ ok('AutoUpdater checks for a new build on returning to the foreground',
   /visibilityState === 'hidden'\) maybeReload\(\);\s*else check\(\);/.test(au));
 ok('…and on a back/forward-cache restore', /addEventListener\('pageshow', onPageShow\)/.test(au) && /e\.persisted\) check\(\)/.test(au));
 const fnav = src('../src/components/FloatingNav.jsx');
-ok('a tapped tab lights up while its page loads', /const shownPath = pendingTo \?\? pathname;/.test(fnav)
-  && /if \(to !== pathname\) setPendingTo\(to\);/.test(fnav) && /setPendingTo\(null\); \}, \[pathname\]\)/.test(fnav));
+// (By path since S131 Wave 2: a tab with a query — the supply manager's Supply Catalog — is its page.
+// With its query since task #125: the office's Supply Catalog row and Supplies share a path, so a tap
+// counts as pending until the path AND query arrive, and clears on either.)
+ok('a tapped tab lights up while its page loads', /const shownPath = (navPath\()?pendingTo \?\? pathname\)?;/.test(fnav)
+  && /if \(to !== pathname \+ search\) setPendingTo\(to\);/.test(fnav) && /setPendingTo\(null\); \}, \[pathname, search\]\)/.test(fnav));
 
 if (fails.length) {
   console.error(`\nFAIL — ${pass} passed, ${fails.length} failed`);

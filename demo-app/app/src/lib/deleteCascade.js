@@ -13,20 +13,8 @@ import { payPeriodRange } from './payroll.js';
 import { dayKey } from './dates.js';
 import { removeUserFromCrewChecklists } from './crewChecklist.js';
 
-// LW-01 — rows a DELETE_CLIENT must also sweep. `supplyItems` / `supplyRequests` (S58)
-// and `opsAlertEvents` all carry `clientId` but were never cascaded, so a deleted
-// account left them riding the org_state blob keyed to a clientId nothing resolves.
-// `deletedJobIds` (the client's jobs, already computed by the handler) also clears any
-// job-scoped ops alert whose clientId happens to be null.
-export function sweepClientOrphans(state, clientId, deletedJobIds = new Set()) {
-  return {
-    supplyItems: (state.supplyItems || []).filter((r) => r.clientId !== clientId),
-    supplyRequests: (state.supplyRequests || []).filter((r) => r.clientId !== clientId),
-    opsAlertEvents: (state.opsAlertEvents || []).filter(
-      (e) => e.clientId !== clientId && !deletedJobIds.has(e.jobId)
-    ),
-  };
-}
+// (LW-01's customer sweep left with the customer delete itself: customers are archived, never
+// deleted — CS-663 / CS-027, lib/customerStatus — so nothing is ever orphaned by one.)
 
 // LW-02 — scrub a deleted tag id from every marketing sequence's `replyTags`. Without
 // this, RECEIVE_MARKETING_REPLY (reducer) re-applies the dead tag id to a contact on the
@@ -59,18 +47,25 @@ export function oauthWorkspaceInUse(state, workspaceId) {
 // SERVER, which has no ambient org zone: it passes company.timezone. In the app it is left
 // out, so the org zone the store sets (lib/dates setOrgTimezone) applies, as for the run.
 export function payCutoffKey(state, now = new Date(), tz) {
-  return payPeriodRange(normalCadence(state), -1, now, tz).fromKey;
+  return payPeriodRange(normalCadence(state), -1, now, tz, weekStartOf(state)).fromKey;
 }
 
 // The same cutoff as an instant — for the Team page's clocked-hours check, which asks
 // the time ledger for any punch on or after it.
 export function payCutoffIso(state, now = new Date(), tz) {
-  return payPeriodRange(normalCadence(state), -1, now, tz).fromIso;
+  return payPeriodRange(normalCadence(state), -1, now, tz, weekStartOf(state)).fromIso;
 }
 
 function normalCadence(state) {
   const c = state?.opsSettings?.payPeriodCadence;
   return c === 'weekly' || c === 'semimonthly' ? c : 'biweekly';
+}
+
+// PAY-19: the ORG's workweek start, read from the same slice as the cadence, so this cutoff and
+// the pay run cannot disagree about where a period begins. 0 (Sunday) is the default.
+function weekStartOf(state) {
+  const d = state?.opsSettings?.payWeekStartDay;
+  return Number.isInteger(d) && d >= 0 && d <= 6 ? d : 0;
 }
 
 // A salaried member is owed pay for every period they are employed, with no punches or
@@ -163,8 +158,9 @@ export function removeReimbursement(state, reimbursementId) {
 //
 // `goneName` is the deleted user's name. A record that OUTLIVES them keeps it (owner:
 // a deleted person must not turn into "—" in history): their own settled pay lines,
-// reimbursements and PTO keep userId AND gain userName; a supply request or client note
-// drops the id and keeps the name. An existing stored name wins, as in the handler.
+// reimbursements and PTO keep userId AND gain userName; a client note drops the id and keeps
+// the name. An existing stored name wins, as in the handler. (Supply requests left the shared
+// record with SUP-13: their table stores each person's name with the act.)
 export function sweepUserOrphans(state, userId, goneName = null) {
   const withName = (row, field) => (goneName && !row[field] ? { ...row, [field]: goneName } : row);
   return {
@@ -187,12 +183,9 @@ export function sweepUserOrphans(state, userId, goneName = null) {
       if (ns.notifyOnReplyUserId === userId) ns = { ...ns, notifyOnReplyUserId: null };
       return ns;
     }),
-    supplyRequests: (state.supplyRequests || []).map((r) => {
-      let nr = r;
-      if (nr.requestedByUserId === userId) nr = { ...withName(nr, 'requestedByName'), requestedByUserId: null };
-      if (nr.completedByUserId === userId) nr = { ...withName(nr, 'completedByName'), completedByUserId: null };
-      return nr;
-    }),
+    // (Supply requests left the shared record with SUP-13: every request row stores the
+    // requester's and each decider's NAME at the time of the act, so a deleted member needs no
+    // sweep there.)
     // timeOff.userId is a DECISION (kept for historical call-out reports): the row keeps
     // the id and gains the name; only the authorship link (createdBy) is scrubbed.
     timeOff: (state.timeOff || []).map((t) => {
@@ -231,5 +224,116 @@ export function sweepUserOrphans(state, userId, goneName = null) {
       if (nr.decidedBy === userId) nr = { ...nr, decidedBy: null };
       return nr;
     }),
+    // SUP-9's named supply approver (opsSettings.supplyApproverUserId) → null when that
+    // person is the one being removed: a dangling id resolves to nobody
+    // (resolveSupplyApprover checks the row is present, active and an eligible tier), so
+    // every new request would silently reach no approver while Settings → Operations still
+    // named one. Cleared to null, which is "the building's supervisor approves" — the
+    // default, and a real approver again. Only this ONE field of opsSettings is touched, and
+    // only when it names the departing user, so an untouched org's save does not move the
+    // slice at all — which matters because the whole slice is `time.config`-gated
+    // (orgStateGuard carries the matching authority-neutral carve-out, the same one
+    // `clients[].supervisorId` has).
+    // (ALR-4's org-wide operations-manager setting was cleared here too until ALR-12
+    // removed it outright — nothing reads it now, so moving a gated slice for it would be
+    // a save nobody asked for. The server carve-out stays tolerant of a legacy value.)
+    ...(namedSupplyApproverId(state.opsSettings || {}) === userId
+      ? { opsSettings: { ...(state.opsSettings || {}), supplyApproverUserId: null } }
+      : {}),
+  };
+}
+
+// S131 — an account manager's Operations Manager (`users[].opsManagerId`, lib/teamScope.js) →
+// null when that OM is the member being removed: a dangling pointer names nobody, and the AM
+// would read as "on a team" nobody leads. Same move as the supervisorId clear above. DELETE_USER
+// runs it over the roster AFTER the removal; orgStateGuard counts the clear as authority-neutral
+// (its OM is gone from the saved roster), so a removal by a settings.team.edit holder is never
+// refused for it. Returns the same array when nothing pointed at them.
+export function clearOpsManagerPointers(users, opsManagerId) {
+  const list = Array.isArray(users) ? users : [];
+  if (!opsManagerId || !list.some((u) => u && u.opsManagerId === opsManagerId)) return list;
+  return list.map((u) => (u && u.opsManagerId === opsManagerId ? { ...u, opsManagerId: null } : u));
+}
+
+// The id in `opsSettings.supplyApproverUserId`, or null — read the same way
+// lib/notifications resolveSupplyApprover reads it, so a blank or non-string setting is
+// "nobody named" in both places. Local to the sweep (the resolver itself needs the roster).
+function namedSupplyApproverId(settings) {
+  const v = settings?.supplyApproverUserId;
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+// 🔴 THE SHARED RECORD'S HALF OF A MEMBER'S REMOVAL (CS-969, 2026-11-03): every slice DELETE_USER
+// changes except the cleans (`jobs`), which the browser loads from public.jobs and mirrors there
+// (the shared record's copy is always empty, store/tableSlices.js). The reducer's DELETE_USER
+// spreads this and adds the jobs sweep. Settings → Team → Remove (api/_lib/rosterRemoval.js) runs
+// it on the committed record in the same request that deletes the login, so the login and the
+// roster row go together (THE LAW II.5); before, the row waited for the tab's next save, and a page
+// left first kept the member listed as active with no login. It refuses nothing: both callers
+// check isLastOwner and hasUnsettledPay first.
+export function removeUserFromRecord(state, id) {
+  const users = Array.isArray(state.users) ? state.users : [];
+  const gone = users.find((u) => u && u.id === id) || null;
+  const goneName = gone?.name || null;
+  return {
+    ...state,
+    // An Operations Manager's account managers leave the team with them (S131,
+    // clearOpsManagerPointers): their opsManagerId would name nobody.
+    users: clearOpsManagerPointers(users.filter((u) => u.id !== id), id),
+    userPermissionOverrides: (state.userPermissionOverrides || []).filter((o) => o.userId !== id),
+    // A key in the departed user's hands stays 'out' but keeps WHO has it:
+    // demote the link to the denormalized name (holder display falls back to
+    // heldByName), instead of a dangling id that renders "Unknown user" at
+    // exactly the moment an admin is chasing the physical key.
+    keys: (state.keys || []).map((k) => (
+      k.heldByUserId === id ? { ...k, heldByUserId: null, heldByName: k.heldByName || goneName } : k
+    )),
+    // A thread ALWAYS outlives its creator — nothing here deletes a conversation.
+    // The creator link is demoted to a denormalized name (same move as the keys
+    // block above): without it the thread reads as authored by nobody, and a
+    // Super Admin cleaning up orphans in OrphanedThreadsModal has no way to tell
+    // whose thread they're about to destroy.
+    conversations: (state.conversations || []).map((cv) => {
+      const next = { ...cv };
+      if (next.createdByUserId === id) {
+        next.createdByUserId = null;
+        next.createdByName = next.createdByName || goneName;
+      }
+      if ((next.mutedByUserIds || []).includes(id)) next.mutedByUserIds = next.mutedByUserIds.filter((u) => u !== id);
+      if ((next.participantUserIds || []).includes(id)) next.participantUserIds = next.participantUserIds.filter((u) => u !== id);
+      // Read-receipt + star lists are membership sets too — scrub the departed user
+      // so they don't ride as dangling ids (DR-01 readByUserIds / DR-02 starred).
+      if ((next.starredByUserIds || []).includes(id)) next.starredByUserIds = next.starredByUserIds.filter((u) => u !== id);
+      return next;
+    }),
+    // Same demotion for message authorship, so a departed teammate's messages
+    // keep their byline instead of rendering as anonymous text in the thread; and
+    // scrub the id from every message's read-receipt list (DR-01).
+    messages: (state.messages || []).map((m) => {
+      let nm = m;
+      if (nm.authorUserId === id) nm = { ...nm, authorUserId: null, authorName: nm.authorName || goneName };
+      if ((nm.readByUserIds || []).includes(id)) nm = { ...nm, readByUserIds: nm.readByUserIds.filter((u) => u !== id) };
+      return nm;
+    }),
+    contactActivities: (state.contactActivities || []).map((a) => (a.authorUserId === id ? { ...a, authorUserId: null, authorName: a.authorName || goneName } : a)),
+    // Key custody events are a legal trail — demote the actor + holder links to their
+    // denormalized name (like the keys block above) so the trail survives the delete
+    // instead of rendering blank (audit DR-25/26; owner: preserve the name).
+    keyEvents: (state.keyEvents || []).map((e) => {
+      let ne = e;
+      if (ne.byUserId === id) ne = { ...ne, byUserId: null, byName: ne.byName || goneName };
+      if (ne.holderUserId === id) ne = { ...ne, holderUserId: null, holderName: ne.holderName || goneName };
+      return ne;
+    }),
+    // Drop the departed user's bell rows — they're unreachable once the user
+    // is gone (CLEAR is self-scoped from the bell) and would otherwise ride
+    // in the shared blob forever as dead weight on every load/save/sync.
+    notifications: (state.notifications || []).filter((n) => n.userId !== id),
+    // The ~14 other user-referencing slices the store grew after this handler was
+    // written (clients supervisor/crewChecklists, marketing/supply authorship, HR,
+    // invitations, activities) — swept here so a delete leaves zero orphans (audit
+    // DR-03/04/06/07/08/09/10/12/13/14/15/16/17/20). Decision-gated slices excluded.
+    // The name rides along so every record that outlives the person keeps it.
+    ...sweepUserOrphans(state, id, goneName),
   };
 }

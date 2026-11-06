@@ -10,9 +10,10 @@ import {
   selectActiveClients, selectClientById, selectSitesForClient, nextInvoiceId,
   selectServiceById, lineItemFromService,
 } from '../store/selectors';
+import { invoiceDefaultsFor, paymentTermLabel } from '../lib/money';
 import { useToast } from './Toast';
 import { newId } from '../lib/ids';
-import { todayKey, addDaysKey, composeIso } from '../lib/dates';
+import { todayKey, addDaysKey, composeIso, money } from '../lib/dates';
 import {
   saveAttachment,
   ATTACHMENT_MAX_BYTES,
@@ -21,25 +22,39 @@ import {
 } from '../lib/attachments';
 import { usePagedRows } from '../hooks/usePagedRows';
 import ListPager from './ListPager';
+import { customerLabel } from '../lib/customerNumber';
+import { isArchivedCustomer } from '../lib/customerStatus';
 
 const newLine = () => ({ id: newId('li'), description: '', qty: 1, unitPrice: 0 });
 
-function buildInitialForm({ presetClientId, presetSiteId, presetClient, defaultTaxRate, presetService }) {
+// 🔴 THE CUSTOMER'S BILLING SETTINGS ARE THE DEFAULTS (CS-044). Terms, tax exemption /
+// override, PO and the designated billing contact were WRITE-ONLY: this form used +30 days
+// and the company tax rate for every customer, so a Net-15 customer was invoiced Net-30,
+// and (with production `company.taxRate` = 0) an override-rate customer was invoiced at 0%
+// while a tax-EXEMPT one would have been taxed the moment a company rate was set.
+// invoiceDefaultsFor (lib/money.js) is the one pure rule; it is applied here AND on every
+// customer change below, so the two can never diverge.
+function buildInitialForm({ presetClientId, presetSiteId, presetClient, company, presetService }) {
   // A preset service (job → invoice flow) seeds a catalog-priced line and opens
   // the line-item detail view so the total is derived, not hand-typed.
   const seededLines = presetService
     ? [{ id: newId('li'), ...lineItemFromService(presetService) }]
     : [newLine()];
+  const d = invoiceDefaultsFor(presetClient, company);
   return {
     clientId: presetClientId || '',
     siteId: presetSiteId || '',
-    billingContactId: presetClient?.primaryContactId || null,
+    billingContactId: d.billingContactId,
     issueDate: todayKey(),
-    dueDate: addDaysKey(todayKey(), 30),
+    dueDate: addDaysKey(todayKey(), d.dueDays),
     totalAmount: '',
     notes: '',
     showDetail: !!presetService,
-    taxRate: defaultTaxRate || 0,
+    taxRate: d.taxRate,
+    paymentTerms: d.paymentTerms,
+    taxExempt: d.taxExempt,
+    poRequired: d.poRequired,
+    poNumber: d.poNumber,
     lineItems: seededLines,
   };
 }
@@ -48,24 +63,34 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
-  const clients = selectActiveClients(state);
-
   const presetClient = presetClientId ? selectClientById(state, presetClientId) : null;
+  // The customers we serve (an ARCHIVED one is not offered for a new invoice, CS-663) — plus the
+  // one this invoice was opened for, archived or not: a clean done before the archive is still billed.
+  const liveClients = selectActiveClients(state);
+  const clients = presetClient && isArchivedCustomer(presetClient) ? [...liveClients, presetClient] : liveClients;
   const presetService = presetServiceId ? selectServiceById(state, presetServiceId) : null;
-  const defaultTaxRate = state.company.taxRate || 0;
+  const company = state.company;
 
-  const [form, setForm] = useState(() => buildInitialForm({ presetClientId, presetSiteId, presetClient, defaultTaxRate, presetService }));
+  const [form, setForm] = useState(() => buildInitialForm({ presetClientId, presetSiteId, presetClient, company, presetService }));
   const [pendingFile, setPendingFile] = useState(null);
   const [fileError, setFileError] = useState(null);
+  // 🔴 ONE SUBMIT PER CLICK (CS-098). submit() awaits the attachment upload before
+  // dispatching, which is a wide-open window for a second click — and the second click
+  // computed the same invoice number. The reducer now renumbers rather than duplicating
+  // a number, but a double-click would still raise TWO invoices, so the button locks.
+  const [submitting, setSubmitting] = useState(false);
+  const [poError, setPoError] = useState(null);
   const linesPager = usePagedRows(form.lineItems);
 
   useEffect(() => {
     if (!open) return;
     const seededClient = presetClientId ? selectClientById(state, presetClientId) : null;
     const seededService = presetServiceId ? selectServiceById(state, presetServiceId) : null;
-    setForm(buildInitialForm({ presetClientId, presetSiteId, presetClient: seededClient, defaultTaxRate, presetService: seededService }));
+    setForm(buildInitialForm({ presetClientId, presetSiteId, presetClient: seededClient, company, presetService: seededService }));
     setPendingFile(null);
     setFileError(null);
+    setPoError(null);
+    setSubmitting(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, presetClientId, presetSiteId, presetServiceId]);
 
@@ -73,11 +98,22 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
     const picked = clientId ? selectClientById(state, clientId) : null;
     // Every customer has exactly one location; default the invoice to it.
     const loc = clientId ? selectSitesForClient(state, clientId)[0] : null;
+    // Switching the customer re-derives EVERY billing default, not just the contact:
+    // keeping the previous customer's terms and tax rate on the form is exactly the
+    // wrong-money bug CS-044 describes, one step later.
+    const d = invoiceDefaultsFor(picked, company);
+    setPoError(null);
     setForm({
       ...form,
       clientId,
       siteId: loc?.id || '',
-      billingContactId: picked?.primaryContactId || null,
+      billingContactId: d.billingContactId,
+      dueDate: addDaysKey(form.issueDate || todayKey(), d.dueDays),
+      taxRate: d.taxRate,
+      paymentTerms: d.paymentTerms,
+      taxExempt: d.taxExempt,
+      poRequired: d.poRequired,
+      poNumber: d.poNumber,
     });
   };
 
@@ -136,6 +172,15 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
     e.preventDefault();
     if (!form.clientId) return;
     if (effectiveTotal <= 0) return;
+    if (submitting) return;
+    // A customer flagged "PO required on invoices" must not be invoiced without one —
+    // that flag exists because their AP department rejects the invoice otherwise.
+    if (form.poRequired && !form.poNumber.trim()) {
+      setPoError('This customer requires a PO number on every invoice.');
+      return;
+    }
+    setPoError(null);
+    setSubmitting(true);
 
     let lineItems;
     let taxRate;
@@ -143,7 +188,7 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
       const cleanItems = form.lineItems
         .filter((li) => li.description.trim())
         .map((li) => ({ ...li, qty: Number(li.qty) || 0, unitPrice: Number(li.unitPrice) || 0 }));
-      if (cleanItems.length === 0) return;
+      if (cleanItems.length === 0) { setSubmitting(false); return; }
       lineItems = cleanItems;
       taxRate = Number(form.taxRate) || 0;
     } else {
@@ -166,6 +211,7 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
         attachmentMeta = await saveAttachment(invoiceId, pendingFile);
       } catch (err) {
         setFileError(err?.message || 'Could not save attachment.');
+        setSubmitting(false);
         return;
       }
     }
@@ -174,6 +220,11 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
       type: ACTIONS.ADD_INVOICE,
       invoice: {
         id: invoiceId,
+        // The create's own identity, minted HERE (CS-098): the reducer drops a replay
+        // that carries this key and RENUMBERS a create whose number was taken while it
+        // sat in the offline queue. `id` above is only the number, so it cannot serve as
+        // the dedupe key — see the note on ADD_INVOICE in store/reducer.js.
+        dedupeKey: newId('inv'),
         clientId: form.clientId,
         siteId: form.siteId || null,
         billingContactId: form.billingContactId || null,
@@ -186,6 +237,11 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
         payments: [],
         notes: form.notes.trim(),
         attachment: attachmentMeta,
+        // The customer's billing terms AS RAISED (CS-044) — a later settings change
+        // must never rewrite an invoice already sent.
+        paymentTerms: form.paymentTerms,
+        taxExempt: !!form.taxExempt,
+        poNumber: form.poNumber.trim(),
       },
     });
     toast.success('Invoice logged');
@@ -193,7 +249,7 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
   };
 
   const accept = ATTACHMENT_ALLOWED_MIME.join(',');
-  const submitDisabled = !form.clientId || effectiveTotal <= 0;
+  const submitDisabled = !form.clientId || effectiveTotal <= 0 || submitting;
 
   return (
     <Modal open={open} onClose={onClose} title="Add Invoice">
@@ -202,7 +258,7 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
           <FormField
             label="Client" as="select" required value={form.clientId}
             onChange={(e) => onClientChange(e.target.value)}
-            options={[{ value: '', label: 'Select a client' }, ...clients.map((c) => ({ value: c.id, label: c.name }))]}
+            options={[{ value: '', label: 'Select a client' }, ...clients.map((c) => ({ value: c.id, label: customerLabel(c) }))]}
           />
         </div>
 
@@ -215,13 +271,26 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
             placeholder="Select a billing contact…"
           />
           <div className="text-xs text-muted" style={{ marginTop: 4 }}>
-            Optional. Defaults to the client's primary contact.
+            Optional. Defaults to the customer's designated billing contact, then their primary contact.
           </div>
         </div>
 
         <div className="form-row">
-          <FormField label="Issue date" type="date" value={form.issueDate} onChange={(e) => setForm({ ...form, issueDate: e.target.value })} />
-          <FormField label="Due date" type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+          <FormField
+            label="Issue date" type="date" value={form.issueDate}
+            onChange={(e) => setForm({
+              ...form,
+              issueDate: e.target.value,
+              // The due date follows the customer's terms off the NEW issue date, so
+              // changing the issue date cannot silently leave a stale due date behind.
+              dueDate: addDaysKey(e.target.value || todayKey(), invoiceDefaultsFor(selectClientById(state, form.clientId), company).dueDays),
+            })}
+          />
+          <FormField
+            label="Due date" type="date" value={form.dueDate}
+            onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+            help={form.clientId ? `${paymentTermLabel(form.paymentTerms)} — from this customer's billing settings` : undefined}
+          />
           {!form.showDetail && (
             <FormField
               label="Total amount" type="number" step="0.01" min="0" required
@@ -232,13 +301,25 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
           )}
         </div>
 
+        <div className="form-row">
+          <FormField
+            label={form.poRequired ? 'PO number (required)' : 'PO number'}
+            value={form.poNumber}
+            required={form.poRequired}
+            onChange={(e) => { setForm({ ...form, poNumber: e.target.value }); if (poError) setPoError(null); }}
+            placeholder={form.poRequired ? 'Required by this customer' : 'Optional'}
+            error={poError || undefined}
+            help={form.taxExempt ? 'This customer is tax exempt — no tax is applied.' : undefined}
+          />
+        </div>
+
         <div className="form-group">
           <label className="form-label">Notes</label>
           <textarea
             className="input" rows={2}
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="Optional. PO #, internal reference, etc."
+            placeholder="Optional. Internal reference, etc."
           />
         </div>
 
@@ -329,19 +410,32 @@ export default function LogInvoiceModal({ open, onClose, presetClientId = null, 
               onChange={(e) => setForm({ ...form, taxRate: e.target.value })}
             />
 
+            {/* 🔴 FLAT CHILDREN, NOT WRAPPED ROWS (CS-374). `.invoice-totals` is a
+                two-column grid (label | amount) and its `.label` / `.value` / `.grand`
+                rules style those cells. Wrapping each row in a <div> put the label and
+                the amount in ONE cell, where the rules matched nothing — so the totals
+                rendered as "Subtotal$0.00", with no gap and no column alignment, on a
+                money summary. The markup now is what the stylesheet describes. */}
             <div className="invoice-totals">
-              <div><span className="text-muted">Subtotal</span><span className="money">${subtotal.toFixed(2)}</span></div>
+              <span className="label">Subtotal</span>
+              <span className="value">{money(subtotal)}</span>
               {Number(form.taxRate) > 0 && (
-                <div><span className="text-muted">Tax ({form.taxRate}%)</span><span className="money">${taxAmount.toFixed(2)}</span></div>
+                <>
+                  <span className="label">Tax ({form.taxRate}%)</span>
+                  <span className="value">{money(taxAmount)}</span>
+                </>
               )}
-              <div><strong>Total</strong><strong className="money">${detailTotal.toFixed(2)}</strong></div>
+              <span className="label grand">Total</span>
+              <span className="value grand">{money(detailTotal)}</span>
             </div>
           </div>
         )}
 
         <div className="modal-actions">
           <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={submitDisabled}>Add Invoice</button>
+          <button type="submit" className="btn btn-primary" disabled={submitDisabled}>
+            {submitting ? 'Adding…' : 'Add Invoice'}
+          </button>
         </div>
       </form>
     </Modal>

@@ -18,19 +18,16 @@ const SCOPES = [
 
 // `creds` (optional) = { clientId, clientSecret } for a specific Google
 // Workspace's OAuth app (multi-Workspace). Falls back to the legacy single env
-// app when not supplied.
-// `scopes` defaults to the Gmail pair so every existing inbox call site is
-// byte-identical; the Business Profile flow (api/reviews) passes its own
-// business.manage scope. Same Internal OAuth app either way — Internal apps
-// add scopes without a Google verification round-trip.
-export function buildConsentUrl(state, redirectUri, creds = {}, scopes = SCOPES) {
+// app when not supplied. Always the Gmail pair (SCOPES): the Business Profile flow that passed
+// its own scopes left with Google reviews on 2026-10-20.
+export function buildConsentUrl(state, redirectUri, creds = {}) {
   const clientId = creds.clientId || process.env.GOOGLE_OAUTH_CLIENT_ID;
   if (!clientId) throw new Error('No Google OAuth client_id — the Workspace isn’t configured and GOOGLE_OAUTH_CLIENT_ID is unset.');
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: scopes.join(' '),
+    scope: SCOPES.join(' '),
     access_type: 'offline',
     prompt: 'consent',
     include_granted_scopes: 'true',
@@ -190,22 +187,59 @@ function encodeHeader(value) {
   return `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`;
 }
 
+// 🔴 CS-075 — MIME HEADER INJECTION. Every header VALUE this builder writes goes through
+// hdr() and every header NAME through hdrName(). Before 2026-09-29 only In-Reply-To,
+// References and the extraHeaders VALUES were stripped: To, Cc, Bcc, Reply-To, From and
+// the extraHeaders KEYS were interpolated raw, so a `to` of "a@b\r\nBcc: attacker@evil"
+// added a real Bcc header to mail leaving the company's own mailbox, and a crafted key did
+// the same. Callers sanitize too (api/_lib/email.js, _lib/sender.js formatFrom) — this is
+// the layer that makes it unexpressible, because it is the only place headers are assembled.
+//
+// CR and LF collapse to a single space rather than being deleted: a space keeps the value
+// on ONE logical line (or makes it an RFC 5322 folded continuation of it at worst), which
+// is what stops a new header from ever starting. NUL goes too — it terminates a C string
+// in some MTAs. Tabs are legal inside a header value and are left alone.
+function hdr(value) {
+  return String(value ?? '').replace(/[\r\n\0]+/g, ' ');
+}
+
+// A header field name is printable US-ASCII except the colon (RFC 5322 §3.6.8). Anything
+// else — CR, LF, a colon, a space — is dropped, and a name left empty is refused by the
+// caller, so a key can no more open a new header than a value can.
+function hdrName(key) {
+  return String(key ?? '').replace(/[^\x21-\x39\x3B-\x7E]/g, '');
+}
+
+// The headers buildMime writes itself. extraHeaders may not restate any of them — a second
+// `To:` or `Bcc:` line is the same attack as a smuggled newline, just spelled as a key.
+const OWNED_HEADERS = new Set([
+  'from', 'to', 'cc', 'bcc', 'reply-to', 'subject', 'message-id',
+  'in-reply-to', 'references', 'mime-version', 'content-type',
+  'content-transfer-encoding', 'content-disposition', 'content-id',
+]);
+
 // Builds an RFC 2822 message and returns it base64url-encoded for Gmail's
 // `raw` send field. Without attachments it's a single text/plain or text/html
 // part; with attachments it's multipart/mixed — the body part followed by one
 // base64 part per file. `attachments` is [{ name, mimeType, content }] where
 // `content` is already base64-encoded.
 export function buildMime({ from, to, subject, body, isHtml, replyTo, cc, bcc, inReplyTo, references, messageId, extraHeaders, attachments }) {
-  const headerLines = [`From: ${from}`, `To: ${to}`];
-  if (cc) headerLines.push(`Cc: ${cc}`);
-  if (bcc) headerLines.push(`Bcc: ${bcc}`);
-  if (replyTo) headerLines.push(`Reply-To: ${replyTo}`);
-  headerLines.push(`Subject: ${encodeHeader(subject)}`);
-  headerLines.push(`Message-ID: ${messageId}`);
-  if (inReplyTo) headerLines.push(`In-Reply-To: ${String(inReplyTo).replace(/[\r\n]+/g, ' ')}`);
-  if (references) headerLines.push(`References: ${String(references).replace(/[\r\n]+/g, ' ')}`);
+  const headerLines = [`From: ${hdr(from)}`, `To: ${hdr(to)}`];
+  if (cc) headerLines.push(`Cc: ${hdr(cc)}`);
+  if (bcc) headerLines.push(`Bcc: ${hdr(bcc)}`);
+  if (replyTo) headerLines.push(`Reply-To: ${hdr(replyTo)}`);
+  headerLines.push(`Subject: ${encodeHeader(hdr(subject))}`);
+  headerLines.push(`Message-ID: ${hdr(messageId)}`);
+  if (inReplyTo) headerLines.push(`In-Reply-To: ${hdr(inReplyTo)}`);
+  if (references) headerLines.push(`References: ${hdr(references)}`);
   for (const [key, value] of Object.entries(extraHeaders || {})) {
-    if (value != null) headerLines.push(`${key}: ${String(value).replace(/[\r\n]+/g, ' ')}`);
+    if (value == null) continue;
+    const name = hdrName(key);
+    // A key that sanitizes to nothing, or that would restate a header this builder owns,
+    // is dropped: extraHeaders is caller-supplied (the X-CleanSpace-Marketing-* tags), and
+    // a second To/Bcc/From line is the injection under another spelling.
+    if (!name || OWNED_HEADERS.has(name.toLowerCase())) continue;
+    headerLines.push(`${name}: ${hdr(value)}`);
   }
   headerLines.push('MIME-Version: 1.0');
 

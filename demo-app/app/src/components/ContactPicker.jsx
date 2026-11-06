@@ -1,13 +1,17 @@
 import { useMemo, useRef, useState } from 'react';
 import PopMenu from './PopMenu';
+import PickerCapNote from './PickerCapNote';
 import { useStore } from '../store';
 import { useAuth } from '../hooks/useAuth';
 import { selectVisibleContactsFor } from '../store/selectors';
+import { capOptions, PICKER_MAX_VISIBLE } from '../lib/pickerOptions';
 import Avatar from './Avatar';
 import AddContactModal from './AddContactModal';
 
 // Combobox for picking a contact. Filterable by name or email.
 // Optional `companyId` filter narrows to that client's contacts (plus "(all)" toggle).
+// The book reaches 1,500 people: the first PICKER_MAX_VISIBLE matches render and a footnote
+// says how many more there are (UI_RULES §127; CS-723 — it cut at 30 in silence).
 
 export default function ContactPicker({ value, onChange, companyId = null, placeholder = 'Search contacts…', allowClear = true }) {
   const state = useStore();
@@ -30,9 +34,9 @@ export default function ContactPicker({ value, onChange, companyId = null, place
         if (!q) return true;
         const name = `${c.firstName} ${c.lastName}`.toLowerCase();
         return name.includes(q) || (c.email || '').toLowerCase().includes(q);
-      })
-      .slice(0, 30);
+      });
   }, [contacts, query, companyOnly, companyId]);
+  const { shown, noteMsg } = useMemo(() => capOptions(results, PICKER_MAX_VISIBLE), [results]);
 
   return (
     <div className="contact-picker" ref={wrapRef}>
@@ -75,7 +79,7 @@ export default function ContactPicker({ value, onChange, companyId = null, place
         )}
         <div className="contact-picker-list">
           {results.length === 0 && <div className="contact-picker-empty">No matches</div>}
-          {results.map((c) => (
+          {shown.map((c) => (
             <button
               key={c.id}
               type="button"
@@ -99,6 +103,7 @@ export default function ContactPicker({ value, onChange, companyId = null, place
             </button>
           )}
         </div>
+        <PickerCapNote note={noteMsg} />
       </PopMenu>
       <AddContactModal
         open={createOpen}

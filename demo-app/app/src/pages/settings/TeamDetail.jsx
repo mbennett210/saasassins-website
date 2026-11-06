@@ -12,27 +12,46 @@ import { useToast } from '../../components/Toast';
 import DetailHeader from '../../components/DetailHeader';
 import SectionTabs, { sectionElementId } from '../../components/SectionTabs';
 import FormField from '../../components/FormField';
-import Avatar from '../../components/Avatar';
+import AvatarPhotoControl from '../../components/AvatarPhotoControl';
 import Badge from '../../components/Badge';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import TimeOffCard from '../../components/TimeOffCard';
 import Toggle from '../../components/Toggle';
-import { ROLES, ROLE_LABELS, PERMISSIONS, ALWAYS_GRANTED, OWNER_ONLY, SUPERVISOR_ROLES, liveOverrideKeys, canGrantPermission, canEndAccess } from '../../lib/roles';
+import { PERMISSIONS, ALWAYS_GRANTED, OWNER_ONLY, SUPERVISOR_ROLES, liveOverrideKeys, canGrantPermission, canEndAccess, can, columnHolds, overrideForEffective, isOfficeRole, memberRoleLabel } from '../../lib/roles';
 import { CLOCK_RULE_KEYS, CLOCK_RULE_LABELS, isClockRuleOff, nextClockRules } from '../../lib/clockRules';
 import { memberDeleteBlock, payCutoffIso } from '../../lib/deleteCascade';
-import { assignableRoles, teamLimit, teamLimitReason } from '../../lib/teamLimits';
-import { deleteTeamLogin, sendTeamPasswordReset, applyLoginChanges } from '../../lib/teamApi';
+import { roleChoices, choiceOf, choiceRole, mayAssignTeams, teamLimit, teamLimitReason, ROLE_CHOICES as ROLE_CHOICE_LIST } from '../../lib/teamLimits';
+import { isOpsManager, isAccountManager, managerLevelOf } from '../../lib/teamScope';
+import { deleteTeamLogin, sendTeamPasswordReset, applyLoginChanges, listTeamSignIns } from '../../lib/teamApi';
+import { LINK_WITHHELD } from '../../lib/signInLink';
+import { SignInLinkModal } from '../../components/SignInLinkPanel';
+import { useT } from '../../i18n/react';
 import * as timeApi from '../../lib/timeApi';
 import TimeClockHistory from '../../components/TimeClockHistory';
 import EmployeeHrFieldsCard from '../../components/EmployeeHrFieldsCard';
 import EmployeeDocumentsCard from '../../components/EmployeeDocumentsCard';
+import EmployeeWarningsCard from '../../components/EmployeeWarningsCard';
+import EmployeeIncidentsCard from '../../components/EmployeeIncidentsCard';
+import EmployeeTerminationCard from '../../components/EmployeeTerminationCard';
 import SupervisedCustomersCard from '../../components/SupervisedCustomersCard';
+import AccountManagerAssignmentCard, { OpsManagerLine } from '../../components/AccountManagerAssignmentCard';
+import BuildingRatesEditor from './BuildingRatesEditor';
+import { PAY_TYPES, payTypeOf } from '../../lib/payTypes';
+import BuildingMultiPicker from '../../components/BuildingMultiPicker';
+import { worksAtOf, worksAtClients } from '../../lib/worksAt';
+import { isActiveBuilding } from '../../lib/customerStatus';
+import { customerLabel } from '../../lib/customerNumber';
+
+// The cleaner's "Can request supplies" switch (the Cleaner Hub, D4): the member's permission override
+// for this key, the same data the Access tab edits.
+const SUPPLY_REQUEST_KEY = 'supplies.request';
 
 export default function SettingsTeamDetail() {
   const { userId } = useParams();
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
+  const t = useT();
   const navigate = useNavigate();
   const canEdit = usePermission('settings.team.edit');
   const canAssignRoles = usePermission('staff.assignRoles');
@@ -65,7 +84,7 @@ export default function SettingsTeamDetail() {
   // shape as the pay rule above, and the same reason for mirroring the server: it refuses
   // the save (orgStateGuard mayWriteClockRules) and a refusal drops the whole pending batch.
   const canEditThisClockRules = canEditClockRules
-    && (currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.role === 'manager');
+    && isOfficeRole(currentUser?.role);
   const permissions = selectPermissions(state);
   const overrides = selectUserPermissionOverrides(state);
   // CS-331: on Access, the viewer may GRANT a member a permission (a grant, or removing a revoke
@@ -98,6 +117,12 @@ export default function SettingsTeamDetail() {
   }));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
+  // CS-661: a reset the app couldn't email hands the caller the one-time link ({ link, why }) to
+  // send themselves. Component state only — never stored, gone when the dialog closes.
+  const [handedLink, setHandedLink] = useState(null);
+  // Whether this member's login has never signed in ('never') or doesn't exist ('none'): the
+  // header then says so instead of a bare Active (CS-661). Same reach as the orphan list.
+  const [signIn, setSignIn] = useState(null);
 
   const override = useMemo(() => overrides.find((o) => o.userId === userId) || { userId, grants: [], revokes: [] }, [overrides, userId]);
 
@@ -129,11 +154,15 @@ export default function SettingsTeamDetail() {
   // member can't be paid (their pay rate goes with them), so the page asks before it
   // offers Remove. null = still checking · true/false = the answer · 'error'.
   const cadence = state.opsSettings?.payPeriodCadence;
+  // PAY-19: the cutoff follows the org's workweek START as well as its cadence, so this check
+  // and the pay run agree on where "the previous period" begins. Passing a cadence-only
+  // stand-in silently used Sunday whatever the org had set.
+  const payWeekStartDay = state.opsSettings?.payWeekStartDay;
   const checkRecentHours = useCallback(async () => {
-    const fromIso = payCutoffIso({ opsSettings: { payPeriodCadence: cadence } });
+    const fromIso = payCutoffIso({ opsSettings: { payPeriodCadence: cadence, payWeekStartDay } });
     const { entries } = await timeApi.entries({ fromIso, userIds: [userId], limit: 1 });
     return entries.length > 0;
-  }, [userId, cadence]);
+  }, [userId, cadence, payWeekStartDay]);
   const [recentHours, setRecentHours] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -143,6 +172,18 @@ export default function SettingsTeamDetail() {
       .catch(() => { if (alive) setRecentHours('error'); });
     return () => { alive = false; };
   }, [checkRecentHours]);
+  const memberEmail = (user?.email || '').trim().toLowerCase();
+  useEffect(() => {
+    if (!authConfigured || !canEdit || !memberEmail) { setSignIn(null); return undefined; }
+    let alive = true;
+    listTeamSignIns()
+      .then((r) => {
+        if (!alive) return;
+        setSignIn((r?.neverSignedIn || []).includes(memberEmail) ? 'never' : (r?.noLogin || []).includes(memberEmail) ? 'none' : null);
+      })
+      .catch(() => { if (alive) setSignIn(null); });
+    return () => { alive = false; };
+  }, [authConfigured, canEdit, memberEmail]);
 
   if (!user) {
     return (
@@ -152,6 +193,14 @@ export default function SettingsTeamDetail() {
     );
   }
   const current = { ...user, ...edits };
+  // The Works at picker's customers (crew only): the buildings cleaned now, plus any already
+  // linked, so a link to a customer that has since gone inactive can still be unticked.
+  const linkedIds = current.role === 'crew' ? worksAtOf(current) : [];
+  const worksAtOptions = current.role === 'crew'
+    ? (state.clients || []).filter((c) => isActiveBuilding(c) || linkedIds.includes(c.id))
+      .map((c) => ({ value: c.id, label: customerLabel(c) }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+    : [];
   // The owner's limits, which the server holds on every save (lib/teamLimits.js): only a
   // Super Admin acts on a Super Admin; nobody changes their own role (a Super Admin
   // neither), and only a Super Admin edits their own overrides; a role is offered only if
@@ -161,9 +210,15 @@ export default function SettingsTeamDetail() {
   const roleLimit = teamLimit(currentUser, user, 'role');
   const statusLimit = teamLimit(currentUser, user, 'status');
   const overrideLimit = teamLimit(currentUser, user, 'overrides');
-  const assignable = assignableRoles(currentUser, permissions, overrides);
+  // The role picker's choices for THIS member (lib/teamLimits roleChoices): the roles this viewer
+  // may give, the Manager role as its two levels (Account / Operations Manager, S131), and a choice
+  // that changes the member's LEVEL only for someone who may give it — owner / admin with ops.edit,
+  // holding everything that level's permission column carries (mayGiveLevel; the guard's rule,
+  // CS-858). Assigning account managers to an OM stays mayAssignTeams.
+  const canAssignTeams = mayAssignTeams(currentUser, permissions, overrides);
+  const choices = roleChoices(currentUser, permissions, overrides, user);
   // A locked field shows the member as stored, never an edit made before the lock applied.
-  const roleValue = roleLimit ? user.role : current.role;
+  const roleValue = choiceOf(roleLimit ? user : current);
   const statusValue = statusLimit ? user.status : current.status;
   // Reset scope: a Super Admin can reset anyone; an Admin (with staff.resetPassword)
   // can reset anyone EXCEPT a Super Admin. Crew never reach this page.
@@ -206,7 +261,12 @@ export default function SettingsTeamDetail() {
     if ('name' in edits) patch.name = current.name;
     if ('phone' in edits) patch.phone = current.phone;
     if ('initials' in edits) patch.initials = (current.initials || '').toUpperCase().slice(0, 3);
-    if ('role' in edits && !roleLimit) patch.role = current.role;
+    if ('role' in edits && !roleLimit) {
+      patch.role = current.role;
+      // A manager's level rides with the role pick (Account / Operations Manager, S131); off the
+      // Manager role the reducer drops the level (lib/teamScope teamCascade).
+      if (current.role === 'manager') patch.managerLevel = managerLevelOf(current) === 'operations' ? 'operations' : 'account';
+    }
     if ('status' in edits && !statusLimit) patch.status = current.status;
     if (!authConfigured && 'email' in edits) patch.email = current.email;
     // Pay rates are owner-only compensation data — thread them through the SAME
@@ -215,6 +275,9 @@ export default function SettingsTeamDetail() {
     // The per-cleaner clock exemptions (step 4b). Same whitelist landmine; `null` when
     // nothing is off, so the field stays sparse (lib/clockRules nextClockRules).
     if (canEditThisClockRules && 'clockRules' in edits) patch.clockRules = current.clockRules;
+    // The customers a cleaner works at (lib/worksAt; the Team import sets it too). Same whitelist
+    // landmine; none = [] and the store drops the field.
+    if (canEdit && 'worksAt' in edits) patch.worksAt = worksAtOf(current);
     // A status or role change in authed mode must hit the real login FIRST: disabling
     // bans the Supabase account (no new sign-in / token refresh), enabling unbans, and a
     // role change re-stamps the JWT claim the server trusts. Both land before the store
@@ -269,17 +332,18 @@ export default function SettingsTeamDetail() {
     navigate('/settings/team', { state: nav });
   };
 
+  // Emailed when a sending mailbox is connected; otherwise (CS-661) the caller is handed the
+  // one-time link to send — or told why not ('link-withheld': the member holds permissions the
+  // caller doesn't, and the link signs in as them).
   const sendReset = async () => {
     setResetBusy(true);
     try {
       const res = await sendTeamPasswordReset(user.email);
-      if (res?.missing) {
-        toast.error(`${user.name.split(' ')[0]} doesn't have a login yet. Create one before sending a reset.`);
-      } else {
-        toast.success(`Reset link sent to ${user.email}.`);
-      }
+      if (res?.missing) toast.error(t('signInLink.noLogin', { name: first }));
+      else if (res?.emailed === false && res.link) setHandedLink({ link: res.link, why: res.why });
+      else toast.success(t('signInLink.resetEmailed', { email: user.email }));
     } catch (err) {
-      toast.error(err.message || 'Could not send the reset link.');
+      toast.error(err?.code === LINK_WITHHELD ? t('signInLink.withheld', { name: first }) : (err?.message || t('signInLink.resetFailed')));
     } finally {
       setResetBusy(false);
     }
@@ -298,12 +362,11 @@ export default function SettingsTeamDetail() {
       dispatch({ type: ACTIONS.SET_USER_PERMISSION_OVERRIDE, userId: user.id, grants: keep(override.grants), revokes: keep(override.revokes) });
       return;
     }
-    const perm = permissions.find((p) => p.id === permKey);
-    // Same fallback can() uses: a key the schema knows but the saved matrix doesn't
-    // yet (added in code, no data-op run) resolves to its schema default. Without
-    // this the card read "Blocked" for a surface the admin was actively using and
-    // could only ever Grant, never Revoke.
-    const roleHas = perm ? perm.roles.includes(user.role) : (PERMISSIONS[permKey]?.defaultRoles || []).includes(user.role);
+    // The member's COLUMN (lib/roles columnHolds — an Operations Manager's own, CS-858), with the
+    // same fallback can() uses: a key the schema knows but the saved matrix doesn't yet (added in
+    // code, no data-op run) resolves to its schema default. Without it the card read "Blocked" for
+    // a surface the admin was actively using and could only ever Grant, never Revoke.
+    const roleHas = columnHolds(user, permKey, permissions);
     let grants = [...(override.grants || [])];
     let revokes = [...(override.revokes || [])];
     if (roleHas) {
@@ -336,6 +399,26 @@ export default function SettingsTeamDetail() {
     dispatch({ type: ACTIONS.SET_USER_PERMISSION_OVERRIDE, userId: user.id, grants, revokes });
   };
 
+  // ── "Can request supplies" (the Cleaner Hub, D4, 2026-10-13; Matt: "I need this option to be turned
+  // on or off … We can remove their access") — a cleaner's Request Supplies page, switched per person.
+  // ONE rule writes it (lib/roles overrideForEffective: a revoke when off, cleared when back on — a
+  // grant where the stored matrix lacks crew), saved as you go through the Access tab's own action,
+  // behind the Access tab's own guards: staff.editOverrides, the owner's limits (teamLimit), and
+  // turning it ON only when the viewer holds the key (canGrantPermission, CS-331; orgStateGuard holds
+  // the same on save). For every cleaner at once: Settings → Roles → Crew → Request supplies.
+  const supplyRoleHas = columnHolds(user, SUPPLY_REQUEST_KEY, permissions);
+  const supplyRequestsOn = can(user, SUPPLY_REQUEST_KEY, permissions, overrides);
+  const supplySwitchReason = !canEditOverrides ? "You don't have permission to change a member's access."
+    : overrideLimit ? teamLimitReason('overrides', overrideLimit)
+      : (!supplyRequestsOn && !canGrant(SUPPLY_REQUEST_KEY)) ? 'You can only turn on permissions you have yourself.'
+        : null;
+  const setSupplyRequests = (on) => {
+    if (!canEditOverrides || overrideLimit) return;
+    if (on && !canGrant(SUPPLY_REQUEST_KEY)) return;
+    const next = overrideForEffective({ grants: override.grants, revokes: override.revokes, key: SUPPLY_REQUEST_KEY, roleHas: supplyRoleHas, on });
+    dispatch({ type: ACTIONS.SET_USER_PERMISSION_OVERRIDE, userId: user.id, ...next });
+  };
+
   const clearOverrides = () => {
     if (!canEditOverrides || overrideLimit) return;
     dispatch({ type: ACTIONS.SET_USER_PERMISSION_OVERRIDE, userId: user.id, grants: [], revokes: [] });
@@ -350,9 +433,11 @@ export default function SettingsTeamDetail() {
         backLabel="Team"
         title={user.name}
         subtitle={user.email || ''}
-        badge={<Badge variant={user.status === 'active' ? 'green' : user.status === 'invited' ? 'amber' : 'slate'}>
-          {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
-        </Badge>}
+        badge={user.status === 'active' && signIn
+          ? <Badge variant={signIn === 'never' ? 'amber' : 'slate'}>{t(signIn === 'never' ? 'teamSignIns.never' : 'teamSignIns.noLogin')}</Badge>
+          : <Badge variant={user.status === 'active' ? 'green' : user.status === 'invited' ? 'amber' : 'slate'}>
+            {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
+          </Badge>}
       />
 
       <div className="detail-tabs">
@@ -361,15 +446,14 @@ export default function SettingsTeamDetail() {
 
         <section id={sectionElementId('profile')} className="detail-section" hidden={activeSection !== 'profile'}>
           <div className="card detail-card">
-            <div className="flex-row" style={{ gap: 16, alignItems: 'center', marginBottom: 20 }}>
-              <Avatar initials={user.initials} variant={user.avatar} size="lg" />
-              <div>
-                <div className="text-sm font-semi">
-                  {ROLE_LABELS[user.role]}
-                  {hasOverrides && <span className="tier-badge" style={{ marginLeft: 8 }}>Custom access</span>}
-                </div>
+            {/* The member's photo (UI_RULES §141): the office sets anyone's with the Team key, and
+                everyone sets their own — the upload route's own rule. */}
+            <AvatarPhotoControl user={user} canEdit={canEdit || ownRow} self={ownRow}>
+              <div className="text-sm font-semi">
+                {memberRoleLabel(t, user)}
+                {hasOverrides && <span className="tier-badge" style={{ marginLeft: 8 }}>Custom access</span>}
               </div>
-            </div>
+            </AvatarPhotoControl>
             <div className="form-row">
               <FormField label="Name" required value={current.name || ''} onChange={(e) => edit({ name: e.target.value })} disabled={!canEdit} />
               <FormField label="Initials" value={current.initials || ''} onChange={(e) => edit({ initials: e.target.value })} disabled={!canEdit} />
@@ -385,22 +469,43 @@ export default function SettingsTeamDetail() {
                 label="Role"
                 as="select"
                 value={roleValue}
-                onChange={(e) => edit({ role: e.target.value })}
+                onChange={(e) => edit(choiceRole(e.target.value))}
                 disabled={!canAssignRoles || !!roleLimit}
                 help={!canAssignRoles ? "You don't have permission to assign roles." : teamLimitReason('role', roleLimit) || undefined}
-                options={ROLES.filter((r) => r === roleValue || assignable.includes(r)).map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
+                options={ROLE_CHOICE_LIST.filter((c) => c.value === roleValue || choices.some((x) => x.value === c.value)).map((c) => ({ value: c.value, label: t(c.labelKey) }))}
               />
               <FormField label="Status" as="select" value={statusValue} onChange={(e) => edit({ status: e.target.value })} disabled={!canEdit || !!statusLimit}
                 help={canEdit ? teamLimitReason('status', statusLimit) || undefined : undefined}
                 options={[{ value: 'active', label: 'Active' }, { value: 'invited', label: 'Invited' }, { value: 'disabled', label: 'Disabled' }]} />
             </div>
+            {/* The customers a cleaner works at (lib/worksAt): a link the office keeps. What the
+                cleaner sees still comes from the cleans they're on. */}
+            {current.role === 'crew' && (
+              <div className="form-group">
+                {canEdit ? (
+                  <BuildingMultiPicker
+                    label={t('worksAt.label')}
+                    emptyNote={t('worksAt.empty')}
+                    options={worksAtOptions}
+                    value={worksAtOf(current)}
+                    onChange={(ids) => edit({ worksAt: ids })}
+                  />
+                ) : (
+                  <>
+                    <span className="form-label">{t('worksAt.label')}</span>
+                    <div className="text-sm">{worksAtClients(current, state.clients).map(customerLabel).join(', ') || '—'}</div>
+                  </>
+                )}
+                <div className="form-help">{t('worksAt.hint')}</div>
+              </div>
+            )}
             {authConfigured && canResetThisUser && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-light)' }}>
                 <div className="text-xs text-muted" style={{ flex: 1, minWidth: 220 }}>
-                  Email {user.name.split(' ')[0]} a secure link to set a new password. It goes to <strong>{user.email}</strong>, and you never see or set it.
+                  {t('signInLink.resetHint', { name: first, email: user.email })}
                 </div>
                 <button type="button" className="btn btn-outline" onClick={sendReset} disabled={resetBusy} style={{ flexShrink: 0 }}>
-                  {resetBusy ? 'Sending…' : 'Email password-reset link'}
+                  {resetBusy ? t('signInLink.sending') : t('signInLink.resetButton')}
                 </button>
               </div>
             )}
@@ -432,6 +537,11 @@ export default function SettingsTeamDetail() {
           {SUPERVISOR_ROLES.includes(user.role) && (
             <SupervisedCustomersCard user={user} canEdit={canEditOps} currentUser={currentUser} />
           )}
+          {/* The Operations Manager's team (S131, UI_RULES §169): on an OM's page, the account managers
+              who report to them; on an account manager's, who they report to. Assigning is owner /
+              admin with ops.edit (lib/teamLimits mayAssignTeams), the org_state guard's rule. */}
+          {isOpsManager(user) && <AccountManagerAssignmentCard om={user} canEdit={canAssignTeams} />}
+          {isAccountManager(user) && <OpsManagerLine user={user} canEdit={canAssignTeams} />}
         </section>
 
         {canViewPay && (
@@ -439,32 +549,42 @@ export default function SettingsTeamDetail() {
           {(() => {
             const pay = current.pay || { type: '' };
             const setPay = (next) => edit({ pay: { ...(current.pay || {}), ...next } });
+            const payRateField = payTypeOf(pay.type)?.field ? payTypeOf(pay.type) : null;
             return (
               <div className="card detail-card">
                 <h3 className="dash-card-title">Employment &amp; pay</h3>
                 <p className="text-xs text-muted" style={{ marginTop: -4, marginBottom: 12 }}>
                   How {user.name.split(' ')[0]} is paid. Feeds the Payroll run (hours × rate → gross). {!canEditThisPay && (canEditRates ? 'Only a Super Admin can change your own pay.' : 'Only a Super Admin can change pay rates.')}
                 </p>
+                {/* The pay types and their rate fields are lib/payTypes', the list Add Team Member
+                    offers too (task 470). */}
                 <div className="form-row">
                   <FormField
                     label="Pay type" as="select" value={pay.type || ''} disabled={!canEditThisPay}
                     onChange={(e) => setPay({ type: e.target.value })}
-                    options={[
-                      { value: '', label: '— Select pay type —' },
-                      { value: 'hourly', label: 'Hourly' },
-                      { value: 'salary', label: 'Salary (per pay period)' },
-                      { value: 'per_visit', label: 'Per-visit (flat rate per clean)' },
-                      { value: 'none', label: 'Not on payroll' },
-                    ]}
+                    options={[{ value: '', label: '— Select pay type —' }, ...PAY_TYPES.map((p) => ({ value: p.value, label: p.label }))]}
                   />
-                  {pay.type === 'hourly' && <FormField label="Hourly rate ($/hr)" type="number" min="0" step="0.01" value={pay.hourlyRate ?? ''} disabled={!canEditThisPay} onChange={(e) => setPay({ hourlyRate: Number(e.target.value) || 0 })} />}
-                  {pay.type === 'salary' && <FormField label="Salary ($/pay period)" type="number" min="0" step="0.01" value={pay.salaryPerPeriod ?? ''} disabled={!canEditThisPay} onChange={(e) => setPay({ salaryPerPeriod: Number(e.target.value) || 0 })} />}
-                  {pay.type === 'per_visit' && <FormField label="Rate per clean ($)" type="number" min="0" step="0.01" value={pay.perVisitRate ?? ''} disabled={!canEditThisPay} onChange={(e) => setPay({ perVisitRate: Number(e.target.value) || 0 })} />}
+                  {payRateField && <FormField label={payRateField.rateLabel} type="number" min="0" step="0.01" value={pay[payRateField.field] ?? ''} disabled={!canEditThisPay} onChange={(e) => setPay({ [payRateField.field]: Number(e.target.value) || 0 })} />}
                 </div>
                 {pay.type === 'salary' && (
                   <label className="pay-check" style={{ marginTop: 4 }}>
                     <input type="checkbox" checked={!!pay.otExempt} disabled={!canEditThisPay} onChange={(e) => setPay({ otExempt: e.target.checked })} /> Overtime exempt (salaried — accrues no OT premium)
                   </label>
+                )}
+                {/* PAY-7 / PAY-18: a different hourly rate at a given building, on top of the
+                    main rate above. Hourly only, and the same `pay` patch — so it is gated by
+                    `payroll.rates.edit` and the own-pay rule exactly like the rate beside it,
+                    and lands in the one Save pay this card already has. */}
+                {pay.type === 'hourly' && (
+                  <BuildingRatesEditor
+                    pay={pay}
+                    clients={state.clients}
+                    canEdit={canEditThisPay}
+                    /* `undefined` rather than null once nothing is overridden, so JSON drops the
+                       key and the field is genuinely ABSENT again — the org_state money
+                       fingerprint returns to its previous value (lib/payRates). */
+                    onChange={(buildingRates) => setPay({ buildingRates: buildingRates || undefined })}
+                  />
                 )}
                 {canEditThisPay && (
                   <div className="modal-actions"><button type="button" className="btn btn-primary" onClick={save}>Save pay</button></div>
@@ -479,6 +599,9 @@ export default function SettingsTeamDetail() {
         <section id={sectionElementId('hr')} className="detail-section" hidden={activeSection !== 'hr'}>
           <EmployeeHrFieldsCard user={user} />
           <EmployeeDocumentsCard user={user} currentUserId={currentUser && currentUser.id} />
+          <EmployeeWarningsCard user={user} />
+          <EmployeeIncidentsCard user={user} />
+          <EmployeeTerminationCard user={user} />
         </section>
         )}
 
@@ -520,6 +643,26 @@ export default function SettingsTeamDetail() {
               <div className="modal-actions"><button type="button" className="btn btn-primary" onClick={save}>Save clock rules</button></div>
             </div>
           )}
+          {/* The cleaner's app (the Cleaner Hub, D4): Request Supplies, on or off for this cleaner.
+              Saves as it flips (the Access tab's action); a switch the viewer may not use stays,
+              disabled, with the reason under it (UI_RULES §118). */}
+          {user.role === 'crew' && (
+            <div className="card detail-card">
+              <h3 className="dash-card-title">Cleaner app</h3>
+              <div className="pref-row">
+                <div className="pref-row-text">
+                  <div className="pref-row-label">Can request supplies</div>
+                  <div className="pref-row-desc">
+                    {supplyRequestsOn
+                      ? 'On. They can flag low or out supplies for the buildings they clean. Their account manager approves.'
+                      : 'Off. Request Supplies is turned off for them.'}
+                  </div>
+                  {supplySwitchReason && <div className="pref-row-desc">{supplySwitchReason}</div>}
+                </div>
+                <Toggle on={supplyRequestsOn} disabled={!!supplySwitchReason} onChange={(on) => setSupplyRequests(on)} />
+              </div>
+            </div>
+          )}
           {/* This person's clock-ins/outs — where the office looks first when "did
               they clock in last night?" comes up. Manager-only (self-gated). */}
           <TimeClockHistory userIds={[user.id]} title={`Time clock · ${user.name}`} hide={['cleaner']} defaultPeriod="30d" />
@@ -552,9 +695,8 @@ export default function SettingsTeamDetail() {
               <tbody>
                 {Object.keys(PERMISSIONS).map((key) => {
                   if (ALWAYS_GRANTED.has(key)) return null; // universal — not overridable
-                  const perm = permissions.find((p) => p.id === key);
-                  // Schema-default fallback — see togglePermOverride.
-                  const roleHas = perm ? perm.roles.includes(user.role) : (PERMISSIONS[key]?.defaultRoles || []).includes(user.role);
+                  // The member's column, with the schema-default fallback — see togglePermOverride.
+                  const roleHas = columnHolds(user, key, permissions);
                   const granted = override.grants?.includes(key);
                   const revoked = override.revokes?.includes(key);
                   // A Super-Admin-only key (OWNER_ONLY) can't apply to anyone else: no
@@ -615,6 +757,16 @@ export default function SettingsTeamDetail() {
 
         </div>
       </div>
+
+      {/* CS-661: the reset the app couldn't email — the link to send, which replaced any before it. */}
+      <SignInLinkModal
+        open={!!handedLink}
+        onClose={() => setHandedLink(null)}
+        name={first}
+        link={handedLink?.link}
+        why={handedLink?.why}
+        replaces
+      />
 
       <ConfirmDialog
         open={confirmDelete}

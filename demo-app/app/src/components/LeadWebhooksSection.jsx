@@ -106,7 +106,7 @@ export default function LeadWebhooksSection() {
           <div className="text-xs" style={{ fontWeight: 600, marginBottom: 4 }}>1. Authenticate</div>
           <p className="text-xs text-muted" style={{ marginBottom: 8 }}>
             Send the webhook’s token in an <code>Authorization</code> header. Advanced senders can instead sign the
-            raw body with HMAC-SHA256 and pass <code>X-CleanSpace-Signature: sha256=…</code> (the signing secret is the same one shown on generic endpoints).
+            raw body with HMAC-SHA256 and pass <code>X-PolishPoint-Signature: sha256=…</code> (the signing secret is the same one shown on generic endpoints).
           </p>
           <pre className="webhook-code">{`Authorization: Bearer <token>
 Content-Type: application/json`}</pre>

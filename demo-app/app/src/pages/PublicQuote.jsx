@@ -9,13 +9,17 @@ import FillableQuoteDoc from '../components/FillableQuoteDoc';
 import Modal from '../components/Modal';
 import { signOptsFromQuote } from '../lib/quoteTemplate';
 import { getPublicQuote, signPublicQuote } from '../lib/quotesApi';
+import { publicCopyLineKey } from '../lib/quoteRules';
+import { english } from '../i18n/core';
 import { IDENTITY } from '../brand/identity.generated.js';
 import './public-form.css';
 
 // Standard plain-English ESIGN/UETA-style consent shown before the signature pad.
 // NOT legal advice — Clean Space should have counsel review. Inline here as it's used
-// only on this page.
-function ConsentDisclosure() {
+// only on this page. 🔴 CS-664: it promises an emailed copy only when one can go
+// (`copyByEmail`, the server's read of whether a sending mailbox is connected); otherwise the
+// signed PDF is on this page to download. The customer's page stays English (LANG-8).
+function ConsentDisclosure({ copyByEmail }) {
   return (
     <div className="text-sm" style={{ lineHeight: 1.55 }}>
       <p style={{ marginTop: 0 }}>
@@ -24,9 +28,9 @@ function ConsentDisclosure() {
       </p>
       <ul style={{ paddingLeft: 18, margin: '0 0 10px' }}>
         <li>Your electronic signature is the legal equivalent of your handwritten signature and is binding.</li>
-        <li>You consent to receive this agreement and related records electronically; a signed PDF copy will be emailed to the address you provide and retained by {IDENTITY.name}.</li>
+        <li>{english(copyByEmail ? 'publicQuote.consent.copyEmailed' : 'publicQuote.consent.copyKept', { company: IDENTITY.name })}</li>
         <li>You may request a paper copy or withdraw your consent to electronic records at any time by contacting {IDENTITY.name} at {IDENTITY.company.email} or {IDENTITY.company.phone}. Withdrawal does not affect the validity of records provided beforehand.</li>
-        <li>To sign, you need a device with a modern web browser and access to the email address you provide.</li>
+        <li>{copyByEmail ? english('publicQuote.consent.needsEmail') : english('publicQuote.consent.needsBrowser')}</li>
         <li>The date, time, and IP address of your signature are recorded as part of the signing record.</li>
       </ul>
       <p className="text-muted" style={{ margin: 0 }}>
@@ -46,6 +50,8 @@ export default function PublicQuote() {
   const [agree, setAgree] = useState(false);       // e-sign consent checkbox
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  // CS-664: whether THIS signature's copy actually reached the signer by email (the sign answer).
+  const [copyEmailed, setCopyEmailed] = useState(false);
   const [error, setError] = useState('');
   const sigRef = useRef(null);
 
@@ -65,7 +71,8 @@ export default function PublicQuote() {
     if (sigRef.current?.isEmpty()) { setError('Please draw or type your signature.'); return; }
     setBusy(true);
     try {
-      await signPublicQuote(token, { signerName: signerName.trim(), signerEmail: signerEmail.trim(), signatureDataUrl: sigRef.current.toDataURL() });
+      const signed = await signPublicQuote(token, { signerName: signerName.trim(), signerEmail: signerEmail.trim(), signatureDataUrl: sigRef.current.toDataURL() });
+      setCopyEmailed(!!signed?.emailed);
       // Re-fetch so the confirmation view's embedded PDF is the freshly-signed
       // document (both signatures) rather than the stale admin-only preview.
       const fresh = await getPublicQuote(token).catch(() => null);
@@ -91,7 +98,8 @@ export default function PublicQuote() {
     return shell(
       <>
         <h2>{done ? 'Thank you. Your document is signed.' : 'This document has been signed.'}</h2>
-        <p className="text-muted">A copy {done ? 'will be' : 'was'} emailed to you for your records.</p>
+        {/* CS-664: "a copy was emailed" only when it was; otherwise the document below is the copy. */}
+        <p className="text-muted">{english(publicCopyLineKey({ justSigned: done, emailed: copyEmailed }))}</p>
         {quote.document_url && <iframe title="Signed document" src={quote.document_url} style={{ width: '100%', height: 600, border: '1px solid var(--card-border)', borderRadius: 8, marginTop: 14 }} />}
       </>
     );
@@ -119,7 +127,7 @@ export default function PublicQuote() {
         {step === 'consent' ? (
           <>
             <p className="text-muted" style={{ marginTop: 0, fontStyle: 'italic' }}>Please read and accept before signing.</p>
-            <ConsentDisclosure />
+            <ConsentDisclosure copyByEmail={!!quote.copy_by_email} />
             <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 14, fontSize: 14 }}>
               <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} style={{ marginTop: 3 }} />
               <span>I agree to use electronic records and electronic signatures, and I have read the disclosure above.</span>
@@ -133,7 +141,7 @@ export default function PublicQuote() {
           <>
             <div className="form-row">
               <div className="form-group"><label className="form-label">Your full name</label><input className="input" value={signerName} onChange={(e) => setSignerName(e.target.value)} /></div>
-              <div className="form-group"><label className="form-label">Email (for your copy)</label><input className="input" type="email" value={signerEmail} onChange={(e) => setSignerEmail(e.target.value)} placeholder="you@company.com" /></div>
+              <div className="form-group"><label className="form-label">{quote.copy_by_email ? english('publicQuote.emailForCopy') : english('publicQuote.emailOptional')}</label><input className="input" type="email" value={signerEmail} onChange={(e) => setSignerEmail(e.target.value)} placeholder="you@company.com" /></div>
             </div>
             <label className="form-label" style={{ marginTop: 6 }}>Signature</label>
             <div><SignatureCapture ref={sigRef} width={420} /></div>

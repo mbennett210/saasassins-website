@@ -24,7 +24,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { appRoutes, publicRoutes, DEMO_PATHS, missingRecord } from './app-routes.mjs';
-import { activeBrandId, loadBrand, brandIds, identityStrings } from './brand.mjs';
+import { activeBrandId, loadBrand, brandIds, identityStrings, productOf } from './brand.mjs';
 import { classify, needles } from './name-ledger.mjs';
 import { derivePalette } from './brand-colors.mjs';
 import { collect, colorsInValue } from './reskin-sweep.mjs';
@@ -176,8 +176,9 @@ if (invoked) {
     console.log(`rebrand-sweep: ${Object.keys(pages).length} pages → ${SNAPSHOT}`);
   } else {
     // the server must be serving THIS tree's brand: every page's title carries its app title (index.html's
-    // <title>, which brand.mjs writes). A sweep of a build that was never re-branded would prove nothing.
-    const { appTitle } = loadBrand(activeId).brand;
+    // <title>, which brand.mjs writes: the software's, productOf). A sweep of a build that was never re-branded
+    // would prove nothing.
+    const { appTitle } = productOf(loadBrand(activeId).brand);
     const untitled = Object.entries(pages).filter(([, pg]) => !pg.title.includes(appTitle)).map(([p]) => p);
     if (untitled.length) { console.error(`✖ ${untitled.length} page(s) lack the active brand's title "${appTitle}" (${untitled.slice(0, 4).join(', ')}): is the server running this tree, after npm run brand?`); process.exit(1); }
     const findings = Object.entries(pages).flatMap(([p, pg]) => findForbidden(pg, forbidden).map((f) => ({ page: p, ...f })));
@@ -189,7 +190,7 @@ if (invoked) {
       console.log(findings.slice(0, 60).map((f) => `  ${f.page}  "${f.text}" (${f.brand}) in ${f.where}: …${f.excerpt.replace(/\s+/g, ' ')}…`).join('\n'));
       console.error(`\n✖ ${findings.length} place(s) still show another brand.`);
       process.exitCode = 1;
-    } else console.log('✓ no page shows another brand\'s identity (its name, wordmark, contacts, address, owner or senders).');
+    } else console.log('✓ no page shows another brand\'s identity (its name, its software\'s name, wordmark, contacts, address, owner or reply-to address).');
     if (checkColours) {
       if (colourFindings.length) {
         const by = new Map();

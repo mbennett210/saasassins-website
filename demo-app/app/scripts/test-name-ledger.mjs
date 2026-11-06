@@ -18,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildLedger, scanText, classify, needles, IDENTIFIERS, MIGRATIONS, EXCLUDE } from './name-ledger.mjs';
 import { activeBrandId, loadBrand, identityText, identityStrings, localeOf, readQuote, validateQuote, quoteText } from './brand.mjs';
 import { derivePalette } from './brand-colors.mjs';
+import { renderDocLogo, docLogoModule } from './gen-brand-images.mjs';
 
 const APP = fileURLToPath(new URL('..', import.meta.url));
 let failed = 0;
@@ -39,7 +40,7 @@ const PROBE = {
     street: '77 Probe Way', city: 'Testville, ZZ 00000', tagline: 'A Probe Holdings Company', services: 'Probe Cleaning & Testing Services',
     signatory: { name: 'Ada Lovelace-Byron', role: 'Director', title: 'Director of Probing', email: 'ada@nordcare.example' },
   },
-  email: { quotesFrom: 'Nørd Care <quotes@mail.nordcare.example>', authFrom: 'Nørd Care <login@mail.nordcare.example>' },
+  email: { authFrom: 'Nørd Care <login@mail.nordcare.example>' },
 };
 // PROBE's own quote pages (a brand pack's quote.html): a quoteTemplate.js imported with ?pages=probe reads them
 const PROBE_SENTINEL = 'These pages are the probe brand’s own words, and no other brand’s.';
@@ -56,6 +57,10 @@ const PROBE_QUOTE = [
 ].join('\n');
 const IDENTITY_URL = pathToFileURL(path.join(APP, 'src', 'brand', 'identity.generated.js')).href;
 const QUOTE_URL = pathToFileURL(path.join(APP, 'src', 'brand', 'quote.generated.js')).href;
+// the letterhead module brand.mjs would write for PROBE: it has no colour lockup, so null (the monogram drawn
+// from PROBE's identity), whatever the active pack's letterhead is
+const LOGO_URL = pathToFileURL(path.join(APP, 'src', 'brand', 'logo.generated.js')).href;
+const PROBE_LOGO = docLogoModule(await renderDocLogo(PROBE));
 registerHooks({
   resolve(spec, ctx, next) {
     if (/quote\.generated\.js$/.test(spec) && ctx.parentURL?.endsWith('?pages=probe')) { const r = next(spec, ctx); return { ...r, url: `${r.url}?pages=probe` }; }
@@ -67,6 +72,7 @@ registerHooks({
   },
   load(url, ctx, next) {
     if (url === IDENTITY_URL) return { format: 'module', source: identityText(PROBE), shortCircuit: true };
+    if (url === LOGO_URL) return { format: 'module', source: PROBE_LOGO, shortCircuit: true };
     if (url === `${QUOTE_URL}?pages=probe`) return { format: 'module', source: quoteText(PROBE, PROBE_QUOTE), shortCircuit: true };
     const r = next(url, ctx);
     if (/\/app\/src\//.test(url) && r.source && String(r.source).includes('import.meta.env')) {
@@ -90,11 +96,11 @@ ok([...IDENTIFIERS, ...MIGRATIONS].every(([t, why]) => typeof t === 'function' &
 // does not read a path literal here as "this suite needs the backend".
 const must = [
   'src/brand/identity.generated.js', 'src/brand/quote.generated.js', 'src/brand/logo.js', 'src/lib/quoteTemplate.js', 'src/lib/inspectionReportTemplate.js',
-  'src/lib/email.js', 'src/lib/documentTitle.js', 'src/data/seed.js', 'src/data/demoStubs.js', 'src/data/emailDrafts.js',
+  'src/lib/quoteEmails.js', 'src/lib/signInEmail.js', 'src/lib/documentTitle.js', 'src/data/seed.js', 'src/data/demoStubs.js', 'src/data/emailDrafts.js',
   'src/pages/PublicQuote.jsx', 'src/pages/Login.jsx', 'index.html', 'public/manifest.json', 'public/sw.js',
 ];
 const hasApi = fs.existsSync(path.join(APP, 'api'));
-if (hasApi) for (const p of [['_lib', 'quotes', 'emails.js'], ['_lib', 'users.js'], ['_lib', 'email.js'], ['_lib', 'push', 'dispatch.js']]) must.push(['api', ...p].join('/'));
+if (hasApi) for (const p of [['_lib', 'users.js'], ['_lib', 'email.js'], ['_lib', 'push', 'dispatch.js']]) must.push(['api', ...p].join('/'));
 const missing = must.filter((f) => !files.includes(f));
 ok(missing.length === 0, `the universe includes ${must.length} sentinel files${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`);
 // public/ ships verbatim into every deployment, so it holds only what the app loads: a design mockup or a
@@ -321,20 +327,20 @@ console.log(`rendered under a throwaway brand ("${PROBE.name}")`);
   const sentences = [...new Set(decode(visible(activePages.replace(/\{\{[^}]*\}\}/g, ' '))).split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length >= 40))];
   const kept = sentences.filter((s) => own.includes(s));
   ok(own.includes(PROBE_SENTINEL) && sentences.length >= 5 && kept.length === 0, `the quote's pages come from the brand pack: the throwaway brand's own words show, and none of ${sentences.length} sentences of ${BRAND.id}'s${own.includes(PROBE_SENTINEL) ? '' : ' (its own words are missing: the template writes its own)'}${kept.length ? ` (kept: ${kept.slice(0, 3).join(' | ')})` : ''}`);
-  const client = await imp('src', 'lib', 'email.js');
-  check('the quote email', client.buildQuoteEmail({ title: 'Nightly clean', amount: 1160, link: 'https://x.test/q/1', contactName: 'Morgan Hayes' }));
-  check('the sign-request email', client.buildSignRequestEmail({ contactName: 'Morgan Hayes', companyName: 'Northside Auto Group', link: 'https://x.test/q/1' }));
+  // The e-signature emails (one copy since 2026-10-20, shared by the routes and the Drafts preview).
+  const quoteEmails = await imp('src', 'lib', 'quoteEmails.js');
+  const quote = { contact_name: 'Morgan Hayes', client_signer_name: 'Morgan Hayes', fields: { companyName: 'Northside Auto Group' } };
+  check('the sign-request email', quoteEmails.signRequestEmail({ quote, link: 'https://x.test/sign/abc' }));
+  check('the signed copy (to the client)', quoteEmails.signedCopyEmail({ quote, toClient: true }));
+  check('the signed copy (internal)', quoteEmails.signedCopyEmail({ quote, toClient: false }), { mustShow: [] });
   if (hasApi) {
-    const server = await imp('api', '_lib', 'quotes', 'emails.js');
-    const quote = { contact_name: 'Morgan Hayes', client_signer_name: 'Morgan Hayes', fields: { companyName: 'Northside Auto Group' } };
-    check("the server's sign-request email", server.signRequestEmail({ quote, link: 'https://x.test/sign/abc' }));
-    check("the server's signed copy (to the client)", server.signedCopyEmail({ quote, toClient: true }));
-    check("the server's signed copy (internal)", server.signedCopyEmail({ quote, toClient: false }), { mustShow: [] });
-    const saved = process.env.RESEND_DEFAULT_FROM;
-    delete process.env.RESEND_DEFAULT_FROM;
-    const { defaultFrom } = await imp('api', '_lib', 'email.js');
-    ok(defaultFrom() === PROBE.email.quotesFrom, "the server's default sender is the brand's (with no RESEND_DEFAULT_FROM)");
-    if (saved !== undefined) process.env.RESEND_DEFAULT_FROM = saved;
+    // The server's From is no longer derived from the brand at all: email goes through
+    // Google, and Gmail sends as the connected mailbox marked SYSTEM SENDER (CS-012,
+    // 2026-09-29). What the brand still owns is the AUTH reply address on an invite or
+    // password-reset mail, so that is what this ledger checks.
+    const users = fs.readFileSync(path.join(APP, 'api', '_lib', 'users.js'), 'utf8');
+    ok(/replyTo: IDENTITY\.email\.authFrom/.test(users), "the auth mail's reply address is the brand's, read from IDENTITY");
+    ok(!/RESEND_/.test(users), 'no RESEND_* env name survives in the auth mail path');
   }
   const { EMAIL_DRAFTS } = await imp('src', 'data', 'emailDrafts.js');
   let rendered = 0;
@@ -370,14 +376,15 @@ console.log(`rendered under a throwaway brand ("${PROBE.name}")`);
   // the seeded messages and signatures that name an owner, and the word the check reads. The first name alone is
   // ambiguous — only the full name is the owner's — when the demo shares it with a fictional person (CS-399), when
   // the seeded prose uses it as an everyday word (its lower-case form appears as a word, e.g. "will"), or when it
-  // is an English month ("May 15"); reading it as the owner then flagged the demo's ordinary prose (CS-400).
+  // is an English month ("May 15"); reading it as the owner then flagged the demo's ordinary prose (CS-400). A first
+  // name written in lower case has no capital to tell it from the word, so it is read by the full name too (CS-576).
   const ownerMentions = (state, ownerName) => {
     const first = ownerName.split(/\s+/)[0];
     const lower = first.toLowerCase();
     const people = [...(state.users || []).map((u) => u.name), ...(state.contacts || []).map((c) => c.firstName || c.name), ...(state.clients || []).map((c) => c.primaryContact)]
       .filter((n) => n && n !== ownerName).map((n) => String(n).split(/\s+/)[0]);
     const texts = [...(state.messages || []).map((m) => [m.id, m.text]), ...(state.marketingInboxes || []).map((i) => [i.id, i.signature])];
-    const shared = people.includes(first) || (first !== lower && texts.some(([, t]) => words(t).includes(lower))) || MONTHS.has(lower);
+    const shared = people.includes(first) || first === lower || texts.some(([, t]) => words(t).includes(lower)) || MONTHS.has(lower);
     return { needle: shared ? ownerName : first, said: texts.filter(([, t]) => (shared ? String(t || '').includes(ownerName) : words(t).includes(first))).map(([id]) => id) };
   };
   const mentioned = ownerMentions(INITIAL_STATE, BRAND.company.signatory.name);
@@ -394,6 +401,12 @@ console.log(`rendered under a throwaway brand ("${PROBE.name}")`);
     'an owner named Will is still found by their full name');
   ok(ownerMentions({ messages: [{ id: 'x', text: 'Hi Matt, see you then.' }] }, 'Matt Giunco').said.join() === 'x',
     'a plain first name (not shared, not an everyday word or a month) stays in first-name mode');
+  // a name typed in lower case (Forge's stand-in signatory for "clean corner" is "clean corner Team") has no
+  // capital to tell it from the word: the demo's "clean" is prose, so only the full name is the owner's (CS-576)
+  const lowerOwner = ownerMentions(INITIAL_STATE, 'clean corner Team');
+  ok(lowerOwner.said.length === 0, `an owner whose name is written in lower case is not flagged for the demo's everyday "clean"${lowerOwner.said.length ? ` (flagged: ${lowerOwner.said.join(', ')})` : ''}`);
+  ok(ownerMentions({ messages: [{ id: 'x', text: 'Ask clean corner Team first. We clean nightly.' }] }, 'clean corner Team').said.join() === 'x',
+    'an owner whose name is written in lower case is still found by their full name');
   const team = (INITIAL_STATE.marketingInboxes || []).find((i) => i.senderName === PROBE.name);
   ok(!!team && team.signature.includes(PROBE.company.phone), `the seeded team inbox signs with the company's phone${team ? '' : ' (no team inbox found)'}`);
   // the stored-owner correction (persist.js v53 → v54) writes the seed's owner, so it follows the brand as the

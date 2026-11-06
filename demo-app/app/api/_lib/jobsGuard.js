@@ -120,7 +120,7 @@
 // through — same conclusion as orgStateGuard, opposite reasoning: on the blob an
 // allowlist fails OPEN on every new slice; here it would fail CLOSED on every new
 // field.
-import { can } from '../../src/lib/roles.js';
+import { can, levelVariants } from '../../src/lib/roles.js';
 import { statusChangeKept } from '../../src/lib/siteAccess.js';
 import { matrixForCan, overridesForCan } from './permissionSlices.js';
 
@@ -168,7 +168,10 @@ const matrixCandidate = (role, selfId) => MATRIX_TIER.includes(role) && typeof s
 //                      visit whose crew is marked. So writing it would let crew keep
 //                      themselves on visits a manager moves them off, and with them the
 //                      job-based site access crewIds grants. Only the office's own
-//                      single-visit edits set it (reducer.js markOneOff).
+//                      single-visit edits set it (reducer.js markOneOff) — and the SERVER's
+//                      fill-in from a QR scan (EP-419, QR Wave 2), which writes the row
+//                      itself under its own narrow rule (src/lib/scanFillIn.js), never
+//                      through this delta.
 //   coverFor           Who is covering whom on this one visit (R8, 2026-09-27):
 //                      { [coverUserId]: coveredUserId }. It decides WHICH checklist a
 //                      cleaner must fill on the clean (src/lib/crewChecklist.checklistFor)
@@ -178,7 +181,10 @@ const matrixCandidate = (role, selfId) => MATRIX_TIER.includes(role) && typeof s
 //                      their own, so it is an INTEGRITY field of the same family as
 //                      shiftId. It also names a cleaner who is NOT on the visit, so unlike
 //                      crewIds it must not be inferable from the crew list. Only the
-//                      office's single-visit edit sets it (reducer.js settleCoverPatch).
+//                      office's single-visit edit sets it (reducer.js settleCoverPatch) — and
+//                      the SERVER's fill-in from a QR scan (EP-419, QR Wave 2: a cleaner
+//                      covering someone who hasn't come, by src/lib/scanFillIn.js's rule,
+//                      written through jobsTable updateJobByServer, never through this delta).
 const PROTECTED_JOB_FIELDS = ['crewIds', 'siteId', 'clientId', 'startAt', 'endAt', 'seriesId', 'recurrence', 'shiftId', 'oneOff', 'coverFor'];
 
 // Job fields that server-side authorization reads but which are deliberately NOT
@@ -195,7 +201,7 @@ const PROTECTED_JOB_FIELDS = ['crewIds', 'siteId', 'clientId', 'startAt', 'endAt
 //           un-cancel a clean to win back its media or code access, nor flip a visit more
 //           than a day out to in_progress / done to keep themselves on it through a series
 //           edit or delete. Residual, recorded: a time-off booking skips done and
-//           cancelled visits (APPLY_TIME_OFF_EXCLUSIONS), so a visit within a day that
+//           cancelled visits (ADD_TIME_OFF's removeFromCleans), so a visit within a day that
 //           crew marked done keeps them through one; it opens nothing the day they were
 //           already on it didn't.
 export const AUTHZ_READ_SAFE_JOB_FIELDS = ['id', 'status'];
@@ -310,15 +316,21 @@ export function idsNeedingPrev(changed = []) {
  * resolve. PURE, and it never throws: a malformed committed row reads as a missing one
  * (permissionSlices.js), so one bad row can't 500 every jobs save.
  *
- * @param role        resolveAuthority's role — never the body
- * @param selfId      resolveAuthority's u_* id; keys the per-user overrides
- * @param permissions the committed `permissions` slice, as stored
- * @param overrides   the committed `userPermissionOverrides` slice, as stored
+ * @param role         resolveAuthority's role — never the body
+ * @param selfId       resolveAuthority's u_* id; keys the per-user overrides
+ * @param managerLevel resolveAuthority's manager level, off the committed roster: the key is read
+ *                     in that level's COLUMN (an Operations Manager's own, CS-858); null = it could
+ *                     not be read, and the key must then hold in BOTH manager columns (fail
+ *                     closed); left out, the manager column, as for a member with no level
+ * @param permissions  the committed `permissions` slice, as stored
+ * @param overrides    the committed `userPermissionOverrides` slice, as stored
  */
-export function holdsScheduleEdit({ role, selfId, permissions, overrides }) {
+export function holdsScheduleEdit({ role, selfId, managerLevel, permissions, overrides }) {
   if (MANAGER.includes(role)) return true;
   if (!matrixCandidate(role, selfId)) return false;
-  return can({ id: selfId, role }, SCHEDULE_EDIT, matrixForCan(permissions), overridesForCan(overrides));
+  const matrix = matrixForCan(permissions);
+  const ov = overridesForCan(overrides);
+  return levelVariants({ id: selfId, role, managerLevel }).every((u) => can(u, SCHEDULE_EDIT, matrix, ov));
 }
 
 /**
@@ -332,19 +344,20 @@ export function holdsScheduleEdit({ role, selfId, permissions, overrides }) {
  * A read that fails THROWS, so the handler answers 500 and the tab retries: never a
  * silent pass-through, and never a silent put-back of a holder's edit.
  *
+ * @param managerLevel the caller's level (resolveAuthority's), for their column — see holdsScheduleEdit
  * @param readAuthz  () => { permissions, overrides } from the COMMITTED org_state
  *                   (authz.readAuthzSlices)
  * @param readRows   (ids) => Map of id -> committed job (jobsTable.getJobsByIds)
  * @param now        the server's clock (ms), passed to sanitizeJobsDelta
  * @returns { changed, removed, adjustments }, as sanitizeJobsDelta
  */
-export async function guardJobsDelta({ role, selfId, changed = [], removed = [], readAuthz, readRows, now = Date.now() }) {
+export async function guardJobsDelta({ role, selfId, managerLevel, changed = [], removed = [], readAuthz, readRows, now = Date.now() }) {
   const list = Array.isArray(changed) ? changed : [];
   const dels = Array.isArray(removed) ? removed : [];
   if (MANAGER.includes(role)) return { changed: list, removed: dels, adjustments: [] };
   if (matrixCandidate(role, selfId)) {
     const slices = await readAuthz();
-    if (holdsScheduleEdit({ role, selfId, permissions: slices?.permissions, overrides: slices?.overrides })) {
+    if (holdsScheduleEdit({ role, selfId, managerLevel, permissions: slices?.permissions, overrides: slices?.overrides })) {
       return { changed: list, removed: dels, adjustments: [] };
     }
   }

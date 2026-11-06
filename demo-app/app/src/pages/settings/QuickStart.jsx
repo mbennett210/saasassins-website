@@ -5,7 +5,7 @@ import EmptyState from '../../components/EmptyState';
 import { useStore } from '../../store';
 import { selectCurrentUser } from '../../store/selectors';
 import { usePermissionChecker } from '../../hooks/usePermission';
-import { MARKETING_ENABLED } from '../../lib/features';
+import { MARKETING_ENABLED, QUOTES_ENABLED } from '../../lib/features';
 import { IDENTITY } from '../../brand/identity.generated.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,25 +22,31 @@ import { IDENTITY } from '../../brand/identity.generated.js';
 // Shared across both guides — installing the PWA is the same on every phone
 // regardless of role, so it's authored once and surfaced at the top of each
 // guide's module list. No `to`/`perm`: it's pure how-to, not a link to a route.
+// It names the SOFTWARE (IDENTITY.product), as the home screen does (UI_RULES §129).
 const PHONE_INSTALL = {
   id: 'install-app', icon: 'phone', title: 'Install the app on your phone',
-  where: `Add ${IDENTITY.name} to your home screen (iPhone & Android)`,
-  blurb: `Add ${IDENTITY.name} to your home screen and it opens like a real app. Full-screen, with its own icon and push notifications. No App Store or Play Store needed; you install it straight from your browser.`,
+  where: `Add ${IDENTITY.product.name} to your home screen (iPhone & Android)`,
+  blurb: `Add ${IDENTITY.product.name} to your home screen and it opens like a real app. Full-screen, with its own icon and push notifications. No App Store or Play Store needed; you install it straight from your browser.`,
   body: [
     { h: 'iPhone & iPad (Safari)', steps: [
-      `Open ${IDENTITY.name} in Safari. Use the same web address you sign in with. It has to be Safari: on an iPhone, Chrome and other browsers can’t install it (an Apple limitation).`,
-      'Tap the Share button (the square with an arrow pointing up) in Safari’s toolbar (bottom of the screen on iPhone, top on iPad).',
-      'Scroll down the share sheet and tap "Add to Home Screen".',
-      `Tap "Add" in the top corner. The ${IDENTITY.name} icon now sits on your home screen. Open it from there and the app runs full-screen with no browser bars.`,
+      `Open ${IDENTITY.product.name} in Safari, at the same web address you sign in with. The first time, a welcome screen shows these steps for your phone.`,
+      'On iOS 26 and later: tap the menu button at the left end of the address bar (three lines; "⋯" on iOS 26), then "Share". If "Add to Home Screen" isn’t in the list, tap "View More".',
+      'On older iPhones: tap the Share button (the square with an arrow pointing up) in Safari’s toolbar. On an iPad it’s at the top of Safari.',
+      `Tap "Add to Home Screen", leave "Open as Web App" on, then tap "Add" in the top corner. The ${IDENTITY.product.name} icon now sits on your home screen. Open it from there and the app runs full-screen with no browser bars.`,
+    ] },
+    { h: 'iPhone & iPad (Chrome)', steps: [
+      `Open ${IDENTITY.product.name} in Chrome.`,
+      'Tap the Share button at the right of the address bar.',
+      'Tap "Add to Home Screen", then "Add".',
     ] },
     { h: 'Android (Chrome)', steps: [
-      `Open ${IDENTITY.name} in Chrome and sign in.`,
-      'Tap the ⋮ menu in the top-right corner.',
-      'Tap "Install app" (some phones label it "Add to Home screen").',
-      `Confirm "Install" / "Add". The ${IDENTITY.name} icon lands on your home screen and in your app drawer. Open it from there for the full-screen app.`,
+      `Open ${IDENTITY.product.name} in Chrome. The first time, a welcome screen offers an "Install" button: tap it, then confirm "Install".`,
+      'No button? Tap the ⋮ menu at the right of the address bar.',
+      'Tap "Install and create shortcut" (some phones label it "Add to Home screen" or "Install app"), then "Install".',
+      `The ${IDENTITY.product.name} icon lands on your home screen and in your app drawer. Open it from there for the full-screen app.`,
     ] },
-    { tip: `After installing, always open ${IDENTITY.name} from the new home-screen icon (not the browser tab). Then go to Settings → Account, turn on mobile push and "Subscribe this device", so schedule changes and messages reach your phone.` },
-    { warn: 'On iPhone you must install from Safari. The "Add to Home Screen" option doesn’t appear in Chrome or other iOS browsers.' },
+    { tip: `After installing, always open ${IDENTITY.product.name} from the new home-screen icon (not the browser tab). Then go to Settings → Account, turn on mobile push and "Subscribe this device", so schedule changes and messages reach your phone.` },
+    { warn: 'A link opened inside another app (Facebook, Instagram, Outlook…) can’t be added to the home screen. Open it in Safari or Chrome first.' },
   ],
 };
 
@@ -59,7 +65,7 @@ const GUIDES = {
       { title: 'Connect your personal mailbox', detail: 'Send and receive email in Messaging as yourself. Each teammate connects their own.', to: '/settings/inboxes', perm: 'messaging.use', linkLabel: 'Settings → Connected Inboxes' },
       { title: 'Wire up SMS and system email', detail: 'Twilio + A2P registration powers texting; the email provider + domain verification powers system sends.', to: '/settings/integrations', perm: 'integrations.view', linkLabel: 'Settings → Integrations' },
       { title: 'Review your pipeline', detail: 'Rename or reorder the deal stages. The app ships with a single Master pipeline (New Lead through Won/Lost).', to: '/pipeline', perm: 'pipeline.view', linkLabel: 'Pipeline' },
-      { title: 'Bring in your contacts', detail: '"Import CSV" upserts (GHL-style): it matches existing people by email → phone (or a Contact ID column), fills in their blanks without overwriting, adds anyone new, and links companies to existing accounts by name or email domain. "Add Customer" for one-offs.', to: '/contacts', perm: 'contacts.view', linkLabel: 'Customers' },
+      { title: 'Bring in your customers', detail: '"Import customers" brings in your buildings from a spreadsheet, one row per building: each becomes an Active customer with its location (a Status column can say Lead or Inactive instead), and a row can name its supervisor and a contact. Add your supervisors on Team first, so the Supervisor column finds them. "Download the template" lists the columns. A building already on file is matched by its customer number, then its name, and only its blank fields are filled; the preview shows every row before anything is saved. "Add Customer" for one-offs.', to: '/contacts', perm: 'contacts.view', linkLabel: 'Customers' },
       { title: 'Schedule your first job', detail: '"New Job". Company, site, service, time, crew. It shows up on the Dashboard.', to: '/schedule', perm: 'schedule.view', linkLabel: 'Schedule' },
     ],
     modules: [
@@ -72,13 +78,13 @@ const GUIDES = {
           { h: 'Work it daily', steps: [
             '"Today’s Schedule" lists every job with its status. Click through to the job.',
             '"Follow-ups" surfaces leads quiet for 7+ days and threads unanswered for 24+ hours, oldest first.',
-            'Goal and financial cards track collected, recurring revenue, receivables, and review targets.',
+            'Goal and financial cards track new business, collected, recurring revenue, and receivables.',
             'Quick-action buttons jump to Schedule, Invoices, Customers, and Messages.',
           ] },
         ],
       },
       {
-        id: 'schedule', icon: 'schedule', title: 'Schedule', where: 'Sidebar → Schedule',
+        id: 'schedule', icon: 'schedule', title: 'Schedule', where: 'Sidebar → Operations → Today → Schedule',
         to: '/schedule', perm: 'schedule.view',
         blurb: 'Plan jobs by day, week, month, or cleaner; assign crew; drive every job to Done.',
         body: [
@@ -109,12 +115,13 @@ const GUIDES = {
         ],
       },
       {
-        id: 'contacts', icon: 'clients', title: 'Customers', where: 'Sidebar → Customers',
+        id: 'contacts', icon: 'clients', title: 'Customers', where: 'Sidebar → Customers → Directory → Customers',
         to: '/contacts', perm: 'contacts.view',
         blurb: 'The CRM: unified contact list with people and companies. Filter by contact type, then click a company name to view its details, sites, and service history. Email is a contact’s unique ID.',
         body: [
           { h: 'Build and work the book', steps: [
-            '"Add Customer" for one-offs. "Import CSV" is an upsert (GHL-style): it maps your columns, matches each row to an existing person by email → phone (or a Contact ID column), and updates matches by filling in blank fields without overwriting what’s already there. Unmatched rows are added. Pick "Create & update" or "Update only" on the preview, which shows per-row whether each will be created, updated, linked to an existing account, or skipped. Companies link to an existing account by name or email domain, or are created on the fly (those born from leads enter as Prospects, not active companies).',
+            '"Add Customer" for one-offs. "Import customers" takes a spreadsheet (Excel, Google Sheets or a QuickBooks export saved as CSV), one row per building: the customer number and name ("0101 Harbor View Towers" splits into both), the address, the status (Active unless the row says Lead or Inactive; a customer already on file takes it only when it has none set), the supervisor (a team member’s email or exact name: add your supervisors on Team first, so the Supervisor column finds them) and an optional contact, who comes in as a client of an Active or Inactive customer and a lead of a Lead one. It maps your columns, then previews every row as New, Update, No change, Same customer (a building named on an earlier row, e.g. its second contact) or Not imported, with the reason. A customer already on file is matched by its number, then its name, and only its blank fields are filled; a number another customer holds is never taken. "Download problems (CSV)" gives the rows to fix, with the reason; fix them and import that file again. The import is refused, with nothing saved, if the company’s shared record could not hold it. Billing stays in QuickBooks, so billing columns are skipped.',
+            'After an import the buildings are located on the map a hundred at a time, for the clock-in check. Until a building is located, clock-ins there are allowed and flagged for review; "Locate the next 100" in the import continues where the last run stopped.',
             'Filter by lifecycle (Lead / Prospect / Client / Vendor), tag, or company; select rows to bulk-tag or delete.',
             'A contact’s profile holds their title, tags, notes, and their full job + payment history. Deals belong to the company (Opportunities), shown on the company’s Opportunities tab and the Pipeline board.',
             'A company’s profile holds inline-editable details, linked contacts ("Set as primary"), a Location with its address + access notes + photos on the "Access" tab, an "Operations" tab, activity, and notes.',
@@ -135,7 +142,7 @@ const GUIDES = {
             'The new row shows a URL and a token. "Copy" the URL and the token. You’ll paste both into your sending tool. "Rotate" mints a new token if one ever leaks (the old one stops working immediately).',
           ] },
           { h: 'Send leads to it', steps: [
-            'Leads are upserted exactly like a CSV import: matched to an existing person by email → phone, blank fields filled in (never overwriting), and brand-new people added. So the same lead arriving twice updates rather than duplicates.',
+            'Each lead is matched to an existing person by email → phone, blank fields are filled in (never overwritten), and brand-new people are added. So the same lead arriving twice updates rather than duplicates.',
             'Send the token in the request’s "Authorization" header as "Bearer <token>". The body is flat JSON; at least one of email, phone, name, or company is required. Optional: lifecycle, source, tags, notes, and a stage to override the default.',
             'An existing company with an open deal is enriched, not moved. In-flight deals stay put.',
           ] },
@@ -148,7 +155,7 @@ const GUIDES = {
         ],
       },
       {
-        id: 'pipeline', icon: 'chart', title: 'Pipeline', where: 'Sidebar → Sales → Pipeline',
+        id: 'pipeline', icon: 'chart', title: 'Pipeline', where: 'Sidebar → Customers → Sales → Pipeline',
         to: '/pipeline', perm: 'pipeline.view',
         blurb: 'One sales board, one card per company deal. Company first, primary contact below. Drag a company between stages to advance its deal.',
         body: [
@@ -162,7 +169,7 @@ const GUIDES = {
         ],
       },
       {
-        id: 'marketing', icon: 'mail', title: 'Marketing', where: 'Sidebar → Sales → Marketing',
+        id: 'marketing', icon: 'mail', title: 'Marketing', where: 'Sidebar → Customers → Sales → Marketing',
         to: '/marketing', perm: 'marketing.view',
         blurb: 'Drip email sequences sent from a rotating pool of shared inboxes. With the Google OAuth setup that powers them.',
         body: [
@@ -197,7 +204,7 @@ const GUIDES = {
         ],
       },
       {
-        id: 'variance', icon: 'chart', title: 'Variance', where: 'Sidebar → Operations → Variance',
+        id: 'variance', icon: 'chart', title: 'Variance', where: 'Sidebar → Team → Time → Variance',
         to: '/variance', perm: 'variance.view',
         blurb: 'Labor logged vs. expected, clean by clean. The multi-cleaner hours report.',
         body: [
@@ -212,7 +219,7 @@ const GUIDES = {
         ],
       },
       {
-        id: 'quality', icon: 'check', title: 'Quality', where: 'Sidebar → Operations → Quality',
+        id: 'quality', icon: 'check', title: 'Quality', where: 'Sidebar → Operations → Service quality → Quality',
         to: '/inspections', perm: 'qc.view',
         blurb: 'Inspections, checklists, work orders, and the templates behind them. One hub, four tabs.',
         body: [
@@ -230,7 +237,7 @@ const GUIDES = {
         ],
       },
       {
-        id: 'keys', icon: 'lock', title: 'Keys', where: 'Sidebar → Operations → Keys',
+        id: 'keys', icon: 'lock', title: 'Keys', where: 'Sidebar → Operations → Today → Keys',
         to: '/keys', perm: 'keys.view',
         blurb: 'The digital key log: every physical key filed under its company and the building (site) it opens, with who holds it and a timestamped trail.',
         body: [
@@ -255,21 +262,7 @@ const GUIDES = {
         ],
       },
       {
-        id: 'reviews', icon: 'star', title: 'Reviews', where: 'Sidebar → Operations → Reviews',
-        to: '/reviews', perm: 'reviews.view',
-        blurb: 'Your Google listing HQ. Review feed + public replies, Google Posts, listing photos, search insights, and review-growth tools.',
-        body: [
-          { h: 'Watch your reputation', steps: [
-            'Connect Google Business Profile (owner/admin): sign in with the Workspace account that manages the listing. Reviews sync automatically every few hours; "Sync now" pulls immediately, and owners/admins get a bell alert when a new review lands.',
-            'Replies, posts, and photos all publish PUBLICLY on your Google listing. The composers say so, and only owners/admins can send them.',
-            'Posts tab: publish What\'s New / Event / Offer updates with a photo and a button. Photos tab: add categorized listing photos and see their view counts.',
-            'Insights tab: Profile views / Searches / Calls / Directions, review trends, and what people actually searched to find you (lags about a month. That\'s Google).',
-            'Get Reviews tab: copy your review link, download the QR code, and use the ask templates. Indeed still has no public API. Type the count into the Indeed card on the Reviews tab.',
-          ] },
-        ],
-      },
-      {
-        id: 'quotes', icon: 'tag', title: 'Quotes', where: 'Sidebar → Finances → Quotes',
+        id: 'quotes', icon: 'tag', title: 'Quotes', where: 'Sidebar → Customers → Sales → Quotes',
         to: '/quotes', perm: 'quotes.view',
         blurb: 'Generate a quote from your template, sign it, and send it for e-signature.',
         body: [
@@ -283,7 +276,7 @@ const GUIDES = {
         ],
       },
       {
-        id: 'invoices', icon: 'invoices', title: 'Invoices', where: 'Sidebar → Finances → Invoices',
+        id: 'invoices', icon: 'invoices', title: 'Invoices', where: 'Sidebar → Finance → Invoices',
         to: '/invoices', perm: 'invoices.view',
         blurb: 'Bill companies and record payments. Statuses derive from money: Pending → Overdue → Paid (or Void).',
         body: [
@@ -477,9 +470,9 @@ export default function SettingsQuickStart() {
   const q = query.trim().toLowerCase();
   const visible = useMemo(
     () => {
-      // Marketing is dormant (MARKETING_ENABLED, lib/features.js) — drop its card
-      // from the guide until the feature is opted back in.
-      const modules = guide.modules.filter((m) => MARKETING_ENABLED || m.id !== 'marketing');
+      // Marketing and Quotes are dormant (MARKETING_ENABLED, QUOTES_ENABLED, lib/features.js) —
+      // drop their cards from the guide until the feature is opted back in.
+      const modules = guide.modules.filter((m) => (MARKETING_ENABLED || m.id !== 'marketing') && (QUOTES_ENABLED || m.id !== 'quotes'));
       return q ? modules.filter((m) => SEARCH_TEXT[m.id].includes(q)) : modules;
     },
     [q, guide],

@@ -3,7 +3,9 @@ import { IDENTITY } from '../../brand/identity.generated.js';
 
 // The REAL draft preview (UI_RULES §98), moved out of the old Drafts page unchanged: a
 // branded HTML document injects inline (scoped CSS, same as InspectionReportModal), a plain
-// email renders as a text card, an SMS as a phone bubble. Driven by the draft's own
+// email renders as a text card, an HTML email (the e-signature, sign-in and customer-hub emails
+// the server sends, 2026-10-20) as that HTML inside the same mail card, an SMS as a phone bubble.
+// Every HTML here comes from the app's own builders, which escape what they interpolate. Driven by the draft's own
 // render() — the same builder the send path uses — never a hand-copied mock. The preview is
 // rebuilt only when the draft changes (useMemo per descriptor), not on every note keystroke.
 export default function DraftPreview({ draft }) {
@@ -38,7 +40,9 @@ export default function DraftPreview({ draft }) {
         <span className="drafts-mailhead-from">{IDENTITY.name}</span>
         <span className="drafts-mailhead-subj">{rendered.subject}</span>
       </div>
-      <div className="drafts-mailbody">{rendered.body}</div>
+      {rendered.html
+        ? <div className="drafts-mailbody drafts-mailbody-html" dangerouslySetInnerHTML={{ __html: rendered.html }} />
+        : <div className="drafts-mailbody">{rendered.body}</div>}
     </div>
   );
 }

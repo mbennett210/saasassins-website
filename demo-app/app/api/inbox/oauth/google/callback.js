@@ -9,6 +9,18 @@ import { getAccountByEmail, upsertAccount, newInboxId } from '../../../_lib/acco
 import { resolveCredsForWorkspaceId, updateWorkspace } from '../../../_lib/oauthWorkspaces.js';
 import { DOC } from '../../../../src/brand/doc.js';
 
+// 🔴 NO LOGIN REACHES THIS PAGE (Google redirects the popup here; the signed state is the gate),
+// so a failure is a sentence and a stable code, never the provider's words — Google's token or
+// Gmail error, a database error — and never the redirect's own `?error=` echoed back (CS-648's
+// family, the CS-077 class). The detail is logged, as the public scan page does (api/public/scan).
+// The popup shows `error` to the person connecting (src/lib/connectedInboxes openOAuthPopup).
+export const CONNECT_INBOX_ERRORS = Object.freeze({
+  failed: Object.freeze({ code: 'connect-failed', error: 'The mailbox could not be connected just now. Please try again in a minute.' }),
+  denied: Object.freeze({ code: 'consent-declined', error: 'Google sign-in was cancelled, so the mailbox was not connected.' }),
+  consent: Object.freeze({ code: 'consent-failed', error: 'Google did not finish the sign-in, so the mailbox was not connected. Please try again.' }),
+});
+const failure = ({ code, error }) => ({ type: 'connect-inbox', error, code });
+
 function resultPage(message) {
   const json = JSON.stringify(message).replace(/</g, '\\u003c');
   const note = message.error
@@ -31,7 +43,8 @@ export default async function handler(req, res) {
   try {
     const { code, state, error } = req.query;
     if (error) {
-      res.status(200).send(resultPage({ type: 'connect-inbox', error: `Google returned: ${error}` }));
+      // Google's own word for it (`access_denied` when the person declines) — never echoed.
+      res.status(200).send(resultPage(failure(error === 'access_denied' ? CONNECT_INBOX_ERRORS.denied : CONNECT_INBOX_ERRORS.consent)));
       return;
     }
     if (!code || !state) {
@@ -63,6 +76,12 @@ export default async function handler(req, res) {
     // Reuse the existing row's id when reconnecting the same address.
     const existing = await getAccountByEmail(email);
     const id = existing?.id || newInboxId();
+    // 🔴 OWNERSHIP IS STAMPED HERE (CS-017). The `u_*` id comes from the SIGNED state that
+    // /api/inbox/connect/start minted after proving authority — never from a query param.
+    // The send gate refuses an unclaimed mailbox, so this is what makes a freshly connected
+    // mailbox usable, and what makes it usable BY ITS CONNECTOR ONLY. A reconnect keeps the
+    // existing owner: re-consenting must not quietly transfer someone else's mailbox.
+    const ownerUserId = existing?.owner_user_id || statePayload.orgUserId || null;
     await upsertAccount({
       id,
       email,
@@ -73,6 +92,7 @@ export default async function handler(req, res) {
       accessTokenExpiresAt: new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString(),
       historyId: profile.historyId || null,
       workspaceId,
+      ownerUserId,
     });
 
     // A successful connect proves this Workspace's OAuth app + Trusted-app
@@ -94,6 +114,8 @@ export default async function handler(req, res) {
       },
     }));
   } catch (err) {
-    res.status(200).send(resultPage({ type: 'connect-inbox', error: err.message || 'Connection failed.' }));
+    // The detail is logged here; the popup gets a sentence and a code (CS-648's family, CS-077).
+    console.error('[api/inbox/oauth/google/callback]', err?.code || err?.name || 'error', err?.message || '');
+    res.status(200).send(resultPage(failure(CONNECT_INBOX_ERRORS.failed)));
   }
 }

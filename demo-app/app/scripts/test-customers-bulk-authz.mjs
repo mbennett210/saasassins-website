@@ -13,6 +13,12 @@
 // without schedule.edit, orphaning the cleans (they keep feeding the ops-alerts
 // cron) — so a delete the caller can't complete is not offered.
 //
+// CS-663 (2026-10-13): customers are ARCHIVED, never deleted (Matt's "Never delete customers").
+// The same rule carries over to Archive, which takes each customer's upcoming cleans off the
+// schedule: clients.delete ("Archive customers") AND the jobs-write tier AND every clean loaded
+// (useJobsHydrated — a partial set would leave some cleans behind). The archive itself is
+// test-customer-archive.mjs; this suite pins the gates.
+//
 // This is a SOURCE-SHAPE suite (like test-client-inspections.mjs Layer C): the gates
 // live in JSX render logic, which the offline suites don't render, so it asserts the
 // wiring by shape. Every assertion below is FALSE against the pre-fix source (which
@@ -40,13 +46,15 @@ const count = (src, needle) => src.replace(/\s+/g, ' ').split(needle.replace(/\s
   // The gate inputs: both hooks are read UNCONDITIONALLY (Rules of Hooks), then combined.
   ok('Clients imports useCanEditJobs from the permission hooks',
     /import\s*\{[^}]*\buseCanEditJobs\b[^}]*\}\s*from\s*'\.\.\/hooks\/usePermission'/.test(src));
-  ok('Clients reads clients.delete', has(src, "const canDeleteClients = usePermission('clients.delete');"));
+  ok('Clients reads clients.delete ("Archive customers")', has(src, "const canArchiveClients = usePermission('clients.delete');"));
+  ok('Clients reads whether every clean has loaded', has(src, 'const jobsHydrated = useJobsHydrated();'));
   ok('Clients reads useCanEditJobs into a variable (not short-circuited)', has(src, 'const canEditJobs = useCanEditJobs();'));
 
   // The three derived gates.
   ok('canBulkTag is clients.edit (the customer TagPicker key)', has(src, 'const canBulkTag = canEditClients;'));
-  ok('canBulkDelete requires clients.delete AND the jobs-write tier', has(src, 'const canBulkDelete = canDeleteClients && canEditJobs;'));
-  ok('canBulkSelect is either bulk action', has(src, 'const canBulkSelect = canBulkTag || canBulkDelete;'));
+  ok('canBulkArchive requires clients.delete AND the jobs-write tier AND every clean loaded', has(src, 'const canBulkArchive = canArchiveClients && canEditJobs && jobsHydrated;'));
+  ok('canBulkSelect is either bulk action', has(src, 'const canBulkSelect = canBulkTag || canBulkArchive;'));
+  ok('🔴 there is no bulk Delete any more (CS-663)', !/\bDELETE_CLIENT\b/.test(src) && !has(src, 'canBulkDelete'));
 
   // The selection UI is HIDDEN when no bulk action is available: the bulk bar and BOTH
   // checkbox cells (select-all header + per-row) sit behind canBulkSelect.
@@ -58,23 +66,23 @@ const count = (src, needle) => src.replace(/\s+/g, ' ').split(needle.replace(/\s
 
   // Each bulk action's control sits behind its own gate.
   ok('Apply tags controls are gated on canBulkTag', has(src, '{canBulkTag && ('));
-  ok('the Delete button is gated on canBulkDelete', has(src, '{canBulkDelete && ('));
-  ok('the danger Delete button opens the confirm dialog only inside that gate',
-    /\{canBulkDelete && \([^]*?btn-danger[^]*?setConfirmDeleteOpen\(true\)/.test(src));
+  ok('the Archive button is gated on canBulkArchive', has(src, '{canBulkArchive && !showingArchived && ('));
+  ok('the Archive button opens the confirm dialog only inside that gate',
+    /\{canBulkArchive && !showingArchived && \([^]*?setConfirmArchiveOpen\(true\)/.test(src));
 
   // Defense in depth: the dispatchers refuse when the gate is absent (stale UI state).
   ok('bulkApplyTags no-ops without canBulkTag', has(src, 'if (!canBulkTag || bulkTagIds.length === 0) return;'));
-  ok('bulkDelete no-ops without canBulkDelete', has(src, 'if (!canBulkDelete) return;'));
+  ok('bulkArchive no-ops without canBulkArchive', has(src, 'if (!canBulkArchive) return;'));
 }
 
-// ── ClientDetail.jsx — the single-record twin (same delete rule) ─────────────
+// ── ClientDetail.jsx — the single-record twin (same archive rule) ─────────────
 {
   const src = read('../src/pages/ClientDetail.jsx');
   ok('ClientDetail imports useCanEditJobs',
     /import\s*\{[^}]*\buseCanEditJobs\b[^}]*\}\s*from\s*'\.\.\/hooks\/usePermission'/.test(src));
   ok('ClientDetail reads useCanEditJobs into a variable', has(src, 'const canEditJobs = useCanEditJobs();'));
-  ok('ClientDetail delete needs clients.delete AND the jobs-write tier', has(src, 'const canDelete = canDeleteClient && canEditJobs;'));
-  ok('  ...and no longer gates delete on clients.delete alone', !has(src, 'const canDelete = canDeleteClient;'));
+  ok('ClientDetail archive needs clients.delete AND the jobs-write tier AND every clean loaded', has(src, 'const canArchive = canArchiveClient && canEditJobs && jobsHydrated;'));
+  ok('  ...and never gates it on clients.delete alone', !has(src, 'const canArchive = canArchiveClient;'));
 }
 
 console.log(`\n${pass}/${pass + fails.length} passed`);

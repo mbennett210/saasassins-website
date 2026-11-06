@@ -1,5 +1,7 @@
-// One-off email deliverability check. SENDS A REAL EMAIL through the shared Resend
-// sender, proving the verified-domain From actually delivers. Usage:
+// One-off email deliverability check. SENDS A REAL EMAIL through the Google SYSTEM SENDER
+// (the connected mailbox marked in Settings → Integrations), proving the app's own mail
+// actually delivers. Nothing is sent when no mailbox is marked — sendEmail() answers
+// { skipped: true } and this exits non-zero. Usage:
 //   node scripts/test-email.mjs --send [recipient@example.com]
 //
 // ⚠️ NAMED `test-*` BUT IT IS NOT A TEST — it has a live side effect. `--send` is
@@ -36,12 +38,12 @@ for (const line of envText.split('\n')) {
 
 const { sendEmail, defaultFrom } = await import('../api/_lib/email.js');
 const to = process.argv.filter((a) => a !== '--send')[2] || 'sellwithdealmate@gmail.com';
-console.log('From:', defaultFrom());
+console.log('From:', await defaultFrom());
 console.log('To:  ', to);
 const r = await sendEmail({
   to,
   subject: `${IDENTITY.wordmark} — quote email wiring test`,
-  html: `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:24px"><div style="background:${DOC.brand};color:${DOC.onBrand};padding:14px 20px;border-radius:10px 10px 0 0;font-weight:700">${IDENTITY.name}</div><div style="border:1px solid ${DOC.divider};border-top:none;border-radius:0 0 10px 10px;padding:22px;color:${DOC.ink}"><h2 style="margin:0 0 10px;font-size:18px">Email is wired ✅</h2><p style="color:${DOC.body};font-size:14px">If you received this, quote sign-request and signed-copy emails will deliver via Resend on the verified domain.</p></div></div>`,
+  html: `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:24px"><div style="background:${DOC.brand};color:${DOC.onBrand};padding:14px 20px;border-radius:10px 10px 0 0;font-weight:700">${IDENTITY.name}</div><div style="border:1px solid ${DOC.divider};border-top:none;border-radius:0 0 10px 10px;padding:22px;color:${DOC.ink}"><h2 style="margin:0 0 10px;font-size:18px">Email is wired ✅</h2><p style="color:${DOC.body};font-size:14px">If you received this, quote sign-request and signed-copy emails will deliver from the system sender mailbox.</p></div></div>`,
 });
 console.log('result:', JSON.stringify(r));
 process.exit(r.ok ? 0 : 1);

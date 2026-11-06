@@ -25,6 +25,12 @@
 //   node scripts/test-series-day-set.mjs
 import { readFileSync } from 'node:fs';
 import { describeRecurrence, seriesBlocksOf, blockDayLabel, blockTimeLabel } from '../src/lib/recurrence.js';
+import { setOrgTimezone } from '../src/lib/dates.js';
+
+// Pin the org zone: this suite's block labels are LA-referenced (08:00Z master start =
+// "1:00 AM" Pacific), and recurrence formats times in the ambient org zone. The module
+// default is now Eastern (W1-R), so pin LA explicitly rather than inheriting the default.
+setOrgTimezone('America/Los_Angeles');
 
 let pass = 0;
 const fails = [];

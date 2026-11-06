@@ -50,6 +50,10 @@ function makeDeps(over = {}) {
     compute: async () => (over.due !== undefined ? over.due : [dueAlert()]),
     dispatch: async () => { calls.dispatch += 1; if (over.dispatchThrows) throw new Error('push boom'); return over.dispatchResult || { claimed: 1, sent: 1 }; },
     pushReady: () => (over.pushReady !== undefined ? over.pushReady : true),
+    // CS-379: the run also writes an activity row per raised alert. Injected as a no-op here
+    // because this suite is about the raise -> dispatch orchestration and runs with no
+    // Supabase credentials; the log itself is proven in test-activity-log-writes.mjs.
+    logAuto: async () => [],
     report: (tag, err) => { calls.report.push([tag, err && err.message]); },
   };
   return { calls, deps };
@@ -110,6 +114,33 @@ await ok('skips dispatch when push is not configured (no VAPID), but still recor
   assert.equal(out.raised, 1, 'the alert is recorded');
   assert.equal(calls.dispatch, 0, 'no VAPID → the core is never called');
   assert.deepEqual(out.push, { skipped: 'vapid_unconfigured' }, 'the response says why push was skipped');
+});
+
+// HUB-21 / CS-639: the cron rebuilds each walker alert (toAlert) before routing it, so the
+// ticket's origin must survive that step, or a customer's repeat at a building with no manager
+// rings the whole office while its first alert rang the Admins. REGRESSION: on the pre-fix tree
+// toAlert dropped `origin` and the row went to all three office seats.
+await ok('a repeat of a customer\'s request keeps its origin through the cron: no manager → the Admins only', async () => {
+  const team = [
+    { id: 'u_owner', name: 'Matt', role: 'owner', status: 'active', notificationPrefs: {} },
+    { id: 'u_admin', name: 'Yolanda', role: 'admin', status: 'active', notificationPrefs: {} },
+    { id: 'u_mgr', name: 'Renata', role: 'manager', status: 'active', notificationPrefs: {} },
+  ];
+  const state = baseState({ users: team, clients: [{ id: 'cl_hub', name: 'Coral Bay HOA', supervisorId: null }] });
+  const repeat = (origin) => ({
+    id: `ticketRepeat|t_${origin}|1`, kind: 'ticketRepeat', recipientScope: 'supervisor', eventKey: 'ticketUrgent',
+    clientId: 'cl_hub', refId: `t_${origin}`, origin, priority: 'urgent', ticketTitle: 'Lobby door',
+  });
+  const ringFor = async (origin) => {
+    let written = null;
+    const { deps } = makeDeps({ state, due: [repeat(origin)] });
+    deps.writeState = async (next) => { written = next; return true; };
+    const out = await run(false, deps);
+    assert.equal(out.raised, 1, `the ${origin} repeat is raised`);
+    return [...new Set((written?.notifications || []).map((n) => n.userId))].sort().join(',');
+  };
+  assert.equal(await ringFor('portal'), 'u_admin', 'a customer\'s request with no manager: the Admins');
+  assert.equal(await ringFor('internal'), 'u_admin,u_mgr,u_owner', 'a cleaner\'s ticket with no manager: the whole office (WO-6)');
 });
 
 console.log(`\nops-alert cron orchestration: ${pass}/${pass + fail} passed`);

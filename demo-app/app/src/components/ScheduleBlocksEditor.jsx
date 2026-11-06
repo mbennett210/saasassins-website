@@ -12,7 +12,9 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 // creation, fully independent afterwards. Used by NewJobModal (create) and
 // JobDetail's edit-all-future scope (with lockDays: changing the day set means
 // regenerating the series, so there the days are fixed and only time/crew edit).
-export default function ScheduleBlocksEditor({ blocks, onChange, crewPool, lockDays = false, errors = {} }) {
+// `preferCrew`: the cleaners who work at the clean's customer (lib/worksAt), who lead each block's
+// crew picker after the people picked.
+export default function ScheduleBlocksEditor({ blocks, onChange, crewPool, preferCrew, lockDays = false, errors = {} }) {
   const toggleDay = (key, dow) => {
     if (lockDays) return;
     onChange(blocks.map((b) => {
@@ -77,7 +79,7 @@ export default function ScheduleBlocksEditor({ blocks, onChange, crewPool, lockD
                 onBlur={() => { const n = normalizeHm(b.endTime); if (n && n !== b.endTime) patchBlock(b.key, { endTime: n }); }} />
             </div>
             <FormField label="Crew (these days)">
-              <CrewPicker value={b.crewIds || []} onChange={(ids) => patchBlock(b.key, { crewIds: ids })} pool={crewPool} placeholder="Add crew…" />
+              <CrewPicker value={b.crewIds || []} onChange={(ids) => patchBlock(b.key, { crewIds: ids })} pool={crewPool} preferIds={preferCrew} placeholder="Add crew…" />
             </FormField>
           </div>
         );

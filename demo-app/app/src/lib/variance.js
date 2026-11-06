@@ -152,6 +152,9 @@ export function buildVarianceReport(entries, { basis = 'labor', thresholds = DEF
         // the drill-down's amber "override" badge means three different things.
         overrideReason: e.overrideReason || null,
         distanceM: e.distanceM ?? null,
+        // Carried through so the drill's Approve/Correct can send the version the manager
+        // saw (the CAS, wave W1-A); the mappers (compute.js / varianceApi.js) supply it.
+        rowVersion: e.rowVersion ?? null,
         note: e.note || null,
       })),
       ...v,

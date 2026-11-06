@@ -25,7 +25,16 @@ async function api(path, { method = 'GET', body } = {}) {
   });
   let json = null;
   try { json = await res.json(); } catch { /* non-JSON */ }
-  if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    // Carry the STATUS and the server's machine-readable `code` (e.g. 'codes_unavailable'
+    // when OPS_CODE_ENCRYPTION_KEY is unset) so the caller can tell an operator-config
+    // problem from a rejected request. Without these, every failure looked alike and
+    // LocationCard abandoned the whole Location edit over an unset key (CS-037).
+    const err = new Error(json?.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    err.code = json?.code || null;
+    throw err;
+  }
   return json;
 }
 

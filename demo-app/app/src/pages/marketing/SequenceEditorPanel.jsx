@@ -194,8 +194,8 @@ export default function SequenceEditorPanel({ sequenceId, onCollapse }) {
 
   // ----- Notify on reply -----
   // Operator-picked team user gets a bell-inbox row when a contact replies to
-  // this sequence. Email channel intentionally absent for v1 (Resend path +
-  // domain DNS still pending — see HANDOFF backlog).
+  // this sequence. Email channel intentionally absent for v1 — the toggle was never
+  // built (system email itself works, through Google; see HANDOFF backlog).
   const notifyUserId = seq.notifyOnReplyUserId || null;
   const notifyInApp = seq.notifyOnReplyChannels?.inApp === true;
   function patchNotify(patch) {

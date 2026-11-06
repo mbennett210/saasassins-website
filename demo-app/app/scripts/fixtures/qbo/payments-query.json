@@ -1,0 +1,28 @@
+{
+  "_note": "NOT CAPTURED FROM A LIVE COMPANY. Built to Intuit's documented Payment query shape (developer.intuit.com, Accounting API, Payment entity: QueryResponse.Payment[] with Id, TxnDate, TotalAmt, CustomerRef, and Line[].LinkedTxn naming the invoices it paid) for the client hub's paid date (plan 2026-10-08 §3.5). Dates are '@d<offset>' placeholders resolved by test-hub-invoices.mjs against today in the org zone. Replace with a capture once the read-only sandbox probe has run.",
+  "QueryResponse": {
+    "Payment": [
+      {
+        "Id": "2001", "SyncToken": "0", "domain": "QBO", "sparse": false,
+        "TxnDate": "@d-45", "TotalAmt": 4000.0, "UnappliedAmt": 0,
+        "CustomerRef": { "value": "4", "name": "0004 Ball Harbor Annex" },
+        "Line": [{ "Amount": 4000.0, "LinkedTxn": [{ "TxnId": "1003", "TxnType": "Invoice" }] }]
+      },
+      {
+        "Id": "2002", "SyncToken": "0", "domain": "QBO", "sparse": false,
+        "TxnDate": "@d-38", "TotalAmt": 4014.15, "UnappliedAmt": 0,
+        "CustomerRef": { "value": "4", "name": "0004 Ball Harbor Annex" },
+        "Line": [{ "Amount": 4014.15, "LinkedTxn": [{ "TxnId": "1003", "TxnType": "Invoice" }] }]
+      },
+      {
+        "Id": "2003", "SyncToken": "0", "domain": "QBO", "sparse": false,
+        "TxnDate": "@d-3", "TotalAmt": 500.0, "UnappliedAmt": 0,
+        "CustomerRef": { "value": "1", "name": "0001 Ball Harbor Village" },
+        "Line": [{ "Amount": 500.0, "LinkedTxn": [{ "TxnId": "1004", "TxnType": "Invoice" }] }]
+      }
+    ],
+    "startPosition": 1,
+    "maxResults": 3
+  },
+  "time": "2026-10-08T09:00:00.000-07:00"
+}

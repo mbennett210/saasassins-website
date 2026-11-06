@@ -4,6 +4,12 @@
 //
 //   node scripts/test-time-off.mjs
 import { isUserOffOn, timeOffEntryFor, draftEffectiveCrewIds, applyTimeOffToOccurrence } from '../src/store/timeOffRules.js';
+import { setOrgTimezone } from '../src/lib/dates.js';
+
+// Pin the org zone: the incident oracle is a Pacific org-day (Aug 31 PT for a
+// 2026-09-01T05:30Z clean), and the time-off rules bucket in the ambient org zone. The
+// module default is now Eastern (W1-R), so pin LA explicitly.
+setOrgTimezone('America/Los_Angeles');
 
 let pass = 0;
 const fails = [];

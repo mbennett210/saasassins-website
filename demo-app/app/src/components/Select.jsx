@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import PopMenu from './PopMenu';
+import { useT } from '../i18n/react';
 
 // Themed dropdown that replaces native <select>. Trigger and menu share the
 // same gradient border; when open the seam disappears so they read as one box
@@ -10,10 +11,13 @@ export default function Select({
   options,
   ghost = false,
   disabled = false,
-  placeholder = 'Select…',
+  placeholder,
   id,
   ariaLabel,
 }) {
+  // The built-in words are catalog lines in the reader's language (CS-193).
+  const t = useT();
+  const placeholderText = placeholder ?? t('common.select');
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const selected = options.find((o) => o.value === value);
@@ -38,7 +42,7 @@ export default function Select({
         onClick={() => !disabled && setOpen((o) => !o)}
       >
         <span className="select-trigger-text">
-          {selected?.label ?? <span className="select-placeholder">{placeholder}</span>}
+          {selected?.label ?? <span className="select-placeholder">{placeholderText}</span>}
         </span>
         <span className="select-trigger-caret" aria-hidden>▾</span>
       </button>
@@ -48,7 +52,7 @@ export default function Select({
         anchorRef={wrapRef}
         className="select-menu"
         role="listbox"
-        sheetTitle={ariaLabel || placeholder}
+        sheetTitle={ariaLabel || placeholderText}
       >
         {options.map((o) => (
           <button

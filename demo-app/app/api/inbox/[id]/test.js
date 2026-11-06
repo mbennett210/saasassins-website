@@ -10,6 +10,7 @@
 // carries the identical per-mailbox ownership check as /send. Gating one and not the
 // other would leave the hole open under another name.
 import { requireInboxOwner } from '../../_lib/inboxOwnership.js';
+import { sanitizeInboxSendBody } from '../../_lib/inboxSendBody.js';
 import { performSend } from '../../_lib/sender.js';
 import { allow } from '../../_lib/rateLimit.js';
 
@@ -38,7 +39,9 @@ export default async function handler(req, res) {
     return;
   }
   try {
-    const result = await performSend(req.query.id, { ...req.body, orgUserId: authority.orgUserId });
+    // Allowlisted body, same as /send — this route is the same send primitive under a
+    // different label, so every control /send carries belongs here too (CS-017).
+    const result = await performSend(req.query.id, { ...sanitizeInboxSendBody(req.body), orgUserId: authority.orgUserId });
     res.status(200).json({ ok: true, id: result.id, status: 'sent' });
   } catch (err) {
     res.status(502).send(err.message || 'Test send failed.');

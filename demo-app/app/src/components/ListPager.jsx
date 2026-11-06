@@ -10,18 +10,24 @@
 //
 // Markup and classes are the ones Clients/Invoices already used (`.list-pager*` in
 // index.css), so adopting this changed no pixels on the two surfaces that had a pager.
+//
+// LANGUAGES (CS-193): the pager's own words are catalog lines; `noun` is the caller's word for
+// the rows, shown as passed — a translated screen passes t('pager.noun.…').
+import { useT } from '../i18n/react';
+
 export default function ListPager({ pager, noun = 'rows' }) {
+  const t = useT();
   if (!pager || pager.totalPages <= 1) return null;
   const { page, totalPages, setPage, start, end, total } = pager;
   return (
     <div className="list-pager">
-      <span className="list-pager-info">Showing {start}–{end} of {total} {noun}</span>
+      <span className="list-pager-info">{t('pager.showing', { start, end, total, noun })}</span>
       <div className="list-pager-controls">
         <button type="button" className="btn btn-secondary" disabled={page <= 1}
-          onClick={() => setPage(page - 1)}>Previous</button>
-        <span className="list-pager-page">Page {page} of {totalPages}</span>
+          onClick={() => setPage(page - 1)}>{t('common.previous')}</button>
+        <span className="list-pager-page">{t('pager.page', { page, pages: totalPages })}</span>
         <button type="button" className="btn btn-secondary" disabled={page >= totalPages}
-          onClick={() => setPage(page + 1)}>Next</button>
+          onClick={() => setPage(page + 1)}>{t('common.next')}</button>
       </div>
     </div>
   );

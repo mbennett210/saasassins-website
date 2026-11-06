@@ -12,7 +12,7 @@
 // Clean&nbsp;Space, cleanspaceonline.com), and every identity string of the ACTIVE brand
 // (brands/<active>/brand.json, brand.mjs identityStrings): its name, wordmark, short name, app title, slug,
 // app host, domain, website, email, phone, street, city, tagline, services, signatory (name, title, email)
-// and sender addresses. Each matches in any spelling (needleFor): any case, other separators between its
+// and the sign-in mails' reply-to address. Each matches in any spelling (needleFor): any case, other separators between its
 // words (a JSX line break, a hyphen, an escaped space), and a phone in any grouping of its digits, with or
 // without the country code.
 //
@@ -71,7 +71,6 @@ const GENERATED = new Set(['src/brand/identity.generated.js', 'src/brand/quote.g
 // locale needles are classed so; the brand's name and contacts there are still a leak (CS-400).
 export const FICTION = new Map([
   ['src/data/seed.js', 'the demo org\'s fictional book, set in the brand\'s region: a clone rewrites it if it wants its own (REBRAND.md §5)'],
-  ['src/lib/csv.js', 'the CSV template\'s sample rows: fictional contacts in the brand\'s region'],
   ['src/data/demoStubs.js', 'the localStorage-stub demo seed (Quotes and Quality): fictional accounts, sites and people in the brand\'s region'],
   ['src/data/sampleData.js', 'the PolishPoint prototype\'s sample data: a generic, fictional service business'],
   ['src/data/dashboardLayoutPreview.js', 'the home-page layout preview\'s fictional accounts (CS-013/CS-066), set in the brand\'s region'],

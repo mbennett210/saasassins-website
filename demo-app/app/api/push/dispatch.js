@@ -11,15 +11,15 @@
 // Cron-only: requires CRON_SECRET. Soft-fails to HTTP 200 so the next tick retries.
 import { dispatchDue } from '../_lib/push/dispatch.js';
 import { pushConfigured } from '../_lib/push/store.js';
+import { refuseUnconfiguredCron } from '../_lib/cronGate.js';
 
 export default async function handler(req, res) {
   // Cron-only. Fail closed when CRON_SECRET is unset — this endpoint sends real
-  // push and churns org_state, so it must never be publicly invokable.
+  // push and churns org_state, so it must never be publicly invokable. An unset secret is a
+  // 500 with a body that names nothing, the gap logged (`_lib/cronGate.js`); a wrong or
+  // missing bearer is a 401.
   const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    res.status(500).json({ ok: false, error: 'CRON_SECRET is not configured' });
-    return;
-  }
+  if (!secret) { refuseUnconfiguredCron(res, 'push/dispatch'); return; }
   if (req.headers.authorization !== `Bearer ${secret}`) {
     res.status(401).json({ ok: false, error: 'Unauthorized' });
     return;

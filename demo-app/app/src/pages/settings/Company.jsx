@@ -8,6 +8,7 @@ import FormField from '../../components/FormField';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { usTimezoneOptions, offsetLabel } from '../../lib/timezones';
 import { getOrgTimezone, todayKey, composeIso, fmtTime } from '../../lib/dates';
+import CustomerDocumentsCard from '../../components/CustomerDocumentsCard';
 
 // A concrete before/after for the timezone-change confirmation: take 9:00 AM today
 // as the OLD zone reads it, and show what that same instant reads as in the NEW zone.
@@ -138,6 +139,11 @@ export default function SettingsCompany() {
           <button type="submit" className="btn btn-primary">Save Company</button>
         </div>
       </form>
+
+      {/* The client hub redesign (plan 2026-10-08 §3.6): "Documents for every customer" — the
+          company's W-9 and anything else every customer downloads from the hub. Renders nothing
+          without `hub.documents.manage`. */}
+      <CustomerDocumentsCard clientId={null} />
 
       <ConfirmDialog
         open={!!tzConfirm}

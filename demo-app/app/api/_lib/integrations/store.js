@@ -125,8 +125,9 @@ export async function upsertSnapshot(metrics) {
     'outstanding_quotes_cents', 'past_due_30_cents', 'ar_cents',
     // goals (actual + target)
     'new_business_actual_cents', 'new_business_goal_cents',
-    'google_reviews_actual', 'google_reviews_goal',
-    'indeed_reviews_actual', 'indeed_reviews_goal',
+    // (google_reviews_* / indeed_reviews_* left with Google reviews on 2026-10-20: the Dashboard
+    // no longer shows a review goal, so a push of them is not written. The columns stay until
+    // the owner decides to drop them.)
     // operational
     'open_complaints', 'variance_yesterday_cents',
   ];

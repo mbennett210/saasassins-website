@@ -12,16 +12,20 @@ import Badge from '../components/Badge';
 import Modal from '../components/Modal';
 import SignatureCapture from '../components/SignatureCapture';
 import FillableQuoteDoc from '../components/FillableQuoteDoc';
+import QuoteLinkModal from '../components/QuoteLinkModal';
+import { useT } from '../i18n/react';
 import { signOptsFromQuote } from '../lib/quoteTemplate';
 import { getQuote, saveQuote, adminSignQuote, sendQuote, getDownloadUrl, deleteQuote, voidQuote } from '../lib/quotesApi';
 import { useStore } from '../store';
 import { selectContactById, selectContactByEmail } from '../store/selectors';
 import { isDoNotContact } from '../lib/contactConsent';
+import { appLink } from '../lib/appLink';
 import { IDENTITY } from '../brand/identity.generated.js';
 
 const STATUS_BADGE = { draft: 'slate', sent: 'blue', signed: 'green', void: 'slate' };
 
 export default function QuoteEditor() {
+  const t = useT();
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -37,6 +41,8 @@ export default function QuoteEditor() {
   const [signing, setSigning] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const [signerName, setSignerName] = useState('');
+  // CS-664: a send that emailed nothing hands the office the signing link: { why, name }.
+  const [handover, setHandover] = useState(null);
   const sigRef = useRef(null);
   const saveTimer = useRef(null);
 
@@ -104,9 +110,13 @@ export default function QuoteEditor() {
       // `fields` object also makes the flush idempotent with prior autosaves.
       if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
       await saveQuote(id, fields);
-      const q = await sendQuote(id);
-      setQuote(q);
-      toast.success(`Sent to ${q.contact_name || 'the contact'} for signature`);
+      const res = await sendQuote(id);
+      setQuote(res.quote);
+      const name = res.quote?.contact_name || t('quoteSend.theContact');
+      // 🔴 CS-664: "sent for signature" only when an email actually went. Otherwise the quote is
+      // sent (its link works) and the office gets the link to send themselves, with the reason.
+      if (res.emailed) toast.success(t('quoteSend.emailed', { name }));
+      else setHandover({ why: res.why, name });
     } catch (e) { toast.error(e.message || 'Send failed.'); } finally { setBusy(false); }
   }
 
@@ -131,7 +141,8 @@ export default function QuoteEditor() {
   if (error) return <div className="page"><Link to="/quotes" className="detail-back">← Quotes</Link><p style={{ color: 'var(--danger)', marginTop: 12 }}>{error}</p></div>;
   if (!quote) return <div className="page"><p>Loading…</p></div>;
 
-  const publicLink = `${window.location.origin}/quote/${quote.public_token}`;
+  // the client link the office pastes into an email: the app's own address (lib/appLink.js)
+  const publicLink = appLink(`/quote/${quote.public_token}`);
 
   return (
     <div className="page">
@@ -192,6 +203,8 @@ export default function QuoteEditor() {
           <button className="btn btn-primary" onClick={onAdminSign} disabled={busy}>{busy ? 'Signing…' : 'Sign document'}</button>
         </div>
       </Modal>
+
+      <QuoteLinkModal open={!!handover} onClose={() => setHandover(null)} name={handover?.name} link={publicLink} why={handover?.why} />
 
       <Modal open={leaving} onClose={() => setLeaving(false)} title="Leave this quote?">
         <p className="text-sm" style={{ marginBottom: 14 }}>Save your progress and come back to it later, or delete this draft?</p>

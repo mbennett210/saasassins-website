@@ -27,6 +27,30 @@ export const APP_SHA = String(import.meta.env?.VITE_APP_SHA || '');
 // refetch. Regenerated on every load, which is correct — a reload is a new listener.
 export const TAB_ID = `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 
+// Per-DEVICE id: one value for as long as this browser keeps its storage (a phone's installed
+// app across launches, a desktop browser across reloads). The fleet heartbeat
+// (components/BuildHeartbeat) keys its row on it, so a phone is ONE row in client_heartbeats
+// rather than one per launch — a row per launch is what put Team's App versions card past the
+// read cap (CS-727). Never used for echo suppression: that is TAB_ID's job, per page load.
+// No storage (a private window, blocked site data): this load's TAB_ID, as before.
+export const DEVICE_KEY_STORAGE = 'cleanspace_device_key_v1';
+const DEVICE_KEY_RE = /^d_[a-z0-9_]{6,60}$/;
+export function deviceKey(storage = browserStorage()) {
+  try {
+    const have = storage.getItem(DEVICE_KEY_STORAGE);
+    if (typeof have === 'string' && DEVICE_KEY_RE.test(have)) return have;
+    const minted = `d_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+    storage.setItem(DEVICE_KEY_STORAGE, minted);
+    // A storage that does not keep what it is given is no storage at all.
+    return storage.getItem(DEVICE_KEY_STORAGE) === minted ? minted : TAB_ID;
+  } catch {
+    return TAB_ID;
+  }
+}
+function browserStorage() {
+  try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
+}
+
 // Stamp applied to every org_state UPDATE and every public.jobs upsert.
 //
 // `updated_via: 'browser'` marks a DIRECT client write — the path Increment 1e

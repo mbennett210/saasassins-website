@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import Icon from './Icon';
+import { useT } from '../i18n/react';
 
 const ToastCtx = createContext(null);
 
@@ -9,6 +10,7 @@ const ToastCtx = createContext(null);
 const MAX_VISIBLE_TOASTS = 5;
 
 export function ToastProvider({ children }) {
+  const t = useT();
   const [toasts, setToasts] = useState([]);
   const nextId = useRef(1);
 
@@ -39,10 +41,10 @@ export function ToastProvider({ children }) {
     <ToastCtx.Provider value={api}>
       {children}
       <div className="toast-stack" role="status" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.variant}`}>
-            <span className="toast-msg">{t.message}</span>
-            <button type="button" className="btn-icon btn-icon-ghost" onClick={() => dismiss(t.id)} aria-label="Dismiss"><Icon name="x" size={14} /></button>
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`toast toast-${toast.variant}`}>
+            <span className="toast-msg">{toast.message}</span>
+            <button type="button" className="btn-icon btn-icon-ghost" onClick={() => dismiss(toast.id)} aria-label={t('common.dismiss')}><Icon name="x" size={14} /></button>
           </div>
         ))}
       </div>

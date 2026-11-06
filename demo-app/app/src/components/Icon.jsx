@@ -18,6 +18,7 @@ const paths = {
   settings: <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.991l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />,
   search:   <path d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />,
   plus:     <path d="M12 4.5v15m7.5-7.5h-15" />,
+  minus:    <path d="M19.5 12h-15" />,
   edit:     <path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />,
   trash:    <path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />,
   check:    <path d="M4.5 12.75l6 6 9-13.5" />,
@@ -36,7 +37,7 @@ const paths = {
   ),
   building: <path d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z" />,
   chart:    <path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />,
-  // Dollar ($) inside a circle — Sales group. A real filled glyph (not a
+  // Dollar ($) inside a circle — the Pipeline nav leaf. A real filled glyph (not a
   // stroked path) so it reads as a clean, even dollar sign. Centered at (12,12)
   // with text-anchor:middle + dominant-baseline:central; the circle is
   // concentric (r=9.5) to match the visual footprint of the other nav icons.
@@ -106,6 +107,14 @@ const paths = {
   dots:     <path d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM12.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM18.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />,
   star:     <path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />,
   moon:     <path d="M21.752 15.002A9.72 9.72 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />,
+  // The language switch (CS-193): a globe reads as "language" whatever language you read.
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c2.5 2.7 3.75 5.7 3.75 9s-1.25 6.3-3.75 9c-2.5-2.7-3.75-5.7-3.75-9S9.5 5.7 12 3z" />
+    </>
+  ),
   folder:   <path d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />,
   // Clipboard with a checklist — the Forms section.
   forms:    <path d="M9 12h6m-6 3.75h3M9 17.25h6M9 8.25h6M9 3.75h.008v.008H9V3.75zm0 0a1.5 1.5 0 00-1.5 1.5h-1.5A2.25 2.25 0 004.5 7.5v11.25A2.25 2.25 0 006.75 21h10.5a2.25 2.25 0 002.25-2.25V7.5a2.25 2.25 0 00-1.5-2.25h-1.5a1.5 1.5 0 00-1.5-1.5h-6zm6 0a1.5 1.5 0 01-1.5 1.5h-3A1.5 1.5 0 019 3.75" />,
@@ -116,6 +125,19 @@ const paths = {
   upload:   <path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 7.5m0 0L7.5 12m4.5-4.5v12" />,
   // Supply carton (open-topped box) — the Supplies section.
   box:      <path d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />,
+  // The public QR page's visitor actions (QR-23, QR-30; UI_RULES §174): a rating's two thumbs, and
+  // two of a report's choices — "needs cleaning" (a drop) and "something broken" (a wrench). Same
+  // outline family and stroke as the rest of the set.
+  thumbUp:  <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />,
+  thumbDown: <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10zM17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />,
+  droplet:  <path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0L12 2.69z" />,
+  wrench:   <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />,
+  // The manager view (UI_RULES §152, Matt's Account Manager Hub): Home's house, the clock of
+  // Shift Check-in and Hours Approval, and Inspections' shield — so the manager's rows and tiles
+  // stop sharing one check. Same outline family and stroke as the rest of the set.
+  home:     <path d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />,
+  clock:    <path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />,
+  shield:   <path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />,
   grip: (
     <>
       <circle cx="9" cy="6" r="1" fill="currentColor" stroke="none" />
@@ -126,11 +148,44 @@ const paths = {
       <circle cx="15" cy="18" r="1" fill="currentColor" stroke="none" />
     </>
   ),
+  // The phone's own buttons, drawn beside the Home Screen welcome's steps (components/InstallWelcome,
+  // UI_RULES §178) so a reader can match them on screen: the share square, Safari 27's page menu (three
+  // lines, shortening, as the iOS 27 simulator draws it), Android's ⋮, "Add to Home Screen"'s plus
+  // square, and open-elsewhere / copy for a browser inside another app.
+  share:    <path d="M8.25 8.25H7.5a2.25 2.25 0 00-2.25 2.25v8.25a2.25 2.25 0 002.25 2.25h9a2.25 2.25 0 002.25-2.25V10.5a2.25 2.25 0 00-2.25-2.25h-.75M12 15V3m0 0L8.25 6.75M12 3l3.75 3.75" />,
+  pageMenu: <path d="M4.5 7.5h15M4.5 12h11.25M4.5 16.5h7.5" />,
+  kebab: (
+    <>
+      <circle cx="12" cy="5.5" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="18.5" r="1.25" fill="currentColor" stroke="none" />
+    </>
+  ),
+  addSquare: <path d="M12 8.25v7.5M15.75 12h-7.5M6.75 3.75h10.5a3 3 0 013 3v10.5a3 3 0 01-3 3H6.75a3 3 0 01-3-3V6.75a3 3 0 013-3z" />,
+  external: <path d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />,
+  // The QR codes page's glyph (UI_RULES §183): three finder squares and the data dots.
+  qr: (
+    <>
+      <path d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+      <path d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" />
+    </>
+  ),
+  copy:     <path d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />,
 };
 
+// An icon's drawing sits in the middle of its 24-unit box, so it sits in the middle of whatever holds it
+// at every size (the menu's tiles and buttons, UI_RULES §182). These are drawn off it and are moved back
+// here, once, in their own units. Worked out by code from each icon's own shapes (the box round all its
+// shapes against the 24-unit box's middle; the stroke grows every side alike), never by eye: the
+// warning triangle sat 1.125 units high (0.75px in Report an issue's button), forms, mapPin and
+// messaging 0.375 low.
+const ICON_CENTER = { warning: [0, 1.125], forms: [0, -0.375], mapPin: [0, -0.375], messaging: [0, -0.375] };
+
 export default function Icon({ name, size = 20, strokeWidth = 2, className = '', ...rest }) {
-  const content = paths[name];
-  if (!content) return null;
+  const drawn = paths[name];
+  if (!drawn) return null;
+  const shift = ICON_CENTER[name];
+  const content = shift ? <g transform={`translate(${shift[0]} ${shift[1]})`}>{drawn}</g> : drawn;
   return (
     <svg
       width={size}

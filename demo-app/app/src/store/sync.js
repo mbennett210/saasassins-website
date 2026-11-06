@@ -10,21 +10,46 @@
 //     top — because the app is a reducer, near-simultaneous edits to different
 //     records both survive. Same-field edits are last-write-wins.
 import { supabase } from '../lib/supabaseClient';
-import { ACTIONS } from './reducer';
+import { ACTIONS, reducer } from './reducer';
 import { productionInitialState } from '../data/seed';
-import { persistJobsDelta, fetchAllJobs, fetchJobsWindow, fetchJobsSince, fetchJobDeletesSince, fetchJobDeletesByIds, nextJobsCursor, REAP_MARKER_ID, mergeFullJobs, maxRv, jobsInWindow, advanceBaseline, diffJobs } from './jobsSync';
+import {
+  persistJobsDelta, fetchJobsInRange, fetchSeriesMasters, fetchSeriesJobs, fetchClientJobs, fetchJobsByIds, fetchJobsHighWater,
+  fetchJobsSince, fetchJobDeletesSince, fetchJobDeletesByIds, nextJobsCursor, REAP_MARKER_ID, mergeFullJobs, maxRv, jobsInWindow,
+  advanceBaseline, diffJobs,
+} from './jobsSync';
 import jobTombstones from './jobTombstones';
 import { cacheDoc, cacheJobs, cacheQueue, cachePendingJobs, readCache } from './offlineCache';
 import { toSharedBlob, serializeSharedBlob, tableOwnedSliceKeys } from './tableSlices';
 import { canonicalJson } from '../lib/canonicalJson';
 import { resolveCurrentUserId } from './identity';
+import { isOfficeRole } from '../lib/roles';
 import { APP_BUILD, TAB_ID, writeStamp } from '../lib/appBuild';
-import { postOrgState, postSeedState, getStateView } from '../lib/stateApi';
+import { postOrgState, postSeedState, getStateView, getOwnJobsWindow } from '../lib/stateApi';
+import { jobsWindowBounds } from '../lib/jobsWindow';
 
 const ORG_ID =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_CLEANSPACE_ORG_ID) ||
   '00000000-0000-0000-0000-000000000001';
 const SAVE_DEBOUNCE_MS = 600;
+
+// ── CS-672: THE FIRST LOAD FAILS CLOSED ─────────────────────────────────────────────────────
+// A signed-in store starts on INITIAL_STATE, which is the DEMO's book (fictional customers,
+// schedule and pay, with the seed's Super Admin as "you"). With no offline cache on the device
+// (every first sign-in, and every sign-in after a sign-out wiped it) the only thing worth showing
+// is the server's copy, so until a read ANSWERS the store shows the boot screen and nothing else:
+//   · the first read gets BOOT_SLOW_MS before the loader says it is taking longer than usual;
+//   · a read that FAILS, or has no answer by BOOT_ATTEMPT_MS, shows "can't reach" and is tried
+//     again after a growing back-off (BOOT_RETRY_BASE_MS doubling to BOOT_RETRY_MAX_MS) — at once
+//     on the screen's Retry, the browser coming back online, or the app coming back into view;
+//   · an attempt that ran out of time keeps running: if its answer lands later it still boots the
+//     app, because a slow link (a ~3 MB record on a phone) must be able to finish;
+//   · start() settles only once a read answered, and never rejects over a failed one.
+// It used to wait 8 s, reject, and the store "failed open onto the seed".
+export const BOOT_SLOW_MS = 8000;
+export const BOOT_ATTEMPT_MS = 20000;
+export const BOOT_RETRY_BASE_MS = 2000;
+export const BOOT_RETRY_MAX_MS = 30000;
+const BOOT_STOPPED = Symbol('boot stopped');
 
 // ── sign-out flush hook ───────────────────────────────────────────────────────
 // AuthProvider.signOut() wipes the offline cache — which is also the last copy
@@ -61,16 +86,18 @@ export function unmarkSyncCacheWipeForSignOut() {
   try { activeMarkCacheWipe?.(false); } catch { /* ignore */ }
 }
 
-export function createSyncManager({ dispatch, getState, getPending, clearPending, setPending, userId, sessionEmail, claimOrgUserId = null, claimRole = null, onStatus, onJobsReady }) {
+export function createSyncManager({ dispatch, getState, getPending, clearPending, setPending, userId, sessionEmail, claimOrgUserId = null, claimRole = null, onStatus, onJobsReady, onProblem, onBoot }) {
   // CS-002 crew READ SPLIT. A non-office login (crew, or a roleless orphan) holds only a
   // SERVER-BUILT PROJECTION of the blob and can no longer read org_state directly once the
   // read-split RLS lands. It reads through GET /api/state/view, polls the open
   // org_state_signal for the version, keeps the org_state_signal realtime subscription, and
   // its writes go to /api/state/org-state where the server MERGES only allowlisted changes
-  // (never the posted projection, which would blank what it can't see). Office roles
-  // (owner/admin/manager) keep the direct read path unchanged. Mirrors the server's
-  // OFFICE_ROLES split (api/_lib/authz.js) so the read projection and the write merge agree.
-  const restrictedRead = claimRole !== 'owner' && claimRole !== 'admin' && claimRole !== 'manager';
+  // (never the posted projection, which would blank what it can't see). Office roles keep the
+  // direct read path unchanged. It IS the server's split: lib/roles isOfficeRole reads the same
+  // OFFICE_ROLES list api/_lib/authz.js serves the full blob to, so a new office tier (the supply
+  // manager, S131) can never read as crew here while the server serves it the full blob — this
+  // was a hand-kept owner/admin/manager list until then.
+  const restrictedRead = !isOfficeRole(claimRole);
   let baseVersion = 0;
   let lastWrittenVersion = -1; // suppress our own realtime echo
   // Content-guard for the blob write. Holds the JSON of the org_state blob (jobs
@@ -99,32 +126,40 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
   // has authoritatively fetched. CURSOR-OWNED-BY-FETCH — advanced only from a
   // fetch/poll, never from an unordered realtime patch (see jobsCursorPoll).
   let jobsCursor = 0;
-  // Gate the per-row mirror until hydrateJobsFromTable() has established the baseline.
-  // Without this, a save that races boot would diff the real jobs against an empty
-  // lastSyncedJobs and rewrite all ~5k rows (the migration-era churn we saw). The
-  // mirror simply waits one hydrate; the edit is picked up by the next diff.
+  // ── THE JOBS BASELINE: A WINDOW, THEN WHAT A SCREEN ASKS FOR (CS-676) ─────────────────
+  // jobsReady: the window of cleans (src/lib/jobsWindow.js, −45/+100 days) and every series
+  // master have loaded from the table and are the mirror baseline. Until then the per-row
+  // mirror waits (a save that raced the load would diff the live jobs against an empty
+  // baseline and rewrite the table — the migration-era churn) and the cursor poll waits.
+  // The app never loads the whole table: what a screen needs beyond the window it asks for
+  // (ensureJobsRange / ensureSeries / ensureClientJobs / ensureJobsByIds below), and those rows
+  // join state AND the baseline, so the diff stays exact. A whole-series edit needs every
+  // occurrence of ITS series (UPDATE_JOB_SERIES / DELETE_JOB_SERIES build their target sets
+  // from state.jobs), so its screen loads that series first — never the table.
+  // windowSnapshot: on a boot from the device's cache, the cached cleans painted before the
+  // server's answer; loadJobsBaseline merges the window onto them, keeping any edit, create
+  // or delete made in the gap (mergeFullJobs). jobsBaselineLoading guards re-entrancy (a boot
+  // and a refocus retry must not both run the merge).
   let jobsReady = false;
-  // Windowed boot: the app paints on a small recent window of jobs (fast first paint),
-  // then the COMPLETE set streams in behind it. jobsFullyHydrated flips true once the
-  // full set is merged in — it drives the Schedule TOP_UP gate (topping up a series
-  // against a partial set would duplicate the unseen tail) via onJobsReady. windowSnapshot
-  // holds the exact objects painted first, so the full-load merge can preserve any job
-  // edit/create/delete made during the window-only gap. jobsHydrating guards re-entrancy
-  // (a boot + a refocus retry must not both run the merge and mass-rewrite the table).
-  let jobsFullyHydrated = false;
-  let jobsHydrating = false;
-  // A single pending backfill-retry timer. completeJobsHydration used to give up
-  // after 5 rounds (~30s); on a chronically slow link (Lauren, ZA) that meant it
-  // never completed, jobsReady stayed false, and every schedule edit no-op'd in
-  // the mirror and was lost on refresh. We now retry indefinitely with capped
-  // backoff, but funnel every retry through THIS one handle so concurrent
-  // triggers (the backoff chain + resync()'s refocus/reconnect re-fire) can never
-  // stack multiple timers. Cleared on stop() so a replaced manager doesn't wake.
-  let hydrationRetryTimer = null;
-  // The sibling retry for hydrateJobsFromTable (the non-windowed fallback load) gets
-  // its OWN handle, not hydrationRetryTimer's: a resync can fire completeJobsHydration
-  // while this fallback's retry is still pending, and the two must not share a slot.
-  let tableHydrateRetryTimer = null;
+  let jobsBaselineLoading = false;
+  // ONE pending retry for a failed baseline load: retried indefinitely with a capped backoff
+  // (a slow link that can't finish the read in N tries would otherwise strand the schedule
+  // un-savable — Lauren, ZA, 2026-08-12), through this one handle so the backoff chain and
+  // resync()'s refocus/reconnect re-fire can never stack timers. Cleared on stop().
+  let baselineRetryTimer = null;
+  // What is loaded beyond single rows. `coverage`: half-open start_at stretches [from, to) in
+  // ms whose every clean is in state. `loadedSeries` / `loadedClients`: every clean of that
+  // series / customer is in state. Realtime and the cursor poll keep loaded rows current and
+  // bring new ones (a top-up another tab minted), so a loaded set stays whole. `askedIds`:
+  // ids asked for by id — after the ask, absent from state means gone, not "not loaded".
+  let coverage = [];
+  const loadedSeries = new Set();
+  const loadedClients = new Set();
+  const askedIds = new Set();
+  // Requests in flight, by what they ask for, so two screens asking for the same thing share one.
+  const jobsInflight = new Map();
+  // Callers of ensure* waiting for the baseline: nothing joins state before it exists.
+  let baselineWaiters = [];
   // Unmirrored jobs carried over from the PREVIOUS session's cache (see
   // cachePendingJobs). Stashed by bootFromCache, consumed once by
   // recoverCachedPendingJobs after the authoritative set lands.
@@ -142,8 +177,26 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
   // clearCache() just destroyed on a signed-out device.
   let persistAbandoned = false;
   let windowSnapshot = null;
-  const signalJobsReady = () => { jobsFullyHydrated = true; try { onJobsReady?.(); } catch { /* ignore */ } };
+  // The baseline landed: wake the ensure* callers waiting on it and tell the store (the UI's
+  // useJobsHydrated: the schedule can be edited; and its epoch, which makes a screen ask again
+  // for what it had loaded when a reload of the baseline dropped it).
+  const signalJobsReady = () => {
+    const waiters = baselineWaiters;
+    baselineWaiters = [];
+    for (const w of waiters) { try { w(); } catch { /* a waiter must never break the load */ } }
+    try { onJobsReady?.(); } catch { /* ignore */ }
+  };
   let started = false;
+  // CS-672: true once the first load landed (from the device's cache or the server). Before it the
+  // store renders the boot screen only, so nothing can have been edited — and nothing is saved.
+  let loaded = false;
+  // While a first read waits on its back-off: `bootRetryNow` tries it again at once (the boot
+  // screen's Retry), `bootStop` ends the wait (stop()). Null otherwise.
+  let bootRetryNow = null;
+  let bootStop = null;
+  // The boot's phase, for the boot screen (store/index.jsx → components/BootScreen):
+  //   { phase: 'loading' } · { phase: 'slow' } · { phase: 'unreachable', retryAt, retrying }
+  const reportBoot = (b) => { if (!started) return; try { onBoot?.(b); } catch { /* a report must never break the boot */ } };
   let saving = false;
   let dirty = false;
   // A peer-save signal that arrived while a flush was in flight. The handler
@@ -161,6 +214,9 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
   let jobsChannel = null;  // B1 Stage 2: public.jobs realtime (per-row job changes)
   let currentStatus = 'synced';
   const setStatus = (s) => { currentStatus = s; try { onStatus?.(s); } catch { /* ignore */ } };
+  // Something the person must be TOLD about a save, not merely shown as a status: changes the
+  // server refused (CS-008). The store turns it into a blocking message (SyncProblemDialog).
+  const reportProblem = (p) => { try { onProblem?.(p); } catch { /* a report must never break a save */ } };
 
   // ── offline cache (Phase 2) ─────────────────────────────────────────────────
   // Mirror the last-known-good workspace into IndexedDB so a boot during a
@@ -172,6 +228,41 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
   let lastJobsCacheAt = 0;
   let lastCachedJobsRef = null;
   let offlineSince = 0;      // >0 while saves are failing — used to back off retries
+  // ── CS-009: A FAILED SAVE IS RETRIED, LATER, AND SAID ─────────────────────────────────
+  // How many saves in a row have failed: the retry waits 5 s, then 10, 20, 40, and at most
+  // 60 s (SAVE_RETRY_*), reset by a save that lands or the browser coming back online.
+  // Before, a failed save "fell back" to a direct write the database has refused since
+  // Increment 1e, read the empty answer as a conflict, and saved again in 600 ms — for ever,
+  // under "Saving…". The edits stay pending (and in the offline cache) the whole time.
+  let failStreak = 0;
+  let tooLargeReported = false; // the 413 message is shown once per run of failures
+  const SAVE_RETRY_BASE_MS = 5000;
+  const SAVE_RETRY_MAX_MS = 60000;
+  const retryDelay = () => Math.min(SAVE_RETRY_MAX_MS, SAVE_RETRY_BASE_MS * 2 ** Math.max(0, failStreak - 1));
+  // The status a failure shows: 'offline' when the server could not be reached at all (the
+  // edits are safe on the device and go when the signal does), 'error' when the server
+  // answered and did not accept the save (not signed in, a server error, over the size limit)
+  // — something a person may need to act on, so it must not read as a dead signal.
+  function saveFailed(r) {
+    dirty = true;
+    failStreak += 1;
+    if (!offlineSince) offlineSince = Date.now();
+    setStatus(r && r.unreachable ? 'offline' : 'error');
+    if (r && r.error) console.warn(`[sync] save not accepted (${r.status || 'no answer'}): ${r.error}`);
+    if (r && r.tooLarge && !tooLargeReported) {
+      tooLargeReported = true;
+      reportProblem({ kind: 'tooLarge', error: r.error || null, field: r.field || null, at: Date.now() });
+    }
+    persistCache({ force: true });
+  }
+  function saveSucceeded() {
+    offlineSince = 0;
+    failStreak = 0;
+    tooLargeReported = false;
+  }
+  // What the last failed jobs delta was (persistJobsDelta's error `kind`), so a mirror failure
+  // shows the same 'offline' / 'error' split as a blob save.
+  let lastMirrorFailure = null;
   function persistCache({ force = false } = {}) {
     if (persistAbandoned) return; // sign-out wipe begun — never repopulate it
     const now = Date.now();
@@ -211,12 +302,10 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     }
     // Jobs ref only changes when jobs actually changed (reducer preserves the array
     // ref otherwise), so this re-caches only when needed — and what gets WRITTEN is
-    // now the boot window, not the full ~19k-row set (see cacheJobsWindowed).
-    // jobsFullyHydrated gate: during a windowed boot the in-memory array is PARTIAL,
-    // and caching it would poison the next offline boot (bootFromCache treats the
-    // cache as the complete set and un-gates TOP_UP → duplicate occurrences). The
-    // cache invariant is: the jobs cache only ever holds a COMPLETE set.
-    if (jobsFullyHydrated && st.jobs !== lastCachedJobsRef && (force || now - lastJobsCacheAt > 10000)) {
+    // the window's cleans, never the rows a screen fetched beyond it (see cacheJobsWindowed).
+    // jobsReady gate: before the baseline lands, state.jobs is the previous session's cache
+    // (or nothing) — re-caching it would stamp stale rows as fresh.
+    if (jobsReady && st.jobs !== lastCachedJobsRef && (force || now - lastJobsCacheAt > 10000)) {
       lastJobsCacheAt = now;
       lastCachedJobsRef = st.jobs;
       cacheJobsWindowed(st.jobs, at);
@@ -319,137 +408,251 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     return typeof data?.version === 'number' ? data.version : null;
   }
 
-  // B1 Stage 2: jobs live in their own public.jobs table, not the org_state blob.
-  // After hydrating the (non-jobs) document, replace the jobs array with the table's
-  // authoritative copy, and set the mirror baseline (lastSyncedJobs) from it.
+  // B1 Stage 2: jobs live in their own public.jobs table, not the org_state blob. After the
+  // (non-jobs) document, the jobs BASELINE loads from the table: the cleans in the window and
+  // every series master — never the whole table (CS-676; see the note at jobsReady above).
   //
-  // 🔴 A FAILED READ MUST NOT ARM THE MIRROR. This used to set `jobsReady = true` and
-  // call signalJobsReady() UNCONDITIONALLY, outside the try/catch, on the theory that the
-  // blob's jobs were a usable fallback. That stopped being true when `jobs` became a
-  // STRIPPED slice (store/tableSlices.js): toSharedBlob writes `shared.jobs = []`, so
-  // `blobJobs` is ALWAYS empty and the "fallback" was a baseline of zero rows.
+  // 🔴 A FAILED READ MUST NOT ARM THE MIRROR. jobsReady is set on the success path only, and a
+  // failure retries (indefinitely, capped backoff, one timer) with the mirror gated. Arming on
+  // anything but the table's answer was a live incident (3f22431): `jobs` is a STRIPPED slice of
+  // the blob (store/tableSlices.js), so the blob's copy is always EMPTY, and an empty baseline
+  //   · un-gates jobsCursorPoll from cursor 0 — the whole table back into state, never into
+  //     the baseline;
+  //   · makes the next save's diff count every live row as changed, re-upserting the table
+  //     into the realtime publication (a per-row event to every connected client);
+  //   · un-gates TOP_UP, which against a partial set mints duplicate occurrences.
+  // Failing closed costs nothing the failure had not already cost: mirrorJobs no-ops and the
+  // cursor poll waits while jobsReady is false.
   //
-  // The consequences of arming on an empty baseline compound:
-  //   · jobsReady=true un-gates jobsCursorPoll, which drains `row_version > 0` from
-  //     cursor 0 — the whole table — back into state.jobs via PATCH_JOBS, which never
-  //     advances lastSyncedJobs.
-  //   · the next save's diffJobs compares ~19k live rows against [] BY REFERENCE, so
-  //     every row counts as changed and the entire table is re-upserted. public.jobs is
-  //     in the supabase_realtime publication, so that is ~19k per-row events fanned to
-  //     every connected client — on a meter already recorded at 191% of plan. This is
-  //     precisely the fan-out the whole SCALE remediation exists to remove.
-  //   · signalJobsReady() also un-gates the Schedule TOP_UP sweep, whose stated purpose
-  //     is that topping up a series against a PARTIAL set duplicates the unseen tail.
-  //     An empty set is maximally partial.
-  //   · and because signalJobsReady() sets jobsFullyHydrated, resync()'s
-  //     `if (!jobsFullyHydrated) completeJobsHydration()` recovery could never fire, so
-  //     nothing retried for the life of the page.
+  // THE WINDOW is src/lib/jobsWindow.js (−45/+100 days, past the 90-day materialised horizon).
+  // An office tab reads it straight from the table (keyset pages, jobsSync fetchJobsInRange)
+  // plus every series MASTER (fetchSeriesMasters): TOP_UP mints from the master, which for a
+  // year-old series is a year back. A crew tab (restrictedRead) asks the server for its own
+  // window of cleans instead (GET /api/state/view?part=jobs, CS-677): the server reads them by
+  // the GIN index on the crew list as the service role, where the same read through the
+  // browser runs under RLS, whose role-or-crew policy no index can serve — it filtered every
+  // clean in the window to find one cleaner's ~100. Crew never top up, so no masters.
   //
-  // The SIBLING catch for the identical hazard — completeJobsHydration below — already
-  // does the right thing: "Keep the mirror gated (a partial baseline would corrupt the
-  // table) and retry with backoff." This one was the outlier. Now it matches.
-  //
-  // Failing closed costs nothing the failure had not already cost: mirrorJobs no-ops and
-  // jobsCursorPoll returns early while jobsReady is false, which is exactly the state a
-  // normal windowed boot occupies until its backfill lands. The crew see the same empty
-  // schedule either way — the only difference is whether the tab rewrites the table.
-  async function hydrateJobsFromTable(blobJobs, attempt = 0) {
-    // Reentrancy + mutual exclusion with completeJobsHydration. Both establish the
-    // authoritative baseline, and a resync() (refocus/reconnect) can fire completeJobsHydration
-    // while THIS fallback loop is mid-flight — so without a shared flag the indefinite retries
-    // become TWO concurrent unbounded full-table-read loops on the exact slow link this targets,
-    // and a late round can clobber the peer's (orphan-filtered) result and resurrect deleted
-    // accounts' jobs. Participate in jobsHydrating and honor the same entry guard so the two
-    // chains strictly serialize; whichever is running holds the flag and the other bails (the
-    // bailing one drops its retry, handing hydration to the live chain — see the catch below).
-    if (!started || jobsFullyHydrated || jobsHydrating) return getState().jobs;
-    jobsHydrating = true;
+  // THE CURSOR FLOOR is the table's high-water row_version read BEFORE the window (office), or
+  // the server's (crew, read before its own read): a row written while the window's pages are
+  // in flight is then above the floor and the first poll fetches it. A floor taken from the rows
+  // read could pass a row written between its page and a later one.
+  async function loadJobsBaseline(attempt = 0) {
+    if (!started || jobsReady || jobsBaselineLoading) return;
+    jobsBaselineLoading = true;
     try {
-      const tableJobs = await fetchAllJobs();
-      // Re-check after the await: a peer hydrate may have completed (jobsFullyHydrated), or
-      // stop() landed, while this read was in flight. Do NOT clobber the baseline or dispatch
-      // the UNFILTERED table set into a settled/replaced manager — that is the orphan-
-      // resurrection path (completeJobsHydration filters orphans; this read does not).
-      if (!started || jobsFullyHydrated) return getState().jobs;
-      dispatch({ type: ACTIONS.SET_JOBS, jobs: tableJobs });
-      lastSyncedJobs = tableJobs;
-      jobsCursor = maxRv(tableJobs); // cursor floor: everything we just fetched
-      jobsReady = true;  // baseline established — ONLY on the authoritative read
-      signalJobsReady(); // full set present — TOP_UP may run
-      await recoverCachedPendingJobs(tableJobs); // previous session's unmirrored rows
-      return tableJobs;
+      const { fromMs, toMs } = jobsWindowBounds();
+      let all;
+      let floor;
+      let span = { from: fromMs, to: toMs };
+      if (restrictedRead) {
+        const own = await getOwnJobsWindow();
+        all = own.jobs;
+        floor = own.highWater;
+        span = { from: own.fromMs, to: own.toMs };
+      } else {
+        floor = await fetchJobsHighWater();
+        const [windowJobs, masters] = await Promise.all([fetchJobsInRange(fromMs, toMs), fetchSeriesMasters()]);
+        const seen = new Set();
+        all = [];
+        for (const j of [...windowJobs, ...masters]) if (j && j.id && !seen.has(j.id)) { seen.add(j.id); all.push(j); }
+      }
+      // stop() landed (sign-out / remount), or a peer load won, while this was reading: abandon.
+      if (!started || jobsReady) return;
+      // 🔴 DROP ORPHANS BEFORE MERGING. DELETE_CLIENT cascades to jobs with
+      // `state.jobs.filter(j => j.clientId !== id)` — only the LOADED cleans — so a deleted
+      // account's other cleans stay in the table, and a later read would bring them back onto
+      // the schedule. Filtering on "the client no longer exists" makes that an INVARIANT for
+      // every orphaning path. Two guards: an EMPTY client list classifies nothing (absence of
+      // evidence is not proof every account was deleted — the empty-baseline lesson of
+      // 3f22431), and the baseline is the FILTERED set, so the mirror never sees the orphans
+      // as removed and bulk-deletes them on a client-side inference (they linger in the table,
+      // invisible; reclaiming them is a data-op).
+      const liveClientIds = new Set((getState().clients || []).map((c) => c.id));
+      const authoritative = liveClientIds.size === 0
+        ? all
+        : all.filter((j) => !j.clientId || liveClientIds.has(j.clientId));
+      if (authoritative.length !== all.length) {
+        console.warn(`[sync] hiding ${all.length - authoritative.length} job(s) whose account no longer exists locally`);
+      }
+      // Merge with what was painted before the answer (a boot from the device's cache): edits,
+      // creates and deletes made in the gap win over the table's copy (pure, unit-tested —
+      // mergeFullJobs). With nothing painted, the merge is the table's answer.
+      const { merged, changed, removed } = mergeFullJobs(windowSnapshot, getState().jobs, authoritative);
+      dispatch({ type: ACTIONS.SET_JOBS, jobs: merged });
+      // The baseline is the PRISTINE table answer, so the next save mirrors exactly the gap's
+      // edits (changed → upserts, removed → deletes) and nothing else.
+      lastSyncedJobs = authoritative;
+      jobsCursor = floor;
+      coverage = [{ from: span.from, to: span.to }];
+      jobsReady = true; // ONLY here, on the table's answer
+      windowSnapshot = null;
+      cacheJobsWindowed(merged, new Date().toISOString());
+      lastCachedJobsRef = merged;
+      lastJobsCacheAt = Date.now();
+      signalJobsReady();
+      if (changed.length || removed.length) scheduleSave(); // flush the gap's edits to the table
+      await recoverCachedPendingJobs(authoritative); // previous session's unmirrored rows (schedules its own save)
     } catch (e) {
-      console.warn(`[sync] jobs table read failed (attempt ${attempt + 1}):`, e?.message || e);
-      // DISPLAY-ONLY fallback. A pre-strip blob row can still carry a jobs array, and
-      // showing it beats showing nothing — but it is NEVER made the mirror baseline.
-      // That distinction is the whole fix: the old code conflated "something to paint"
-      // with "a baseline safe to diff against", and a stale or empty array is fine for
-      // the former and catastrophic for the latter.
-      const fallback = Array.isArray(blobJobs) && blobJobs.length ? blobJobs : null;
-      if (fallback && attempt === 0) dispatch({ type: ACTIONS.SET_JOBS, jobs: fallback });
-      // No baseline, so no mirroring, no cursor poll, no TOP_UP — and jobsFullyHydrated
-      // stays false so resync() on refocus/reconnect retries this too. Retry INDEFINITELY
-      // with capped backoff (was 5-and-out): a slow link that can't finish the read leaves
-      // the mirror gated forever, so giving up strands the schedule un-savable — the same
-      // wedge completeJobsHydration fixes. One timer only (see tableHydrateRetryTimer).
-      if (!tableHydrateRetryTimer && started && !jobsFullyHydrated) {
+      console.warn(`[sync] jobs window read failed (attempt ${attempt + 1}):`, e?.message || e);
+      if (!baselineRetryTimer && started && !jobsReady) {
         const delay = Math.min(2000 * (attempt + 1), 30000);
-        tableHydrateRetryTimer = setTimeout(() => {
-          tableHydrateRetryTimer = null;
-          hydrateJobsFromTable(blobJobs, attempt + 1);
+        baselineRetryTimer = setTimeout(() => {
+          baselineRetryTimer = null;
+          loadJobsBaseline(attempt + 1);
         }, delay);
       }
-      const live = getState().jobs;
-      return Array.isArray(live) ? live : [];
     } finally {
-      jobsHydrating = false;
+      jobsBaselineLoading = false;
     }
   }
 
-  // The rolling-year jobs table is tens of thousands of occurrences (~50 MB) — far more
-  // than boot needs to paint. Load a small recent WINDOW first so the app goes interactive
-  // in a fraction of the time (this is what un-freezes admins on mobile), then stream the
-  // complete set in behind it. Returns the window jobs; the full backfill runs detached.
-  function bootWindowRange() {
-    const day = 86400000;
-    const now = Date.now();
-    const isoDate = (t) => new Date(t).toISOString().slice(0, 10);
-    // Loose ± bounds — only what to paint FIRST; the full set backfills exact membership
-    // seconds later. Wide enough for today's Schedule, My Day, the Dashboard's 30-day
-    // tiles, and near-term calendar navigation with no visible gap.
-    return { from: isoDate(now - 45 * day), to: isoDate(now + 100 * day) };
+  // Load the baseline again, mid-session: the cursor poll met the delete feed's REAP MARKER
+  // (this tab slept past the 30-day tombstone reap, so deletes may be missing and nothing
+  // incremental can recover them). The rows as this tab last confirmed them become the
+  // snapshot, so any local change not saved yet survives the merge, and everything fetched
+  // beyond the window is let go: the screens that need it ask again (the store's jobs epoch).
+  function reloadJobsBaseline() {
+    if (!started || !jobsReady || jobsBaselineLoading) return Promise.resolve();
+    jobsReady = false;
+    windowSnapshot = lastSyncedJobs;
+    coverage = [];
+    loadedSeries.clear();
+    loadedClients.clear();
+    askedIds.clear();
+    return loadJobsBaseline();
   }
 
-  async function hydrateJobsWindowed(blobJobs) {
-    let windowJobs;
-    try {
-      const { from, to } = bootWindowRange();
-      windowJobs = await fetchJobsWindow(from, to);
-    } catch (e) {
-      // Window read failed → fall back to the original full, blocking load so the app
-      // still boots with data and the mirror baseline is correct.
-      console.warn('[sync] job window read failed. Full load:', e?.message || e);
-      return hydrateJobsFromTable(blobJobs);
-    }
-    dispatch({ type: ACTIONS.SET_JOBS, jobs: windowJobs });
-    windowSnapshot = windowJobs;
-    // jobsReady stays FALSE: windowJobs is partial and must never become the mirror
-    // baseline (the next save would delete every out-of-window row). completeJobsHydration()
-    // flips it once the full set is merged in. Detached — the app is already interactive.
-    completeJobsHydration();
-    return windowJobs;
+  // ── ON DEMAND: what a screen needs beyond the window (CS-676) ───────────────────────────
+  // Each ensure* resolves once what it asks for is in state, and throws when it could not be
+  // read — or when this manager stopped or reloaded its baseline meanwhile (the rows would
+  // land in a store that no longer matches); the screen asks again on the store's next jobs
+  // epoch.
+  const NOT_LOADED = 'jobs not loaded';
+  const whenJobsReady = async () => {
+    if (!jobsReady) await new Promise((resolve) => { baselineWaiters.push(resolve); });
+    if (!started || !jobsReady) throw new Error(NOT_LOADED);
+  };
+  const stillCurrent = () => { if (!started || !jobsReady) throw new Error(NOT_LOADED); };
+  // One request per distinct ask: two screens wanting the same range or series share it.
+  function once(key, run) {
+    const cur = jobsInflight.get(key);
+    if (cur) return cur;
+    const p = (async () => { try { return await run(); } finally { jobsInflight.delete(key); } })();
+    jobsInflight.set(key, p);
+    return p;
   }
+  // [from, to) minus what is loaded: the gaps a range request still has to read.
+  function uncovered(from, to) {
+    let gaps = [{ from, to }];
+    for (const c of coverage) {
+      const next = [];
+      for (const g of gaps) {
+        if (c.to <= g.from || c.from >= g.to) { next.push(g); continue; }
+        if (c.from > g.from) next.push({ from: g.from, to: c.from });
+        if (c.to < g.to) next.push({ from: c.to, to: g.to });
+      }
+      gaps = next;
+    }
+    return gaps.filter((g) => g.to > g.from);
+  }
+  function addCoverage(from, to) {
+    const all = [...coverage, { from, to }].sort((a, b) => a.from - b.from);
+    const out = [];
+    for (const c of all) {
+      const last = out[out.length - 1];
+      if (last && c.from <= last.to) last.to = Math.max(last.to, c.to);
+      else out.push({ ...c });
+    }
+    coverage = out;
+  }
+  // Rows a request brought that this tab does not hold join state AND the baseline: they are
+  // the table's own copy, so the next save must not send them back (the ping-pong loop). It
+  // never overwrites: a row the tab holds may carry an edit not saved yet, and a row in the
+  // baseline but not in state is a delete not saved yet — both skipped; realtime and the
+  // cursor poll keep held rows current. Orphans (their customer is gone) are dropped as at
+  // the baseline load.
+  function adoptFetchedJobs(rows) {
+    const st = getState();
+    const held = new Set((st.jobs || []).map((j) => j && j.id));
+    const base = new Set(lastSyncedJobs.map((j) => j && j.id));
+    const liveClientIds = new Set((st.clients || []).map((c) => c.id));
+    const fresh = (rows || []).filter((j) => j && j.id && !held.has(j.id) && !base.has(j.id)
+      && (!j.clientId || liveClientIds.size === 0 || liveClientIds.has(j.clientId)));
+    if (!fresh.length) return 0;
+    dispatch({ type: ACTIONS.PATCH_JOBS, upserts: fresh, deletes: [] });
+    advanceJobsBaseline(fresh, []);
+    return fresh.length;
+  }
+  // Every clean that starts in [fromMs, toMs): a past week on the Schedule, a report's day,
+  // the days a time-off booking covers. Resolves once they are in state; throws when the read
+  // fails (the screen says so and can ask again).
+  async function ensureJobsRange(fromMs, toMs) {
+    const from = Number(fromMs);
+    const to = Number(toMs);
+    if (!(to > from)) return;
+    await whenJobsReady();
+    const gaps = uncovered(from, to);
+    await Promise.all(gaps.map((g) => once(`range:${g.from}:${g.to}`, async () => {
+      const rows = await fetchJobsInRange(g.from, g.to);
+      stillCurrent();
+      adoptFetchedJobs(rows);
+      addCoverage(g.from, g.to);
+    })));
+  }
+  // Every occurrence of one series, wherever it falls — what a whole-series edit or delete needs.
+  async function ensureSeries(seriesId) {
+    if (!seriesId) return;
+    await whenJobsReady();
+    if (loadedSeries.has(seriesId)) return;
+    await once(`series:${seriesId}`, async () => {
+      const rows = await fetchSeriesJobs(seriesId);
+      stillCurrent();
+      adoptFetchedJobs(rows);
+      loadedSeries.add(seriesId);
+    });
+  }
+  // Every clean of one customer — the customer page's history.
+  async function ensureClientJobs(clientId) {
+    if (!clientId) return;
+    await whenJobsReady();
+    if (loadedClients.has(clientId)) return;
+    await once(`client:${clientId}`, async () => {
+      const rows = await fetchClientJobs(clientId);
+      stillCurrent();
+      adoptFetchedJobs(rows);
+      loadedClients.add(clientId);
+    });
+  }
+  // These cleans by id (a deep link, a notification's clean). Afterwards an id still absent
+  // from state is GONE (deleted), not merely outside the window.
+  async function ensureJobsByIds(ids) {
+    await whenJobsReady();
+    const held = new Set((getState().jobs || []).map((j) => j && j.id));
+    const want = [...new Set((ids || []).filter((id) => typeof id === 'string' && id && !held.has(id) && !askedIds.has(id)))].sort();
+    if (!want.length) return;
+    await once(`ids:${want.join(',')}`, async () => {
+      const rows = await fetchJobsByIds(want);
+      stillCurrent();
+      adoptFetchedJobs(rows);
+      for (const id of want) askedIds.add(id);
+    });
+  }
+  const isRangeLoaded = (fromMs, toMs) => jobsReady && uncovered(Number(fromMs), Number(toMs)).length === 0;
+  const isSeriesLoaded = (seriesId) => jobsReady && (!seriesId || loadedSeries.has(seriesId));
+  const isClientLoaded = (clientId) => jobsReady && (!clientId || loadedClients.has(clientId));
 
   // Re-apply unmirrored jobs carried over from the previous session's cache, once
-  // the authoritative table set has landed (called from both hydration success
-  // paths). CONSERVATIVE by construction — this recovers CREATES only:
+  // the jobs baseline has landed (loadJobsBaseline's success path). CONSERVATIVE by
+  // construction — this recovers CREATES only:
   //   · only rows the table does NOT have. An id the table knows means the
   //     mirror won or a peer wrote newer — never clobber that. (Deliberate
   //     limitation: an unmirrored EDIT of an existing row, and an unmirrored
   //     DELETE, are NOT recovered — distinguishing "my edit is newer" from "a
   //     peer's write is newer" isn't decidable from a cached copy, so we take
   //     the table's answer. The lost-series class — creates — is what this
-  //     exists for.)
+  //     exists for.) The baseline holds only the window, so a candidate it lacks is
+  //     looked up by id: a row outside the window that the table has is the table's.
   //   · 🔴 rows whose id is TOMBSTONED in public.job_deletes are dropped. The
   //     in-memory jobTombstones module is EMPTY on a fresh page load, so the
   //     reducer's guard alone cannot veto a row a peer deleted while this tab
@@ -481,15 +684,19 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     const candidates = rows.filter((j) => j && j.id && !have.has(j.id)
       && (!j.clientId || liveClients.size === 0 || liveClients.has(j.clientId)));
     if (!candidates.length) { clearRecord(); return; }
-    const tombs = await fetchJobDeletesByIds(candidates.map((j) => j.id));
-    if (!started || persistAbandoned || jobsFullyHydrated !== true) { cachedPendingJobsRows = rows; return; }
+    // Two lookups, both by id: which candidates the table HAS (outside the window), and
+    // which it deleted. Either failing leaves the answer unknown — see below.
+    let inTable = null;
+    try { inTable = new Set((await fetchJobsByIds(candidates.map((j) => j.id))).map((j) => j.id)); } catch { inTable = null; }
+    const tombs = inTable ? await fetchJobDeletesByIds(candidates.map((j) => j.id)) : null;
+    if (!started || persistAbandoned || jobsReady !== true) { cachedPendingJobsRows = rows; return; }
     if (tombs === null) {
       // Unknown — do NOT recover blind. Keep the stash + record for a retry.
-      console.warn('[sync] pending-jobs recovery deferred: tombstone lookup unavailable');
+      console.warn('[sync] pending-jobs recovery deferred: the table could not be asked');
       cachedPendingJobsRows = rows;
       return;
     }
-    const recovered = candidates.filter((j) => !tombs.has(j.id));
+    const recovered = candidates.filter((j) => !tombs.has(j.id) && !inTable.has(j.id));
     for (const [id, rv] of tombs) jobTombstones.record(id, rv); // seed the in-memory guard too
     if (!recovered.length) { clearRecord(); return; }
     // Keep the recovered rows DURABLE until their mirror confirms: re-write the
@@ -509,122 +716,39 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     }
   }
 
-  async function completeJobsHydration(attempt = 0) {
-    // started guard: a stop() (sign-out / manager remount) must abandon a detached
-    // backfill — a late completion would dispatch into and signal a manager that has
-    // been replaced. The replacement manager runs its own windowed boot + backfill.
-    if (!started || jobsFullyHydrated || jobsHydrating) return;
-    jobsHydrating = true;
-    try {
-      const all = await fetchAllJobs();
-      if (!started) return; // stopped while fetching — abandon, don't dispatch
-      // Merge the authoritative table set with any job edit/create/delete the user made
-      // during the window-only gap (pure, unit-tested — see mergeFullJobs in jobsSync.js).
-      // 🔴 DROP ORPHANS BEFORE MERGING. DELETE_CLIENT cascades to jobs with
-      // `state.jobs.filter(j => j.clientId !== id)` — but since E6 that array is only the
-      // WINDOW, so deleting an account during the windowed phase removes its in-window
-      // jobs and leaves the rest. Those out-of-window rows were never in windowSnapshot,
-      // so mergeFullJobs cannot classify them as locally-removed: they are merely absent,
-      // the authoritative set still has them, and the merge RESURRECTS them. The account
-      // is gone from the UI while its jobs come back onto the schedule.
-      //
-      // Filtering on "the client no longer exists" fixes it as an INVARIANT rather than a
-      // special case, so any orphaning path is covered, not just DELETE_CLIENT. Safe
-      // because clients live in the blob (never windowed) and the blob is fully hydrated
-      // before this runs — and jobs with no clientId are left alone.
-      // ⚠️ AND THIS FILTER ITSELF MUST NOT DISENGAGE-OR-OVERREACH. Two guards:
-      //
-      //   1. Skip entirely when `clients` is empty. An empty client list would classify
-      //      EVERY job as an orphan. Clients should always be hydrated by now, but "should
-      //      be" is exactly the assumption behind the empty-baseline bug fixed in
-      //      3f22431 — so absence of evidence is treated as no evidence, not as proof
-      //      that every account was deleted.
-      //   2. The baseline below is set to the FILTERED set, deliberately. Setting it to
-      //      `all` would make the next mirror pass see the orphans as removed and DELETE
-      //      those rows from public.jobs. That is arguably the correct end state, but it
-      //      is an irreversible bulk delete triggered by a client-side inference, which
-      //      is not a call this path should make on its own. The rows linger in the table,
-      //      invisible locally; reclaiming them is logged in LOOP_REVIEW as a data-op.
-      const liveClientIds = new Set((getState().clients || []).map((c) => c.id));
-      const authoritative = liveClientIds.size === 0
-        ? all
-        : all.filter((j) => !j.clientId || liveClientIds.has(j.clientId));
-      if (authoritative.length !== all.length) {
-        console.warn(`[sync] hiding ${all.length - authoritative.length} job(s) whose account no longer exists locally`);
-      }
-      const { merged, changed, removed } = mergeFullJobs(windowSnapshot, getState().jobs, authoritative);
-      dispatch({ type: ACTIONS.SET_JOBS, jobs: merged });
-      // Baseline is the PRISTINE table snapshot, so the next save mirrors exactly the gap
-      // divergence (changed → upserts, removed → deletes) and rewrites nothing else.
-      lastSyncedJobs = authoritative; // see guard 2 above — never `all`, or orphans get bulk-deleted
-      jobsCursor = maxRv(all); // cursor floor from the REAL read, so nothing is re-fetched
-      jobsReady = true;
-      windowSnapshot = null;
-      cacheJobsWindowed(merged, new Date().toISOString());
-      lastCachedJobsRef = merged;
-      lastJobsCacheAt = Date.now();
-      signalJobsReady();
-      if (changed.length || removed.length) scheduleSave(); // flush any gap edits to the table
-      await recoverCachedPendingJobs(authoritative); // previous session's unmirrored rows (schedules its own save)
-    } catch (e) {
-      console.warn(`[sync] full jobs backfill failed (attempt ${attempt + 1}):`, e?.message || e);
-      // Keep the mirror gated (a partial baseline would corrupt the table) and retry with
-      // capped backoff — INDEFINITELY, not 5-and-out. A manager whose backfill can't finish
-      // has a schedule that silently won't save (mirrorJobs no-ops while !jobsReady), so
-      // giving up strands them there; better to keep trying every ≤30s until the link
-      // recovers or the tab closes. The entry guard (jobsFullyHydrated) stops the chain the
-      // instant a round succeeds. One timer only (see hydrationRetryTimer): resync() may also
-      // re-fire completeJobsHydration on refocus/reconnect, and we must not stack chains.
-      if (!hydrationRetryTimer && started && !jobsFullyHydrated) {
-        const delay = Math.min(2000 * (attempt + 1), 30000);
-        hydrationRetryTimer = setTimeout(() => {
-          hydrationRetryTimer = null;
-          completeJobsHydration(attempt + 1);
-        }, delay);
-      }
-    } finally {
-      jobsHydrating = false;
-    }
-  }
-
   // Prime the offline cache directly from freshly-loaded values. We can't use
   // persistCache() on the load path: getState() reads stateRef, which lags a
   // just-dispatched HYDRATE/SET_JOBS by a render, so it would cache a stale
   // (empty) jobs array. These are the authoritative values we just fetched.
-  function primeCache(state, version, jobs) {
+  function primeCache(state, version) {
+    // A first load that lands after a sign-out began (its boot screen offers Sign out) must not
+    // write the cache that sign-out just wiped — the same law as persistCache.
+    if (persistAbandoned) return;
     const at = new Date().toISOString();
     cacheDoc(state, version, at);     // cacheDoc strips jobs + currentUserId itself
     cacheQueue([], at);
     lastDocCacheAt = Date.now();
-    // Same complete-set cache invariant as persistCache: after a windowed boot `jobs`
-    // is only the painted window — never cache it (a prior session's full cache, if
-    // any, stays valid; completeJobsHydration writes the fresh full set when it lands).
-    if (jobsFullyHydrated) {
-      cacheJobsWindowed(jobs, at);
-      lastCachedJobsRef = jobs;
-      lastJobsCacheAt = Date.now();
-    }
+    // The jobs are cached by loadJobsBaseline when the window lands (cacheJobsWindowed).
   }
 
-  // Phase 2: boot from the IndexedDB cache when the backend is unreachable, so a
-  // signed-in user gets their REAL workspace during an outage instead of a blank
-  // seed. Any pending (unsaved) edits are restored so they flush on reconnect.
-  // Write only the boot window to IndexedDB (SCALE-C14 / §8 G4). cacheJobs is a
-  // main-thread structured clone, so its cost is the row count: the full ~19k set was
-  // ~52.9 MB resident, enough to risk the browser evicting the whole origin's storage
-  // under quota pressure — which silently destroys the offline cache crew rely on in
-  // the field. The IN-MEMORY set stays complete; only the persisted copy is bounded,
-  // and every caller is already gated on jobsFullyHydrated.
+  // Write only the window's cleans to IndexedDB (SCALE-C14 / §8 G4). cacheJobs is a
+  // main-thread structured clone, so its cost is the row count, and a big record risks the
+  // browser evicting the whole origin's storage under quota pressure — which silently
+  // destroys the offline cache crew rely on in the field. Rows a screen fetched beyond the
+  // window (a past week, a series) are never cached.
   //
-  // Stamped `windowed` because bootFromCache treats this record as the save baseline
-  // and the TOP_UP readiness signal — see there.
+  // Stamped `windowed: true` although this build never reads the flag back (a cache is a
+  // snapshot to paint, never the baseline — bootFromCache): an OLDER bundle still installed
+  // on the same device reads it, and a record without it would read there as the complete
+  // table — the empty-baseline hazard of ba57f40.
   function cacheJobsWindowed(jobs, at) {
-    // Gate here (not only in persistCache): completeJobsHydration writes the
-    // jobs cache directly, and a backfill settling between sign-out's
-    // clearCache() and the SIGNED_OUT-driven stop() must not repopulate the
-    // wiped cache on a signed-out device.
+    // Gate here (not only in persistCache): loadJobsBaseline writes the jobs cache directly,
+    // and a load settling between sign-out's clearCache() and the SIGNED_OUT-driven stop()
+    // must not repopulate the wiped cache on a signed-out device.
     if (persistAbandoned) return false;
-    const { from, to } = bootWindowRange();
+    const { fromIso, toIso } = jobsWindowBounds();
+    const from = fromIso.slice(0, 10);
+    const to = toIso.slice(0, 10);
     return cacheJobs(jobsInWindow(jobs, from, to), at, { windowed: true, from, to });
   }
 
@@ -640,28 +764,19 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     dispatch({ type: ACTIONS.HYDRATE, payload: withSession(cached.state) });
     const jobs = Array.isArray(cached.state.jobs) ? cached.state.jobs : [];
     lastSyncedJobs = jobs;
-    // Offline boot: the cache carries whatever _rv each job had when cached, so
-    // the cursor resumes from there and the first poll on reconnect pulls exactly
-    // what changed while this tab was away.
-    jobsCursor = maxRv(jobs);
+    jobsCursor = maxRv(jobs); // replaced by the table's high-water when the baseline lands
     lastCachedJobsRef = jobs;
 
-    // ⚠️ A WINDOWED CACHE IS NOT AN AUTHORITATIVE BASELINE, and treating it as one is
-    // destructive in two separate ways:
-    //   • the reconnect flush diffs against it, so every out-of-window job reads as a
-    //     local deletion and the save emits a delete for each one;
-    //   • TOP_UP derives its tail from the in-memory set, so against a partial set it
-    //     appends duplicate occurrences for the not-yet-loaded tail.
-    // Both are exactly what hydrateJobsWindowed already guards for the ONLINE windowed
-    // boot; this is the offline twin of that guard. Records written before windowing
-    // shipped carry no flag and genuinely hold the full set, so they keep the old path.
+    // ⚠️ THE CACHE IS NEVER THE BASELINE — it is what to paint while the server answers. It
+    // holds only the window as it stood when it was written (and IndexedDB may have evicted
+    // its jobs record outright, ba57f40), so arming the mirror on it would be destructive
+    // twice over: the reconnect flush would read every clean the cache lacks as a local
+    // delete, and TOP_UP would mint duplicates of the tail it can't see. So the mirror stays
+    // gated and loadJobsBaseline reads the window and merges it onto these painted rows,
+    // keeping any edit made in the gap (offline it fails, and retries until the link is back).
     // Unmirrored rows from the previous session (empty for pre-feature caches).
-    // Consumed by recoverCachedPendingJobs once the authoritative set lands —
-    // the hydration merge below would otherwise silently discard them (they're
-    // in the cached live array but not in the table). Note the legacy
-    // non-windowed path can't recover them (its baseline IS the cached array,
-    // so the diff never sees them) — that path only serves pre-windowing cache
-    // records, which predate this feature and carry no pending rows anyway.
+    // Consumed by recoverCachedPendingJobs once the baseline lands — the merge would
+    // otherwise silently discard them (they're in the cached live array but not in the table).
     cachedPendingJobsRows = Array.isArray(cached.pendingJobsRows) && cached.pendingJobsRows.length
       ? cached.pendingJobsRows
       : null;
@@ -670,29 +785,89 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     // only when rows.length || latch) could never fire after a clean recovery —
     // leaving a stale non-empty record to re-run recovery on every future boot.
     lastCachedPendingCount = cachedPendingJobsRows ? cachedPendingJobsRows.length : 0;
-    if (cached.jobsWindowed) {
-      windowSnapshot = jobs;   // what completeJobsHydration merges the full set onto
-      jobsReady = false;       // no mirroring until the authoritative set lands
-      jobsFullyHydrated = false;
-      // Detached: offline this fails and retries; on reconnect it fills in the tail.
-      completeJobsHydration();
-    } else {
-      jobsReady = true; // baseline is the cache; the reconnect flush diffs against it
-      signalJobsReady(); // the cache holds the FULL set — TOP_UP may run
-    }
+    windowSnapshot = jobs; // what loadJobsBaseline merges the window onto
+    jobsReady = false;     // no mirroring until the table answers
+    loadJobsBaseline();    // detached
     if (cached.queue && cached.queue.length && setPending) setPending(cached.queue);
     if (markOffline) setStatus('offline');
     return true;
   }
 
-  // Bound the initial read so a hung request during an outage (crew with no
-  // signal) doesn't strand the user on the loading screen — after this we fall
-  // back to the cache.
-  const BOOT_FETCH_TIMEOUT_MS = 8000;
-  function withTimeout(promise, ms) {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('boot fetch timeout')), ms);
-      promise.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  // CS-672: the first read of a device with no cache — patient, retried, and never a failure for the
+  // caller to fail open on (see BOOT_* at the top). Resolves with the first answer any attempt gets
+  // (fetchLatest's row, or null for no row), or BOOT_STOPPED when stop() ended the wait. While it
+  // waits, the boot screen is told the phase (reportBoot) and Retry calls bootRetryNow.
+  function bootRead() {
+    return new Promise((resolve) => {
+      let attempt = 0;        // attempts started
+      let lastFailed = 0;     // the newest attempt already counted as failed (an attempt fails once)
+      let failures = 0;       // failures in a row — the back-off
+      let inFlight = false;   // the newest attempt is running and still inside its time
+      let settled = false;
+      let retryTimer = null;
+      let slowTimer = null;
+      let deadline = null;
+      const clearTimers = () => {
+        clearTimeout(retryTimer); clearTimeout(slowTimer); clearTimeout(deadline);
+        retryTimer = null; slowTimer = null; deadline = null;
+      };
+      const wake = () => { if (!settled && !inFlight) run(); };
+      const wakeIfVisible = () => { if (typeof document !== 'undefined' && document.visibilityState === 'visible') wake(); };
+      const listen = (on) => {
+        if (typeof window === 'undefined') return;
+        const fn = on ? 'addEventListener' : 'removeEventListener';
+        window[fn]('online', wake);
+        if (typeof document !== 'undefined') document[fn]('visibilitychange', wakeIfVisible);
+      };
+      const finish = (row) => {
+        if (settled) return;
+        settled = true;
+        clearTimers();
+        listen(false);
+        bootRetryNow = null;
+        bootStop = null;
+        resolve(row);
+      };
+      // Only the NEWEST attempt's failure counts, and only once: an older attempt that fails late
+      // has been superseded (its answer would still count — a success boots, whichever attempt).
+      const failed = (n, e) => {
+        if (settled || n !== attempt || n <= lastFailed) return;
+        if (!started) { finish(BOOT_STOPPED); return; }
+        lastFailed = n;
+        inFlight = false;
+        clearTimeout(slowTimer); slowTimer = null;
+        clearTimeout(deadline); deadline = null;
+        failures += 1;
+        const delay = Math.min(BOOT_RETRY_MAX_MS, BOOT_RETRY_BASE_MS * 2 ** (failures - 1));
+        console.warn(`[sync] first load: attempt ${n} got no answer (${e?.message || e}); trying again in ${Math.round(delay / 1000)} s`);
+        reportBoot({ phase: 'unreachable', retryAt: Date.now() + delay, retrying: false });
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(run, delay);
+      };
+      function run() {
+        if (settled) return;
+        if (!started) { finish(BOOT_STOPPED); return; }
+        if (inFlight) return; // the newest attempt is still inside its time: let it answer
+        clearTimeout(retryTimer); retryTimer = null;
+        attempt += 1;
+        const n = attempt;
+        inFlight = true;
+        if (n === 1) {
+          reportBoot({ phase: 'loading' });
+          slowTimer = setTimeout(() => { if (!settled && n === attempt && inFlight) reportBoot({ phase: 'slow' }); }, BOOT_SLOW_MS);
+        } else {
+          reportBoot({ phase: 'unreachable', retryAt: null, retrying: true });
+        }
+        deadline = setTimeout(() => failed(n, new Error('no answer in time')), BOOT_ATTEMPT_MS);
+        Promise.resolve().then(fetchLatest).then(
+          (row) => { if (!settled) finish(row); },
+          (e) => failed(n, e),
+        );
+      }
+      bootRetryNow = wake;
+      bootStop = () => finish(BOOT_STOPPED);
+      listen(true);
+      run();
     });
   }
 
@@ -703,9 +878,8 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     // IndexedDB from the last visit. Paint from the cache immediately and
     // freshen through resync(), which is the SAME battle-tested path an
     // offline tab takes when connectivity returns: fetchLatest → adoptRemote
-    // (keeps table-owned jobs, replays pending), completeJobsHydration if the
-    // cache was windowed (bootFromCache already gated jobsReady/TOP_UP for
-    // that), and the cursor poll resuming from the cached _rv high-water mark.
+    // (keeps table-owned jobs, replays pending), and the jobs window read
+    // fresh from the table (bootFromCache gated jobsReady/TOP_UP until it lands).
     // `started` is set before loadInitial runs, so the detached resync passes
     // its own guard; saving/reentrancy rules are resync's, unchanged. A stale
     // cache paints briefly and converges — stale-while-revalidate, strictly
@@ -717,46 +891,43 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
       if (!knownOffline) setTimeout(() => { resync(); }, 0);
       return;
     }
-    // No cache (first visit on this device) — the network-first path. A failed
-    // or timed-out fetch propagates: there is no cache to fall back on (the
-    // boot above proved that), so the caller fails open onto the seed.
-    const existing = await withTimeout(fetchLatest(), BOOT_FETCH_TIMEOUT_MS);
+    // No cache (first visit on this device, or the first since a sign-out wiped it) — the
+    // network-first path. There is nothing on the device worth showing, so the read FAILS CLOSED
+    // (CS-672): bootRead waits, retries and tells the boot screen, and returns only an answer —
+    // or BOOT_STOPPED when this manager was stopped while it waited (a sign-out, a remount).
+    const existing = await bootRead();
+    if (existing === BOOT_STOPPED) return;
     if (existing && existing.state && Object.keys(existing.state).length > 0) {
       baseVersion = existing.version;
       lastSavedStateJson = serializeShared(existing.state); // blob baseline = the loaded doc
       dispatch({ type: ACTIONS.HYDRATE, payload: withSession(existing.state) });
-      const jobs = await hydrateJobsWindowed(existing.state.jobs);
-      primeCache(existing.state, existing.version, jobs); // refresh the offline cache (window now; full set re-caches when it lands)
+      // The window of cleans is waited for, as before: the app opens with its schedule. A read
+      // that fails retries in the background (the mirror stays gated until it lands).
+      await loadJobsBaseline();
+      primeCache(existing.state, existing.version); // refresh the offline cache
       return;
     }
     // First run for this org — seed a BLANK production state (team + config, no
     // sample customer data). ignoreDuplicates makes this safe if two users sign
     // in for the very first time at once.
     const seed = productionInitialState();
-    // Routed through the server like every other write (Increment 1d) so a fresh
-    // clone can still seed itself once 1e revokes the browser's write policy.
-    // Direct upsert remains only as the pre-1e fallback.
+    // Routed through the server like every other write (Increment 1d): a fresh clone seeds
+    // itself through /api/state/seed and nothing else. A failed seed is not worked around
+    // (the direct upsert it used to fall back to is refused since 1e, CS-009): the read
+    // below finds no row, the tab runs on the blank seed, and every save answers "row not
+    // found" and backs off with an error showing until the server can seed.
     const seeded = await postSeedState(seed);
-    if (!seeded.ok && seeded.unavailable) {
-      await supabase.from('org_state').upsert(
-        {
-          organization_id: ORG_ID,
-          state: seed,
-          version: 1,
-          updated_by: userId,
-          updated_at: new Date().toISOString(),
-          updated_via: 'browser',
-        },
-        { onConflict: 'organization_id', ignoreDuplicates: true },
-      );
-    }
-    const after = await fetchLatest();
+    if (!seeded.ok) console.warn('[sync] first-run seed was not accepted:', seeded.error || seeded.status);
+    // The read after the seed is as patient as the first: a boot never runs on anything but the
+    // server's answer (no row at all is an answer — the blank production seed above stands).
+    const after = await bootRead();
+    if (after === BOOT_STOPPED) return;
     baseVersion = after?.version ?? 1;
     const booted = after?.state ?? seed;
     lastSavedStateJson = serializeShared(booted); // blob baseline = the freshly-seeded doc
     dispatch({ type: ACTIONS.HYDRATE, payload: withSession(booted) });
-    const jobs = await hydrateJobsWindowed(booted.jobs);
-    primeCache(booted, baseVersion, jobs); // prime the offline cache for this org's first run
+    await loadJobsBaseline();
+    primeCache(booted, baseVersion); // prime the offline cache for this org's first run
   }
 
   // Replace local state with the remote document, then re-apply any of our own
@@ -845,10 +1016,18 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
   async function mirrorJobs(jobsNow) {
     if (!jobsReady) return true; // baseline not established yet — nothing to mirror, not a failure
     try {
-      await persistJobsDelta(lastSyncedJobs, jobsNow, userId);
+      await persistJobsDelta(lastSyncedJobs, jobsNow);
       lastSyncedJobs = jobsNow;
+      lastMirrorFailure = null;
       return true;
-    } catch (e) { console.warn('[sync] jobs mirror failed:', e?.message || e); return false; }
+    } catch (e) {
+      // The baseline stays put, so the next flush re-sends the same delta (CS-009: there is
+      // no direct write to "succeed" through any more — a DELETE the database filtered out
+      // used to advance the baseline and the deleted clean came back on the next load).
+      lastMirrorFailure = { unreachable: e?.kind === 'unreachable', status: e?.status || 0, error: e?.message || String(e) };
+      console.warn('[sync] jobs mirror failed:', lastMirrorFailure.error);
+      return false;
+    }
   }
 
   // ── THE PING-PONG FIX ────────────────────────────────────────────────────────
@@ -895,8 +1074,157 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     if (!rtJobsTimer) rtJobsTimer = setTimeout(flushRealtimeJobsBuf, RT_COALESCE_MS);
   }
 
+  // ── CS-008: A REFUSED SAVE DROPS ONLY WHAT WAS REFUSED ──────────────────────────────────
+  //
+  // The guard answers for a whole save, and a save carries every action dispatched in the
+  // last ~600 ms. Which of them it refused, it cannot say: its violations name RULES ("change
+  // another member's pay"), not actions. So the batch is replayed from the server's committed
+  // state ONE ACTION AT A TIME, each saved on its own: an action the guard refuses is dropped
+  // and reported, every other one lands. Actions that change nothing the guard can see (a
+  // jobs-only edit, a no-op) are applied without a request at all.
+  //
+  // The JOBS half of a refused action is undone too. Jobs live in their own table and are
+  // mirrored separately, so a refused customer delete used to keep its cascade: the customer
+  // stayed, its cleans were deleted on the next save. The walk runs the jobs from the mirror
+  // baseline (the table as this tab last confirmed it), so each refused action's effect on
+  // them is measurable — and the rows it touched are put back as they were before it.
+  //
+  // Writes per refusal = the actions in the batch that change the shared record (usually one
+  // to three). Never a silent drop: if the committed state can't be read, or a save in the
+  // walk fails for any reason but a refusal, everything not yet decided STAYS pending.
+  const ISOLATE_CONFLICT_TRIES = 3;
+  async function isolateRefusedBatch(pendingCovered, stamp) {
+    const batch = getPending().slice(0, pendingCovered);
+    let remote = null;
+    try { remote = await fetchLatest(); } catch { remote = null; }
+    // Nothing is attributable without the committed state, so nothing is dropped: everything
+    // stays pending and the save is retried after the backoff, with an error showing.
+    if (!remote || !remote.state) { saveFailed({ failed: true, error: 'The saved copy could not be read to check the refused changes' }); return; }
+
+    // Jobs from the mirror baseline once it exists; before it lands, from the cleans painted
+    // first (the same base loadJobsBaseline measures gap edits against).
+    let iso = { ...withSession(remote.state), jobs: jobsReady ? lastSyncedJobs : (windowSnapshot || getState().jobs || []) };
+    let isoJson = serializeShared(iso);
+    let isoVersion = remote.version;
+    baseVersion = remote.version;
+    lastSavedStateJson = isoJson;
+    const refused = [];
+    // job id -> the row as it was before the first refused action that touched it (null = it
+    // did not exist then, so the refused action created it).
+    const restoreJobs = new Map();
+    let processed = 0;
+    let committedAny = false;
+    let stop = null; // the answer that ended the walk early: anything but ok / refused / conflict
+    const save = (json, base) => {
+      lastWrittenVersion = base + 1;
+      return postOrgState({ stateJson: json, baseVersion: base, build: stamp.updated_by_build, tab: stamp.updated_by_tab });
+    };
+    for (; processed < batch.length; processed += 1) {
+      const action = batch[processed];
+      let next = reducer(iso, action);
+      let nextJson = serializeShared(next);
+      if (nextJson === isoJson) { iso = next; continue; } // nothing the guard can see
+      let decided = false;
+      for (let attempt = 1; !decided; attempt += 1) {
+        const r = await save(nextJson, isoVersion);
+        if (r.ok) {
+          iso = next; isoJson = nextJson; isoVersion = r.version;
+          baseVersion = r.version; lastSavedStateJson = nextJson;
+          committedAny = true;
+          decided = true;
+        } else if (r.rejected) {
+          refused.push({ action, violations: Array.isArray(r.violations) ? r.violations : [] });
+          const before = new Map((iso.jobs || []).map((j) => [j.id, j]));
+          const d = diffJobs(iso.jobs || [], next.jobs || []);
+          for (const j of d.changed) if (!restoreJobs.has(j.id)) restoreJobs.set(j.id, before.get(j.id) || null);
+          for (const id of d.removed) if (!restoreJobs.has(id)) restoreJobs.set(id, before.get(id) || null);
+          decided = true;
+        } else if (r.conflict && attempt < ISOLATE_CONFLICT_TRIES) {
+          // Someone else saved mid-walk: rebase this action on their commit and try again.
+          let fresh = null;
+          try { fresh = await fetchLatest(); } catch { fresh = null; }
+          if (!fresh || !fresh.state) { stop = r; decided = true; break; }
+          iso = { ...withSession(fresh.state), jobs: iso.jobs };
+          isoJson = serializeShared(iso); isoVersion = fresh.version;
+          baseVersion = fresh.version; lastSavedStateJson = isoJson;
+          next = reducer(iso, action);
+          nextJson = serializeShared(next);
+          if (nextJson === isoJson) { iso = next; decided = true; }
+        } else {
+          stop = r; decided = true;
+        }
+      }
+      if (stop) break;
+    }
+
+    if (stop && stop.gated) {
+      persistCache({ force: true });
+      if (!reloadedForBuildGate) {
+        reloadedForBuildGate = true;
+        try { if (typeof window !== 'undefined') window.location.reload(); } catch { /* ignore */ }
+      }
+      return;
+    }
+    if (stop && stop.terminal) {
+      // This login can no longer write (the sign-out is already under way): nothing left to keep.
+      setPending(getPending().slice(pendingCovered));
+      dirty = false;
+      return;
+    }
+
+    // The jobs a refused action touched go back as they were before it. SET_JOBS, not
+    // PATCH_JOBS: the reducer's order guard drops an upsert that isn't newer, and a row a local
+    // action changed carries the same row version as the one it replaced.
+    if (restoreJobs.size) {
+      const live = getState().jobs || [];
+      const out = [];
+      const seen = new Set();
+      for (const j of live) {
+        if (!j) continue;
+        seen.add(j.id);
+        if (!restoreJobs.has(j.id)) { out.push(j); continue; }
+        const back = restoreJobs.get(j.id);
+        if (back) out.push(back);
+      }
+      for (const [id, back] of restoreJobs) if (back && !seen.has(id)) out.push(back);
+      dispatch({ type: ACTIONS.SET_JOBS, jobs: out });
+    }
+
+    // What was not decided (a failure stopped the walk) stays pending, ahead of anything
+    // dispatched while the walk ran; the decided actions are on the server or refused.
+    setPending([...batch.slice(processed), ...getPending().slice(pendingCovered)]);
+    let latest = null;
+    try { latest = await fetchLatest(); } catch { latest = null; }
+    adoptRemote(latest && latest.state && latest.version >= isoVersion ? latest : { state: iso, version: isoVersion });
+
+    if (refused.length) {
+      console.warn('[sync] changes refused by the server:', refused.map((r) => `${r.action?.type}: ${r.violations.join('; ')}`).join(' | '));
+      reportProblem({ kind: 'refused', refused, at: Date.now() });
+    }
+    if (stop) {
+      // A failure (not a refusal) stopped the walk: what it had not decided is pending again
+      // above, and is retried after the backoff with the failure showing.
+      saveFailed(stop);
+      return;
+    }
+    // The accepted actions' JOBS changes are mirrored by the next pass (content-guard path).
+    if (committedAny) saveSucceeded();
+    dirty = true;
+  }
+
   async function flush() {
     if (!started) return;
+    // Nothing to save before the first load unless edits are waiting (CS-672). On a first boot the
+    // store shows only the boot screen, so it holds the seed placeholder — the DEMO's book — and no
+    // edit: posting it would only ever put the demo's data on the wire. (Edits CAN be waiting when
+    // the session's claim changed mid-use and a new manager is booting under a live screen; those
+    // still save, as before.)
+    if (!loaded && !getPending().length) {
+      // A save armed while the last one was in flight, with nothing left to send: the status the
+      // last one held back (CS-952) is said here.
+      if (currentStatus === 'saving' && !saving && !dirty && !saveTimer) setStatus('synced');
+      return;
+    }
     if (saving) { dirty = true; return; }
     saving = true;
     try {
@@ -982,32 +1310,28 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
         setPending(getPending().slice(pendingCovered));
         const mirrored = await mirrorSlices(liveSlices());
         if (mirrored) {
-          offlineSince = 0;
+          saveSucceeded();
           // force: the queue just SHRANK, and the throttled path may skip this
           // snapshot — a cache still holding committed creates replays them on
           // the next cache-first boot (duplicate series, 2026-07-30).
           persistCache({ force: true });
-          if (!dirty) setStatus('synced');
+          // Synced only with nothing waiting: not marked for a follow-up, and no save armed (an
+          // edit made while this one was in flight, CS-952).
+          if (!dirty && !saveTimer) setStatus('synced');
         } else {
-          // The per-row jobs mirror was the only network op here and it failed (offline).
-          // Keep the offline signal and requeue so the delta retries — the edit is already
-          // in the offline cache below, and lastSyncedJobs is unadvanced so the next flush
-          // re-diffs it. (A pure no-op with no jobs delta never reaches here as a failure:
-          // an empty delta makes no network call.)
-          dirty = true;
-          if (!offlineSince) offlineSince = Date.now();
-          setStatus('offline');
-          persistCache();
+          // The per-row jobs mirror was the only network op here and it failed. Keep the
+          // delta (lastSyncedJobs is unadvanced, so the next flush re-diffs it) and retry
+          // after the backoff, showing offline or error as the failure was. (A pure no-op
+          // with no jobs delta never reaches here: an empty delta makes no network call.)
+          saveFailed(lastMirrorFailure || { unreachable: true });
         }
         return;
       }
 
       const target = baseVersion + 1;
       lastWrittenVersion = target;
-      // Increment 1d: the write goes through a service-role endpoint that stamps
-      // authorship from the caller's JWT claim. The direct UPDATE below is the
-      // fallback for an unreachable server only — Increment 1e revokes the
-      // browser's org_state write policy and deletes it. See lib/stateApi.js.
+      // Increment 1d: the write goes through a service-role endpoint that stamps authorship
+      // from the caller's JWT claim — the ONLY path a save has (CS-009, lib/stateApi.js).
       const stamp = writeStamp();
       const viaServer = await postOrgState({
         stateJson: sharedJson, // already serialized for the content guard — don't re-stringify ~800 KB
@@ -1016,7 +1340,6 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
         tab: stamp.updated_by_tab,
       });
 
-      let committed = viaServer.ok;
       if (!viaServer.ok && viaServer.gated) {
         // The server refused because this tab is below min_client_build. Same
         // response as the local gate: persist, then reload onto a newer build.
@@ -1029,28 +1352,20 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
         return;
       }
       if (!viaServer.ok && viaServer.rejected) {
-        // The org-state field guard refused a protected-field change (roles /
-        // permissions / standing crew / site parentage). This is a REAL answer:
-        // do NOT fall back to the direct write (that bypassed the guard and
-        // made the refusal invisible — 2026-07-30 roles incident). Drop the
-        // refused actions from the queue (replaying them would refuse forever),
-        // adopt the server's state so the UI visibly reverts, and log loudly.
-        // The guard only judges a save against its OWN base version: a stale base
-        // is answered 409 and replayed below, never refused here (api/state/org-state.js).
-        console.error('[sync] protected-field change refused by the server:', viaServer.violations);
-        setPending(getPending().slice(pendingCovered));
-        try {
-          const remote = await fetchLatest();
-          if (remote) adoptRemote(remote);
-        } catch { /* next signal/backstop resyncs */ }
-        dirty = false;
-        setStatus('synced');
+        // The org-state field guard refused this save (a change the caller's access level
+        // doesn't cover). A REAL answer: never retried through another path (that bypassed
+        // the guard once — 2026-07-30 roles incident). But the save carried EVERY action of
+        // the last ~600 ms, and dropping them all lost the unrelated edits beside the refused
+        // one while the status said "synced" (CS-008). So the batch is ISOLATED: saved again
+        // one action at a time, and only what the guard refuses is dropped — and reported.
+        // (The guard judges a save against its OWN base version: a stale base is answered 409
+        // and replayed below, never refused here — api/state/org-state.js.)
+        await isolateRefusedBatch(pendingCovered, stamp);
         return;
       }
       if (!viaServer.ok && viaServer.terminal) {
         // TERMINAL auth (account-disabled / not-on-team): this login can no longer
-        // write. NOT transport — the direct-write fallback below and the 5s retry in
-        // scheduleSave() would spin against the same 403 forever ("offline" that never
+        // write. Retrying would spin against the same 403 forever ("offline" that never
         // clears). stateApi already handed the account off to AuthProvider to sign out;
         // drop the actions we can never persist and return WITHOUT marking dirty, so no
         // retry is scheduled. Guarded against a sign-out loop by the handler itself.
@@ -1058,39 +1373,20 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
         dirty = false;
         return;
       }
-      if (!viaServer.ok && viaServer.unavailable) {
-        // CS-002: a crew (restricted) client must NEVER fall back to a direct org_state
-        // write. Its local state is a PROJECTION, so a direct full-blob write would blank
-        // every slice it can't see — and the read-split RLS denies the write anyway. Keep the
-        // edit queued (dirty) and retry the server merge path; nothing is lost.
-        if (restrictedRead) {
-          dirty = true;
-          if (!offlineSince) offlineSince = Date.now();
-          setStatus('offline');
-          persistCache();
-          return;
-        }
-        // Transport failure (cold start, offline). Pre-1e the browser can still
-        // write directly, and a save must not be lost to a flaky function.
-        const { data, error } = await supabase
-          .from('org_state')
-          .update({
-            state: shared,
-            version: target,
-            updated_by: userId,
-            updated_at: new Date().toISOString(),
-            // Build/tab provenance — this is what makes the prune gate checkable:
-            // "zero writes with updated_by_build < min_client_build over a soak window".
-            ...stamp,
-          })
-          .eq('organization_id', ORG_ID)
-          .eq('version', baseVersion)
-          .select('version');
-        if (error) throw error;
-        committed = !!(data && data.length === 1);
+      if (!viaServer.ok && !viaServer.conflict) {
+        // 🔴 CS-009: THE SAVE DID NOT LAND, AND NOTHING ELSE IS TRIED. Unreachable (offline,
+        // the 12 s abort), not signed in, a server error, a missing route, over the size limit
+        // (413 — the person is TOLD, once): the pending actions stay queued (and in the
+        // offline cache), the status says offline or error, and the save is retried after the
+        // backoff — never sooner. This branch used to write org_state DIRECTLY, a write the
+        // database has refused since Increment 1e (it matched no row and said nothing), which
+        // read as a conflict and re-saved in 600 ms for ever. Crew (CS-002) and office alike.
+        saveFailed(viaServer);
+        return;
       }
 
-      if (committed) {
+      if (viaServer.ok) {
+        saveSucceeded();
         baseVersion = target;
         lastSavedStateJson = sharedJson; // the blob now committed to the DB
         // Prefix only — this write persisted exactly the first `pendingCovered` actions.
@@ -1110,14 +1406,10 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
         // the queue, and a throttled skip here leaves committed creates in the
         // cached queue to replay as duplicates on the next cache-first boot.
         if (mirrored) {
-          offlineSince = 0;
           persistCache({ force: true });
-          if (!dirty) setStatus('synced');
+          if (!dirty && !saveTimer) setStatus('synced');   // nothing waiting (CS-952), as above
         } else {
-          dirty = true;
-          if (!offlineSince) offlineSince = Date.now();
-          setStatus('offline');
-          persistCache({ force: true });
+          saveFailed(lastMirrorFailure || { unreachable: true }); // force-persists the cache too
         }
         // CS-002: the server merged this crew save and DROPPED changes it doesn't allow.
         // Refetch + adopt so local state converges to the server's merged truth (the dropped
@@ -1142,17 +1434,14 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
         // row a realtime echo already advanced past. On failure, mark dirty so
         // the finally-block reschedules even if the pending queue is empty.
         const mirroredOnConflict = await mirrorSlices(liveSlices());
-        if (!mirroredOnConflict) dirty = true;
+        if (!mirroredOnConflict) saveFailed(lastMirrorFailure || { unreachable: true });
         const remote = await fetchLatest();
         if (remote) adoptRemote(remote);
       }
     } catch (e) {
-      // Leave state dirty; the next change (or a retry below) will re-attempt.
-      console.warn('[sync] save failed:', e?.message || e);
-      dirty = true;
-      if (!offlineSince) offlineSince = Date.now();
-      setStatus('offline');
-      persistCache(); // preserve the unsaved edits + queue so a reload survives an outage
+      // A read on the way (the conflict branch's fetchLatest) never got an answer. Leave
+      // state dirty; the retry after the backoff re-attempts, and the cache keeps the edits.
+      saveFailed({ unreachable: true, error: e?.message || String(e) });
     } finally {
       saving = false;
       if (dirty) { dirty = false; scheduleSave(); }
@@ -1167,18 +1456,26 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     }
   }
 
+  // The save's one timer. It forgets itself as it fires, so `saveTimer` says exactly whether a save
+  // is still waiting to go: a save that lands while the next one waits must not say 'synced'
+  // (CS-952: an area saved while an earlier save was in flight read as synced before it was sent,
+  // and its QR code was never asked for).
+  function armSave(ms) {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { saveTimer = null; flush(); }, ms);
+  }
+
   function scheduleSave() {
     if (offlineSince) {
-      // Backing off during an outage: keep the 'offline' status and retry gently
-      // (every 5 s) rather than spinning failed network calls every 600 ms — this
-      // matters on the crew's phones. A reconnect (online event) resets the backoff.
-      if (saveTimer) clearTimeout(saveTimer);
-      saveTimer = setTimeout(flush, 5000);
+      // Backing off after a failed save: keep the 'offline' / 'error' status and retry
+      // gently — 5 s, doubling to at most 60 s (retryDelay, CS-009) — rather than spinning
+      // failed calls every 600 ms; this matters on the crew's phones. A save that lands, or
+      // the browser coming back online, resets the backoff.
+      armSave(retryDelay());
       return;
     }
     setStatus('saving');
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(flush, SAVE_DEBOUNCE_MS);
+    armSave(SAVE_DEBOUNCE_MS);
   }
 
   function subscribeRealtime() {
@@ -1303,10 +1600,10 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
   async function resync() {
     if (!started) return;
     ensureSubscribed();
-    // If the full jobs backfill never completed at boot (offline / a transient read
-    // error), finish it now that the tab is active again — until it does, the per-row
-    // mirror stays gated and TOP_UP is held, so job edits wouldn't persist.
-    if (!jobsFullyHydrated) completeJobsHydration();
+    // If the jobs window never loaded at boot (offline / a transient read error), load it
+    // now that the tab is active again — until it does, the per-row mirror stays gated and
+    // TOP_UP is held, so job edits wouldn't persist.
+    if (!jobsReady) loadJobsBaseline();
     // Don't adopt+replay while a save is mid-flight — the flush's own CAS-conflict
     // path will reconcile, and replaying still-pending actions here could
     // double-apply non-idempotent reducers.
@@ -1375,9 +1672,10 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
 
         // The reaper leaves a watermark ABOVE everything it removed, so a cursor old
         // enough to have missed those tombstones is necessarily below it. Seeing the
-        // marker means the delete feed has a hole nothing incremental can close.
+        // marker means the delete feed has a hole nothing incremental can close: load the
+        // window again from the table (unsaved local changes survive the merge).
         if (tombRows.some((t) => t.job_id === REAP_MARKER_ID)) {
-          await completeJobsHydration();
+          await reloadJobsBaseline();
           return;
         }
         if (!rows.length && !tombRows.length) return;
@@ -1470,7 +1768,7 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
   };
   // Network came back: drop the outage backoff, push any unsaved edits immediately,
   // and pull anything we missed.
-  const onOnline = () => { offlineSince = 0; if (dirty) scheduleSave(); resync(); };
+  const onOnline = () => { offlineSince = 0; failStreak = 0; if (dirty) scheduleSave(); resync(); };
 
   // The sign-out flush (see flushSyncBeforeSignOut). Cancels the debounce and
   // drives flush() directly, then verifies NOTHING is left local: blob clean
@@ -1480,6 +1778,9 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
   // another is in flight just marks dirty and returns, and a CAS conflict costs
   // a round-trip — so give it three beats before declaring failure.
   async function finalFlush() {
+    // A sign-out from the boot screen (CS-672): the first load never landed and no edit is waiting,
+    // so nothing local exists to lose — and the seed placeholder must not be "saved" on the way out.
+    if (!loaded && !getPending().length) return true;
     for (let i = 0; i < 3; i++) {
       if (!started) return true;
       if (persistAbandoned) return false; // wipe already begun — nothing more to save
@@ -1499,9 +1800,9 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
       //     deferred stash is still in hand).
       //   · jobsReady: the mirror baseline diff (includes unmirrored deletes).
       //   · !jobsReady: "baseline matches" is vacuous (mirror gated) — instead
-      //     diff against the hydration WINDOW snapshot, which is exactly how
-      //     completeJobsHydration detects gap edits made during the windowed
-      //     phase (a jobs-only edit there rides the content-guard path, drops
+      //     diff against the painted snapshot, which is exactly how
+      //     loadJobsBaseline detects gap edits made before the window landed
+      //     (a jobs-only edit there rides the content-guard path, drops
       //     its queue prefix, and reports 'synced' while living only in RAM).
       const stashClean = !(cachedPendingJobsRows && cachedPendingJobsRows.length)
         && !pendingRecoveryInFlight;
@@ -1538,14 +1839,17 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
       started = true;
       activeFinalFlush = finalFlush;
       activeMarkCacheWipe = (on = true) => { persistAbandoned = on; };
+      // Settles only once the company's data has loaded (from the cache, or a read that answered —
+      // CS-672), or when stop() ends the wait.
       await loadInitial();
       // A stop() may have landed during the awaited load (StrictMode remount /
       // re-auth). Bail before wiring listeners + channel so we don't leak them on
       // an already-stopped instance that nothing will clean up.
       if (!started) return;
+      loaded = true;
       // Realtime is best-effort — a subscription hiccup must NOT reject start()
-      // (loadInitial already hydrated the shared doc), otherwise the app
-      // needlessly "fails open onto the seed" over a non-critical realtime error.
+      // (loadInitial already hydrated the shared doc), otherwise the store would
+      // hold the boot screen over a non-critical realtime error.
       try { subscribeRealtime(); } catch (e) { console.warn('[sync] realtime subscribe failed:', e?.message || e); }
       try { subscribeJobsRealtime(); } catch (e) { console.warn('[sync] jobs realtime subscribe failed:', e?.message || e); }
       if (typeof window !== 'undefined') {
@@ -1567,18 +1871,59 @@ export function createSyncManager({ dispatch, getState, getPending, clearPending
     getDiagnostics() {
       return { version: baseVersion, dirty };
     },
+    // The boot screen's Retry (CS-672): a first read waiting on its back-off is tried again at
+    // once. A no-op while an attempt is running, and once the first load has landed.
+    retryBoot() {
+      if (bootRetryNow) bootRetryNow();
+    },
+    // Jobs beyond the window, on demand (CS-676) — the store's useJobsLoader hands these to the
+    // screens. Each resolves once the cleans are in state and throws when they could not be read.
+    ensureJobsRange,
+    ensureSeries,
+    ensureClientJobs,
+    ensureJobsByIds,
+    // Rows a SERVER route wrote and handed back in its answer (QR Wave 2: the fill-in, EP-419, and
+    // the cleaner's own clean at a scanned building, EP-420), applied NOW rather than on the next
+    // realtime message or poll: as server-originated rows — PATCH_JOBS (the order guard keeps the
+    // newer of two versions) and the mirror baseline, so they are never POSTed back (the ping-pong
+    // law, II.8). `rescope`: a crew login's projection is scoped by its own cleans (CS-002), so a
+    // clean it just joined brings that customer and its locations into it although the shared
+    // record's version did not move — the projection is read again and adopted first (never
+    // mid-save: adoptRemote replays unsaved edits, so it waits for a save in flight).
+    async adoptServerJobs(rows, { rescope = false } = {}) {
+      const list = (Array.isArray(rows) ? rows : []).filter((j) => j && typeof j.id === 'string' && j.id);
+      if (rescope && restrictedRead && started) {
+        for (let i = 0; saving && i < 25; i += 1) await new Promise((r) => setTimeout(r, 200));
+        if (started && !saving) {
+          try {
+            const remote = await fetchLatest();
+            if (started && !saving && remote && remote.version >= baseVersion) adoptRemote(remote);
+          } catch { /* the next signal, focus or poll reconciles */ }
+        }
+      }
+      if (!started || !list.length) return;
+      dispatch({ type: ACTIONS.PATCH_JOBS, upserts: list, deletes: [] });
+      advanceJobsBaseline(list, []);
+    },
+    isRangeLoaded,
+    isSeriesLoaded,
+    isClientLoaded,
     stop() {
       started = false;
+      // A first read still waiting ends here, its timers with it (start() then settles unloaded).
+      if (bootStop) bootStop();
       if (activeFinalFlush === finalFlush) { activeFinalFlush = null; activeMarkCacheWipe = null; }
-      if (saveTimer) clearTimeout(saveTimer);
+      if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
       if (backstopTimer) { clearInterval(backstopTimer); backstopTimer = null; }
       // Drop any coalescing window in flight — its flush also bails on !started,
       // but the timer itself must not outlive the manager (StrictMode remount).
       if (rtJobsTimer) { clearTimeout(rtJobsTimer); rtJobsTimer = null; rtJobsBuf = { upserts: [], deletes: [] }; }
-      // Abandon a pending jobs-backfill retry — its completeJobsHydration also bails
-      // on !started, but the timer must not outlive the manager.
-      if (hydrationRetryTimer) { clearTimeout(hydrationRetryTimer); hydrationRetryTimer = null; }
-      if (tableHydrateRetryTimer) { clearTimeout(tableHydrateRetryTimer); tableHydrateRetryTimer = null; }
+      // Abandon a pending jobs-window retry — its loadJobsBaseline also bails on !started,
+      // but the timer must not outlive the manager.
+      if (baselineRetryTimer) { clearTimeout(baselineRetryTimer); baselineRetryTimer = null; }
+      // Release anyone waiting on the baseline (the screens' ensure* calls): this manager will
+      // never load it; the next one starts its own.
+      { const waiters = baselineWaiters; baselineWaiters = []; for (const w of waiters) { try { w(); } catch { /* ignore */ } } }
       // A pending detach must not fire against a stopped manager (sign-out /
       // StrictMode remount), and the flag must reset or a fresh instance would
       // start believing it is detached and never subscribe.

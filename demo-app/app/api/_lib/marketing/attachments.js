@@ -10,10 +10,11 @@ import { requireSafeSegment, isValidAttachmentKey } from '../storagePaths.js';
 // Shared with the client uploader (src/lib/attachments.js). Keep in lockstep.
 export const MARKETING_ATTACHMENT_BUCKET = 'marketing-attachments';
 
-// The `id` comes from step.attachments[] inside the org_state blob, which every user can
-// write directly under the open RLS policy until Increment 1e. So it is caller-influenced
-// even though it looks like internal metadata, and it is interpolated straight into an
-// object key. Validated at the point of derivation rather than trusted by provenance.
+// The `id` comes from step.attachments[] inside the org_state blob, which every office
+// login writes (through the guarded save route since Increment 1e; directly before it). So
+// it is caller-influenced even though it looks like internal metadata, and it is
+// interpolated straight into an object key. Validated at the point of derivation rather
+// than trusted by provenance.
 export const marketingAttachmentKey = (id) => `marketing/${requireSafeSegment(id, 'marketing attachment id')}`;
 
 // Resolve step.attachments[] metadata into send-ready { name, mimeType, content }

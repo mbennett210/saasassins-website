@@ -11,7 +11,7 @@
 //     return next;
 //
 // With the default Object.is and ANY allocating selector — `s => s.jobs.filter(...)`,
-// `s => ({ a: s.x })`, or even `s => s.reviews || {}` when the key is absent — `next`
+// `s => ({ a: s.x })`, or even `s => s.opsSettings || {}` when the key is absent — `next`
 // is a fresh reference every call, so `isEqual` always fails and the cache NEVER hits.
 //
 // React calls getSnapshot at least twice per render: once to render, and again

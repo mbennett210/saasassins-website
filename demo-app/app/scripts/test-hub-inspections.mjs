@@ -25,8 +25,14 @@ import * as store from '../api/_lib/qc/store.js';
 import * as queryParams from '../api/_lib/queryParams.js';
 import { CLEANSPACE_ORG_ID as ORG } from '../api/_lib/constants.js';
 import * as inspectionsLib from '../src/lib/inspections.js';
+import { QC_INSPECTIONS_STUB_KEY } from '../src/data/stubKeys.js';
+import { setOrgTimezone } from '../src/lib/dates.js';
 
 installResolveShim(); // Vite writes extensionless imports; plain node needs `.js`
+// Pin the org zone: this suite's range-bound oracle is Pacific (Jan 31 23:59:30 PST edge),
+// and rangeBounds resolves day ends in the ambient org zone. The module default is now
+// Eastern (W1-R), so pin LA explicitly rather than inheriting the default.
+setOrgTimezone('America/Los_Angeles');
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const load = (...p) => import(pathToFileURL(path.join(APP, 'src', 'lib', ...p)).href);
 const { rangeBounds } = await load('filters', 'applyFilters.js');
@@ -289,7 +295,7 @@ const db = (opts = {}) => fakeDb({ inspection_records: ALL.slice() }, { maxRows:
   ok(qcApi.isQcStub(), 'B0: under plain node qcApi runs its demo stub');
   // Stored out of order: the stub must sort, not trust insertion order.
   const shuffled = ALL.map((r, i) => [(i * 7919) % ALL.length, r]).sort((a, b) => a[0] - b[0]).map(([, r]) => r);
-  mem.set('cleanspace_qc_inspections_stub_v1', JSON.stringify({ inspections: shuffled }));
+  mem.set(QC_INSPECTIONS_STUB_KEY, JSON.stringify({ inspections: shuffled }));
 
   for (const c of COMBOS) {
     const truth = matching(c.pred);
@@ -306,7 +312,7 @@ const db = (opts = {}) => fakeDb({ inspection_records: ALL.slice() }, { maxRows:
   // An empty facet is no facet: the adapter never sends (or stubs) an empty list as "nothing".
   const blank = await attempt(() => qcApi.listInspections({ siteIds: [], results: [], inspectorIds: [] }));
   ok(same(ids(blank.v?.inspections), ids(orgNewest)), `B4: empty lists from the page are "no filter", in both modes${why(blank)}`);
-  mem.delete('cleanspace_qc_inspections_stub_v1');
+  mem.delete(QC_INSPECTIONS_STUB_KEY);
 }
 
 // ── C. the facet values → the server's filters ──────────────────────────────────
@@ -434,8 +440,19 @@ const db = (opts = {}) => fakeDb({ inspection_records: ALL.slice() }, { maxRows:
   'D6b: qcApi reads the export through every page (lib/pagedFetch.js), with the same filters — never one capped response');
 
   const page = read('src/pages/Inspections.jsx');
-  ok(!/applyFilters/.test(page) && !/summarizeInspections/.test(page),
-    'D7: the hub no longer filters, or tallies, inspection records in the browser');
+  // D7 asks ONE thing: no INSPECTION RECORD is filtered or tallied in the browser — that is
+  // the defect this suite exists for (past 200 org-wide, a browser-side filter drops
+  // matching records out of the list, the cards and the CSV). It used to be spelled "the
+  // page must not mention applyFilters at all", which also banned local filtering of things
+  // the page reads COMPLETELY. The Templates tab is one: step 5 gave it a Customer facet
+  // over the full template list (qcApi.listTemplates reads every row), so the ban is now
+  // written as what it means — applyFilters may only ever be handed `templates`.
+  ok(!/summarizeInspections/.test(page), 'D7: the hub does not tally inspection records in the browser');
+  const applyCalls = [...page.matchAll(/applyFilters\(\s*([A-Za-z_$][\w$]*)[\s\S]{0,120}?\)/g)].map((m) => m[1]);
+  ok(applyCalls.every((arg) => arg === 'templates'),
+    `D7b: the only local filtering is the complete templates list, never inspection records (saw: ${applyCalls.join(', ') || 'none'})`);
+  ok(!/applyFilters\([\s\S]{0,160}?inspectionFilterSpecs/.test(page),
+    'D7c: the inspection facets never run through a browser-side filter — they go in the server read');
   ok(/const query = inspectionListQuery\(JSON\.parse\(filtersKey\)\);[\s\S]{0,120}?qcApi\.listInspections\(query\.filters\)/.test(page)
     && /const query = inspectionListQuery\(JSON\.parse\(filtersKey\)\);[\s\S]{0,120}?qcApi\.inspectionFigures\(query\.filters\)/.test(page)
     && /downloadInspectionsCsv\(await qcApi\.exportInspections\(query\.filters\)/.test(page) && /onClick=\{exportCsv\}/.test(page),

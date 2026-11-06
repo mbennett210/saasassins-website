@@ -54,7 +54,37 @@
 // public-form lead bridge — did not look at size at all. So the blob could be grown past
 // the ceiling through a path that never checked, and past it EVERY BROWSER SAVE IN THE
 // ORG 413s. One constant, imported by both, so they cannot drift again.
-export const MAX_STATE_BYTES = 3_500_000;
+// Since 2026-10-03 the constant itself lives in src/lib/stateBudget.js, because the BROWSER
+// needs it too: the Customers import measures its save against it before writing anything.
+// Re-exported here, so every server import stays as it was.
+import { MAX_STATE_BYTES, SAVE_ENVELOPE_BYTES } from '../../src/lib/stateBudget.js';
+export { MAX_STATE_BYTES };
+
+// ══ CS-671: A MERGED SAVE IS MEASURED AFTER THE MERGE ═════════════════════════
+// A save answered 413 carries this code, whichever path refused it (the office's posted body, or
+// a cleaner's MERGED record). The client classifies the 413 itself (lib/stateApi `tooLarge`: the
+// edits stay on the device and the person is told once); the code names the reason for anyone
+// reading the answer.
+export const STATE_TOO_LARGE_CODE = 'state-too-large';
+
+// What the office's next save of `state` will weigh: its JSON (the browser posts it compact,
+// canonicalJson — the same bytes as JSON.stringify) plus the request's envelope.
+export function stateSaveBytes(state) {
+  return Buffer.byteLength(JSON.stringify(state ?? null), 'utf8') + SAVE_ENVELOPE_BYTES;
+}
+
+// The cleaner's path posts a PROJECTION and the server merges it into the full record, so the
+// posted body's size says nothing about what gets committed: near the ceiling one message (and the
+// bell rows it rings) committed past it with a 200, and then every office save was refused.
+// A merged save may not GROW the record past what the office's next save can carry; one that does
+// not grow it (a read receipt, a dismissed bell row) still lands, even on a record already over.
+// Returns null when it fits, else { bytes, before, max }. PURE.
+export function mergedSaveOverLimit(prev, next, max = MAX_STATE_BYTES) {
+  const bytes = stateSaveBytes(next);
+  if (bytes <= max) return null;
+  const before = stateSaveBytes(prev);
+  return bytes > before ? { bytes, before, max } : null;
+}
 
 export const SIGNATURE_MAX_B64_BYTES = 48 * 1024;
 

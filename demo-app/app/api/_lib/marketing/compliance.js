@@ -9,6 +9,7 @@
 
 import crypto from 'node:crypto';
 import { DOC } from '../../../src/brand/doc.js';
+import { appPublicUrl } from '../appUrl.js';
 
 // Signing secret: a dedicated UNSUBSCRIBE_SECRET if set, else reuse the existing
 // server-only token-encryption key. Either way the secret stays on the backend.
@@ -18,12 +19,15 @@ function secret() {
 
 // Public origin for the absolute unsubscribe URL. A per-tenant override (set in
 // Marketing Settings) wins so the link domain stays correct across a production
-// domain change; otherwise INBOX_INBOUND_BASE_URL (already set for the OAuth
-// redirect), then Vercel's injected prod URL.
+// domain change; otherwise INBOX_INBOUND_BASE_URL (the OAuth redirect's base, when
+// set), then the app's own address, appPublicUrl() (APP_PUBLIC_URL, else
+// APP_BASE_URL, else the brand pack's appUrl: DEV_PLAYBOOK 3.4.18), the one
+// every emailed link uses. Never Vercel's injected production URL: that is
+// Vercel's pick of a domain (the shortest), which can be one that only redirects.
 function resolveBaseUrl(override) {
   const b = (override && String(override).trim())
     || process.env.INBOX_INBOUND_BASE_URL
-    || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
+    || appPublicUrl();
   return (b || '').replace(/\/+$/, '');
 }
 

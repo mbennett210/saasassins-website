@@ -14,9 +14,10 @@ import { useToast } from '../components/Toast';
 import { seriesFromDate, STARTED_SERIES_MOVE_BLOCK } from '../lib/seriesScope';
 import { applyFilters, rangeBounds } from '../lib/filters/applyFilters';
 import { scheduleFilterSpecs } from '../lib/filters/scheduleFilters';
-import { useDispatch, useStore, useJobsHydrated } from '../store';
+import { useDispatch, useStore, useJobsHydrated, useJobsLoader, useJobsRange, useGetState } from '../store';
 import { ACTIONS } from '../store/reducer';
 import { HORIZON_DAYS } from '../lib/recurrence.js';
+import { jobsWindowBounds } from '../lib/jobsWindow';
 import { useAuth } from '../hooks/useAuth';
 import { useCanEditJobs } from '../hooks/usePermission';
 import {
@@ -27,7 +28,10 @@ import {
 } from '../store/selectors';
 import ConfirmDialog from '../components/ConfirmDialog';
 import * as timeApi from '../lib/timeApi';
-import { currentWeekMinutesByUser, otStatus, startOfPayWeek } from '../lib/payroll';
+import { currentWeekMinutesByUser, otStatus, payWeekStartDayOf, currentPayWeekWindow } from '../lib/payroll';
+// ── Manager view (Builder A, 2026-10-09): the "Today" view — today's visits by status ──
+import ScheduleToday from '../components/ScheduleToday';
+import { useT } from '../i18n/react';
 
 // Compact crew line for a schedule row: the first names of the named crew.
 const crewLine = (effectiveCrew) =>
@@ -38,7 +42,12 @@ import {
   addDaysKey, diffDaysKey,
 } from '../lib/dates';
 
-const VIEWS = ['Day', 'Week', 'Month', 'Cleaner'];
+// 'Today' (the manager view, 2026-10-09) is today's visits with where each stands — the
+// default for a manager; the owner and admins keep Day, and crew never get it (their today
+// is My Day). `?view=Today` deep-links it.
+const TODAY_VIEW = 'Today';
+const VIEWS = [TODAY_VIEW, 'Day', 'Week', 'Month', 'Cleaner'];
+const CALENDAR_VIEWS = VIEWS.filter((v) => v !== TODAY_VIEW);
 
 // The calendar cursor is an INSTANT pinned to org-zone midnight, and every read of
 // it goes back through dayKey() in the org zone. Building it from local calendar
@@ -58,6 +67,11 @@ const fromIsoDay = (s) => startOfDayKey(s);
 // nothing due; this also avoids the reducer scan + the multi-tab mint race.
 const TOP_UP_THROTTLE_MS = 3600000; // 1h
 let lastTopUpAt = 0;
+// TOP_UP mints from the cleans in memory, so every existing occurrence it could mint over must
+// be loaded first (CS-676: the app holds the jobs WINDOW, not the table): it loads [now, until +
+// this margin] before it dispatches. The margin reaches one monthly period past the edge, so
+// an occurrence deleted near it is still bracketed by a later one and is not minted again.
+const TOP_UP_LOAD_MARGIN_MS = 35 * 86400000;
 // (The former module-level extend-on-navigate high-water mark lived here. It
 // never reset, so a month visited EARLIER in the session permanently blocked
 // minting for series created LATER — "I plotted it and it isn't showing",
@@ -75,6 +89,7 @@ export default function Schedule() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const nav = useFromHere();
+  const t = useT();
   const { currentUser } = useAuth();
   // Gate the affordances on what the server will actually keep (jobsGuard): owner +
   // admin by role (the UI still asks them for the key), a manager by schedule.edit in
@@ -87,15 +102,17 @@ export default function Schedule() {
   // role whenever the login carries one.
   const canCreate = useCanEditJobs();
   const jobsHydrated = useJobsHydrated();
+  const jobsLoader = useJobsLoader();
+  const getState = useGetState();
 
-  // Until the FULL jobs set has hydrated, a schedule edit cannot be mirrored to
+  // Until the jobs window has loaded, a schedule edit cannot be mirrored to
   // public.jobs (mirrorJobs no-ops while !jobsReady) — so a move/reschedule made
   // now looks saved but is dropped on refresh. That is exactly the "nothing saves"
   // report from a manager on a slow international link (Lauren, 2026-08-12), the
   // same phantom-success class as the 2026-07-30 claim-role note above. We pause
-  // the edit affordances until hydration completes (below); this flag only decides
+  // the edit affordances until the window lands (below); this flag only decides
   // whether to SURFACE why, and it waits a beat so a normal fast boot — which
-  // hydrates in a second or two — never flashes the banner.
+  // loads it in a second or two — never flashes the banner.
   const [hydrationStalled, setHydrationStalled] = useState(false);
   useEffect(() => {
     if (jobsHydrated) { setHydrationStalled(false); return undefined; }
@@ -105,9 +122,9 @@ export default function Schedule() {
 
   // Keep never-ending recurring jobs perpetual: each visit extends their tail to
   // the rolling horizon. Idempotent — a no-op (stable state) when nothing is due.
-  // GATED on full hydration: during windowed boot only a recent window of jobs is
-  // loaded, and topping up a series against a partial set would append duplicate
-  // occurrences for the not-yet-loaded tail (see completeJobsHydration in sync.js).
+  // GATED on the jobs window AND on the stretch it mints into being loaded: topping up a
+  // series against cleans not in memory would append duplicates of them (the masters it
+  // mints from load with the window — store/sync.js loadJobsBaseline).
   useEffect(() => {
     if (!jobsHydrated) return;
     // GATED on schedule.edit: materializing occurrences IS creating jobs, so it must
@@ -124,10 +141,12 @@ export default function Schedule() {
     const now = Date.now();
     if (now - lastTopUpAt < TOP_UP_THROTTLE_MS) return; // throttled (see TOP_UP_THROTTLE_MS)
     // Set only once we are actually going to dispatch — returning early above must not
-    // burn the hour for the manager who mounts the page next.
+    // burn the hour for the manager who mounts the page next (a failed load gives it back).
     lastTopUpAt = now;
-    dispatch({ type: ACTIONS.TOP_UP_RECURRING_SERIES });
-  }, [dispatch, jobsHydrated, canCreate]);
+    jobsLoader.ensureRange(now, now + HORIZON_DAYS * 86400000 + TOP_UP_LOAD_MARGIN_MS)
+      .then(() => dispatch({ type: ACTIONS.TOP_UP_RECURRING_SERIES }))
+      .catch(() => { lastTopUpAt = 0; });
+  }, [dispatch, jobsHydrated, canCreate, jobsLoader]);
 
   const [searchParams, setSearchParams] = useSearchParams();
   // Functional updater — a snapshot-built URLSearchParams raced concurrent
@@ -143,10 +162,14 @@ export default function Schedule() {
   };
 
   // Clamp to a real view: a stale/removed value in ?view= (e.g. an old
-  // ?view=Agenda bookmark after those tabs were dropped) falls back to Day
-  // rather than rendering a blank body with no active tab.
-  const view = VIEWS.includes(searchParams.get('view')) ? searchParams.get('view') : 'Day';
-  const setView = (v) => setParam('view', v, 'Day');
+  // ?view=Agenda bookmark after those tabs were dropped) falls back to the
+  // viewer's default view (Today for a manager, else Day) rather than rendering
+  // a blank body with no active tab. The default is left out of the URL.
+  const isCrewViewer = currentUser?.role === 'crew';
+  const views = isCrewViewer ? CALENDAR_VIEWS : VIEWS;
+  const defaultView = currentUser?.role === 'manager' ? TODAY_VIEW : 'Day';
+  const view = views.includes(searchParams.get('view')) ? searchParams.get('view') : defaultView;
+  const setView = (v) => setParam('view', v, defaultView);
   const refDate = searchParams.get('d') ? fromIsoDay(searchParams.get('d')) : new Date();
   const todayIso = todayKey();
   const setRefDate = (d) => setParam('d', toIsoDay(d), todayIso);
@@ -166,7 +189,7 @@ export default function Schedule() {
   useEffect(() => {
     if (!jobsHydrated || !canCreate) return;
     const DAY = 86400000;
-    const spanDays = view === 'Month' ? 31 : view === 'Day' ? 1 : 7;
+    const spanDays = view === 'Month' ? 31 : (view === 'Day' || view === TODAY_VIEW) ? 1 : 7;
     // Org-zone day math (fromIsoDay pins the key to org midnight) — the old
     // `${key}T00:00:00Z` was UTC, a 7-8h skew inside the buffer.
     const viewedEndMs = fromIsoDay(refDayKey).getTime() + spanDays * DAY;
@@ -175,8 +198,12 @@ export default function Schedule() {
     const nowMs = Date.now();
     if (nowMs - lastExtendAtRef.current < 5000) return;
     lastExtendAtRef.current = nowMs;
-    dispatch({ type: ACTIONS.TOP_UP_RECURRING_SERIES, untilMs: viewedEndMs + 30 * DAY });
-  }, [dispatch, jobsHydrated, canCreate, view, refDayKey, state.jobs]);
+    const untilMs = viewedEndMs + 30 * DAY;
+    // Everything it could mint over must be in memory first (see TOP_UP_LOAD_MARGIN_MS).
+    jobsLoader.ensureRange(nowMs, untilMs + TOP_UP_LOAD_MARGIN_MS)
+      .then(() => dispatch({ type: ACTIONS.TOP_UP_RECURRING_SERIES, untilMs }))
+      .catch(() => { lastExtendAtRef.current = 0; });
+  }, [dispatch, jobsHydrated, canCreate, view, refDayKey, state.jobs, jobsLoader]);
   const [modalOpen, setModalOpen] = useState(false);
   // Global search "New job" deep-link: ?new=1 opens the new-job modal once, then strips the
   // param. Gated like the New Job button itself: canCreate AND
@@ -235,7 +262,8 @@ export default function Schedule() {
   useEffect(() => {
     const wasActive = prevCustomRangeRef.current;
     prevCustomRangeRef.current = customRangeActive;
-    if (customRangeActive && !wasActive && (view === 'Day' || view === 'Week' || view === 'Month')) {
+    // Today is cursor-pinned too (it is always today), so a range entered there moves on as well.
+    if (customRangeActive && !wasActive && (view === TODAY_VIEW || view === 'Day' || view === 'Week' || view === 'Month')) {
       setView('Cleaner');
     }
     // setView is a fresh closure each render; the ref transition is the real guard.
@@ -255,8 +283,10 @@ export default function Schedule() {
     const nowMs = Date.now();
     if (nowMs - lastExtendAtRef.current < 5000) return;
     lastExtendAtRef.current = nowMs;
-    dispatch({ type: ACTIONS.TOP_UP_RECURRING_SERIES, untilMs });
-  }, [dispatch, jobsHydrated, canCreate, customRange, state.jobs]);
+    jobsLoader.ensureRange(nowMs, untilMs + TOP_UP_LOAD_MARGIN_MS)
+      .then(() => dispatch({ type: ACTIONS.TOP_UP_RECURRING_SERIES, untilMs }))
+      .catch(() => { lastExtendAtRef.current = 0; });
+  }, [dispatch, jobsHydrated, canCreate, customRange, state.jobs, jobsLoader]);
 
   // Week DnD state
   const [draggingId, setDraggingId] = useState(null);
@@ -272,6 +302,13 @@ export default function Schedule() {
   const filteredJobs = useMemo(
     () => applyFilters(scope, filters.values, scheduleFilterSpecs, filterCtx),
     [scope, filters.values, filterCtx],
+  );
+
+  // The Today view keeps the page's facets: it shows a visit only when the filtered set holds
+  // it. Null (no narrowing) when no facet is set, so the common case builds nothing.
+  const todayJobIds = useMemo(
+    () => (view === TODAY_VIEW && filters.activeCount > 0 ? new Set(filteredJobs.map((j) => j.id)) : null),
+    [view, filters.activeCount, filteredJobs],
   );
 
   // Count of cleans nobody is assigned to that still need someone, across the
@@ -351,23 +388,47 @@ export default function Schedule() {
   }, [view, filteredJobs, rangeActive, refDayKey]);
   const cleanerRows = useMemo(() => selectScheduleRowsByCleaner(state, groupWindowJobs, users), [state, groupWindowJobs, users]);
 
+  // ── The days on screen are LOADED (CS-676) ───────────────────────────────────
+  // The app holds the jobs window (src/lib/jobsWindow.js, −45/+100 days), never the whole
+  // table; a week, month or range outside it is fetched when the calendar moves there. Day
+  // keys in the org zone, so the ask is the same all day (padded a day each side, so a clean
+  // starting just past midnight still lands in its cell); an open-ended range runs to the
+  // window's edge.
+  const viewRange = useMemo(() => {
+    let fromKey;
+    let toKey; // exclusive
+    if (view === TODAY_VIEW) { fromKey = todayIso; toKey = addDaysKey(todayIso, 1); }
+    else if (view === 'Day') { fromKey = refDayKey; toKey = addDaysKey(refDayKey, 1); }
+    else if (view === 'Month') { fromKey = dayKey(startOfWeek(startOfMonth(fromIsoDay(refDayKey)))); toKey = addDaysKey(fromKey, 42); }
+    else if (view === 'Cleaner' && rangeActive) {
+      const rb = rangeBounds(customRange || null);
+      const win = jobsWindowBounds();
+      fromKey = dayKey(rb.from || new Date(win.fromMs));
+      toKey = addDaysKey(dayKey(rb.to || new Date(win.toMs)), 1);
+    } else { fromKey = dayKey(startOfWeek(fromIsoDay(refDayKey))); toKey = addDaysKey(fromKey, 7); } // Week, Cleaner
+    return { from: startOfDayKey(addDaysKey(fromKey, -1)).getTime(), to: startOfDayKey(addDaysKey(toKey, 1)).getTime() };
+  }, [view, refDayKey, todayIso, rangeActive, customRange]);
+  const viewLoad = useJobsRange(viewRange.from, viewRange.to);
+
   // Approaching-40h lens for the By-Cleaner view: this week's CLOCKED labor per
   // cleaner (operational — approved or not), flagged at 36h/40h. Manager-only
   // (the rollup route is manager-gated); crew skip the fetch. Component-local
   // projection (useState), never the synced blob (§2.1).
   const isManager = currentUser?.role !== 'crew';
   const [weekClocked, setWeekClocked] = useState(null); // Map userId -> { minutes }
+  // The ORG's workweek (lib/payroll's one reader), the week the pay run pays overtime on — a
+  // hard-coded Sunday counted a different week in production's Monday week (CS-055).
+  const weekStartDay = payWeekStartDayOf(state.opsSettings);
   useEffect(() => {
     if (!isManager || view !== 'Cleaner') return undefined;
     let cancelled = false;
     const now = new Date();
-    const ws = startOfPayWeek(now, 0);
-    const we = new Date(ws); we.setDate(we.getDate() + 7);
-    timeApi.rollup({ fromIso: ws.toISOString(), toIso: we.toISOString() })
-      .then((entries) => { if (!cancelled) setWeekClocked(currentWeekMinutesByUser(entries, { now: now.getTime(), weekStartDay: 0 })); })
+    const week = currentPayWeekWindow(now, { weekStartDay });
+    timeApi.rollup({ fromIso: week.fromIso, toIso: week.toIso })
+      .then((entries) => { if (!cancelled) setWeekClocked(currentWeekMinutesByUser(entries, { now: now.getTime(), weekStartDay })); })
       .catch(() => { if (!cancelled) setWeekClocked(null); });
     return () => { cancelled = true; };
-  }, [isManager, view]);
+  }, [isManager, view, weekStartDay]);
 
   const shiftRef = (dir) => {
     // Stepped on the org's calendar, not the device's — setDate/setMonth read local
@@ -377,6 +438,7 @@ export default function Schedule() {
   };
 
   const viewTitle = useMemo(() => {
+    if (view === TODAY_VIEW) return t('schedToday.title');
     if (view === 'Day') return fmtDateLong(refDate.toISOString());
     if (view === 'Month') return fmtDate(refDate.toISOString(), { month: 'long', year: 'numeric' });
     // Cleaner un-windows to the whole span when a range/preset is active — name
@@ -390,7 +452,7 @@ export default function Schedule() {
     // Week + Cleaner (no range) — show the week window.
     const s = startOfWeek(refDate); const e = addDays(s, 6);
     return `${fmtDate(s.toISOString(), { month: 'short', day: 'numeric' })} – ${fmtDate(e.toISOString(), { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  }, [view, refDate, customRange, rangeActive]);
+  }, [view, refDate, customRange, rangeActive, t]);
 
   // Compact date for the mobile header (Direction 4): Day → "Tue, Sep 15", Month →
   // "Sep 2026"; the Week/Cleaner range titles are already short enough to reuse.
@@ -417,45 +479,48 @@ export default function Schedule() {
   const onColDragLeave = (e) => {
     if (!e.currentTarget.contains(e.relatedTarget)) setDropTargetDay(null);
   };
-  const isSeriesJob = (job) => !!(job.seriesId && selectSeriesJobs(state, job.seriesId).length > 1);
+  const isSeriesJob = (job, s = state) => !!(job.seriesId && selectSeriesJobs(s, job.seriesId).length > 1);
   // A per-day (multi-day / block) weekly series carries per-day crews + times in
   // recurrence.dayOverrides (or runs on >1 weekday). The quick paths here edit
   // through a single crew/time — so "this & all future" would flatten every day.
   // Restrict those to "just this one"; whole-series edits go through the job's
   // block-aware Edit (JobDetail). A single-day series has neither and is safe.
-  // 🔴 FAILS SAFE WHEN THE MASTER IS NOT LOADED, and that is not a hypothetical.
+  // 🔴 FAILS SAFE WHEN THE SERIES IS NOT LOADED.
   //
-  // selectSeriesMaster searches `state.jobs` for the occurrence carrying `recurrence`.
-  // Since E6 the app boots on a WINDOW of jobs (roughly -45/+100 days, store/sync.js)
-  // and backfills the rest detached, so for a series that started outside that window
-  // the master is simply absent for the first seconds of every session — and absent for
-  // good on a tab that never completes the backfill.
-  //
-  // The old code returned false in that case, which is the DANGEROUS direction: false
-  // means "not per-day", which leaves `disableFuture: false`, which OFFERS the user
-  // "this & all future" — and that path patches a single uniform crew across every
-  // occurrence, flattening the per-day crew assignments held in recurrence.dayOverrides.
-  // A guard that silently disengages while the data it needs is still loading is worse
-  // than no guard, because it disengages exactly when nobody is watching.
-  //
-  // Unknown now means "assume per-day". The cost of a false positive is small and
-  // reversible: the user is restricted to "just this one" and does whole-series edits
-  // through JobDetail's block-aware editor, which is where they belong anyway. The cost
-  // of a false negative is silent, permanent loss of every day's crew assignment.
-  const isPerDaySeries = (job) => {
+  // The app holds the jobs WINDOW (−45/+100 days, store/sync.js), not the table, so a
+  // series' occurrences past it — and, for a series older than the window, its master —
+  // are in memory only once the series is loaded (promptSeriesScope below loads it before
+  // asking). The old code read a missing master as "not per-day", the DANGEROUS direction:
+  // it OFFERED "this & all future", which patches a single uniform crew across every
+  // occurrence and flattens the per-day crews in recurrence.dayOverrides. Unknown means
+  // "assume per-day": a false positive restricts the user to "just this one" (whole-series
+  // edits stay in JobDetail's block-aware editor); a false negative silently loses every
+  // day's crew assignment.
+  const isPerDaySeries = (job, s = state) => {
     if (!job.seriesId) return false;
-    // Not fully hydrated → the whole-series path is unsafe regardless of shape. Both
-    // UPDATE_JOB_SERIES and DELETE_JOB_SERIES build their target set from state.jobs,
-    // which is only the boot window until the detached backfill lands, so occurrences
-    // past +100 days would be silently left behind and merged back. Same precondition
-    // TOP_UP is gated on above, and the same one JobDetail's scope modal applies.
-    if (!jobsHydrated) return true;
-    const m = selectSeriesMaster(state, job.seriesId);
-    if (!m) return true; // master not loaded (or missing) → assume the risky shape
+    // Not loaded → the whole-series path is unsafe regardless of shape: UPDATE_JOB_SERIES and
+    // DELETE_JOB_SERIES build their target set from state.jobs, so an occurrence not in memory
+    // would be silently left behind. The same rule JobDetail's scope modal applies.
+    if (!jobsLoader.isSeriesLoaded(job.seriesId)) return true;
+    const m = selectSeriesMaster(s, job.seriesId);
+    if (!m) return true; // master missing → assume the risky shape
     const r = m.recurrence;
     if (!r || r.frequency !== 'weekly') return false;
     return (r.dayOverrides && Object.keys(r.dayOverrides).length > 0)
       || (Array.isArray(r.daysOfWeek) && r.daysOfWeek.length > 1);
+  };
+
+  // A series visit's move or reschedule asks "just this one, or all future?" — after its
+  // SERIES is loaded (CS-676): the answer decides a target set that must hold every
+  // occurrence, and the master decides whether "all future" is safe at all. A series that
+  // could not be loaded still offers "just this one". `single()` runs the one-visit path:
+  // a series of one visit needs no question.
+  const promptSeriesScope = async (job, prompt, single) => {
+    let loaded = true;
+    try { await jobsLoader.ensureSeries(job.seriesId); } catch { loaded = false; }
+    const s = getState();
+    if (loaded && !isSeriesJob(job, s)) { single(); return; }
+    setSeriesPrompt({ ...prompt, job, disableFuture: !loaded || isPerDaySeries(job, s), disableReason: loaded ? null : 'load-failed' });
   };
 
   const onColDrop = (e, targetDate) => {
@@ -464,33 +529,35 @@ export default function Schedule() {
     setDraggingId(null);
     setDropTargetDay(null);
     // !jobsHydrated: the card is un-draggable in that state (see draggable= below),
-    // so this is belt-and-suspenders — a move can't be mirrored until the full set
+    // so this is belt-and-suspenders — a move can't be mirrored until the window
     // lands, and letting one through here is the phantom "saved, then gone" path.
     if (!canCreate || !jobId || !jobsHydrated) return;
-    const job = state.jobs.find((j) => j.id === jobId);
+    const job = getState().jobs.find((j) => j.id === jobId);
     if (!job) return;
     if (splitIso(job.startAt).date === toIsoDay(targetDate)) return; // same day → no move
     // A series occurrence can't move silently — ask "just this one, or all future?"
     // FIRST (the conflict set depends on that answer), then apply.
-    if (isSeriesJob(job)) { setSeriesPrompt({ kind: 'drag', job, targetDate, disableFuture: isPerDaySeries(job) }); return; }
+    if (job.seriesId) { promptSeriesScope(job, { kind: 'drag', targetDate }, () => applyDragMove(job, targetDate, 'single')); return; }
     applyDragMove(job, targetDate, 'single');
   };
 
   // Crew double-books for a move: just this occurrence ('single') or every still-
   // upcoming occurrence of the series ('future'). Same-series jobs move together, so
   // they're never counted as conflicting with each other. Confirm-gate, don't block.
+  // Read from the live state: it runs after a series load.
   const moveConflicts = (job, targetDate, scope) => {
+    const s = getState();
     const dayShift = diffDaysKey(splitIso(job.startAt).date, toIsoDay(targetDate));
     const occ = scope === 'future'
-      ? state.jobs.filter((j) => j.seriesId === job.seriesId && j.status === 'upcoming' && j.startAt >= job.startAt)
+      ? s.jobs.filter((j) => j.seriesId === job.seriesId && j.status === 'upcoming' && j.startAt >= job.startAt)
       : [job];
     const seen = new Set();
     const out = [];
     for (const o of occ) {
       const os = splitIso(o.startAt); const oe = splitIso(o.endAt);
       const nd = addDaysKey(os.date, dayShift);
-      const crew = selectEffectiveCrewForJob(state, o).map((c) => c.user.id);
-      for (const c of selectCrewConflicts(state, crew, composeIso(nd, os.time), composeIso(nd, oe.time), o.id)) {
+      const crew = selectEffectiveCrewForJob(s, o).map((c) => c.user.id);
+      for (const c of selectCrewConflicts(s, crew, composeIso(nd, os.time), composeIso(nd, oe.time), o.id)) {
         // Time-off conflicts carry no job (c.timeOff instead) — see selectCrewConflicts.
         if (scope === 'future' && c.job?.seriesId === job.seriesId) continue;
         const k = `${c.job ? c.job.id : `off_${c.timeOff?.id}`}|${c.userName}`;
@@ -539,11 +606,11 @@ export default function Schedule() {
 
   // Reschedule button: series occurrences prompt for scope first; one-offs open direct.
   const openReschedule = (job) => {
-    // Guard the same as drag: a reschedule dispatched before the full set hydrates
+    // Guard the same as drag: a reschedule dispatched before the window lands
     // can't be mirrored and is lost on refresh. The button is disabled in that state;
     // this backstops a stray call.
     if (!jobsHydrated) return;
-    if (isSeriesJob(job)) setSeriesPrompt({ kind: 'reschedule', job, disableFuture: isPerDaySeries(job) });
+    if (job.seriesId) promptSeriesScope(job, { kind: 'reschedule' }, () => setReschedule({ job, scope: null }));
     else setReschedule({ job, scope: null });
   };
 
@@ -561,7 +628,8 @@ export default function Schedule() {
     const next = new URLSearchParams(searchParams);
     const iso = toIsoDay(date);
     if (iso === todayIso) next.delete('d'); else next.set('d', iso);
-    next.delete('view');
+    // Day is the default view only for the owner / admin; a manager's default is Today.
+    if (defaultView === 'Day') next.delete('view'); else next.set('view', 'Day');
     setSearchParams(next, { replace: true });
   };
 
@@ -643,10 +711,21 @@ export default function Schedule() {
         </div>
       )}
 
+      {jobsHydrated && !viewLoad.ready && (
+        <div className={`callout ${viewLoad.error ? 'callout-warning' : 'callout-info'} text-sm mb-14`} role="status">
+          {viewLoad.error ? (
+            <>
+              {t('jobsLoad.rangeFailed')}{' '}
+              <button type="button" className="btn btn-outline" onClick={viewLoad.retry}>{t('common.retry')}</button>
+            </>
+          ) : t('jobsLoad.range')}
+        </div>
+      )}
+
       <div className="schedule-toolbar">
         <div className="tab-container tab-container-line">
-          {VIEWS.map((v) => (
-            <button key={v} className={`tab-btn ${view === v ? 'active' : ''}`} onClick={() => setView(v)} type="button">{v}</button>
+          {views.map((v) => (
+            <button key={v} className={`tab-btn ${view === v ? 'active' : ''}`} onClick={() => setView(v)} type="button">{v === TODAY_VIEW ? t('schedToday.tab') : v}</button>
           ))}
         </div>
         <div className="schedule-nav">
@@ -683,7 +762,10 @@ export default function Schedule() {
               <Icon name="warning" size={13} /> {unassignedCount} unassigned
             </button>
           )}
-          {isMobile ? (
+          {view === TODAY_VIEW ? (
+            /* Today is always today: no date to step, just its title. */
+            <span className="schedule-title">{viewTitle}</span>
+          ) : isMobile ? (
             /* Direction 4 mobile: ‹ [compact date] › — arrows flank the date, no Today
                (the arrows step; the range/date already reads as "today" when it is). */
             <>
@@ -726,11 +808,13 @@ export default function Schedule() {
         />
       )}
 
+      {view === TODAY_VIEW && <ScheduleToday jobIds={todayJobIds} />}
+
       {view === 'Day' && (
         <div className="card dash-card tl-day-card">
-          {dayJobs.length === 0 ? (
+          {dayJobs.length === 0 ? (viewLoad.ready && (
             <EmptyState icon={<Icon name="schedule" size={28} />} title="No jobs scheduled" message={canCreate ? 'Add your first job to start planning the day.' : 'Check back soon nothing to do yet.'} action={canCreate && <button className="btn btn-primary" disabled={!jobsHydrated} title={!jobsHydrated ? 'Still loading the full schedule try again in a moment' : undefined} onClick={() => setModalOpen(true)}>New Job</button>} />
-          ) : (
+          )) : (
             <div className="tl-track">
               <div className="tl-line" />
               {dayJobs.map((job) => {
@@ -869,11 +953,11 @@ export default function Schedule() {
       )}
 
       {view === 'Cleaner' && (
-        cleanerRows.length === 0 ? (
+        cleanerRows.length === 0 ? (viewLoad.ready && (
           <div className="card dash-card">
             <EmptyState icon={<Icon name="schedule" size={28} />} title="No assigned cleans in this window" message="Adjust the filters or pick a date range." />
           </div>
-        ) : (
+        )) : (
           <div className="sched-groups">
             {cleanerRows.map((row) => (
               row.unassigned ? (
@@ -894,7 +978,7 @@ export default function Schedule() {
                 <div key={row.user.id} className="card sched-group">
                   <div className="sched-group-head">
                     <div className="sched-group-title sched-group-cleaner">
-                      <Avatar initials={row.user.initials} variant={row.user.avatar} size="sm" />
+                      <Avatar user={row.user} size="sm" />
                       <strong>{row.user.name}</strong>
                     </div>
                     <div className="sched-group-meta">
@@ -933,6 +1017,7 @@ export default function Schedule() {
         open={!!seriesPrompt}
         intent="edit"
         disableFuture={!!seriesPrompt?.disableFuture}
+        disableReason={seriesPrompt?.disableReason || null}
         onClose={() => setSeriesPrompt(null)}
         onPick={onSeriesScopePick}
       />

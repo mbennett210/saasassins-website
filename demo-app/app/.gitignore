@@ -34,3 +34,8 @@ scripts/orgstate-current.json
 # holds live job rows. Keep them local as recovery artifacts.
 scripts/jwt-claims-backup-*.json
 scripts/jobs-dedup-backup-*.json
+
+# The translator's spreadsheet (npm --prefix app run i18n:export, CS-193): a working file
+# sent to the translator and back, never committed — the catalogs are the record.
+translations-*.xlsx
+translations-*.csv

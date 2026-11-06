@@ -44,7 +44,7 @@ export const CREW_VIEW_CLASSIFICATION = Object.freeze({
   version: 'keep',
   company: 'trim',                 // org identity + settings; company.integrations trimmed to the send-readiness fields crew read (no last4/EIN/address/DKIM/DNS/tokens)
   currentUserId: 'session',        // per-session, stripped from the blob by toSharedBlob — never present
-  users: 'trim',                   // id/name/initials/avatar/role/status (+phone for office rows); self adds email/phone/prefs/clockRules
+  users: 'trim',                   // id/name/initials/avatar/photo/role/status (+phone for office rows); self adds email/phone/prefs/clockRules
   services: 'keep',
   frequencies: 'keep',
   clients: 'scope',                // in-scope accounts only
@@ -57,7 +57,6 @@ export const CREW_VIEW_CLASSIFICATION = Object.freeze({
   conversations: 'scope',          // threads the caller participates in + external threads for in-scope accounts
   messages: 'scope',               // messages in visible conversations
   reminderTemplates: 'drop',
-  reminderEvents: 'drop',
   clientReview: 'drop',
   permissions: 'keep',             // the crew's own can() reads the org matrix
   contacts: 'scope',               // contacts of in-scope accounts
@@ -83,7 +82,6 @@ export const CREW_VIEW_CLASSIFICATION = Object.freeze({
   marketingSettings: 'drop',
   keys: 'scope',                   // in-scope keys + keys the caller holds; masterCode REMOVED
   keyEvents: 'scope',              // events for visible keys
-  reviews: 'drop',
   opsSettings: 'trim',             // geofence/variance/alert knobs kept; pay-run fields removed
   payrollLines: 'drop',
   reimbursements: 'drop',
@@ -93,8 +91,10 @@ export const CREW_VIEW_CLASSIFICATION = Object.freeze({
   accountMedia: 'scope',           // media refs for in-scope sites
   inspectionFollowUps: 'drop',     // manager triage
   opsAlertEvents: 'drop',          // once-fired markers; a crew tab never raises ops alerts
-  supplyItems: 'drop',             // crew hold no supplies permission
-  supplyRequests: 'drop',
+  // supplyItems / supplyRequests left INITIAL_STATE with SUP-13 (2026-10-05: their own tables).
+  // Until supplies-move.mjs --strip removes them from the committed blob they are still there,
+  // and an unclassified slice is DROPPED by default (above), so a crew projection never carries them.
+  // The same holds for `reviews` (the Indeed count), which left with Google reviews on 2026-10-20.
 });
 
 // A key row with its master code removed. The crew Keys page shows custody, never the
@@ -116,6 +116,10 @@ function trimUserRow(u, isSelf) {
     name: u.name ?? null,
     initials: u.initials ?? null,
     avatar: u.avatar ?? null,
+    // The profile photo's version (UI_RULES §141) on EVERY row: a cleaner sees their coworkers'
+    // and supervisors' faces wherever the office does. It is a random id, not the image; the
+    // image comes through /api/avatars/urls, which signs only what the roster says.
+    photo: u.photo ?? null,
     role: u.role ?? null,
     status: u.status ?? null,
   };
@@ -126,6 +130,10 @@ function trimUserRow(u, isSelf) {
     row.phone = u.phone ?? null;
     row.notificationPrefs = u.notificationPrefs ?? null;
     row.signaturePrefs = u.signaturePrefs ?? null;
+    // Their OWN language (CS-193): the saved choice the app renders in, and the phone's
+    // language last recorded. Self only — nobody else's language is any crew screen's business.
+    row.language = u.language ?? null;
+    row.phoneLanguage = u.phoneLanguage ?? null;
     // Their OWN clock rules only (checklists step 4b): the clock-out gate and the clock-in
     // control read `clockRules` off the current user, so a cleaner the office exempted from
     // the checklist block or the geofence would still be blocked BY THEIR OWN DEVICE if the

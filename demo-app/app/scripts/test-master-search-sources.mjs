@@ -19,8 +19,8 @@ const ok = (label, cond) => { if (cond) pass += 1; else fails.push(label); };
 // ── fake state + adapters that mirror the real shapes (incl. a crew-scoping select) ──
 const state = {
   clients: [
-    { id: 'cl_a', name: 'Acme Cleaning', city: 'Miami', contactNumber: 1001 },
-    { id: 'cl_b', name: 'Beta Corp', city: 'Tampa', contactNumber: 1002 },
+    { id: 'cl_a', name: 'Acme Cleaning', city: 'Miami', customerNumber: '0001' },
+    { id: 'cl_b', name: 'Beta Corp', city: 'Tampa', customerNumber: '0002' },
   ],
   invoices: [{ id: 'CS-1001', clientId: 'cl_a', status: 'paid' }],
   // who the crew is assigned to (mirrors selectVisibleClientsFor's crew path)
@@ -34,7 +34,7 @@ const clientSource = {
     : s.clients),
   primary: (c) => c.name,
   sublabel: (c) => c.city,
-  keywords: (c) => [c.city, `#${c.contactNumber}`, String(c.contactNumber)],
+  keywords: (c) => [c.city, c.customerNumber],
   to: (c) => `/clients/${c.id}`,
   seeAll: (q) => `/clients?q=${encodeURIComponent(q)}`,
   seeAllLabel: 'Customers',
@@ -84,7 +84,7 @@ const allowAll = () => true;
   const inv = cand.filter((c) => c.type === 'invoice');
   ok('bare "1001" matches CS-1001', rankEntries(inv, '1001').some((e) => e.refId === 'CS-1001'));
   ok('"cs-1001" is an exact match', rankEntries(inv, 'cs-1001')[0]?.refId === 'CS-1001');
-  ok('customer #1001 findable by contactNumber', rankEntries(cand.filter((c) => c.type === 'client'), '1001').some((e) => e.refId === 'cl_a'));
+  ok('customer 0001 findable by its customer number (GO-2)', rankEntries(cand.filter((c) => c.type === 'client'), '0001').some((e) => e.refId === 'cl_a'));
 }
 
 // ── engine: recent re-resolution ────────────────────────────────────────────────────
@@ -136,28 +136,38 @@ const src = readFileSync(new URL('../src/lib/masterSearch/sources.js', import.me
 ok('client adapter uses selectVisibleClientsFor', /type: 'client'[\s\S]{0,400}selectVisibleClientsFor\(s, user\)/.test(src));
 ok('contact adapter uses selectVisibleContactsFor', /type: 'contact'[\s\S]{0,400}selectVisibleContactsFor\(s, user\)/.test(src));
 ok('site adapter uses selectVisibleSitesFor', /type: 'site'[\s\S]{0,400}selectVisibleSitesFor\(s, user\)/.test(src));
-ok('job adapter scopes crew via selectJobsForUser', /type: 'job'[\s\S]{0,400}crew[\s\S]{0,80}selectJobsForUser\(s, user\.id\)/.test(src));
+// The cleans source is built in jobRecords.js (CS-674); sources.js hands it the page's own
+// crew-scoped selector and the store's effective status.
+const jobSrc = readFileSync(new URL('../src/lib/masterSearch/jobRecords.js', import.meta.url), 'utf8');
+ok('job adapter scopes crew via selectJobsForUser', /makeJobSource\(\{[\s\S]{0,300}crew[\s\S]{0,80}selectJobsForUser\(s, user\.id\)/.test(src));
 ok('no scoped type reads the raw s.clients slice for its list', !/type: 'client'[\s\S]{0,300}select: \(s\) => s\.clients/.test(src));
 ok('keys adapter uses selectVisibleKeysFor (crew see only their keys)', /type: 'key'[\s\S]{0,300}selectVisibleKeysFor\(s, user\)/.test(src));
-ok('cleans show org-timezone dates (fmtDate), never device-local toLocaleDateString', /fmtDate\(j\.startAt/.test(src) && !/toLocaleDateString/.test(src));
-ok('cleans show the app status labels via the effective status', /jobStatusLabel\(selectEffectiveJobStatus\(j\)\)/.test(src));
+ok('cleans show org-timezone dates (fmtDate), never device-local toLocaleDateString', /fmtDate\(iso, /.test(jobSrc) && /visitDates\(j\.startAt\)/.test(jobSrc)
+  && !/toLocaleDateString/.test(src + jobSrc));
+ok('cleans show the app status labels via the effective status', /JOB_STATUS_LABELS\[st\]/.test(jobSrc) && /statusWord\(effectiveStatus\(j, now\)\)/.test(jobSrc)
+  && /makeJobSource\(\{[\s\S]{0,400}effectiveStatus: selectEffectiveJobStatus/.test(src));
 ok('invoices show the derived (live) status', /deriveInvoiceStatus\(inv\)/.test(src));
 ok('deals are desktop-only (the board is desktop-bound)', /type: 'opportunity'[\s\S]{0,200}desktopOnly: true/.test(src));
-ok('supply items gate on supplies.manage (their tab is manager-only)', /type: 'supplyItem'[\s\S]{0,200}perm: 'supplies\.manage'/.test(src));
+// SUP-13 (2026-10-05): approved supply items left the store for their own table, and a record
+// source reads the store — so there is NO supply-item record source any more (the "Approved
+// items" page entry and the "Add supply item" action still find the tab, gated in the registry).
+ok('no record source reads supply items out of the store (they live behind /api/supplies)', !/type: 'supplyItem'/.test(src) && !/selectSupplyItems/.test(src));
 ok('no adapter routes by viewer role (crew have no search; see-all takes only the query)', !/seeAll: \([^)]*user/.test(src));
 
 // ── 🔴 LOCKSTEP: crew have NO search, desktop or mobile (owner 2026-09-22) ─────────────
-// The gate sits in front of everything search mounts (field, magnifier, sheet, Ctrl/Cmd+K
-// and cs:open-search listeners), and the FloatingNav menu hides its "Search" row for crew.
+// Since the Cleaner Hub (2026-10-14) the gate is the SHELL: layouts/AppLayout's crew shell mounts
+// no MasterSearch and no FloatingNav (UI_RULES §165), so search mounts for office viewers only —
+// field, magnifier, sheet, Ctrl/Cmd+K and cs:open-search listeners alike.
 const msSrc = readFileSync(new URL('../src/components/MasterSearch.jsx', import.meta.url), 'utf8');
-const gate = msSrc.slice(msSrc.indexOf('export default function MasterSearch'));
+const layoutSrc = readFileSync(new URL('../src/layouts/AppLayout.jsx', import.meta.url), 'utf8');
+const crewShellSrc = (layoutSrc.split('if (crew) {')[1] || '').split('\n  }\n')[0];
 ok('MasterSearch returns before mounting search for crew',
-  /useSelector\(selectCurrentUser\)[\s\S]{0,120}role === 'crew'\) return[^\n]*\n\s*return <GlobalSearch \/>/.test(gate));
-ok('the crew desktop keeps only the empty bar band (no field)', /role === 'crew'\) return isMobile \? null : <div className="topbar" \/>/.test(gate));
+  !!crewShellSrc && !/<MasterSearch\b/.test(crewShellSrc) && /<MasterSearch \/>/.test(layoutSrc));
+ok('the crew desktop keeps only the empty bar band (no field)', !/<FloatingNav\b/.test(crewShellSrc) && !/className="topbar"/.test(crewShellSrc));
 ok('hotkey + open-event listeners live only inside the gated search', msSrc.indexOf("addEventListener('keydown'") > msSrc.indexOf('function useMasterSearch')
   && /function GlobalSearch\(\)[\s\S]{0,200}useMasterSearch\(/.test(msSrc));
 const fnavSrc = readFileSync(new URL('../src/components/FloatingNav.jsx', import.meta.url), 'utf8');
-ok('FloatingNav hides the Search row for crew', /\{!isCrew && \([\s\S]{0,400}cs:open-search/.test(fnavSrc));
+ok('FloatingNav hides the Search row for crew', /cs:open-search/.test(fnavSrc) && !/isCrew/.test(fnavSrc) && !/<FloatingNav\b/.test(crewShellSrc));
 
 // ── 🔴 LOCKSTEP: the phone search bar (owner pick 02 "Facebook" + the launchpad, 2026-09-22) ──
 // The spyglass grows leftward into one bar across the top (back arrow at the far left), the
@@ -174,7 +184,7 @@ ok('with nothing typed a phone always shows the launchpad (no search-mode latch)
   && !/searching|cancelSearch|msearch-cancel/.test(msSrc));
 ok('the menu Search row opens the same bar, field focused', /const onOpen = \(\) => \{\s*flushSync\(\(\) => openSearch\(\{ captureFocus: true \}\)\);\s*inputRef\.current\?\.focus\(\);\s*\};/.test(msSrc));
 ok('the screen pads for the on-screen keyboard', /useKeyboardInset\(screenRef, s\.isMobile && s\.open\)/.test(msSrc));
-ok('FloatingNav tray tabs come from navData.mobileTabs', /import \{ mobileTabs \} from '\.\.\/lib\/navData'/.test(fnavSrc) && /const tabDefs = mobileTabs\(check, isCrew\)/.test(fnavSrc));
+ok('FloatingNav tray tabs come from navData.mobileTabs', /import \{[^}]*\bmobileTabs\b[^}]*\} from '\.\.\/lib\/navData'/.test(fnavSrc) && /const tabDefs = mobileTabs\(check(, \{ supply \})?\)/.test(fnavSrc));
 const kbHook = readFileSync(new URL('../src/hooks/useKeyboardInset.js', import.meta.url), 'utf8');
 ok('useKeyboardInset reads the visual viewport through the tested math', /window\.visualViewport/.test(kbHook) && /measureKeyboard\(window\.innerHeight, vv\.height, vv\.offsetTop\)/.test(kbHook));
 // The morph must START where the spyglass sits, or the field would jump instead of growing

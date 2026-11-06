@@ -256,8 +256,10 @@ const editVisit = (s, id, patch) => reducer(s, { type: ACTIONS.UPDATE_JOB, id, p
   const s1 = editVisit(s0, v1.id, { crewIds: [KEI], coverFor: { [KEI]: LAT } });
 
   // Time off booked for the COVER takes them off the visit → the entry goes with them.
+  // (One action since CS-054: ADD_TIME_OFF { removeFromCleans }, as both booking screens send it.)
   const off = reducer(s1, {
-    type: ACTIONS.APPLY_TIME_OFF_EXCLUSIONS, userId: KEI, startDate: week(1), endDate: week(1),
+    type: ACTIONS.ADD_TIME_OFF, removeFromCleans: true,
+    entry: { id: 'to_cv_kei', userId: KEI, startDate: week(1), endDate: week(1), reason: 'test', kind: 'planned' },
   });
   eq('time off: the cover is taken off the visit → the cover is dropped',
     coverOf(onDay(off, week(1))), null);
@@ -266,7 +268,8 @@ const editVisit = (s, id, patch) => reducer(s, { type: ACTIONS.UPDATE_JOB, id, p
   // Time off for the COVERED cleaner changes nothing: they were already off this visit,
   // which is exactly why someone is covering.
   const offCovered = reducer(s1, {
-    type: ACTIONS.APPLY_TIME_OFF_EXCLUSIONS, userId: LAT, startDate: week(1), endDate: week(1),
+    type: ACTIONS.ADD_TIME_OFF, removeFromCleans: true,
+    entry: { id: 'to_cv_lat', userId: LAT, startDate: week(1), endDate: week(1), reason: 'test', kind: 'planned' },
   });
   eq('time off: booking the COVERED cleaner off keeps the cover (they are why it exists)',
     coverOf(onDay(offCovered, week(1))), { [KEI]: LAT });
@@ -519,19 +522,19 @@ const editVisit = (s, id, patch) => reducer(s, { type: ACTIONS.UPDATE_JOB, id, p
   // C4's time-off half: the booking that took a cleaner off THIS clean records the job id,
   // which is how the edit knows they were a regular of it. Pinned so the UI rule has a
   // source of truth and the exclusion still settles a cover it invalidates.
-  const withOff = reducer(added, {
+  const booking = {
     type: ACTIONS.ADD_TIME_OFF,
     entry: {
       id: 'to_cv', userId: LAT, startDate: week(1), endDate: week(1), reason: 'test',
       kind: 'callout', scheduledJobIds: [JID], createdBy: LAT, createdAt: new Date().toISOString(),
     },
-  });
+  };
+  const withOff = reducer(added, booking);
   const entry = (withOff.timeOff || []).find((t) => t.id === 'to_cv');
   eq('§I the booking records the cleans it took the person off (C4 offers them)',
     entry?.scheduledJobIds, [JID]);
-  const excluded = reducer(withOff, {
-    type: ACTIONS.APPLY_TIME_OFF_EXCLUSIONS, userId: LAT, startDate: week(1), endDate: week(1),
-  });
+  // The same booking with "Also remove" (CS-054: one action) takes them off it.
+  const excluded = reducer(added, { ...booking, removeFromCleans: true });
   eq('§I the exclusion takes the regular off the one-off clean',
     excluded.jobs.find((j) => j.id === JID).crewIds, []);
 }

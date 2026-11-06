@@ -4,7 +4,7 @@
 // /api/inbox/connect/google, which redirected to Google's consent screen with NO auth
 // gate (2026-08-03 audit S3): anyone could start the flow and, after consenting with a
 // mailbox they control, have the callback graft an attacker-controlled inbox into the
-// org. Exactly like /api/reviews/oauth/start, authority is proven HERE — the popup
+// org. Exactly like /api/quickbooks/oauth/start, authority is proven HERE — the popup
 // can't carry our Bearer header — and the popup then opens the returned Google consent
 // URL directly. The signed `state` binds the initiating org_user_id.
 import { requirePermission } from '../../_lib/authz.js';

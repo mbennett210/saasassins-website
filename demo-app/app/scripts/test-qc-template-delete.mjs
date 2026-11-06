@@ -20,7 +20,7 @@
 import { installFakeSupabase, resetWorld, world } from './fake-supabase.mjs';
 import { installResolveShim, loadStore } from './deletion-core.mjs';
 import { removeTemplateFromClients } from '../src/lib/crewChecklist.js';
-import { seedPermissions } from '../src/lib/roles.js';
+import { seedPermissions, ROLES } from '../src/lib/roles.js';
 
 const ORG = '00000000-0000-0000-0000-000000000042';
 // Set BEFORE anything under api/ loads (constants.js / orgState.js read env at import). The
@@ -107,6 +107,7 @@ const prev = {
     { id: 'u_owner', role: 'owner', status: 'active', email: 'o@x.test' },
     { id: 'u_admin', role: 'admin', status: 'active', email: 'a@x.test' },
     { id: 'u_mgr', role: 'manager', status: 'active', email: 'm@x.test' },
+    { id: 'u_sm', role: 'supply_manager', status: 'active', email: 's@x.test' },
     { id: 'u_crew', role: 'crew', status: 'active', email: 'c@x.test' },
   ],
   permissions: seedPermissions(),
@@ -125,8 +126,9 @@ const next = { ...prev, clients: removeTemplateFromClients(prev.clients, 'it_del
 eq('scrub dropped only the per-cleaner entry for the deleted template', next.clients[0].crewChecklists, { u_x: 'it_keep' });
 eq('scrub left standingCrewIds untouched', next.clients[0].standingCrewIds, ['u_crew']);
 
-const selfOf = { owner: 'u_owner', admin: 'u_admin', manager: 'u_mgr', crew: 'u_crew' };
-for (const role of ['owner', 'admin', 'manager', 'crew']) {
+// Every role, the supply manager (S131) included: the scrub is ordinary data for each.
+const selfOf = { owner: 'u_owner', admin: 'u_admin', manager: 'u_mgr', supply_manager: 'u_sm', crew: 'u_crew' };
+for (const role of ROLES) {
   eq(`guard allows the template-scrub save for ${role} (no violations)`,
     protectedFieldViolations(prev, next, role, selfOf[role]), []);
 }

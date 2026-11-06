@@ -98,14 +98,13 @@ export async function cacheDoc(state, version, at) {
 // This is a MAIN-THREAD STRUCTURED CLONE, so its cost is the row count. Caching the
 // full ~19k-row set was ~52.9 MB resident (SCALE-C14) — enough to risk the browser
 // evicting the whole origin's storage under quota pressure, which silently destroys
-// the offline cache the crew depend on. So callers pass a bounded recent window and
-// stamp `windowed`.
+// the offline cache the crew depend on. So callers pass the jobs window's cleans.
 //
-// ⚠️ `windowed` IS LOAD-BEARING, NOT METADATA. bootFromCache uses this record as the
-// save baseline and as the TOP_UP readiness signal. Against a partial set, a save
-// diffs to "delete every out-of-window job" and TOP_UP appends duplicate tail
-// occurrences. A record without the flag is treated as a full set, which is the
-// correct reading for anything written before this shipped.
+// This build never reads the record as a baseline — only as what to paint while the
+// server answers (store/sync.js bootFromCache; CS-676) — but it still stamps
+// `windowed: true`: an OLDER bundle installed on the same device reads the record back,
+// takes it as its save baseline unless the flag says windowed, and against a partial set
+// its next save would delete every clean the record lacks.
 export async function cacheJobs(jobs, at, meta = null) {
   return put(JOBS_KEY, {
     jobs: Array.isArray(jobs) ? jobs : [],
@@ -140,27 +139,10 @@ export async function readCache() {
   const jobs = Array.isArray(jobsRec?.jobs) ? jobsRec.jobs : [];
   const actions = Array.isArray(queueRec?.actions) ? queueRec.actions : [];
   return {
+    // The cached cleans are a SNAPSHOT to paint, never a baseline (store/sync.js
+    // bootFromCache): a missing or evicted jobs record (IndexedDB evicts per record under
+    // quota pressure, ba57f40) reads as no cleans and is filled when the server answers.
     state: { ...doc.state, jobs },
-    // 🔴 THREE CASES, NOT TWO — and conflating the third is how absence became a claim
-    // of completeness:
-    //   record present, windowed === true   → windowed
-    //   record present, windowed !== true   → COMPLETE. Records written before windowing
-    //                                         shipped carry no flag and genuinely hold
-    //                                         the full set, so this default is right.
-    //   record ABSENT                       → UNKNOWN, and must NOT read as complete.
-    //
-    // The old `jobsRec?.windowed === true` collapsed the third case into the second: with
-    // no jobs record at all, `jobs` above is [] and this returned false, i.e. "this empty
-    // array is the complete table". bootFromCache then takes the else branch — jobsReady
-    // = true with the cache as the mirror baseline — so the next save diffs the real ~19k
-    // rows against [] and re-upserts the entire table into a realtime publication. That is
-    // the same empty-baseline failure fixed on the online path in 3f22431, reached through
-    // the offline door. A partial-record cache (doc written, jobs write failed or evicted
-    // — IndexedDB evicts per-record under quota pressure) is exactly how it happens.
-    //
-    // Unknown now takes the windowed path, which is the safe one: no mirroring until the
-    // authoritative set lands, and completeJobsHydration fills it in.
-    jobsWindowed: !jobsRec || jobsRec.windowed === true,
     version: doc.version ?? 0,
     queue: actions,
     // Rows that were never confirmed mirrored to public.jobs (may not exist for

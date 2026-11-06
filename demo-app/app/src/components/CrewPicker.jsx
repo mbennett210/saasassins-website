@@ -1,32 +1,51 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import PopMenu from './PopMenu';
+import PickerCapNote from './PickerCapNote';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { crewPickerRows, PICKER_MAX_VISIBLE } from '../lib/pickerOptions';
 import Avatar from './Avatar';
+import Badge from './Badge';
+import { useT } from '../i18n/react';
+
+const NO_LEAD = [];
+const NO_PREFER = [];
 
 // Multi-select picker for crew assignment. Designed for clients with many
-// staff (30+) where a chip-grid would overwhelm the modal.
+// staff (30+) where a chip-grid would overwhelm the modal — and the ONE crew
+// field: New clean, the series blocks and, since CS-673, the clean's own edit
+// form (which drew one chip per active person: 1,544 chips at Matt's size).
 //
 // Behavior:
 // - Trigger row shows selected crew as compact chips inline. The row is
 //   single-line, no-wrap, with overflow hidden — chips that don't fit get
 //   clipped and a CSS mask fades the right edge to signal "more selected
 //   than visible." Click the trigger to open the picker and see all chips.
-// - Dropdown is a single scrollable list of every crew member, with a
-//   checkmark on the right of those already selected. Clicking a row
-//   toggles the assignment without removing the row from the list, so the
-//   user can keep clicking the same spot — the dropdown geometry doesn't
-//   reflow as items move between selected/unselected. (See the menu's
-//   fixed `height: 360px` rule in index.css.)
+// - Dropdown is a single scrollable list of crew, with a checkmark on the
+//   right of those already selected. Clicking a row toggles the assignment
+//   without removing the row from the list, so the user can keep clicking the
+//   same spot — the dropdown geometry doesn't reflow as items move between
+//   selected/unselected. (See the menu's fixed `height: 360px` rule in index.css.)
+// - It never renders the whole roster (UI_RULES §127): typing narrows by name,
+//   the people picked when the menu OPENED lead the list (a snapshot, so a
+//   toggle never moves a row), then the first PICKER_MAX_VISIBLE show with a
+//   "Showing 50 of 1,540. Type to narrow." footnote (lib/pickerOptions
+//   crewPickerRows). After them, the cleaners who work at the clean's customer (`preferIds`,
+//   lib/worksAt), each tagged "Works here".
 // - Type-to-search filters the list. Backspace on empty input pops the
 //   last chip — chip-input convention.
-export default function CrewPicker({ value = [], onChange, pool = [], placeholder = 'Add crew…' }) {
+export default function CrewPicker({ value = [], onChange, pool = [], placeholder = 'Add crew…', preferIds = NO_PREFER }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [lead, setLead] = useState(NO_LEAD);
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
   const isMobile = useIsMobile();
 
   useEffect(() => { if (!open) setQuery(''); }, [open]);
+
+  // Opening snapshots who is picked, so they lead the list for this whole visit to it.
+  const openMenu = () => { if (!open) setLead(value); setOpen(true); };
 
   // Selected ids missing from the pool (deleted/deactivated users in legacy
   // data) render as a removable "Former member" ghost chip instead of being
@@ -37,13 +56,13 @@ export default function CrewPicker({ value = [], onChange, pool = [], placeholde
     [value, pool],
   );
 
-  // Single list — all eligible crew shown, with checkmarks on selected.
-  // Filtering applies to query only, not to selection state, so selected
+  // Filtering applies to the query only, not to selection state, so selected
   // crew don't disappear when a user toggles them on.
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return pool.filter((u) => !q || u.name.toLowerCase().includes(q));
-  }, [pool, query]);
+  const { matches, shown, noteMsg } = useMemo(
+    () => crewPickerRows(pool, { query, leadIds: lead, preferIds, maxVisible: PICKER_MAX_VISIBLE }),
+    [pool, query, lead, preferIds],
+  );
+  const worksHere = useMemo(() => new Set(preferIds), [preferIds]);
 
   const isSelected = (id) => value.includes(id);
 
@@ -59,16 +78,18 @@ export default function CrewPicker({ value = [], onChange, pool = [], placeholde
     if (e.key === 'Backspace' && !query && selected.length > 0) {
       onChange(value.slice(0, -1));
     } else if (e.key === 'Escape') {
+      // An open list takes Esc: it closes, and the pop-up around it stays (UI_RULES §181).
+      if (open) e.preventDefault();
       setOpen(false);
       inputRef.current?.blur();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (visible.length === 1) toggle(visible[0]);
+      if (matches.length === 1) toggle(matches[0]);
     }
   };
 
   const focusInput = () => {
-    setOpen(true);
+    openMenu();
     // On mobile the search field lives in the sheet (autofocus); focusing the read-only
     // row input would just pop the keyboard behind the backdrop.
     if (!isMobile) inputRef.current?.focus();
@@ -90,7 +111,7 @@ export default function CrewPicker({ value = [], onChange, pool = [], placeholde
             </span>
           ) : (
             <span key={u.id} className="crew-chip">
-              <Avatar initials={u.initials} variant={u.avatar} size="xs" />
+              <Avatar user={u} size="xs" />
               <span className="crew-chip-name">{u.name}</span>
             </span>
           )))}
@@ -100,8 +121,8 @@ export default function CrewPicker({ value = [], onChange, pool = [], placeholde
             placeholder={selected.length === 0 ? placeholder : ''}
             value={query}
             readOnly={isMobile}
-            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-            onFocus={() => setOpen(true)}
+            onChange={(e) => { setQuery(e.target.value); openMenu(); }}
+            onFocus={openMenu}
             onKeyDown={handleKeyDown}
           />
         </div>
@@ -119,16 +140,16 @@ export default function CrewPicker({ value = [], onChange, pool = [], placeholde
             className="input pop-sheet-search"
             placeholder={placeholder}
             value={query}
-            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+            onChange={(e) => { setQuery(e.target.value); openMenu(); }}
             onKeyDown={handleKeyDown}
             autoFocus
           />
         )}
         <div className="crew-picker-list">
-          {visible.length === 0 ? (
+          {matches.length === 0 ? (
             <div className="tag-picker-empty">No matching crew.</div>
           ) : (
-            visible.map((u) => {
+            shown.map((u) => {
               const on = isSelected(u.id);
               return (
                 <button
@@ -138,14 +159,16 @@ export default function CrewPicker({ value = [], onChange, pool = [], placeholde
                   onClick={() => toggle(u)}
                   aria-pressed={on}
                 >
-                  <Avatar initials={u.initials} variant={u.avatar} size="sm" />
+                  <Avatar user={u} size="sm" />
                   <span className="crew-picker-row-name">{u.name}</span>
+                  {worksHere.has(u.id) && <Badge variant="blue">{t('worksAt.tag')}</Badge>}
                   {on && <span className="crew-picker-row-check" aria-hidden>✓</span>}
                 </button>
               );
             })
           )}
         </div>
+        <PickerCapNote note={noteMsg} />
       </PopMenu>
     </div>
   );

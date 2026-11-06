@@ -13,4 +13,4 @@ The title row at the top of a list or settings page, with that page's actions on
 
 ## Rules
 
-Actions are filled role pairs (UI_RULES §11), for example Import CSV (`btn-gold`) with Add Customer (`btn-primary`). No "+" in the labels.
+Actions are filled role pairs (UI_RULES §11), for example Import customers (`btn-gold`) with Add Customer (`btn-primary`). No "+" in the labels.

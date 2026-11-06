@@ -1,4 +1,5 @@
 import Icon from './Icon';
+import { useT } from '../i18n/react';
 
 // The bulk toolbar. Shown whenever the list is in multi-select mode (entered from
 // a row's ⋯ "Select"). Left: a Select-all / Deselect-all toggle so every visible
@@ -15,35 +16,36 @@ export default function BulkActionBar({
   onBulkDelete,
   canBulk,
 }) {
+  const t = useT();
   const hasSelection = selectedCount > 0;
   return (
-    <div className="bulk-action-bar" role="toolbar" aria-label="Bulk actions">
+    <div className="bulk-action-bar" role="toolbar" aria-label={t('messages.bulkActions')}>
       <button type="button" className="btn btn-outline btn-sm bulk-selectall" onClick={onToggleAll}>
         <Icon name={allSelected ? 'x' : 'check'} size={12} />
-        <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
+        <span>{allSelected ? t('messages.deselectAll') : t('messages.selectAll')}</span>
       </button>
       <span className="bulk-count">
-        <strong>{selectedCount}</strong> selected
+        {t.rich('messages.selectedCount', { count: selectedCount })}
       </span>
       <div className="bulk-actions">
         {hasSelection && canBulk && (
           <>
             <button type="button" className="btn btn-primary btn-sm" onClick={onMarkRead}>
               <Icon name="check" size={12} />
-              <span>Mark read</span>
+              <span>{t('messages.markReadShort')}</span>
             </button>
             <button type="button" className="btn btn-primary btn-sm" onClick={onMarkUnread}>
-              <span>Mark unread</span>
+              <span>{t('messages.markUnreadShort')}</span>
             </button>
             {onBulkDelete && (
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
                 onClick={onBulkDelete}
-                title="Permanently delete selected threads (only those you can delete will be removed)"
+                title={t('messages.bulkDeleteHint')}
               >
                 <Icon name="trash" size={12} />
-                <span>Delete</span>
+                <span>{t('messages.delete')}</span>
               </button>
             )}
           </>

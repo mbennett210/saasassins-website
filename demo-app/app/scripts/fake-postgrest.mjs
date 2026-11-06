@@ -117,6 +117,29 @@ class Query {
   lt(c, v) { this.filters.push((r) => r[c] != null && cmp(r[c], v) < 0); return this.typed(c, [v]); }
   in(c, arr) { const s = new Set(arr); this.filters.push((r) => r[c] != null && s.has(r[c])); return this.typed(c, arr); }
   is(c, v) { this.filters.push((r) => (v === null ? r[c] == null : r[c] === v)); return this; }
+  // JSONB containment (`col @> value`, PostgREST `cs.…`): every key of an object must be
+  // contained, an array by each of its elements, anything else by equality. The column may be
+  // a JSON path and the value the JSON string supabase-js passes through — how a cleaner's
+  // cleans are read (`data->'crewIds' @> '["id"]'`, _lib/jobsTable getCrewJobRows, CS-677).
+  // Same as fake-supabase.mjs.
+  contains(c, value) {
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const want = typeof value === 'string' ? JSON.parse(value) : value;
+    const path = /^(\w+)((?:->\w+)+)$/.exec(c);
+    const cellOf = (r) => {
+      if (!path) return r[c];
+      let v = r[path[1]];
+      for (const [, key] of path[2].matchAll(/->(\w+)/g)) v = v != null && typeof v === 'object' ? v[key] : undefined;
+      return v;
+    };
+    const holds = (have, w) => {
+      if (Array.isArray(w)) return Array.isArray(have) && w.every((x) => have.some((h) => holds(h, x) || same(h, x)));
+      if (w && typeof w === 'object') return have != null && typeof have === 'object' && !Array.isArray(have) && Object.entries(w).every(([k, x]) => holds(have[k], x));
+      return same(have, w);
+    };
+    this.filters.push((r) => { const v = cellOf(r); return v != null && typeof v === 'object' && holds(v, want); });
+    return this;
+  }
   not(c, op, v) {
     if (op === 'is' && v === null) { this.filters.push((r) => r[c] != null); return this; }
     throw new Error(`fake-postgrest: not.${op} unsupported`);

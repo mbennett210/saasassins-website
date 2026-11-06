@@ -8,8 +8,9 @@ let baseTitle = null;
 
 function ensureBase() {
   if (baseTitle === null) {
-    // Strip any leading "(N) " in case a prior render left one behind.
-    baseTitle = (document.title || IDENTITY.appTitle).replace(/^\(\d+\)\s*/, '');
+    // Strip any leading "(N) " in case a prior render left one behind. The tab names the software
+    // (IDENTITY.product: the company's names when the brand pack names no product, UI_RULES §129).
+    baseTitle = (document.title || IDENTITY.product.appTitle).replace(/^\(\d+\)\s*/, '');
   }
 }
 

@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import { usePermission } from '../hooks/usePermission';
-import { HOME_PATH } from '../demo/demoConfig';
+import { useT } from '../i18n/react';
 
-export default function RequirePerm({ perm, children, fallbackLabel }) {
+export default function RequirePerm({ perm, children }) {
+  const t = useT();
   const allowed = usePermission(perm);
 
   if (allowed) return children;
@@ -15,9 +16,9 @@ export default function RequirePerm({ perm, children, fallbackLabel }) {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0 3v.008M4.5 19.5h15a1.5 1.5 0 001.342-2.17l-7.5-13.5a1.5 1.5 0 00-2.684 0l-7.5 13.5A1.5 1.5 0 004.5 19.5z" />
           </svg>
         </div>
-        <h2>Page not available</h2>
-        <p>You don&rsquo;t have access to{fallbackLabel ? ` ${fallbackLabel}` : ' this page'}.</p>
-        <Link to={HOME_PATH} className="btn btn-outline">Go home</Link>
+        <h2>{t('noAccess.title')}</h2>
+        <p>{t('noAccess.body')}</p>
+        <Link to="/" className="btn btn-outline">{t('noAccess.home')}</Link>
       </div>
     </div>
   );

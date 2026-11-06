@@ -22,6 +22,7 @@ import { getSupabase } from './supabase.js';
 import { getAuthUser } from './auth.js';
 import { CLEANSPACE_ORG_ID } from './constants.js';
 import { ROLES } from '../../src/lib/roles.js';
+import { CLIENT_ROLE } from '../../src/lib/clientHub.js';
 
 // Every role the app has is a role a claim can carry: THE role list (lib/roles ROLES),
 // never a copy. A hand-kept copy here said owner/admin/crew for ten days after the 4th
@@ -29,6 +30,21 @@ import { ROLES } from '../../src/lib/roles.js';
 // to manager in live mode ("Invalid role"), and every manager's login carried no role
 // claim and was matched to its roster row by email instead (fixed 2026-09-23).
 export const VALID_ROLES = Object.freeze([...ROLES]);
+
+// 🔴 `client` IS NOT IN VALID_ROLES, AND MUST NOT BE. A customer-hub login (the client hub,
+// 2026-10-03) carries `app_metadata.role = 'client'` — but it is not a tier of staff: it holds
+// no permission in the matrix, has no roster row, and `can()` must never be asked about one.
+// Keeping it out of VALID_ROLES is what makes buildClaims / setClaimsForAuthUser — the STAFF
+// invite and re-stamp path — refuse to mint one by accident. The client half has its own
+// builder below, and api/_lib/authz.js refuses the role at every office gate.
+export { CLIENT_ROLE };
+
+// Shape of a client-user row id: the uuid primary key of public.client_users. Validated
+// everywhere it crosses a request boundary for the same reason isOrgUserId exists — the hub's
+// whole scope is resolved from this claim, so an unvalidated one is an identity-rebinding
+// primitive.
+export const isClientUserId = (v) => typeof v === 'string'
+  && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 
 // Shape of a CRM user id. Validated everywhere an org_user_id crosses a request
 // boundary: an unvalidated one is an identity-rebinding primitive, since every
@@ -43,17 +59,37 @@ export const isOrgUserId = (v) => typeof v === 'string' && /^u_[A-Za-z0-9_]+$/.t
 // "deny", or every un-backfilled login locks out.
 export async function getClaims(req) {
   const user = await getAuthUser(req);
-  if (!user) return null;
+  return user ? claimsOf(user) : null;
+}
+
+// The claims of a GoTrue user already in hand: the ONE reading of `app_metadata`. getClaims reads a
+// session's; authz.js `admissionOf` reads a login found by address, with no session (the sign-in
+// page's "Forgot password?", api/public/auth), so both decide from the same fields.
+export function claimsOf(user) {
   const md = user.app_metadata || {};
   const role = VALID_ROLES.includes(md.role) ? md.role : null;
+  // A CLIENT login is recognized HERE and refused in authz.js, rather than quietly resolving
+  // as "no role" — which is what it did before the hub shipped, and which was only ever safe
+  // by accident (no roster row). Three ways that accident failed: an unreadable roster
+  // decides "as before" and hands back an authority; a roster row with the same email lends
+  // its role to the claim-less fallback; and a stray org_user_id resolves a full identity.
+  const isClient = md.role === CLIENT_ROLE;
   return {
     user,
     email: user.email || null,
     authUserId: user.id,
     role,
-    orgUserId: typeof md.org_user_id === 'string' ? md.org_user_id : null,
+    // 🔴 A CLIENT LOGIN NEVER CARRIES AN ORG IDENTITY HERE, whatever app_metadata says. The
+    // mint path refuses to stamp one and reads the account back to prove it (users.js
+    // createClientUserAccount), because `public.jobs` RLS admits any login whose
+    // org_user_id claim is in a job's crewIds and RLS reads the TOKEN, not this. This line is
+    // the second belt: even a login that somehow kept the key resolves to no identity in
+    // every server gate.
+    orgUserId: isClient ? null : (typeof md.org_user_id === 'string' ? md.org_user_id : null),
     orgId: typeof md.org_id === 'string' ? md.org_id : null,
     hasRoleClaim: role !== null,
+    isClient,
+    clientUserId: isClient && isClientUserId(md.client_user_id) ? md.client_user_id : null,
   };
 }
 
@@ -86,4 +122,40 @@ export function buildClaims({ role, orgUserId } = {}) {
   if (role != null) appMetadata.role = role;
   if (orgUserId != null) appMetadata.org_user_id = orgUserId;
   return appMetadata;
+}
+
+// The CLIENT half of buildClaims: the trust root of a customer-hub login.
+//
+// 🔴 `org_user_id: null` IS THE POINT, NOT A PLACEHOLDER. GoTrue MERGES app_metadata key by
+// key and DELETES a key whose value is null, so stamping this over an account that somehow
+// carried an org identity removes it. `public.jobs` and (after 20261003110100)
+// `public.job_deletes` admit a login by that claim straight through PostgREST, with no server
+// route in the way, so the one thing a customer login must never hold is an org_user_id.
+// Callers read the account back and refuse the login if the key survived
+// (users.js createClientUserAccount).
+export function buildClientClaims({ clientUserId } = {}) {
+  if (!isClientUserId(clientUserId)) throw new Error(`Invalid client user id: ${clientUserId}`);
+  return {
+    org_id: CLEANSPACE_ORG_ID,
+    role: CLIENT_ROLE,
+    client_user_id: clientUserId,
+    org_user_id: null,
+  };
+}
+
+// Stamp (or re-stamp) a customer-hub login's claims and PROVE the result: the returned
+// account must carry the client role, this client-user id, and no org_user_id. Throws
+// otherwise — a half-stamped client login is a login with staff reach.
+export async function setClientClaimsForAuthUser(authUserId, { clientUserId } = {}) {
+  if (!authUserId) throw new Error('authUserId is required');
+  const appMetadata = buildClientClaims({ clientUserId });
+  const { data, error } = await getSupabase().auth.admin.updateUserById(authUserId, {
+    app_metadata: appMetadata,
+  });
+  if (error) throw error;
+  const md = data?.user?.app_metadata || {};
+  if (md.role !== CLIENT_ROLE || md.client_user_id !== clientUserId || md.org_user_id != null) {
+    throw new Error('The customer login could not be stamped safely; it was left unusable.');
+  }
+  return { ok: true, claims: md };
 }

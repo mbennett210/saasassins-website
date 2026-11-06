@@ -56,7 +56,7 @@ function listFunctionFiles() {
 // Reduce the environment to a minimal, config-free set so a module that reads config at
 // load resolves to undefined (the empty-env / `env -i` posture §1.4 requires), while
 // Node itself keeps working on Windows. Nothing app-specific (VITE_*, SUPABASE_*,
-// CRON_SECRET, RESEND_*, …) survives.
+// CRON_SECRET, SYSTEM_SENDER_EMAIL, …) survives.
 function scrubEnv() {
   const keep = new Set(['PATH', 'PATHEXT', 'SYSTEMROOT', 'SYSTEMDRIVE', 'TEMP', 'TMP', 'WINDIR', 'COMSPEC']);
   for (const k of Object.keys(process.env)) {

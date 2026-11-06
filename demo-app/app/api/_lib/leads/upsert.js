@@ -1,24 +1,26 @@
-// Server-side lead upsert — the inbound-webhook counterpart to the CSV importer.
+// Server-side lead upsert — one inbound-webhook lead becomes a contact (a PERSON).
 //
-// It REUSES the importer's matching engine (src/lib/csv.js `buildImportPlan` +
-// normalizers) verbatim by feeding it a single synthetic row, then applies the
-// resulting plan to the org_state blob by PORTING the reducer's ADD_CONTACT /
-// UPDATE_CONTACT / ADD_CLIENT side effects plus CsvImportModal.doImport's
-// account-create / route / tag-union logic. Pure (no I/O, no React, no store) —
-// same posture as api/_lib/marketing/engine.js, so the webhook and the
-// interactive importer compute identical results and can't drift.
+// It runs the person-matching engine in src/lib/csv.js (`buildImportPlan` +
+// normalizers) on a single synthetic row, then applies the resulting plan to the
+// org_state blob by PORTING the reducer's ADD_CONTACT / UPDATE_CONTACT / ADD_CLIENT
+// side effects plus the account-create / route / tag-union steps below. Pure (no
+// I/O, no React, no store) — same posture as api/_lib/marketing/engine.js.
+// That engine was the old Customers CSV importer's; the screen now imports
+// BUILDINGS (src/lib/customerImport.js, 2026-10-03), so these steps are this
+// intake's own and the person engine in csv.js is kept for it alone.
 //
 // Entry point: ingestLead(state, payload, endpointConfig) -> { state, status,
 // contactId, reason }. The caller (api/webhooks/[...path].js) does the CAS write.
 
 import { buildImportPlan } from '../../../src/lib/csv.js';
 import { newId } from '../../../src/lib/ids.js';
+import { LEAD_ACK_REPEAT_DAYS } from '../../../src/lib/customerMessages.js';
 
 const nowIso = () => new Date().toISOString();
 const has = (v) => !!(v && String(v).trim());
 
-// The importer maps these CSV columns; we feed one synthetic row so the engine
-// runs exactly like a 1-row CSV upsert. `id` is a Contact-ID match key (a sender
+// The person engine's fields; we feed one synthetic row so it runs as a 1-row
+// person upsert. `id` is a Contact-ID match key (a sender
 // echoing back our contactId matches exactly); it's never adopted as our id.
 const FIELDS = ['firstName', 'lastName', 'email', 'phone', 'title', 'company', 'lifecycle', 'notes', 'id'];
 
@@ -81,8 +83,8 @@ function resolveTagNames(tags, names) {
   return { tagIds: ids, tags: list };
 }
 
-// Create a client/account record — mirrors the ADD_CLIENT reducer defaults +
-// CsvImportModal.ensureAccountId's status-from-lifecycle.
+// Create a client/account record — the ADD_CLIENT reducer defaults + a status
+// from the lead's lifecycle (once the person importer's ensureAccountId).
 function makeClient(name, lifecycle) {
   return {
     id: newId('cl'),
@@ -105,7 +107,7 @@ function ensureAccount(clients, account, lifecycle) {
   return { companyId: client.id, clients: [...clients, client] };
 }
 
-// Bulk-route into the chosen pipeline — mirrors CsvImportModal.routePatch: never
+// Route into the endpoint's pipeline (once the person importer's routePatch): never
 // pull a contact out of a working (non-Master) pipeline, and skip if already there.
 function routePatch(routing, existing) {
   const { pipelineId, stage, masterId } = routing;
@@ -167,6 +169,13 @@ function applyContactPatch(state, contactId, patch, clients) {
   return { contacts, clients: nextClients };
 }
 
+// Does a known contact's new submission count as a new lead (for the acknowledgement)? Only when it
+// was never stamped, or its last stamp is older than LEAD_ACK_REPEAT_DAYS.
+function leadStampDue(contact) {
+  const last = Date.parse(contact?.leadReceivedAt ?? '');
+  return !Number.isFinite(last) || Date.now() - last > LEAD_ACK_REPEAT_DAYS * 864e5;
+}
+
 // Upsert one inbound lead into the org_state blob.
 //   state          — the whole app store (contacts, clients, pipelines, tags…)
 //   payload        — the flat inbound JSON
@@ -180,7 +189,7 @@ export function ingestLead(state, payload = {}, endpointConfig = {}) {
   const tagIds = [...new Set([...routing.tagIds, ...payloadTagIds])];
   let workingState = tagsAfter === (state.tags || []) ? state : { ...state, tags: tagsAfter };
 
-  // One synthetic CSV row → reuse the importer's engine for match + account-tie +
+  // One synthetic row → the person engine (csv.js) for match + account-tie +
   // fill-blanks enrichment. Lifecycle is the resolved default so normalizeContact
   // coerces it into the canonical set.
   const rowObj = {
@@ -210,7 +219,14 @@ export function ingestLead(state, payload = {}, endpointConfig = {}) {
     return { state, status: 'invalid', contactId: null, reason: r.reason };
   }
   if (r.action === 'skip') {
-    // Matched but nothing to change, or a same-call duplicate — idempotent no-op.
+    // Matched but nothing to change, or a same-call duplicate — idempotent no-op… unless it is a
+    // known person asking again after LEAD_ACK_REPEAT_DAYS: that is a new lead arrival, stamped so
+    // the new-lead acknowledgement goes again (leadStampDue below).
+    const known = r.contactId ? (workingState.contacts || []).find((c) => c.id === r.contactId) : null;
+    if (known && leadStampDue(known)) {
+      const { contacts, clients: clientsAfter } = applyContactPatch(workingState, known.id, { leadReceivedAt: nowIso() }, workingState.clients || []);
+      return { state: { ...workingState, contacts, clients: clientsAfter }, status: 'updated', contactId: known.id };
+    }
     return { state: workingState, status: 'skipped', contactId: r.contactId || null, reason: r.reason };
   }
 
@@ -227,6 +243,8 @@ export function ingestLead(state, payload = {}, endpointConfig = {}) {
     if (has(payload.source)) contactInput.customFields = { ...(contactInput.customFields || {}), source: String(payload.source).trim() };
     const route = routePatch(routing, null);
     if (route) Object.assign(contactInput, route);
+    // The new-lead acknowledgement fires on this stamp (lib/reminderScheduler walkLeads).
+    contactInput.leadReceivedAt = nowIso();
 
     const { contact, clients: clients3 } = buildContact(contactInput, clients, workingState.pipelines);
     return {
@@ -255,6 +273,9 @@ export function ingestLead(state, payload = {}, endpointConfig = {}) {
   }
   const route = routePatch(routing, existing);
   if (route) Object.assign(patch, route);
+  // A known person asking again is a new lead arrival — acknowledged again, but not more than once
+  // in LEAD_ACK_REPEAT_DAYS (a form resubmitted three times in a minute is one inquiry).
+  if (leadStampDue(existing)) patch.leadReceivedAt = nowIso();
 
   if (Object.keys(patch).length === 0) {
     return { state: workingState, status: 'skipped', contactId: r.contactId, reason: 'Already up to date' };

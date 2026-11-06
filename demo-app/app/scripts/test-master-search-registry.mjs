@@ -10,6 +10,7 @@ import { PAGE_ENTRIES, ACTION_ENTRIES, NAV_ENTRIES, EXCLUDED_ROUTES, DETAIL_ROUT
 import { mobileTabs, visible } from '../src/lib/navData.js';
 import { MARKETING_ENABLED } from '../src/lib/features.js';
 import { PERMISSIONS, ALWAYS_GRANTED } from '../src/lib/roles.js';
+import { SETTINGS_GROUPS } from '../src/pages/settings/settingsNav.js';
 
 let pass = 0;
 const fails = [];
@@ -43,7 +44,7 @@ ok('actions have rankBucket 1', ACTION_ENTRIES.every((e) => e.rankBucket === 1 &
 
 // ── exclusions carry reasons + real-looking paths ───────────────────────────────
 ok('every exclusion has a non-empty reason', EXCLUDED_ROUTES.every((x) => x.path.startsWith('/') && x.reason && x.reason.length > 10));
-ok('reviews is excluded', EXCLUDED_ROUTES.some((x) => x.path === '/reviews'));
+ok('no exclusion names the retired /reviews route (Google reviews, 2026-10-20)', !EXCLUDED_ROUTES.some((x) => x.path === '/reviews'));
 
 // ── detail routes are param templates ────────────────────────────────────────────
 ok('detail routes are param templates', DETAIL_ROUTES.length >= 4 && DETAIL_ROUTES.every((p) => p.includes('/:')));
@@ -63,7 +64,13 @@ ok('/marketing carries the MARKETING_ENABLED flag through', byTo('/marketing')?.
     marketing.length === 1 && marketing.every((e) => visible(e, () => true, false, false) === MARKETING_ENABLED
       && visible(e, () => true, true, false) === false));
 }
-ok('Add customer action uses permsAny', ACTION_ENTRIES.find((e) => e.id === 'action:add-customer')?.permsAny?.length === 2);
+// Adding a customer is "Create / edit customers" alone since 2026-10-03: the server refuses a
+// new customer from a contacts.edit-only login (orgStateGuard "add a customer"), so search must
+// not offer it to one (it used to accept either key).
+ok('Add customer action asks for clients.edit (the server’s rule)', (() => {
+  const e = ACTION_ENTRIES.find((x) => x.id === 'action:add-customer');
+  return e?.perm === 'clients.edit' && !e.permsAny;
+})());
 
 // ── 🔴 crew have NO search (owner 2026-09-22): nothing here may exist only for crew ──
 // MasterSearch renders nothing for crew, so a crew-only action or keyword set is dead weight.
@@ -75,9 +82,14 @@ ok('no action targets a crew-only page', ACTION_ENTRIES.every((e) => !crewOnlyPa
 ok('crew-only pages carry no search keywords', crewOnlyPages.every((e) => e.keywords.length === 0));
 ok('no hand-authored (non-nav) page is crew-only', PAGE_ENTRIES.filter((e) => e.source !== 'nav').every((e) => !e.crewOnly));
 
-// ── settings pages all present (11 from settingsNav) ─────────────────────────────
+// ── settings pages all present ───────────────────────────────────────────────────
+// Counted FROM settingsNav, never a restated number: the point is that every page the
+// Settings map declares reached the search index, and a hardcoded count only ever says
+// "somebody edited settingsNav and not this line" (it did, when Customer Logins landed).
 const settingsPages = PAGE_ENTRIES.filter((e) => e.source === 'settings');
-ok('11 settings pages derived', settingsPages.length === 11);
+const settingsDeclared = 1 + SETTINGS_GROUPS.reduce((n, g) => n + g.items.length, 0); // + the pinned Quick Start
+ok(`every settings page in settingsNav is derived (${settingsPages.length} of ${settingsDeclared})`,
+  settingsDeclared > 5 && settingsPages.length === settingsDeclared);
 ok('settings pages carry a sublabel (desc)', settingsPages.every((e) => typeof e.sublabel === 'string' && e.sublabel.length > 0));
 
 // ── keywords are always an array; normalized text + display fields precomputed ────
@@ -99,7 +111,10 @@ ok('the canonical page keeps its decorations', byTo('/inspections')?.keywords.in
 
 // ── sub-tabs a page gates tighter than its route carry permsAll ─────────────────
 ok('Work orders needs problems.manage too', byTo('/inspections?tab=workorders')?.permsAll?.includes('problems.manage'));
-ok('Approved supply items needs supplies.manage too', byTo('/supplies?tab=approved')?.permsAll?.includes('supplies.manage'));
+// Round 3 (2026-10-06): Supplies' "Approved items" tab is gone — a building's list lives on its
+// customer page — so search offers neither the tab nor an "Add supply item" with no building.
+ok('the deleted Approved items tab is not offered, nor an Add supply item with no building',
+  !byTo('/supplies?tab=approved') && !act('add-supply-item'));
 
 // ── the mobile LAUNCHPAD: permission-filtered tiles + the pages the tray doesn't show ──
 const allow = () => true;
@@ -107,36 +122,41 @@ const without = (...denied) => (k) => !denied.includes(k);
 for (const a of ACTION_ENTRIES) ok(`${a.id}: tile glyph "${a.glyph}" exists`, ICON_NAMES.has(a.glyph));
 ok('curated launchpad slugs all exist', LAUNCHPAD_ACTIONS.every((slug) => ACTION_ENTRIES.some((a) => a.slug === slug)));
 {
-  const lp = buildLaunchpad(allow, true, false);
+  const lp = buildLaunchpad(allow, true);
   ok('full access: the curated six, in order', JSON.stringify(lp.actions.map((a) => a.slug)) === JSON.stringify(LAUNCHPAD_ACTIONS));
+  // The manager view (2026-10-09) put Shift Check-in before Approvals, and Client Requests and
+  // Checklists after Quality, in the Operations group, so in nav order they take places in the
+  // eight; the pages after them are found by typing.
   ok('full access: Go to = primary pages minus the tray, max 8',
-    JSON.stringify(lp.pages.map((p) => p.to)) === JSON.stringify(['/reports', '/time', '/variance', '/payroll', '/inspections', '/keys', '/supplies', '/invoices']));
-  const tray = mobileTabs(allow, false).map((t) => t.to);
+    JSON.stringify(lp.pages.map((p) => p.to)) === JSON.stringify(['/reports', '/check-in', '/approvals', '/time', '/variance', '/payroll', '/inspections', '/requests']));
+  const tray = mobileTabs(allow).map((t) => t.to);
   ok('the tray is Dashboard / Schedule / Messaging / Customers', JSON.stringify(tray) === JSON.stringify(['/', '/schedule', '/messaging', '/contacts']));
   ok('Go to never repeats a tray tab', lp.pages.every((p) => !tray.includes(p.to)));
 }
 {
   // No invoices.edit / keys.manage: those tiles drop and the grid backfills in registry order.
-  const lp = buildLaunchpad(without('invoices.edit', 'keys.manage'), true, false);
+  const lp = buildLaunchpad(without('invoices.edit', 'keys.manage'), true);
   const slugs = lp.actions.map((a) => a.slug);
   ok('a tile never offers a flow the viewer cannot open', !slugs.includes('new-invoice') && !slugs.includes('add-key'));
   ok('curated first, then registry-order backfill to six',
-    JSON.stringify(slugs) === JSON.stringify(['add-customer', 'new-job', 'new-message', 'request-supplies', 'add-supply-item', 'invite-team']));
+    JSON.stringify(slugs) === JSON.stringify(['add-customer', 'new-job', 'new-message', 'request-supplies', 'invite-team', 'add-tag']));
   ok('desktop-bound actions never reach the phone', !slugs.includes('new-quote') && !slugs.includes('new-deal'));
 }
 {
   // Customers as /clients (no contacts.view): the tray carries /clients, so Go to skips it.
   const check = without('contacts.view', 'contacts.edit');
-  ok('tray follows the Customers perm', mobileTabs(check, false).some((t) => t.to === '/clients'));
-  ok('Go to skips /clients when the tray has it', !buildLaunchpad(check, true, false).pages.some((p) => p.to === '/clients'));
+  ok('tray follows the Customers perm', mobileTabs(check).some((t) => t.to === '/clients'));
+  ok('Go to skips /clients when the tray has it', !buildLaunchpad(check, true).pages.some((p) => p.to === '/clients'));
 }
 {
   const actionPerms = new Set(ACTION_ENTRIES.flatMap((a) => [a.perm, ...(a.permsAny || [])]).filter(Boolean));
-  const lp = buildLaunchpad((k) => !actionPerms.has(k), true, false);
+  const lp = buildLaunchpad((k) => !actionPerms.has(k), true);
   ok('no create permissions → no tiles', lp.actions.length === 0);
 }
-ok('crew tray: My Day + Quality (the nav split lives in one place)',
-  JSON.stringify(mobileTabs(allow, true).map((t) => t.to)) === JSON.stringify(['/', '/my-day', '/messaging', '/inspections']));
+// The tray is the office's alone since the Cleaner Hub (the crew shell draws none, UI_RULES §165):
+// mobileTabs takes no role, and a crew-only page never reaches it.
+ok('the tray is the office\'s: no role argument, and no crew-only page in it',
+  mobileTabs.length === 1 && !mobileTabs(allow).some((t) => t.to === '/my-day'));
 
 // ── 🔴 TOTALITY: every report and every non-default HR tab is findable by name ───
 // Parsed from the pages themselves, so adding a report / tab without a search entry fails.

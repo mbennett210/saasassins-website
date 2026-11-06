@@ -57,7 +57,7 @@ function StageRow({ stage, count, index, total, onRename, onMove, onDelete, onDr
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setLabel(stage.label); e.currentTarget.blur(); } }}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { e.preventDefault(); setLabel(stage.label); e.currentTarget.blur(); } }}
       />
       <span className="stage-row-count text-xs text-muted">
         {count} deal{count === 1 ? '' : 's'}
@@ -218,7 +218,8 @@ export default function StageManagerModal({ open, onClose }) {
         help={isMaster ? 'The Master Pipeline is the default board and cannot be renamed or deleted.' : undefined}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
-          if (e.key === 'Escape') setNameDraft(pipelineLabel);
+          // Esc reverts the name and nothing else: the pop-up stays open (UI_RULES §181).
+          if (e.key === 'Escape') { e.preventDefault(); setNameDraft(pipelineLabel); }
         }}
       />
       <label className="form-label">Stages</label>

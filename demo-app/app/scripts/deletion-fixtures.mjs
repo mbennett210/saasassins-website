@@ -32,7 +32,6 @@ export const SCENARIOS = [
   // guarded: a pay line that pays out an approved reimbursement can't be deleted on its
   // own (it's undone from HR, where removing the reimbursement takes the line).
   { target: 'payrollLines', action: 'DELETE_PAYROLL_LINE', victimId: 'fx_pl_hist', expect: 'block', cells: ['reimbursements[].payrollLineId'] },
-  { target: 'clients', action: 'DELETE_CLIENT', victimId: 'fx_v_client', expect: 'delete', cells: 'target' },
   { target: 'contacts', action: 'DELETE_CONTACT', victimId: 'fx_v_contact', expect: 'delete', cells: 'target' },
   { target: 'tags', action: 'DELETE_TAG', victimId: 'fx_v_tag', expect: 'delete', cells: 'target' },
   // Hard template delete (no archive): the server drops the inspection_templates record;
@@ -41,13 +40,12 @@ export const SCENARIOS = [
   // per-cleaner map is the only binding left. The fx_wc_user witness references fx_tmpl there.
   { target: 'checklistTemplates', action: 'SCRUB_CHECKLIST_TEMPLATE', victimId: 'fx_tmpl', expect: 'delete',
     payload: { templateId: 'fx_tmpl' }, cells: ['clients[].crewChecklists.{value}'] },
-  { target: 'jobs', action: 'DELETE_JOB', victimId: 'fx_v_job', expect: 'delete', cells: ['reminderEvents[].jobId', 'invoices[].jobIds', 'timeOff[].scheduledJobIds'] },
+  { target: 'jobs', action: 'DELETE_JOB', victimId: 'fx_v_job', expect: 'delete', cells: ['invoices[].jobIds', 'timeOff[].scheduledJobIds'] },
   { target: 'services', action: 'DELETE_SERVICE', victimId: 'fx_v_service', expect: 'delete', cells: 'target' },
   { target: 'frequencies', action: 'DELETE_FREQUENCY', victimId: 'fx_v_freq', expect: 'delete', cells: 'target' },
   { target: 'keys', action: 'DELETE_KEY', victimId: 'fx_v_key', expect: 'delete', cells: 'target' },
   { target: 'conversations', action: 'DELETE_CONVERSATION', victimId: 'fx_v_conv', expect: 'delete', cells: 'target' },
   { target: 'snippets', action: 'DELETE_SNIPPET', victimId: 'fx_v_snip', expect: 'delete', cells: 'target' },
-  { target: 'supplyItems', action: 'DELETE_SUPPLY_ITEM', victimId: 'fx_v_si', expect: 'delete', cells: 'target' },
   { target: 'marketingInboxes', action: 'REMOVE_MARKETING_INBOX', victimId: 'fx_v_mi', expect: 'delete', cells: 'target' },
   { target: 'marketingSequences', action: 'DELETE_MARKETING_SEQUENCE', victimId: 'fx_v_mseq', expect: 'delete', extraVictimIds: ['fx_menr_mseq'],
     cells: ['marketingEnrollments[].sequenceId', 'marketingSends[].sequenceId', 'marketingReplies[].sequenceId', 'marketingSends[].enrollmentId', 'marketingReplies[].enrollmentId'] },
@@ -59,10 +57,9 @@ export const SCENARIOS = [
   // … and proceeds (repointing activePipelineId) when none does (free)
   { target: 'pipelines', action: 'DELETE_PIPELINE', victimId: 'fx_v_pipe_free', expect: 'delete',
     cells: ['$.activePipelineId', 'marketingSequences[].replyRouting.pipelineId', 'marketingSettings.replyRouting.pipelineId'] },
-  // sites have no standalone delete — they die with their client (DELETE_CLIENT). Track
-  // the SITE id while deleting its client so the site-referencing cells are verdicted.
-  { target: 'sites', deleteFrom: 'clients', action: 'DELETE_CLIENT', victimId: 'fx_v_client', extraVictimIds: ['fx_st_client'],
-    expect: 'delete', cells: ['jobs[].siteId', 'invoices[].siteId', 'keys[].siteId'] },
+  // (No customer or site scenario: customers are ARCHIVED, never deleted — CS-663, Matt's "never
+  // delete customers" — and a site has no delete of its own, so nothing removes either. Their
+  // reference cells are NOT-EXERCISABLE in the manifest.)
   // nested step delete (marketingSends.stepId is historical → KEPT)
   { target: 'marketingSequences.steps', deleteFrom: 'marketingSequences', action: 'DELETE_MARKETING_STEP',
     victimId: 'fx_step', extraVictimIds: ['fx_step'], payload: { sequenceId: 'fx_mseq_step', stepId: 'fx_step' },
@@ -70,7 +67,6 @@ export const SCENARIOS = [
   // path-embedded deep-link ids (notifications[].url) — one polymorphic cell, verdicted
   // under each target whose id its url can carry (adversarial-pass finding).
   { target: 'notifications', deleteFrom: 'conversations', action: 'DELETE_CONVERSATION', victimId: 'fx_v_conv', expect: 'delete', cells: ['notifications[].url'] },
-  { target: 'notifications', deleteFrom: 'clients', action: 'DELETE_CLIENT', victimId: 'fx_v_client', expect: 'delete', cells: ['notifications[].url'] },
   { target: 'notifications', deleteFrom: 'jobs', action: 'DELETE_JOB', victimId: 'fx_v_job', expect: 'delete', cells: ['notifications[].url'] },
 ];
 
@@ -94,8 +90,17 @@ export function enrichState(state) {
   });
   // a checklist template so crewChecklists.{value} resolves to a real id
   push(s, 'checklistTemplates', { id: 'fx_tmpl', name: 'FX Template', sections: [] });
+  // S131: an account manager reporting to the victim (users[].opsManagerId) — DELETE_USER must
+  // clear the pointer (lib/deleteCascade clearOpsManagerPointers), whatever the victim's level.
+  push(s, 'users', { id: 'fx_wu_am', name: 'FX Witness Account Manager', email: 'fx-am@example.test', role: 'manager', status: 'active', opsManagerId: U, hr: {} });
 
   push(s, 'connectedInboxes', { id: 'fx_ci_user', userId: U, workspaceId: 'fx_ws_x', provider: 'google', status: 'active' });
+
+  // SUP-9's named supply approver (opsSettings, a SINGLETON slice rather than a row list),
+  // so the ripple witnesses that DELETE_USER nulls it: a dangling id resolves to NOBODY, so
+  // every new supply request would silently reach no approver while Settings still named
+  // one. (ALR-4's operations manager sat here too until ALR-12 removed the setting.)
+  s.opsSettings = { ...(s.opsSettings || {}), supplyApproverUserId: U };
 
   // Name-keeping witnesses start with NO stored name (as live rows do), so the harness's
   // "+NAME" check proves the delete STAMPED it rather than finding it already there.
@@ -113,10 +118,6 @@ export function enrichState(state) {
 
   push(s, 'marketingInboxes', { id: 'fx_mi_user', connectedByUserId: U, workspaceId: 'fx_ws_y', email: 'fx@example.test', rotationOrder: 99 });
   push(s, 'marketingSequences', { id: 'fx_mseq_user', createdByUserId: U, notifyOnReplyUserId: U, steps: [], replyTags: [] });
-
-  push(s, 'supplyRequests', {
-    id: 'fx_sr_user', clientId: null, requestedByUserId: U, completedByUserId: U, lines: [], status: 'completed',
-  });
 
   push(s, 'timeOff', { id: 'fx_to_user', userId: U, createdBy: U, startDate: '2026-01-01', endDate: '2026-01-01', reason: 'fx' });
 
@@ -170,7 +171,9 @@ export function enrichState(state) {
   push(s, 'payrollLines', { id: 'fx_pl_hist', userId: UH, periodKey: '2000-01-01', kind: 'earning', category: 'reimbursement', amount: 20, taxable: false, createdBy: U, note: 'reimbursement fx_rmb_hist' });
   push(s, 'reimbursements', { id: 'fx_rmb_hist', userId: UH, amount: 20, status: 'approved', periodKey: '2000-01-01', payrollLineId: 'fx_pl_hist', submittedBy: U, decidedBy: U });
 
-  // ── clients target (DELETE_CLIENT) ──
+  // ── clients target: archived, never deleted (CS-663), so no scenario deletes it. The rows stay
+  // as witnesses, so the enumerator still surfaces (and the manifest still classifies) every
+  // cell that references a customer or its site. ──
   const C = VICTIMS.clients.id;
   push(s, 'clients', { id: C, name: 'FX Victim Account', type: 'customer', tagIds: [], primaryContactId: null });
   push(s, 'contacts', { id: 'fx_ct_client', email: 'fx-ctc@example.test', companyId: C, tagIds: [] });
@@ -179,15 +182,10 @@ export function enrichState(state) {
   push(s, 'jobs', { id: 'fx_j_client', clientId: C, siteId: 'fx_st_client', serviceId: null, crewIds: [], tagIds: [], status: 'upcoming', startAt: '2026-01-02T10:00:00.000Z' });
   push(s, 'keys', { id: 'fx_key_client', clientId: C, siteId: 'fx_st_client', clientName: 'FX Victim Account', heldByUserId: null });
   push(s, 'opportunities', { id: 'fx_opp_client', clientId: C, pipelineId: null, primaryContactId: null, status: 'open' });
-  // a reminder for the client's OWN job — DELETE_CLIENT scrubs reminderEvents by the
-  // client's jobId, so clientId rides out with it (realistic link, not a manufactured dangle).
-  push(s, 'reminderEvents', { id: 'fx_re_client', clientId: C, jobId: 'fx_j_client', templateKey: 'fx' });
-  // a bell row whose deep-link embeds the client id — DELETE_CLIENT sweeps /schedule/ urls
-  // but NOT /clients/ urls, so this dangles (adversarial finding).
+  // a reminder for the client's OWN job (a realistic link, not a manufactured one)
+  // a bell row whose deep-link embeds the client id
   push(s, 'notifications', { id: 'fx_nt_client', userId: null, eventKey: 'fx', url: `/clients/${C}` });
   push(s, 'sites', { id: 'fx_st_client', clientId: C, siteContactId: null, tagIds: [] });
-  push(s, 'supplyItems', { id: 'fx_si_client', clientId: C, name: 'FX supply' });
-  push(s, 'supplyRequests', { id: 'fx_sr_client', clientId: C, lines: [], status: 'open' });
   push(s, 'clientActivities', { id: 'fx_clact_client', clientId: C, authorUserId: null, kind: 'note' });
 
   // ── contacts target (DELETE_CONTACT; email is the alt key) ──
@@ -220,7 +218,6 @@ export function enrichState(state) {
   // ── jobs target (DELETE_JOB) ──
   const J = 'fx_v_job';
   push(s, 'jobs', { id: J, clientId: null, siteId: null, serviceId: null, crewIds: [], tagIds: [], status: 'upcoming', startAt: '2026-01-05T10:00:00.000Z' });
-  push(s, 'reminderEvents', { id: 'fx_re_job', clientId: null, jobId: J, templateKey: 'fx' });
   push(s, 'invoices', { id: 'fx_inv_job', clientId: null, billingContactId: null, jobIds: [J] });
   push(s, 'notifications', { id: 'fx_nt_job', userId: null, eventKey: 'fx', url: `/schedule/${J}` });
   // A call-out keeps the ids of the cleans it took the person off (Reports › Called out).
@@ -251,11 +248,6 @@ export function enrichState(state) {
   const SN = 'fx_v_snip';
   push(s, 'snippets', { id: SN, title: 'FX Snippet', body: 'fx' });
   push(s, 'messages', { id: 'fx_m_snip', conversationId: 'fx_v_conv', snippetId: SN, body: 'fx' });
-
-  // ── supplyItems target (DELETE_SUPPLY_ITEM) ──
-  const SI = 'fx_v_si';
-  push(s, 'supplyItems', { id: SI, clientId: null, name: 'FX Item' });
-  push(s, 'supplyRequests', { id: 'fx_sr_item', clientId: null, lines: [{ itemId: SI, name: 'FX Item', qty: 1 }], status: 'open' });
 
   // ── marketingInboxes target (REMOVE_MARKETING_INBOX) ──
   const MI = 'fx_v_mi';

@@ -22,6 +22,7 @@ import { listInspections } from '../api/_lib/qc/store.js';
 import { idParam } from '../api/_lib/queryParams.js';
 import { CLEANSPACE_ORG_ID as ORG } from '../api/_lib/constants.js';
 import * as inspectionsLib from '../src/lib/inspections.js';
+import { QC_INSPECTIONS_STUB_KEY } from '../src/data/stubKeys.js';
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -146,7 +147,7 @@ const list = (filters, maxRows) => attempt(() => listInspections(filters, db(max
   ok(qcApi.isQcStub(), 'B0: under plain node qcApi runs its demo stub');
   // Stored out of order: the stub must sort, not trust insertion order.
   const shuffled = ALL.map((r, i) => [(i * 7919) % ALL.length, r]).sort((a, b) => a[0] - b[0]).map(([, r]) => r);
-  mem.set('cleanspace_qc_inspections_stub_v1', JSON.stringify({ inspections: shuffled }));
+  mem.set(QC_INSPECTIONS_STUB_KEY, JSON.stringify({ inspections: shuffled }));
   const stub = (filters) => attempt(() => qcApi.listInspections(filters));
 
   const quiet = await stub({ clientId: 'c_quiet' });

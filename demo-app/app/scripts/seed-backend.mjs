@@ -15,26 +15,65 @@
 // folded into Work Orders (relational problem_reports), and the dead `complaints` key
 // is deleted from the blob. The blob write appends ONLY non-authority demo rows (never
 // users/permissions), is size-checked, retries on CAS.
-// (gmb_reviews is intentionally NOT seeded — the Reviews surface is hidden for now.)
 //
 // WINDOW: seeds PAST_WEEKS of history + FUTURE_WEEKS of upcoming work (default 8+8)
 // so the demo covers the whole dev period and future-dated testing without needing
 // a refresh. Dates are runtime-relative to when it runs.
 //
+// THE MANAGER'S DAY (2026-10-09): the same day the login-free demo shows (src/data/
+// demoManagerDay.js), placed around the run's NOW on the org's clock, over the LIVE book: the
+// manager with the most buildings (role manager first), her buildings in the day's building slots,
+// the roster's cleaners in its crew slots (a seed id the live book still has keeps its own slot).
+// It writes today's visits (jobs 'j_bkseed_md_*') with their punches — done, two on site now, late,
+// no check-in, upcoming, called out — the checklist saves on them, the requests the customer raised
+// in the hub on her buildings (problem_reports origin 'portal', raised by the building's client-hub
+// user when it has one) WITH their threads, supply requests (an order placed, a delivery past a
+// budget), and a cleaner's 42½-hour last pay week (overtime to approve). Today's cadence visit is
+// left out at her buildings and for her cleaners, so nobody is booked or on the clock twice. It
+// never changes a customer or a user: a checklist save shows on the manager's Checklists page only
+// where the building assigns that cleaner a checklist (Customers → the location's checklists).
+//
 // SAFE BY DEFAULT: dry-run unless --commit. Idempotent — a --commit first DELETES
 // the prior seed set (jobs id 'j_bkseed_*', their time_entries, inspections by
-// 'tok_bkseed_*', templates by created_by='seed') then re-inserts, so re-running at
-// any window never duplicates and never orphans. Non-seed rows are left untouched.
+// 'tok_bkseed_*', templates by created_by='seed', the seed's own work orders by their
+// deterministic ids, the manager's day's checklist saves and supply rows) then re-inserts, so
+// re-running at any window never duplicates and never orphans. Non-seed rows are left untouched
+// (a work order a customer raised in the hub is never deleted).
 //
 //   node scripts/seed-backend.mjs            # DRY RUN — prints the plan, writes nothing
 //   node scripts/seed-backend.mjs --commit   # writes to the live backend
 //
 // Creds from app/.env.local: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, CLEANSPACE_ORG_ID (optional).
+// A worktree has no env file: CS_ENV_FILE=<path to the main checkout's app/.env.local> reads that
+// one instead (read here, never printed).
+//
+// TWO TRANSPORTS (scripts/_lib/seedWrite.mjs). With the service-role pair it reads and writes
+// through supabase-js. With only SUPABASE_DB_URL (the main checkout's case) it goes through
+// Postgres: the dry run reads inside a READ ONLY transaction it rolls back; --commit runs EVERY
+// write in ONE transaction, the shared record's write a version-checked UPDATE inside it, and
+// refuses any project but the production sandbox (nvsbknowpkmhrzbkcwxs). It prints the project
+// ref, never the connection string. Site photos need Storage, so the Postgres path leaves them
+// exactly as they are (it neither deletes nor writes account_media).
+//
+// The dry run prints the whole plan: per table, the rows it would delete (counted in the live
+// database) and write; the shared record's fields it would change; and which alerts the rows it
+// writes will set off, when, and for whom.
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { scoreInspection } from '../src/lib/inspections.js';
+import { countChecklistSubmission } from '../src/lib/checklistCount.js';
 import { IDENTITY } from '../src/brand/identity.generated.js';
+import { MAX_STATE_BYTES } from '../src/lib/stateBudget.js';
+import { missedAfterStartMins, shiftLookbackHours } from '../src/lib/opsAlerts.js';
+import { dayKey as orgDayKey, startOfDayKey, addDaysKey } from '../src/lib/dates.js';
+import {
+  assignManagers, planManagerDays, managerDayRows, managerDayIdUniverse, blobClientChanges,
+  MD_JOB_PREFIX, MD_SUPPLY_ITEM_PREFIX, MD_SUPPLY_REQUEST_PREFIX,
+} from './_lib/managerDaySeed.mjs';
+import {
+  pgTarget, checkPgPlan, explainPgPlan, countPgDeletes, runPgPlan, countRestDeletes, runRestPlan,
+} from './_lib/seedWrite.mjs';
 
 const COMMIT = process.argv.includes('--commit');
 const MODE = COMMIT ? 'COMMIT (writing)' : 'DRY RUN (no writes)';
@@ -48,14 +87,71 @@ const CHECKLISTS_PER_SITE = 5;
 
 // ── env ────────────────────────────────────────────────────────────────────────
 const env = {};
-for (const line of readFileSync(new URL('../.env.local', import.meta.url), 'utf8').split('\n')) {
+for (const line of readFileSync(process.env.CS_ENV_FILE || new URL('../.env.local', import.meta.url), 'utf8').split('\n')) {
   if (line.trim().startsWith('#')) continue;
   const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
-  if (m) env[m[1]] = m[2];
+  if (m) env[m[1]] = m[2].replace(/^["']|["']$/g, '');
 }
 const SUPABASE_URL = env.SUPABASE_URL, KEY = env.SUPABASE_SERVICE_ROLE_KEY;
-if (!SUPABASE_URL || !KEY) { console.error('✖ Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY in app/.env.local'); process.exit(1); }
-const sb = createClient(SUPABASE_URL, KEY, { auth: { persistSession: false } });
+const REST = !!(SUPABASE_URL && KEY);
+const PG = !REST && !!env.SUPABASE_DB_URL;
+if (!REST && !PG) {
+  console.error('✖ Missing SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY, or SUPABASE_DB_URL, in the env file.');
+  process.exit(1);
+}
+// The Postgres path's target is checked before a socket opens (the production sandbox only).
+const PG_TARGET = PG ? pgTarget(env.SUPABASE_DB_URL) : null;
+if (PG_TARGET?.refusal) { console.error(PG_TARGET.refusal); process.exit(1); }
+const sb = REST ? createClient(SUPABASE_URL, KEY, { auth: { persistSession: false } }) : null;
+const TARGET = REST
+  ? `supabase-js, project ${(SUPABASE_URL.match(/https:\/\/([a-z0-9]+)\./) || [])[1] || '(unknown)'}`
+  : `postgres, project ${PG_TARGET.ref} (${COMMIT ? 'ONE transaction' : 'READ ONLY, rolled back'})`;
+// The shared record's size limit, with headroom (src/lib/stateBudget).
+const BLOB_LIMIT = MAX_STATE_BYTES - 100_000;
+
+// The reads the plan needs, through whichever transport this run has. Table and column names are
+// this file's constants, never input; the org id is a bound parameter.
+let pgClient = null;
+async function pgRead() {
+  if (pgClient) return pgClient;
+  const { default: pg } = await import('pg');
+  pgClient = new pg.Client({ connectionString: env.SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } });
+  await pgClient.connect();
+  await pgClient.query('begin transaction read only');
+  return pgClient;
+}
+let pgQueue = Promise.resolve();
+function readRows(table, cols, org = null) {
+  if (REST) return readRowsNow(table, cols, org);
+  const next = pgQueue.then(() => readRowsNow(table, cols, org));
+  pgQueue = next.catch(() => {});
+  return next;
+}
+async function readRowsNow(table, cols, org) {
+  if (REST) {
+    let q = sb.from(table).select(cols);
+    if (org) q = q.eq('organization_id', org);
+    const { data, error } = await q;
+    return { rows: data || [], error: error ? error.message : null };
+  }
+  try {
+    const c = await pgRead();
+    const r = await c.query(`select ${cols} from public.${table}${org ? ' where organization_id = $1' : ''}`, org ? [org] : []);
+    return { rows: r.rows, error: null };
+  } catch (e) {
+    // A failed statement aborts the transaction; start a fresh read-only one for the next read.
+    try { await pgClient.query('rollback'); await pgClient.query('begin transaction read only'); } catch { /* closed */ }
+    return { rows: [], error: e.message };
+  }
+}
+// End the read-only transaction (the reads are rolled back); `close` also ends the connection.
+async function endReads({ close = true } = {}) {
+  if (!pgClient) return;
+  await pgQueue.catch(() => {});
+  try { await pgClient.query('rollback'); } catch { /* ignore */ }
+  if (close) { await pgClient.end().catch(() => {}); pgClient = null; }
+}
+const closeReads = () => endReads({ close: true });
 
 // ── deterministic uuid v5 (stable ids → idempotent) ─────────────────────────────
 const NS = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
@@ -123,15 +219,16 @@ function flattenItems(schema, failKeys = [], commentByKey = {}) {
 
 async function main() {
   console.log(`\n=== ${IDENTITY.name} backend seed — ${MODE} ===`);
-  console.log(`window: ${PAST_WEEKS}w back + ${FUTURE_WEEKS}w forward | target: ${SUPABASE_URL}\n`);
+  console.log(`window: ${PAST_WEEKS}w back + ${FUTURE_WEEKS}w forward | target: ${TARGET}\n`);
 
   // ── resolve entities from the live org_state blob (READ-ONLY) ─────────────────
-  const { data: orgs, error: orgErr } = await sb.from('org_state').select('organization_id, version');
-  if (orgErr) { console.error('✖ org_state read failed:', orgErr.message); process.exit(1); }
+  const { rows: orgs, error: orgErr } = await readRows('org_state', 'organization_id, version');
+  if (orgErr) throw new Error(`org_state read failed: ${orgErr}`);
   const org = env.CLEANSPACE_ORG_ID || orgs?.[0]?.organization_id;
-  if (!org) { console.error('✖ Could not resolve org id'); process.exit(1); }
-  const { data: row, error: stErr } = await sb.from('org_state').select('state, version').eq('organization_id', org).maybeSingle();
-  if (stErr || !row) { console.error('✖ org_state blob read failed:', stErr?.message); process.exit(1); }
+  if (!org) throw new Error('Could not resolve org id');
+  const { rows: stateRows, error: stErr } = await readRows('org_state', 'state, version', org);
+  const row = stateRows[0] || null;
+  if (stErr || !row) throw new Error(`org_state blob read failed: ${stErr || 'no row'}`);
   const state = row.state || {};
   const clients = state.clients || [];
   const sites = (state.sites || []).filter((s) => s.clientId);
@@ -145,7 +242,16 @@ async function main() {
   const svcId = (kw) => (services.find((s) => (s.name || s.code || '').toLowerCase().includes(kw)) || services[0])?.id ?? null;
   const expOf = (site) => (Number.isFinite(site.expectedCleanMins) ? site.expectedCleanMins : 120);
   console.log(`org ${org} | blob v${row.version} (NOT modified) | clients:${clients.length} sites:${sites.length} crew:${crew.length} inspectors:${inspectors.length}`);
-  if (!sites.length || !crew.length || !inspectors.length) { console.error('✖ Not enough entities to seed against'); process.exit(1); }
+  if (!sites.length || !crew.length || !inspectors.length) throw new Error('Not enough entities to seed against');
+
+  // ── THE MANAGER'S DAY (scripts/_lib/managerDaySeed.mjs): the unmanaged seed buildings get a
+  // manager, then the day is laid over every managed building (READ-ONLY here) ──────────────
+  const { clients: managedBook, assignments } = assignManagers({ clients, sites, users });
+  const md = planManagerDays({ clients: managedBook, sites, users, services, state, now: NOW });
+  const seedClientIds = clients.filter((c) => String(c.id).startsWith('cl_seed_')).map((c) => c.id);
+  const mdIds = managerDayIdUniverse({ uuid5, seedClientIds });
+  // The lines already in the threads this seed writes to (a thread summary counts them all).
+  const { rows: existingMessages } = await readRows('client_messages', 'id, client_id, author_role, author_name, author_user_id, author_client_user_id, body, created_at', org);
 
   // ── TEMPLATES ─────────────────────────────────────────────────────────────────
   const tmplRows = [], tmplVerRows = [], tmplByKey = {};
@@ -196,31 +302,32 @@ async function main() {
       const items = CLOSEOUT_SCHEMA.areas[0].items.map((it, i) => ({ item_key: it.id, label: it.label, checked: i < checkedCount }));
       const worker = pick(crew, si + k);
       const id = uuid5(`chk:${site.id}:${k}`);
-      checkRows.push({ id, organization_id: org, template_id: closeout.id, template_version_id: closeout.verId, template_snapshot: { name: closeout.name, kind: 'checklist', schema: CLOSEOUT_SCHEMA }, client_id: site.clientId, site_id: site.id, job_id: null, completed_by_user_id: worker.id, items, completed_count: items.filter((i) => i.checked).length, total_count: items.length, performed_at: iso(at(-(1 + k * chkStepDays + (si % 2)), 23)) });
+      // Counted against the schema, as the server does (CS-494, src/lib/checklistCount).
+      checkRows.push({ id, organization_id: org, template_id: closeout.id, template_version_id: closeout.verId, template_snapshot: { name: closeout.name, kind: 'checklist', schema: CLOSEOUT_SCHEMA }, client_id: site.clientId, site_id: site.id, job_id: null, completed_by_user_id: worker.id, items, ...countChecklistSubmission(CLOSEOUT_SCHEMA, items), performed_at: iso(at(-(1 + k * chkStepDays + (si % 2)), 23)) });
     }
   });
 
   // ── WORK ORDERS (problem_reports + threads) — the client-raised ticket queue ──
   // Increment 3 folded Complaints in here: a work order is type complaint|request|
-  // issue, origin portal|internal, priority urgent|high|medium|low (drives the SLA
-  // clock — urgent 2h … low 72h), status open|in_progress|awaiting_client|resolved.
+  // issue, origin portal|internal, priority urgent|medium|low (WO-18 — drives the SLA
+  // clock: urgent 2h, medium 1 day, low 3 days), status open|in_progress|awaiting_client|resolved.
   // Portal-raised (client) items carry a message thread; a few overdue-and-open ones
   // set escalated_at. Deterministic uuid5(`wo:i`) ids so a re-run replaces cleanly.
-  const SLA_HOURS = { urgent: 2, high: 8, medium: 24, low: 72 };
+  const SLA_HOURS = { urgent: 2, medium: 24, low: 72 };   // mirrors src/lib/workOrders.SLA_HOURS
   const WORK_ORDERS = [
     { type: 'complaint', origin: 'portal',   priority: 'urgent', status: 'open',            title: 'Crew arrived 40 minutes late for the Friday close', desc: 'Client asks that we confirm arrival windows going forward.' },
-    { type: 'complaint', origin: 'portal',   priority: 'high',   status: 'in_progress',     title: 'Restroom soap dispensers found empty', desc: 'Two dispensers in the east wing were empty at open.' },
-    { type: 'complaint', origin: 'portal',   priority: 'high',   status: 'resolved',        title: 'Trash not emptied in the 3rd-floor break room', desc: 'Reported Tuesday morning by the office manager.' },
+    { type: 'complaint', origin: 'portal',   priority: 'medium', status: 'in_progress',     title: 'Restroom soap dispensers found empty', desc: 'Two dispensers in the east wing were empty at open.' },
+    { type: 'complaint', origin: 'portal',   priority: 'medium', status: 'resolved',        title: 'Trash not emptied in the 3rd-floor break room', desc: 'Reported Tuesday morning by the office manager.' },
     { type: 'complaint', origin: 'portal',   priority: 'medium', status: 'awaiting_client', title: 'Recycling combined with trash at pickup', desc: 'Client sustainability program requires separation — confirming the new pickup plan.' },
     { type: 'complaint', origin: 'portal',   priority: 'medium', status: 'resolved',        title: 'Lobby glass streaked at Monday open', desc: 'Streaking visible in the morning light; re-cleaned same day.' },
     { type: 'complaint', origin: 'portal',   priority: 'low',    status: 'resolved',        title: 'Vacuum missed under the conference table', desc: 'Noted after the board meeting.' },
-    { type: 'request',   origin: 'portal',   priority: 'high',   status: 'awaiting_client', title: 'Quote for post-event cleanup', desc: 'Annual gala on the 14th — needs a one-time deep clean the morning after.' },
+    { type: 'request',   origin: 'portal',   priority: 'medium', status: 'awaiting_client', title: 'Quote for post-event cleanup', desc: 'Annual gala on the 14th — needs a one-time deep clean the morning after.' },
     { type: 'request',   origin: 'portal',   priority: 'medium', status: 'open',            title: 'Add a mid-week restroom deep-clean', desc: 'Requesting Wednesdays in addition to the nightly service.' },
     { type: 'request',   origin: 'portal',   priority: 'low',    status: 'resolved',        title: 'Swap to unscented restroom air fresheners', desc: 'A tenant reported a fragrance sensitivity.' },
     { type: 'request',   origin: 'internal', priority: 'low',    status: 'in_progress',     title: 'Replace worn entry mats', desc: 'Crew flagged frayed mats at the main entrance.' },
     { type: 'issue',     origin: 'internal', priority: 'urgent', status: 'in_progress',     title: 'Wrong floor finish used in the north corridor', desc: 'Being corrected on the next scheduled visit.' },
-    { type: 'issue',     origin: 'internal', priority: 'high',   status: 'open',            title: 'Loading dock floor still greasy after clean', desc: 'Needs a degreaser pass before the next shift.' },
-    { type: 'issue',     origin: 'internal', priority: 'high',   status: 'resolved',        title: 'Alarm not set on Thursday close', desc: 'Crew retrained on the close-out checklist.' },
+    { type: 'issue',     origin: 'internal', priority: 'urgent', status: 'open',            title: 'Loading dock floor still greasy after clean', desc: 'Needs a degreaser pass before the next shift.' },
+    { type: 'issue',     origin: 'internal', priority: 'medium', status: 'resolved',        title: 'Alarm not set on Thursday close', desc: 'Crew retrained on the close-out checklist.' },
     { type: 'issue',     origin: 'internal', priority: 'medium', status: 'open',            title: 'Break room floor sticky by the sink', desc: 'Flagged on the nightly inspection.' },
   ];
   const probRows = [], woMsgRows = [];
@@ -281,7 +388,8 @@ async function main() {
       if (status === 'in_progress') todayJobs.push({ job, site, exp, crewMember: primary });
     };
     pastDays.forEach((d) => emit(d, 'done'));
-    emit(0, 'in_progress');
+    // Today at the manager's buildings, and for her cleaners, is the manager's day (below).
+    if (!(md && (md.bookSiteIds.has(site.id) || md.crewIds.has(primary.id)))) emit(0, 'in_progress');
     futureDays.forEach((d) => emit(d, 'upcoming'));
     // Operational exceptions (edge cases): a missed clean (feeds the missed-clean KPI;
     // no time entry) and a client-cancelled visit (excluded from variance). Non-cadence
@@ -305,7 +413,7 @@ async function main() {
       clock_in_lat: hasCoords ? site.lat : null, clock_in_lng: hasCoords ? site.lng : null,
       clock_in_accuracy_m: hasCoords ? 8 : null, clock_in_distance_m: geo === 'override' ? dist : (hasCoords ? dist : null),
       clock_out_lat: hasCoords ? site.lat : null, clock_out_lng: hasCoords ? site.lng : null,
-      geofence_result: geo, override_reason: geo === 'override' ? 'crew_override_offsite' : null,
+      geofence_result: geo, override_reason: geo === 'override' ? 'geofence_disabled' : null,
       source: 'crew_mobile', status: 'completed', approval_status: pending ? 'pending' : 'approved',
     };
   };
@@ -368,7 +476,16 @@ async function main() {
     }
   });
 
-  // ═══════════ BROAD PASS: quotes, reviews, financials + blob slices ═══════
+  // ═══════════ THE MANAGER'S DAY (src/data/demoManagerDay.js) ═══════════════
+  const mdOut = md ? managerDayRows(md, { org, uuid5, nowIso, schema: CLOSEOUT_SCHEMA, existingMessages, seedMessageIds: new Set(mdIds.messageIds) }) : null;
+  if (mdOut) {
+    jobRows.push(...mdOut.jobRows);
+    teRows.push(...mdOut.teRows);
+    probRows.push(...mdOut.probRows);
+    woMsgRows.push(...mdOut.msgRows);
+  }
+
+  // ═══════════ BROAD PASS: quotes, financials + blob slices ═══════
   const contacts = state.contacts || [];
   const invoices = state.invoices || [];
   const company = state.company || {};
@@ -452,8 +569,6 @@ async function main() {
     ar_cents: openInvoiceCents,
     new_business_actual_cents: outstandingQuoteCents + quoteRows.filter((q) => q.status === 'signed' || q.status === 'paid').reduce((s, q) => s + q.amount_cents, 0),
     new_business_goal_cents: 100000000,
-    google_reviews_actual: 87, google_reviews_goal: 100,
-    indeed_reviews_actual: 12, indeed_reviews_goal: 50,
     mrr_cents: monthlyRevCents,
     source: 'seed', updated_at: iso(NOW),
   };
@@ -526,6 +641,11 @@ async function main() {
   ]);
   const notifSlice = [...mgrNotifs, ...crewNotifs];
 
+  // The manager's day's call-out (today, sick), with the seed's own prefix so the next run replaces it.
+  if (mdOut) timeOffSlice.push(...mdOut.timeOff);
+  // The seed's bell rows are history, never news: marked delivered so the push dispatcher (which
+  // pushes any undelivered row under six hours old) can never send one to a phone.
+  for (const n of notifSlice) n.pushed = true;
   const BLOB_SLICES = { opportunities: oppSlice, notifications: notifSlice, payrollLines: payrollLineSlice, clientActivities: clientActSlice, contactActivities: contactActSlice, timeOff: timeOffSlice, reimbursements: reimbSlice, employeeDocuments: edocSlice };
   const BLOB_PREFIX = { opportunities: 'opp_bkseed_', notifications: 'ntf_bkseed_', payrollLines: 'pl_bkseed_', clientActivities: 'clact_bkseed_', contactActivities: 'act_bkseed_', timeOff: 'to_bkseed_', reimbursements: 'rmb_bkseed_', employeeDocuments: 'edoc_bkseed_' };
 
@@ -542,7 +662,7 @@ async function main() {
   console.log('\n── Generated ──');
   console.log(`  templates ${tmplRows.length} (${draftTmpl} draft) | inspections ${inspRows.length} (${failCount} fail/follow-up, ${followUpCount} needs-follow-up) | items ${itemRows.length} | checklists ${checkRows.length}`);
   console.log(`  work orders ${probRows.length} (complaint ${woByType('complaint')} / request ${woByType('request')} / issue ${woByType('issue')}) + ${woMsgRows.length} messages`);
-  console.log(`  jobs ${jobRows.length} (${pastJobs.length} done, ${sites.length} today, ${upcoming} upcoming, ${missed} missed, ${cancelled} cancelled) | time_entries ${teRows.length} (${pendingTE} pending, ${openTE} on-the-clock) | drive-route stops ${routeStops}`);
+  console.log(`  jobs ${jobRows.length} (${pastJobs.length} done, ${jobRows.filter((r) => r.status === 'in_progress' && !r.id.startsWith('j_bkseed_md_')).length} cadence today, ${upcoming} upcoming, ${missed} missed, ${cancelled} cancelled) | time_entries ${teRows.length} (${pendingTE} pending, ${openTE} on-the-clock) | drive-route stops ${routeStops}`);
   const hrs = {};
   for (const te of teRows) hrs[te.user_name] = (hrs[te.user_name] || 0) + (te.duration_minutes || 0) / 60;
   console.log('  payroll hours/crew:', Object.entries(hrs).map(([n, h]) => `${n.split(' ')[0]}=${h.toFixed(0)}h`).join(' '));
@@ -550,82 +670,213 @@ async function main() {
   console.log(`  quotes ${quoteRows.length} (${quotePayRows.length} paid) | site photos ${mediaRows.length} | financial_snapshot 1`);
   console.log(`  BLOB slices: opportunities +${oppSlice.length} (won/lost) | notifications ${notifSlice.length} | payrollLines ${payrollLineSlice.length} | clientActivities ${clientActSlice.length} | contactActivities ${contactActSlice.length} | timeOff ${timeOffSlice.length} | reimbursements ${reimbSlice.length} | employeeDocuments ${edocSlice.length}`);
 
-  if (!COMMIT) { console.log('\n✅ DRY RUN — nothing written. Re-run with --commit to write.\n'); return; }
+  printManagerDay(md, mdOut, assignments, jobRows.filter((r) => r.status === 'in_progress' && !r.id.startsWith(MD_JOB_PREFIX)).length);
 
-  // ── COMMIT: clean prior seed set, then insert ─────────────────────────────────
-  console.log('\n── Cleaning prior seed set (non-seed rows untouched) ──');
-  const clean = async (label, q) => { const { error } = await q; if (error) throw new Error(`${label} cleanup failed: ${error.message}`); console.log(`  ✓ cleaned ${label}`); };
-  await clean('time_entries', sb.from('time_entries').delete().eq('organization_id', org).like('job_id', 'j_bkseed_%'));
-  await clean('jobs',         sb.from('jobs').delete().eq('organization_id', org).like('id', 'j_bkseed_%'));
-  await clean('inspections',  sb.from('inspection_records').delete().eq('organization_id', org).like('public_token', 'tok_bkseed_%')); // cascades items
-  await clean('templates',    sb.from('inspection_templates').delete().eq('organization_id', org).eq('created_by', 'seed'));           // cascades versions
-  await clean('quotes',       sb.from('quotes').delete().eq('organization_id', org).like('public_token', 'qt_bkseed_%'));              // cascades quote_payments
-  await clean('forms',        sb.from('forms').delete().eq('organization_id', org).like('slug', 'bkseed-%'));                          // prior seeded rows only (Forms retired 2026-09-19; cascades versions + submissions)
-  await clean('gmb_reviews',  sb.from('gmb_reviews').delete().eq('organization_id', org).like('review_name', 'bkseed/%')); // remove prior seeded reviews (Reviews hidden)
-  await clean('account_media', sb.from('account_media').delete().eq('organization_id', org).like('storage_path', 'seed/%'));
-  await clean('work_order_messages', sb.from('work_order_messages').delete().eq('organization_id', org)); // before problem_reports (FK problem_id)
-  await clean('problem_reports', sb.from('problem_reports').delete().eq('organization_id', org));          // Work Orders queue is demo-only — replace whole
-
-  console.log('── Writing relational ──');
-  const insert = async (table, rows, conflict = 'id') => {
-    if (!rows.length) return;
-    for (let i = 0; i < rows.length; i += 500) {
-      const { error } = await sb.from(table).upsert(rows.slice(i, i + 500), { onConflict: conflict });
-      if (error) throw new Error(`${table} write failed: ${error.message}`);
-    }
-    console.log(`  ✓ ${table}: ${rows.length}`);
+  // ═══════════ THE PLAN: deletes (the seed's own rows only), then writes, then the shared record ═══
+  // Work orders and their messages: the SEED's own, by their deterministic ids (the old 14 and every
+  // id the manager's day can write) — never the whole table.
+  const seedWoIds = [...new Set([...probRows.map((r) => r.id), ...mdIds.problemIds])];
+  const D = (table, where, label = table, extra = {}) => ({ kind: 'delete', table, where: [{ col: 'organization_id', op: 'eq', value: org }, ...where], label, ...extra });
+  const U = (table, rows, label = table, conflict = ['id'], extra = {}) => ({ kind: 'upsert', table, rows, conflict, label, ...extra });
+  const steps = [
+    D('time_entries', [{ col: 'job_id', op: 'like', value: 'j_bkseed_%' }]),
+    // before the jobs: a checklist save's job reference is set null when its job goes
+    D('checklist_results', [{ col: 'id', op: 'in', value: mdIds.checklistIds }], 'checklist_results (manager\'s day)'),
+    D('jobs', [{ col: 'id', op: 'like', value: 'j_bkseed_%' }]),
+    D('inspection_records', [{ col: 'public_token', op: 'like', value: 'tok_bkseed_%' }], 'inspection_records (+ their items)'),
+    D('inspection_templates', [{ col: 'created_by', op: 'eq', value: 'seed' }], 'inspection_templates (+ their versions)'),
+    D('quotes', [{ col: 'public_token', op: 'like', value: 'qt_bkseed_%' }], 'quotes (+ their payments)'),
+    D('forms', [{ col: 'slug', op: 'like', value: 'bkseed-%' }]),
+    D('account_media', [{ col: 'storage_path', op: 'like', value: 'seed/%' }], 'account_media', { restOnly: true }),
+    D('work_order_messages', [{ col: 'problem_id', op: 'in', value: seedWoIds }]),
+    D('problem_reports', [{ col: 'id', op: 'in', value: seedWoIds }]),
+    D('client_messages', [{ col: 'id', op: 'in', value: mdIds.messageIds }], 'client_messages (manager\'s day)'),
+    D('supply_requests', [{ col: 'id', op: 'like', value: `${MD_SUPPLY_REQUEST_PREFIX}%` }], 'supply_requests (manager\'s day)'),
+    D('supply_items', [{ col: 'id', op: 'like', value: `${MD_SUPPLY_ITEM_PREFIX}%` }], 'supply_items (manager\'s day)'),
+    U('inspection_templates', tmplRows),
+    U('inspection_template_versions', tmplVerRows),
+    U('inspection_templates', mdOut?.templateRows || [], 'inspection_templates (each visited building\'s checklist)'),
+    U('inspection_template_versions', mdOut?.versionRows || [], 'inspection_template_versions (the buildings\' checklists)'),
+    U('inspection_records', inspRows),
+    U('inspection_items', itemRows),
+    U('checklist_results', checkRows),
+    U('problem_reports', probRows),
+    U('work_order_messages', woMsgRows),                 // after problem_reports (FK problem_id)
+    U('jobs', jobRows),                                  // before time_entries (FK)
+    U('time_entries', teRows),
+    U('checklist_results', mdOut?.checkRows || [], 'checklist_results (manager\'s day)'),   // after the jobs they name
+    U('quotes', quoteRows),                              // before quote_payments (FK)
+    U('quote_payments', quotePayRows),
+    U('financial_snapshot', [snapshotRow], 'financial_snapshot', ['organization_id']),
+    U('client_messages', mdOut?.cmsgRows || [], 'client_messages (the customer\'s hub threads)'),
+    U('client_message_threads', mdOut?.threadRows || [], 'client_message_threads (the thread summaries)', ['organization_id', 'client_id']),
+    // The master list's rows the day uses, before the switches that name them (FK). Upserted on
+    // their backfill ids and never deleted: the catalog is the org's (managerDaySeed says why).
+    U('supply_catalog', mdOut?.supplyCatalogRows || [], 'supply_catalog (the items the day uses)'),
+    U('supply_items', mdOut?.supplyItemRows || []),
+    U('supply_requests', mdOut?.supplyRequestRows || []),
+    U('account_media', mediaRows, 'account_media', ['id'], { restOnly: true }),
+  ];
+  const runSteps = PG ? steps.filter((st) => !st.restOnly) : steps;
+  // The shared record: the seed's own slices replaced, the dead complaints slice dropped, and the
+  // seed customers' supervisors, checklists and budget (managerDaySeed blobClientChanges).
+  const blob = {
+    org,
+    apply: (cur) => {
+      const next = { ...cur };
+      const changes = [];
+      for (const [key, seedRows] of Object.entries(BLOB_SLICES)) {
+        const existing = Array.isArray(cur?.[key]) ? cur[key] : [];
+        const kept = existing.filter((r) => !String(r?.id || '').startsWith(BLOB_PREFIX[key]));
+        next[key] = [...kept, ...seedRows];
+        changes.push({ field: key, from: existing.length, to: next[key].length, note: `${existing.length - kept.length} seed rows replaced by ${seedRows.length}` });
+      }
+      if ('complaints' in next) { delete next.complaints; changes.push({ field: 'complaints', from: 'present', to: 'deleted' }); }
+      const cc = blobClientChanges(Array.isArray(cur?.clients) ? cur.clients : [], {
+        assignments, picks: mdOut?.picks || {}, budgetClientIds: mdOut?.budgetClientIds || [],
+      });
+      next.clients = cc.clients;
+      for (const ch of cc.changes) changes.push({ field: `clients[${ch.clientId}].${ch.field}`, from: ch.from, to: ch.to, note: ch.name });
+      return { state: next, changes };
+    },
   };
-  await insert('inspection_templates', tmplRows);
-  await insert('inspection_template_versions', tmplVerRows);
-  await insert('inspection_records', inspRows);
-  await insert('inspection_items', itemRows);
-  await insert('checklist_results', checkRows);
-  await insert('problem_reports', probRows);
-  await insert('work_order_messages', woMsgRows);   // after problem_reports (FK problem_id)
-  await insert('jobs', jobRows);                 // before time_entries (FK)
-  await insert('time_entries', teRows);
-  await insert('quotes', quoteRows);             // before quote_payments (FK)
-  await insert('quote_payments', quotePayRows);
-  await insert('financial_snapshot', [snapshotRow], 'organization_id');
 
-  // ── Site photos: upload SVG files to Storage (ops-media), then insert rows ──
-  console.log('── Uploading site photos to ops-media Storage ──');
-  try { await sb.storage.createBucket('ops-media', { public: false }); } catch { /* bucket already exists */ }
-  let uploaded = 0;
-  for (const [path, svg] of mediaBlobs) {
-    const { error } = await sb.storage.from('ops-media').upload(path, Buffer.from(svg, 'utf8'), { contentType: 'image/svg+xml', upsert: true });
-    if (error) throw new Error(`storage upload failed (${path}): ${error.message}`);
-    uploaded += 1;
-  }
-  console.log(`  ✓ uploaded ${uploaded} images to ops-media`);
-  await insert('account_media', mediaRows);
-
-  // ── COMMIT: blob slices via CAS (append only our 'bkseed' rows; never authority) ─
-  console.log('── Writing org_state blob (CAS; non-authority slices only) ──');
-  let blobDone = false;
-  for (let attempt = 1; attempt <= 3 && !blobDone; attempt++) {
-    const { data: cur, error: rerr } = await sb.from('org_state').select('state, version').eq('organization_id', org).maybeSingle();
-    if (rerr || !cur) throw new Error(`blob read failed: ${rerr?.message}`);
-    const nextState = { ...cur.state };
-    for (const [key, seedRows] of Object.entries(BLOB_SLICES)) {
-      const existing = Array.isArray(cur.state?.[key]) ? cur.state[key] : [];
-      const kept = existing.filter((r) => !String(r?.id || '').startsWith(BLOB_PREFIX[key]));
-      nextState[key] = [...kept, ...seedRows];
+  if (!COMMIT) {
+    console.log('\n── The plan, table by table (the dry run counts what it would delete in the live database) ──');
+    let counts;
+    if (PG) {
+      const c = await pgRead();
+      const check = await checkPgPlan(c, runSteps);
+      counts = await countPgDeletes(c, runSteps, check.types);
+      if (check.skipped.length) console.log(`  skipped (the project has no such table): ${check.skipped.join(', ')}`);
+      if (check.problems.length) console.log(`  ✖ THE PLAN DOES NOT FIT THE DATABASE: ${check.problems.join('; ')}`);
+      else console.log('  ✓ every row\'s columns exist in its table');
+      // Every statement the commit would send, planned by the live database and never run.
+      const ex = await explainPgPlan(c, runSteps, check.types, { blob: { state: blob.apply(state).state, org, version: row.version } });
+      console.log(ex.problems.length
+        ? `  ✖ ${ex.problems.length} of ${ex.statements} statements were refused by the database's planner: ${ex.problems.join(' | ')}`
+        : `  ✓ all ${ex.statements} statements the commit would send were parsed, type-checked and planned by the live database (EXPLAIN, nothing run)`);
+      const restOnly = steps.filter((st) => st.restOnly).map((st) => st.label);
+      if (restOnly.length) console.log(`  left as they are on the Postgres path (Storage needs the service-role key): ${[...new Set(restOnly)].join(', ')}`);
+    } else counts = await countRestDeletes(sb, runSteps);
+    for (const st of runSteps) {
+      if (st.kind === 'delete') {
+        const n = counts.find((x) => x.label === st.label)?.n;
+        console.log(`  − ${st.label}: delete ${n ?? '(table absent)'}`);
+      } else console.log(`  + ${st.label}: write ${st.rows.length}`);
     }
-    // Complaints were folded into Work Orders (relational problem_reports); drop the
-    // now-dead blob slice so it can't resurface as a stale surface.
-    delete nextState.complaints;
-    const bytes = Buffer.byteLength(JSON.stringify(nextState), 'utf8');
-    if (bytes > 3_400_000) throw new Error(`blob too large after seed: ${Math.round(bytes / 1024)} KB`);
-    const { data, error } = await sb.from('org_state')
-      .update({ state: nextState, version: cur.version + 1, updated_via: 'server', updated_at: new Date().toISOString() })
-      .eq('organization_id', org).eq('version', cur.version).select('version');
-    if (error) throw new Error(`blob write failed: ${error.message}`);
-    if (Array.isArray(data) && data.length === 1) { console.log(`  ✓ org_state blob v${cur.version}→${cur.version + 1} (${Math.round(bytes / 1024)} KB)`); blobDone = true; }
-    else console.log(`  … CAS conflict, re-reading (attempt ${attempt}/3)`);
+    const sim = blob.apply(state);
+    const bytes = Buffer.byteLength(JSON.stringify(sim.state), 'utf8');
+    console.log(`\n── The shared record (org_state v${row.version} → v${Number(row.version) + 1} on commit, CAS; ${Math.round(bytes / 1024)} KB of the ${Math.round(BLOB_LIMIT / 1024)} KB limit) ──`);
+    for (const ch of sim.changes) console.log(`  ~ ${ch.field}: ${ch.from} → ${ch.to}${ch.note ? `  (${ch.note})` : ''}`);
+    printAlertForecast({ md, mdOut, jobRows, teRows, state: { ...state, clients: sim.state.clients }, now: NOW });
+    await closeReads();
+    console.log('\n✅ DRY RUN — nothing written. Re-run with --commit to write.\n');
+    return;
   }
-  if (!blobDone) throw new Error('blob CAS failed after 3 attempts — re-run.');
+
+  // ── COMMIT ─────────────────────────────────────────────────────────────────────
+  if (PG) {
+    console.log('\n── Writing (Postgres: ONE transaction; the shared record CAS inside it) ──');
+    const c = await pgRead();
+    await endReads({ close: false });
+    try {
+      const out = await runPgPlan(c, { steps: runSteps, blob, maxBlobBytes: BLOB_LIMIT, log: (l) => console.log(l) });
+      if (out.skipped.length) console.log(`  skipped (no such table): ${out.skipped.join(', ')}`);
+      console.log('  site photos (account_media + Storage): left as they are on the Postgres path');
+    } finally { await c.end().catch(() => {}); pgClient = null; }
+  } else {
+    console.log('\n── Uploading site photos to ops-media Storage ──');
+    try { await sb.storage.createBucket('ops-media', { public: false }); } catch { /* bucket already exists */ }
+    let uploaded = 0;
+    for (const [path, svg] of mediaBlobs) {
+      const { error } = await sb.storage.from('ops-media').upload(path, Buffer.from(svg, 'utf8'), { contentType: 'image/svg+xml', upsert: true });
+      if (error) throw new Error(`storage upload failed (${path}): ${error.message}`);
+      uploaded += 1;
+    }
+    console.log(`  ✓ uploaded ${uploaded} images to ops-media`);
+    console.log('── Writing (supabase-js) ──');
+    await runRestPlan(sb, { steps: runSteps, blob, maxBlobBytes: BLOB_LIMIT, log: (l) => console.log(l) });
+  }
   console.log('\n✅ COMMIT complete.\n');
 }
 
-main().catch((e) => { console.error('\n✖ Seed failed:', e.message, '\n'); process.exit(1); });
+// ── what the plan prints ─────────────────────────────────────────────────────────────────────
+function printManagerDay(md, out, assignments, todayCadence) {
+  console.log('\n── The manager\'s day (src/data/demoManagerDay.js, over the live book) ──');
+  if (assignments.length) console.log(`  managers given: ${assignments.map((a) => `${a.name} → ${a.toName}`).join(' | ')}`);
+  if (!md) { console.log('  SKIPPED: nobody supervises a building, so there is no manager whose day to place.'); return; }
+  const fmt = (ms) => new Intl.DateTimeFormat('en-US', { timeZone: md.tz, hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
+  console.log(`  placed ${fmt(md.day.nowMs)} ${md.tz} on ${md.day.dayKey} · her day: ${md.primary.name} (${md.primary.role})`);
+  console.log(`  books: ${md.managers.map((m) => `${m.u.name} ${m.book.length} (${m.book.map((c) => c.name).join(', ')})`).join(' | ')}`);
+  console.log(`  her slots: ${Object.entries(md.assigned).map(([k, c]) => `${k}→${c.name}`).join(' | ')}`);
+  console.log(`  other managers' slots: ${Object.entries(md.xAssigned).map(([k, c]) => `${k}→${c.name}`).join(' | ') || '(none)'}`);
+  console.log(`  crew slots: ${Object.entries(md.crewMap).map(([k, u]) => `${k}→${u.name}`).join(' | ')}${md.thinRoster ? '  (fewer cleaners than slots: one person holds two)' : ''}`);
+  const N = md.day.nowMs;
+  const openJobs = new Set(out.teRows.filter((t) => !t.clock_out_at).map((t) => t.job_id));
+  const punched = new Set(out.teRows.map((t) => t.job_id));
+  const offIds = new Set(md.day.timeOff.map((t) => t.userId));
+  const supName = (c) => md.userById.get(c?.supervisorId)?.name || '—';
+  for (const j of [...md.day.jobs].sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt))) {
+    const start = Date.parse(j.startAt);
+    const c = md.clientById.get(j.clientId);
+    const state = j.crewIds.every((id) => offIds.has(id)) ? 'called out' : openJobs.has(j.id) ? 'on site' : punched.has(j.id) ? 'done'
+      : start > N ? 'upcoming' : (N - start) > 30 * 60000 ? 'no check-in (past the 30-min mark)' : 'late';
+    const save = out.checkRows.find((r) => r.job_id === j.id);
+    console.log(`   · ${fmt(start)}  ${c?.name || j.clientId} [${supName(c)}] — ${j.crewIds.map((id) => md.userById.get(id)?.name || id).join(' + ')} — ${state}${save ? ` · checklist ${save.completed_count}/${save.total_count}` : ''}`);
+  }
+  console.log(`  today's cadence visits left in the plan (outside the day's buildings and cleaners): ${todayCadence}`);
+  const ot = out.teRows.filter((t) => t.job_id.includes('_md-ot-')).reduce((n, t) => n + (t.duration_minutes || 0), 0);
+  console.log(`  jobs ${out.jobRows.length} (incl. ${out.jobRows.filter((r) => r.id.includes('_md-ot-')).length} overtime-week visits) | punches ${out.teRows.length} (${out.teRows.filter((t) => t.approval_status === 'pending' && t.clock_out_at).length} pending, ${out.teRows.filter((t) => !t.clock_out_at).length} on the clock) | overtime week ${(ot / 60).toFixed(1)}h`);
+  console.log(`  checklists filed under ${out.templateRows.length} buildings; saves ${out.checkRows.length} (${out.checkRows.map((r) => `${r.completed_count}/${r.total_count}`).join(', ')}); picks for ${Object.values(out.picks).reduce((n, p) => n + Object.keys(p).length, 0)} cleaner×building`);
+  const stage = (p) => `${p.priority} ${p.status}`;
+  console.log(`  requests ${out.probRows.length} + ${out.msgRows.length} thread lines (raised in the portal by the building's contact): ${out.probRows.map((p) => `${p.client_name}: ${stage(p)}`).join(' | ')}`);
+  const waiting = out.threadRows.filter((t) => t.last_author_role === 'client');
+  console.log(`  customer messages ${out.cmsgRows.length} in ${out.threadRows.length} building threads; waiting for the office's first reply: ${waiting.map((t) => `${md.clientById.get(t.client_id)?.name} (${Math.round((N - Date.parse(t.last_message_at)) / 60000)} min)`).join(', ')}`);
+  console.log(`  supplies: ${out.supplyCatalogRows.length} catalog items (${out.supplyCatalogRows.map((c) => c.name).join(', ')}), ${out.supplyItemRows.length} switched on, ${out.supplyRequestRows.map((r) => `${r.status} $${(r.total_cents / 100).toFixed(2)} at ${md.clientById.get(r.client_id)?.name}`).join(' | ')}`);
+  console.log(`  call-out today: ${md.day.timeOff.map((t) => md.userById.get(t.userId)?.name).join(', ')} (timeOff 'to_bkseed_md_callout')`);
+  if (out.dropped.length) console.log(`  dropped (would overlap the same person's punch): ${out.dropped.join(', ')}`);
+}
+
+// Which alerts the rows this seed writes will set off, when, and for whom. Only ONE walker reacts to
+// seed rows: the missed-shift alert (ALR-11, lib/opsAlerts getDueShiftAlerts), which fires on seed
+// jobs by the owner's call (2026-09-26) for any visit nobody has clocked into by its start + the
+// missed mark — the called-out ones included, since the walker does not read time off. Every other
+// walker skips the seed's customers or jobs (lib/opsAlerts SEED-DATA SKIP; lib/ticketAlerts;
+// lib/preShiftReminders), and a row written straight to a table raises nothing the API would have
+// (a customer message's office bell, a request's customer email).
+function printAlertForecast({ md, mdOut, jobRows, teRows, state, now }) {
+  console.log('\n── What the written rows will set off ──');
+  const settings = state.opsSettings || {};
+  const mark = missedAfterStartMins(settings);
+  const lookbackMs = shiftLookbackHours(settings) * 3600000;
+  const N = now.getTime();
+  const tz = md?.tz || state.company?.timezone || 'America/New_York';
+  const fmt = (ms) => new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
+  const dayEnd = startOfDayKey(addDaysKey(orgDayKey(new Date(N), tz), 1), tz).getTime() - 1;   // the org day's end
+  const covered = new Set(teRows.map((t) => t.job_id));
+  const users = state.users || [];
+  const owners = users.filter((u) => u.role === 'owner' && u.status === 'active');
+  const nameOf = (id) => users.find((u) => u.id === id)?.name || id;
+  const clientOf = (id) => (state.clients || []).find((c) => c.id === id);
+  const TERMINAL = new Set(['done', 'completed', 'cancelled', 'canceled', 'in_progress']);   // the walker's own (TERMINAL_JOB + in_progress)
+  const due = jobRows.map((r) => r.data).filter((j) => {
+    const start = Date.parse(j.startAt);
+    return !TERMINAL.has(j.status) && !covered.has(j.id) && start >= N - lookbackMs && start + mark * 60000 <= dayEnd;
+  }).sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
+  console.log(`  MISSED-SHIFT alerts (ALR-11) — one per visit nobody clocks into, ${mark} min after its start, today:`);
+  for (const j of due) {
+    const at = Date.parse(j.startAt) + mark * 60000;
+    const c = clientOf(j.clientId);
+    const spoc = c?.supervisorId ? nameOf(c.supervisorId) : null;
+    const to = [...new Set([spoc, ...owners.map((o) => o.name)].filter(Boolean))];
+    console.log(`   · ${at <= N ? 'on the next cron run' : fmt(at)} — ${c?.name || j.clientId} (${j.crewIds.map(nameOf).join(' + ')}${j.id.startsWith(MD_JOB_PREFIX) ? '' : ', cadence'}) → ${to.join(', ')}`);
+  }
+  const later = jobRows.filter((r) => r.status === 'upcoming' && Date.parse(r.start_at) > dayEnd).length;
+  console.log(`    each as a bell row + a phone push (to every device subscribed on those logins; quiet hours hold a push, never this one), and as a TEXT to each recipient's profile phone if Twilio is configured on Vercel — the seed users' phones are fictional 555-01xx numbers (owner logins: ${owners.map((o) => o.name).join(', ')}).`);
+  console.log(`    later days: the seed's ${later} upcoming cadence visits set off the same alert on their own days unless someone clocks in (unchanged from earlier runs).`);
+  console.log('  Nothing else: checklist / inspection / supply / pre-shift / ticket alerts skip seed jobs and customers; the customer messages and requests are rows, not API posts, so no office bell or customer email goes out for them; no customer login is created (the portal shape); the seed\'s own bell rows are marked delivered, so none is pushed.');
+  if (mdOut?.cmsgRows?.length) console.log(`  The office will SEE (no alert): ${mdOut.threadRows.filter((t) => t.last_author_role === 'client').length} customer messages waiting for a first reply in Client Requests, and ${mdOut.probRows.filter((p) => p.status !== 'resolved').length} open customer requests.`);
+}
+
+main().catch(async (e) => { await closeReads(); console.error('\n✖ Seed failed:', e.message, '\n'); process.exitCode = 1; });

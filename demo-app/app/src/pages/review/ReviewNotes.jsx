@@ -12,6 +12,10 @@ import { fmtDate } from '../../lib/dates';
 // visibilitychange to hidden — so a note the client typed but didn't click "Add" on isn't
 // lost when they navigate or close the tab. It never replaces an existing note: `flush`
 // clears the draft ref before posting, so unmount + pagehide firing together can't double-post.
+//
+// One instance serves ONE item: the focus cards are keyed by their item (ReviewFocus), so Next,
+// Back and Skip unmount it and the draft posts on the item it was typed for. Reused for another
+// item, the draft would sit in that item's box and post there (task #130).
 export default function ReviewNotes({ entry, onAdd, placeholder = 'Add a note (saved for everyone)' }) {
   const notes = reviewNotes(entry);
   const [draft, setDraft] = useState('');

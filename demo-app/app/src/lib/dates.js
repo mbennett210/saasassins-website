@@ -21,20 +21,37 @@
 // so the dependency would be circular).
 
 // The canonical default org timezone — the single source of truth for "what zone
-// does scheduling resolve in when nothing else says otherwise". The live org_state
-// blob predates company.timezone (the field was never written), so this is what
-// production actually runs on until a Super Admin saves an explicit zone. Keep the
-// seed's company.timezone in sync with this.
-export const DEFAULT_ORG_TIMEZONE = 'America/Los_Angeles';
+// does scheduling resolve in when nothing else says otherwise". Clean Space is an
+// East-coast business (Daniel's call, CS-029: "This is an East coast company"), so the
+// default is Eastern. Production's LIVE org_state carries an explicit company.timezone
+// (read 2026-09-27), which only a Super Admin changes in Settings → Company — so
+// changing THIS default does not move a configured org; it governs a fresh clone, a
+// blank zone, and the login-free demo. Keep the seed's company.timezone in sync with this.
+// The Creole month and weekday names (CS-851): no phone or browser carries them (see creoleFormatter).
+import { CALENDAR_NAMES, intlLocale } from '../i18n/languages.js';
+
+export const DEFAULT_ORG_TIMEZONE = 'America/New_York';
 
 let ORG_TZ = DEFAULT_ORG_TIMEZONE;
 
 // Called by StoreProvider from company.timezone. A blank/unknown zone falls back to
-// the LA default rather than the device zone: an operator in Manila must still see
-// the business's Los-Angeles schedule, not their own. (A client on a different shell
-// simply saves their own zone; the default only decides the pre-configuration state.)
+// the Eastern default rather than the device zone: an operator in another timezone must
+// still see the business's Eastern schedule, not their own. (A client on a different
+// shell simply saves their own zone; the default only decides the pre-configuration
+// state.)
 export function setOrgTimezone(tz) { ORG_TZ = tz || DEFAULT_ORG_TIMEZONE; }
 export function getOrgTimezone() { return ORG_TZ; }
+
+// THE DISPLAY LOCALE (CS-193). Ambient for the same reason the zone is: a missed call site
+// must still be right. The i18n runtime (src/i18n/runtime.js) sets it from the language the
+// signed-in person reads the app in, so "Oct 3" becomes "3 oct" on a Spanish screen without
+// touching the ~60 formatter call sites. Unset (the server, a test, the login screen before
+// any choice) it is `undefined`, which is exactly what these formatters passed before: the
+// device / process default. A formatter that renders for SOMEONE ELSE (an alert written for
+// its recipient, src/i18n/core.js) passes that person's locale explicitly instead.
+let UI_LOCALE;
+export function setUiLocale(locale) { UI_LOCALE = locale || undefined; }
+export function getUiLocale() { return UI_LOCALE; }
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -156,6 +173,16 @@ export function hourInZone(value = new Date(), tz = ORG_TZ) {
   return partsInZone(d, tz).hour;
 }
 
+// Minutes since midnight (0…1439) in the org's timezone. Same reason as hourInZone, one
+// resolution finer: office hours are a wall-clock RANGE the office types ("08:00–17:00",
+// WO-17), so an hour-only read could not express 8:30 and would round a boundary the wrong
+// way. Built on the same cached partsInZone, so it costs no extra formatter.
+export function minutesInZone(value = new Date(), tz = ORG_TZ) {
+  const d = value instanceof Date ? value : new Date(value);
+  const p = partsInZone(d, tz);
+  return p.hour * 60 + p.minute;
+}
+
 // Day-key arithmetic. UTC is used purely as a calendar here — these are labels,
 // not instants, so no zone (device or org) can perturb the result.
 export function addDaysKey(key, n) {
@@ -249,46 +276,162 @@ export function sameDay(a, b, tz = ORG_TZ) {
   return dayKey(a, tz) === dayKey(b, tz);
 }
 
+// 🔴 A BARE DAY KEY IS NOT AN INSTANT (CS-145). `new Date('2026-03-04')` is UTC
+// midnight by spec, so rendering it in a NEGATIVE-offset org zone (America/New_York, the
+// default) prints March 3 — the day BEFORE the one that was stored. Payment dates were
+// written both ways (InvoiceDetail stored a day key, LogPaymentModal an ISO instant), so
+// the same payment read as two different days depending on which screen wrote it.
+//
+// Both write points now store org-zone ISO, but a day key stays readable FOREVER — the
+// live blob holds rows written the old way, and `<input type="date">` hands one back on
+// every edit — so the formatters anchor a bare key at the org's NOON before formatting.
+// Noon is chosen because it is inside the same calendar day for every real UTC offset.
+// Fixed here, at the one render boundary, rather than at each of the ~40 call sites.
+export function dayKeyToInstant(value, tz = ORG_TZ) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split('-').map(Number);
+    return zonedFieldsToInstant(y, m, d, 12, 0, zoneOr(tz));
+  }
+  return new Date(value);
+}
+
+// ── ONE FORMATTER PER (locale, options, zone) (CS-674, CS-721) ─────────────────
+// `toLocaleDateString(locale, options)` / `toLocaleTimeString` build a NEW Intl.DateTimeFormat
+// on EVERY call — the same ~100 µs construction `dtfForZone` above caches for partsInZone. The
+// formatters below called them once per value, so a screen formatting every visit paid it per
+// visit: at Matt's size (49,883 visits) the first letter typed in global search spent 7.4 of
+// its 8.4 s here, and the Schedule's Cleaner view about 1.6 of its ~2.8 s (S128, F11-04/05).
+// They now keep one formatter per (kind, locale, options, zone) and say EXACTLY what the
+// per-call path said (`test-dates-formatter-cache.mjs` compares them byte for byte against the
+// engine's own toLocale*String):
+//   • a DATE string fills year/month/day ('numeric') when the options name no date field and no
+//     style — the engine's own default for toLocaleDateString (ECMA-402 CreateDateTimeFormat,
+//     required "date", defaults "date"); the copy, never the caller's object, takes them;
+//   • a date string refuses `timeStyle` — that rare call keeps the engine's per-call path, so it
+//     throws the same TypeError;
+//   • an invalid instant reads "Invalid Date" BEFORE any option is looked at (toLocale*String
+//     check the time value first; format() would throw instead);
+//   • an unknown zone throws the engine's RangeError on construction and is never cached.
+// Bounded by a wholesale clear: the set is a handful of call-site option shapes × the display
+// locales × the org zone, so the cap only guards against a caller minting options per value.
+const _fmtCache = new Map();
+const FMT_CACHE_MAX = 400;
+const DATE_FIELDS = ['weekday', 'year', 'month', 'day'];
+const localeKey = (locale) => (locale === undefined || typeof locale === 'string' ? String(locale) : JSON.stringify(locale));
+function cachedFormatter(kind, locale, options) {
+  const key = `${kind}|${localeKey(locale)}|${JSON.stringify(options)}`;
+  let f = _fmtCache.get(key);
+  if (!f) {
+    // Intl gets the base locale, never the private-use tag (i18n/languages intlLocale); the tag
+    // only chooses the Creole names.
+    f = new Intl.DateTimeFormat(intlLocale(locale), options);
+    if (CREOLE_TAG.test(String(locale ?? ''))) f = creoleFormatter(f);
+    if (_fmtCache.size >= FMT_CACHE_MAX) _fmtCache.clear();
+    _fmtCache.set(key, f);
+  }
+  return f;
+}
+
+// ── HAITIAN CREOLE NAMES (CS-851) ─────────────────────────────────────────────────────────
+// No phone, browser or Node carries Creole date data, so the Creole locale is `en-US-x-ht`
+// (i18n/languages.js): Intl formats its base locale, US English (never the tag itself: runtimes
+// disagree on a private-use tag — see languages.js), and here the month and weekday names become
+// Creole (CALENDAR_NAMES) and a date with a month name is put in Creole order — weekday, day,
+// month, year, then any time: "madi 13 oktòb 2026, 9:30 PM". A date written in numbers only
+// ("10/13/2026") keeps its numbers; a weekday on its own is just renamed ("madi").
+const CREOLE_TAG = /-x-ht$/i;
+let _enNames = null;
+function englishNames() {
+  if (_enNames) return _enNames;
+  const month = new Map();
+  const weekday = new Map();
+  for (const style of ['short', 'long']) {
+    const m = new Intl.DateTimeFormat('en-US', { month: style, timeZone: 'UTC' });
+    for (let i = 0; i < 12; i += 1) month.set(m.format(new Date(Date.UTC(2026, i, 15))), i);
+    const w = new Intl.DateTimeFormat('en-US', { weekday: style, timeZone: 'UTC' });
+    for (let i = 0; i < 7; i += 1) weekday.set(w.format(new Date(Date.UTC(2026, 9, 11 + i))), i);   // 2026-10-11 is a Sunday
+  }
+  _enNames = { month, weekday };
+  return _enNames;
+}
+// 🔴 THE ENGINE'S OWN format() IS THE REFERENCE FOR SPACING, NEVER formatToParts(): Node 24's V8
+// (ICU 78.3) puts a narrow no-break space (U+202F) before AM/PM in formatToParts() while its
+// format() and toLocale*String() write a plain space (measured: main's CI, 2026-10-15; Node 26
+// writes a plain space in all three). So a date with nothing to rename IS format(), a weekday is
+// renamed inside format()'s own text, and a rebuilt Creole date takes its time's spaces from it.
+const NNBSP = /\u202f/g;
+function creoleFormatter(base) {
+  const names = CALENDAR_NAMES.ht;
+  return {
+    format(date) {
+      const whole = base.format(date);
+      const parts = base.formatToParts(date);
+      const en = englishNames();
+      const out = { weekday: null, day: null, month: null, year: null };
+      let named = false;
+      let weekdayEn = null;
+      for (const p of parts) {
+        if (p.type === 'month' && en.month.has(p.value)) { out.month = names.months[en.month.get(p.value)]; named = true; } else if (p.type === 'weekday') {
+          weekdayEn = p.value;
+          out.weekday = en.weekday.has(p.value) ? names.weekdays[en.weekday.get(p.value)] : p.value;
+        } else if (p.type === 'day' || p.type === 'year') out[p.type] = p.value;
+      }
+      if (!named) return weekdayEn && out.weekday ? whole.replace(weekdayEn, out.weekday) : whole;
+      const day = [out.weekday, out.day, out.month, out.year].filter(Boolean).join(' ');
+      const at = parts.findIndex((p) => p.type === 'hour');
+      let time = at >= 0 ? parts.slice(at).map((p) => p.value).join('').trim() : '';
+      if (time && !whole.includes('\u202f')) time = time.replace(NNBSP, ' ');
+      return time ? `${day}, ${time}` : day;
+    },
+    formatToParts: (date) => base.formatToParts(date),
+    resolvedOptions: () => base.resolvedOptions(),
+  };
+}
+const INVALID_DATE = 'Invalid Date';
+function formatDatePart(date, locale, opts, timeZone) {
+  if (Number.isNaN(date.getTime())) return INVALID_DATE;
+  const o = { ...opts, timeZone };
+  if (o.timeStyle !== undefined) return date.toLocaleDateString(intlLocale(locale), o); // the engine's refusal, verbatim
+  if (o.dateStyle === undefined && DATE_FIELDS.every((k) => o[k] === undefined)) {
+    o.year = 'numeric'; o.month = 'numeric'; o.day = 'numeric';
+  }
+  return cachedFormatter('date', locale, o).format(date);
+}
+
 // The three customer-facing formatters. Each used `tz ? {...timeZone} : opts`, so a
 // null/'' zone DROPPED timeZone entirely and formatted in the process zone — UTC on
 // the cron. See zoneOr: falsy now resolves to the org zone.
-export function fmtDate(iso, opts = { month: 'short', day: 'numeric' }, tz = ORG_TZ) {
+// `locale` defaults to the ambient display locale (setUiLocale above); an explicit one is for
+// rendering in someone else's language.
+export function fmtDate(iso, opts = { month: 'short', day: 'numeric' }, tz = ORG_TZ, locale = UI_LOCALE) {
   if (!iso) return '';
-  return new Date(iso).toLocaleDateString(undefined, { ...opts, timeZone: zoneOr(tz) });
+  return formatDatePart(dayKeyToInstant(iso, tz), locale, opts, zoneOr(tz));
 }
 
-export function fmtDateLong(iso, tz = ORG_TZ) {
+const LONG_DATE = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' };
+export function fmtDateLong(iso, tz = ORG_TZ, locale = UI_LOCALE) {
   if (!iso) return '';
-  return new Date(iso).toLocaleDateString(undefined, {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-    timeZone: zoneOr(tz),
-  });
+  return formatDatePart(dayKeyToInstant(iso, tz), locale, LONG_DATE, zoneOr(tz));
 }
 
-export function fmtTime(iso, tz = ORG_TZ) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleTimeString(undefined, {
-    hour: 'numeric', minute: '2-digit',
-    timeZone: zoneOr(tz),
-  });
-}
-
-export function fmtTimeRange(startIso, endIso) {
-  return `${fmtTime(startIso)} – ${fmtTime(endIso)}`;
-}
-
-export function fmtRelative(iso) {
+export function fmtTime(iso, tz = ORG_TZ, locale = UI_LOCALE) {
   if (!iso) return '';
   const d = new Date(iso);
-  const diffMs = Date.now() - d.getTime();
-  const mins = Math.round(diffMs / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
-  const days = Math.round(hrs / 24);
-  if (days < 7) return `${days}d`;
-  return fmtDate(iso);
+  if (Number.isNaN(d.getTime())) return INVALID_DATE;
+  return cachedFormatter('time', locale, { hour: 'numeric', minute: '2-digit', timeZone: zoneOr(tz) }).format(d);
+}
+
+// A date and a time together, e.g. "Oct 3, 2026, 9:30 PM" (Creole: "3 oktòb 2026, 9:30 PM") — what
+// a catalog line's `{x, dateTime}` shows (src/i18n/core.js).
+export function fmtDateTime(iso, tz = ORG_TZ, locale = UI_LOCALE) {
+  if (iso == null || iso === '') return '';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  return cachedFormatter('dateTime', locale, { dateStyle: 'medium', timeStyle: 'short', timeZone: zoneOr(tz) }).format(d);
+}
+
+export function fmtTimeRange(startIso, endIso, locale = UI_LOCALE) {
+  return `${fmtTime(startIso, ORG_TZ, locale)} – ${fmtTime(endIso, ORG_TZ, locale)}`;
 }
 
 // Build ISO from a date (YYYY-MM-DD) + time (HH:MM) pair for form inputs.
@@ -373,11 +516,24 @@ export function composeEndIso(dateStr, startTime, endTime, tz = ORG_TZ) {
 // earlier: splitIso handed the form the wrong day, composeIso stored it back.
 export function splitIso(iso, tz = ORG_TZ) {
   if (!iso) return { date: '', time: '' };
-  const p = partsInZone(new Date(iso), tz);
+  // dayKeyToInstant, not `new Date(iso)`: a BARE day key is UTC midnight by spec, so
+  // reading one back in a negative-offset org zone returned the day BEFORE — and since
+  // the editors compose the value straight back with composeIso, opening and saving a
+  // legacy day-key row rewrote it one day earlier (CS-145, the same round-trip this
+  // function's own header describes for jobs).
+  const p = partsInZone(dayKeyToInstant(iso, tz), tz);
   return {
     date: `${p.year}-${pad(p.month)}-${pad(p.day)}`,
     time: `${pad(p.hour)}:${pad(p.minute)}`,
   };
+}
+
+// Whole minutes from an instant to `now`: never negative; null when the instant cannot be read.
+// An age or a wait (how long a customer's message has waited for a reply — lib/hubMessages), not a
+// calendar figure, so no zone is involved.
+export function minutesSince(iso, now = Date.now()) {
+  const t = Date.parse(iso ?? '');
+  return Number.isFinite(t) ? Math.max(0, Math.floor((now - t) / 60000)) : null;
 }
 
 // Minutes -> "4h 12m" / "45m" / "—". Labor + expected-time display.

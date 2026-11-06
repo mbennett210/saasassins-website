@@ -17,17 +17,24 @@
 // this one reads. A link that omits it silently regresses Back for that entry point,
 // which is what `lint:backnav` now fails the build on.
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useT } from '../i18n/react';
+import { BACK_STATE } from '../lib/pageScroll';
 
-export function useBackTarget(fallbackTo, fallbackLabel = 'Back') {
+export function useBackTarget(fallbackTo, fallbackLabel = null) {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const target = location.state?.from || fallbackTo;
-  const label = location.state?.fromLabel || fallbackLabel;
+  // The referrer's label (already in the reader's language: useFromHere), else the page's
+  // own, else "Back" in the reader's language (CS-193).
+  const label = location.state?.fromLabel || fallbackLabel || t('back.back');
   // `navigate(-1)` only as a last resort: with neither a referrer nor a fallback there is
   // nothing better, but it is genuinely worse — it can walk the user out of the app.
+  // BACK_STATE says the move is a Back, so the shell puts the page where it was left
+  // (CS-960, UI_RULES §186), referrer or not: Settings' ← Settings has none.
   const goBack = (e) => {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
-    if (target) navigate(target);
+    if (target) navigate(target, { state: BACK_STATE });
     else navigate(-1);
   };
   return { target, label, goBack, href: target || '#' };

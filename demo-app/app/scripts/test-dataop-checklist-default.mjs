@@ -13,17 +13,25 @@
 // Failing-first by construction: pre-fix the module does not exist, so the import throws.
 //
 // Run: node app/scripts/test-dataop-checklist-default.mjs
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync, readdirSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   OP_NAME, PROD_REF, ENV_DEFAULT, ENV_PROD, JOB_SELECT, OP_JOB_STATUSES,
   jobRowsToCleans, planChecklistDefaultOp,
+  refFromDbUrl, liveTarget, refuseTarget, printTarget, pgTransport, runChecklistDefaultOp,
 } from './dataop-checklist-default.mjs';
 import { RETIRE_DEFAULT_JOB_STATUSES } from '../src/lib/crewChecklist.js';
+import { MAX_STATE_BYTES } from '../api/_lib/blobBudget.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(path.join(HERE, 'dataop-checklist-default.mjs'), 'utf8');
+// §8.2 rules 2 and 3 (which project, may it proceed, say so first) moved to the SHARED
+// guard on 2026-09-28 so the second data-op runs the same one (CS-025). The contract is
+// still checked mechanically — against the file that now implements it. Rules 1, 4 and 5
+// stay in the op's own body and are still read off SRC below.
+const GUARD = readFileSync(path.join(HERE, '_lib', 'liveGuard.mjs'), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass += 1; else { fail += 1; console.error('  ✗ ' + msg); } };
@@ -136,8 +144,10 @@ const fixture = () => ({
   ok(/--dry-run|DRY|APPLY\s*=\s*process\.argv\.includes\('--apply'\)/.test(SRC), 'G1: writes are behind --apply');
   ok(/APPLY\s*=\s*process\.argv\.includes\('--apply'\)/.test(SRC), 'G1: dry run is the DEFAULT (an --apply opt-in, never a --dry-run opt-out)');
   ok(!/includes\('--dry-run'\)/.test(SRC), 'G1: not one of the write-by-default scripts (§8.1)');
-  ok(/CONFIRM_PROD/.test(SRC) && new RegExp(`CONFIRM_PROD[^\\n]*PROD_REF|PROD_REF[^\\n]*CONFIRM_PROD`).test(SRC),
-    'G3: production needs CONFIRM_PROD to equal the prod ref');
+  ok(/CONFIRM_PROD/.test(GUARD) && new RegExp(`CONFIRM_PROD[^\\n]*PROD_REF|PROD_REF[^\\n]*CONFIRM_PROD`).test(GUARD),
+    'G3: production needs CONFIRM_PROD to equal the prod ref (the shared guard)');
+  ok(/from '\.\/_lib\/liveGuard\.mjs'/.test(SRC) && /refuseTarget/.test(SRC),
+    'G3: …and this op runs that shared guard rather than a copy of it');
   ok(/--prod/.test(SRC), 'G3: production needs an explicit --prod');
   ok(/orgstate-backup-/.test(SRC), 'G4: the pre-write backup lands on the gitignored orgstate-backup-* pattern');
   ok(new RegExp(`updated_via:\\s*\`script:\\$\\{OP_NAME\\}\`|updated_via:\\s*'script:${OP_NAME}'`).test(SRC),
@@ -148,7 +158,11 @@ const fixture = () => ({
   ok(/import \{ MAX_STATE_BYTES \} from '\.\.\/api\/_lib\/blobBudget\.js'/.test(SRC),
     'D7: the blob ceiling is imported from api/_lib/blobBudget.js, not redeclared');
   ok(!/3_500_000|3500000/.test(SRC), 'D7: no restated byte literal anywhere in the script');
-  ok(/MAX_STATE_BYTES/.test(SRC.slice(SRC.indexOf('const isMain'))), 'the write checks the ceiling before committing');
+  // The ceiling is checked inside the op body — the one function that performs the write,
+  // whichever transport carries it. (Proven behaviourally further down too: an over-ceiling
+  // state refuses and issues no UPDATE.)
+  ok(/MAX_STATE_BYTES/.test(SRC.slice(SRC.indexOf('function runChecklistDefaultOp'))),
+    'the write checks the ceiling before committing');
 
   // D4: the statuses come from the rule module, so the op and the store migration can
   // never disagree about which cleans count.
@@ -163,12 +177,13 @@ const fixture = () => ({
   ok(prodLines.every((l) => /CONFIRM_PROD/.test(l)),
     'D3a: every documented --prod invocation carries CONFIRM_PROD, as the guard requires');
 
-  // D3b: §8.2 rule 2 — the target prints BEFORE anything can fail.
-  const printAt = SRC.indexOf('function printTarget');
-  const callAt = SRC.indexOf('printTarget(');
+  // D3b: §8.2 rule 2 — the target prints BEFORE anything can fail. printTarget is declared
+  // in the shared guard now; what matters here is that THIS op calls it before its read.
+  const printAt = GUARD.indexOf('export function printTarget');
+  const callAt = SRC.indexOf('printTarget({');
   const readAt = SRC.indexOf(".from('org_state')");
-  ok(printAt > 0 && callAt > 0 && readAt > 0, 'the script has a printTarget and an org_state read');
-  ok(SRC.indexOf('printTarget(', printAt + 10) < readAt,
+  ok(printAt > 0 && callAt > 0 && readAt > 0, 'the shared guard declares printTarget, and the script calls it and reads org_state');
+  ok(callAt < readAt,
     'D3b: the target is printed before the org_state read, so a failed read still names what it was pointed at');
 
   // D6: the audit row must not credit a human for a script write.
@@ -177,6 +192,253 @@ const fixture = () => ({
   ok(SRC.includes('updated_by_tab: `script:${OP_NAME}`'),
     'D6: updated_by_tab identifies the script (text column)');
 }
+
+// ── the Postgres transport (SUPABASE_DB_URL, no service-role key) ────────────
+// Some machines hold only `SUPABASE_DB_URL` — a Postgres connection string — as the
+// production credential (`apply-migration.mjs` already runs on it) and have no
+// service-role pair at all. The op then talks to Postgres directly, on the SAME pure
+// plan and under the SAME §8.2 guard contract. Everything below drives a FAKE client
+// that records `query(text, params)`, so the suite stays offline.
+const PASSWORD = 'n0t-a-real-p%40ssword';
+const DSN_POOLER = `postgresql://postgres.${PROD_REF}:${PASSWORD}@aws-1-us-east-2.pooler.supabase.com:6543/postgres`;
+const DSN_DIRECT = `postgresql://postgres:${PASSWORD}@db.${PROD_REF}.supabase.co:5432/postgres`;
+
+{
+  eq('the pooler username carries the ref', refFromDbUrl(DSN_POOLER), PROD_REF);
+  eq('the direct host carries the ref', refFromDbUrl(DSN_DIRECT), PROD_REF);
+  eq('a sandbox pooler dsn reads its own ref',
+    refFromDbUrl('postgres://postgres.abcdefghijklmnopqrst:pw@aws-0-eu-west-2.pooler.supabase.com:5432/postgres'),
+    'abcdefghijklmnopqrst');
+  // A password may legally contain an '@', so the LAST one separates userinfo from host.
+  eq('the LAST @ splits userinfo from host',
+    refFromDbUrl(`postgresql://postgres:pw@db.deadbeefdeadbeefdead.supabase.co@db.${PROD_REF}.supabase.co:5432/postgres`),
+    PROD_REF);
+  eq('garbage is unknown, never a guess', refFromDbUrl('not a connection string'), null);
+  eq('a local dsn is unknown', refFromDbUrl('postgresql://postgres:pw@localhost:5432/postgres'), null);
+  eq('a missing dsn is unknown', refFromDbUrl(undefined), null);
+}
+
+// which transport the environment offers, and what it is pointed at
+{
+  eq('the service-role pair still wins when it is present',
+    liveTarget({ SUPABASE_URL: `https://${PROD_REF}.supabase.co`, SUPABASE_SERVICE_ROLE_KEY: 'k', SUPABASE_DB_URL: DSN_POOLER }),
+    { transport: 'supabase', ref: PROD_REF });
+  eq('a bare SUPABASE_DB_URL takes the Postgres transport',
+    liveTarget({ SUPABASE_DB_URL: DSN_POOLER }), { transport: 'pg', ref: PROD_REF });
+  eq('half a service-role pair is not a transport',
+    liveTarget({ SUPABASE_URL: `https://${PROD_REF}.supabase.co` }), { transport: null, ref: null });
+  eq('no credential at all is no transport', liveTarget({}), { transport: null, ref: null });
+}
+
+// §8.2 rule 3 on the Postgres path — the refusal is a value, so it is testable
+{
+  const refusal = (over) => refuseTarget({ transport: 'pg', ref: PROD_REF, prod: false, confirmProd: undefined, ...over });
+  ok(refusal() && /CONFIRM_PROD/.test(refusal()), 'G3/pg: the prod ref without --prod and CONFIRM_PROD is refused');
+  ok(refusal({ prod: true }), 'G3/pg: --prod alone is not enough');
+  ok(refusal({ confirmProd: PROD_REF }), 'G3/pg: CONFIRM_PROD alone is not enough');
+  eq('G3/pg: both together proceed', refusal({ prod: true, confirmProd: PROD_REF }), null);
+  eq('G3/pg: a non-production ref proceeds', refuseTarget({ transport: 'pg', ref: 'sandboxrefsandboxref', prod: false }), null);
+  // An unknown ref cannot be compared with PROD_REF, so it may not be assumed harmless.
+  ok(refuseTarget({ transport: 'pg', ref: null, prod: true, confirmProd: PROD_REF }),
+    'G3/pg: an unparseable ref is unknown, and unknown is refused');
+  eq('the supabase-js path is unchanged: an unparsed https host still runs',
+    refuseTarget({ transport: 'supabase', ref: null, prod: false }), null);
+  ok(!refusal().includes(PASSWORD) && !refusal().includes(DSN_POOLER), 'the refusal never quotes the credential');
+}
+
+// §8.2 rule 2 — the target names the project, never the credential
+{
+  const r = recorder();
+  printTarget({ ref: refFromDbUrl(DSN_POOLER), org: '00000000-0000-0000-0000-0000000000ab', envLabel: 'the preloaded environment', transport: 'pg', apply: false, log: r.write });
+  ok(r.text().includes(PROD_REF), 'the target names the project ref');
+  ok(/PRODUCTION/.test(r.text()), '…and flags production');
+  ok(/pg|postgres/i.test(r.text()), '…and says which transport is carrying the run');
+  ok(!r.text().includes(PASSWORD), 'the target line never contains the password');
+  ok(!r.text().includes(DSN_POOLER) && !r.text().includes('pooler.supabase.com'), '…nor the connection string');
+}
+
+// the guard is consulted before ANY driver is loaded or any socket opened
+{
+  // the CALL, not the declaration — the first occurrence after the function it names
+  const guardAt = SRC.indexOf('refuseTarget({', SRC.indexOf('function refuseTarget') + 10);
+  const importAt = SRC.indexOf('await import(');
+  const pgAt = SRC.indexOf('new pg.Client');
+  ok(guardAt > 0 && importAt > 0 && pgAt > 0, 'the script has a guard call, a dynamic driver import and a pg client');
+  ok(guardAt < importAt, 'G3: the refusal is decided before the driver is even imported');
+  ok(guardAt < pgAt, 'G3: …and before a Postgres connection is constructed — a refused run makes NO query');
+  ok(SRC.indexOf('printTarget(', SRC.indexOf('function printTarget') + 10) > guardAt,
+    'the guard runs before the target is printed, so a refused run prints only the refusal');
+  // Supabase bans an address after a few failed password attempts: connect once, never loop.
+  eq('the pg path connects exactly once', (SRC.match(/client\.connect\(\)/g) || []).length, 1);
+  ok(/client\.end\(\)/.test(SRC), 'the pg client is closed on every exit');
+  ok(!/process\.exit\(/.test(SRC), 'exit codes are set, never process.exit() — it can crash node on Windows after network I/O');
+}
+
+// ── the op over the Postgres transport, end to end on a fake client ──────────
+const ORG_FIX = '00000000-0000-0000-0000-0000000000ab';
+// 4177, not 1 or 2: a version digit that cannot be confused with a `$1` placeholder when
+// the "no value is interpolated into the SQL" check scans the statement text.
+const VERSION_FIX = 4177;
+const JOB_ROWS = [
+  { id: 'j1', client_id: 'cl_bay', status: 'upcoming', crewIds: ['u_andre', 'u_tomas'] },
+  { id: 'j2', client_id: 'cl_bay', status: 'in_progress', crewIds: ['u_priya'] },
+  { id: 'j5', client_id: 'cl_none', status: 'upcoming', crewIds: ['u_zoe', 'u_new'] },
+];
+const STATE_FIX = () => ({ version: 57, clients: fixture().clients, users: [] });
+
+function recorder() {
+  const lines = [];
+  const write = (...a) => { lines.push(a.map(String).join(' ')); };
+  return { lines, write, text: () => lines.join('\n') };
+}
+
+// node-postgres hands bigint back as a STRING (PostgREST hands back a number), so the
+// fake returns `version` as a string on purpose: if the op forgets to normalise it,
+// `version + 1` concatenates and the success line reads "v4177 → 41771".
+function fakePg({ state, version = VERSION_FIX, jobRows = JOB_ROWS, count, updated = [{ version: String(version + 1) }], onUpdate }) {
+  const calls = [];
+  const client = {
+    calls,
+    query: async (text, params) => {
+      calls.push({ text, params });
+      if (/from public\.org_state/.test(text)) return { rows: state === null ? [] : [{ state, version: String(version) }] };
+      if (/count\(\*\)/.test(text)) return { rows: [{ n: count ?? jobRows.length }] };
+      if (/from public\.jobs/.test(text)) return { rows: jobRows };
+      if (/^\s*update public\.org_state/.test(text)) { if (onUpdate) onUpdate(); return { rows: updated }; }
+      throw new Error(`the fake saw an unexpected statement: ${text}`);
+    },
+  };
+  return client;
+}
+
+const BACKUPS = mkdtempSync(path.join(tmpdir(), 'cs-dataop-'));
+const BACKUP_DIR = new URL(`${pathToFileURL(BACKUPS).href}/`);
+const runPg = (client, over = {}) => {
+  const r = recorder();
+  return runChecklistDefaultOp({
+    t: pgTransport(client), org: ORG_FIX, apply: true, backupDir: BACKUP_DIR,
+    log: r.write, err: r.write, ...over,
+  }).then((code) => ({ code, out: r.text(), calls: client.calls }));
+};
+const updateOf = (calls) => calls.find((c) => /^\s*update /i.test(c.text));
+
+{
+  const state = STATE_FIX();
+  const client = fakePg({ state });
+  const { code, out, calls } = await runPg(client);
+  eq('the happy path exits 0', code, 0);
+  ok(/org_state v4177 → 4178/.test(out), `the version is read as a number, not a string (got: ${out.split('\n').filter((l) => /v41/.test(l)).join(' | ')})`);
+
+  // every statement is parameterized: the values live in `params`, never in the text
+  for (const { text, params } of calls) {
+    ok(!/;\s*\S/.test(text), `one statement per query: ${text.slice(0, 48)}…`);
+    for (let i = 0; i < (params || []).length; i += 1) {
+      const v = params[i];
+      const asText = typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v);
+      ok(text.includes(`$${i + 1}`), `$${i + 1} is a placeholder in: ${text.slice(0, 48)}…`);
+      ok(!text.includes(asText), `param ${i + 1} is not interpolated into: ${text.slice(0, 48)}…`);
+    }
+  }
+
+  // count-first, then ONE ordered read — pg has no PostgREST row cap, so a single
+  // ordered statement is the complete set and the caller proves it against the count.
+  const counts = calls.filter((c) => /count\(\*\)/.test(c.text));
+  const reads = calls.filter((c) => /from public\.jobs/.test(c.text) && !/count\(\*\)/.test(c.text));
+  eq('the jobs are counted first', calls.indexOf(counts[0]) < calls.indexOf(reads[0]), true);
+  eq('…and read in exactly one statement', reads.length, 1);
+  ok(/order by id/.test(reads[0].text), 'the jobs read is ordered by id');
+  ok(/status = any\(\$2\)/.test(reads[0].text), 'the statuses ride as a parameter, not a literal list');
+  eq('…and they are the shared constant', reads[0].params[1], OP_JOB_STATUSES);
+  ok(/data->'crewIds' as "crewIds"/.test(reads[0].text), 'the crew ids are lifted out of data under the same alias the PostgREST select used');
+
+  // the CAS write
+  const upd = updateOf(calls);
+  ok(/where organization_id = \$4 and version = \$5/.test(upd.text), 'CAS: the version predicate rides ON the update, as a parameter');
+  ok(/set state = \$1::jsonb/.test(upd.text), 'the new blob is a jsonb parameter');
+  ok(/version = version \+ 1/.test(upd.text), 'the next version is computed in SQL, never restated');
+  ok(/updated_at = now\(\)/.test(upd.text), 'the write stamps updated_at');
+  ok(/returning version/.test(upd.text), 'the update returns its row, so 0 rows is a detectable conflict');
+  ok(/updated_by = null/.test(upd.text) && /updated_by_build = null/.test(upd.text),
+    'D6/pg: no human and no client build is credited for a script write');
+  eq('D6/pg: updated_via is the script', upd.params[1], `script:${OP_NAME}`);
+  eq('D6/pg: updated_by_tab is the script', upd.params[2], `script:${OP_NAME}`);
+  eq('the CAS params are the org and the version just read', [upd.params[3], upd.params[4]], [ORG_FIX, VERSION_FIX]);
+
+  // the pg rows go through the SAME pure transform as the PostgREST rows
+  const plan = planChecklistDefaultOp({ clients: STATE_FIX().clients, jobs: jobRowsToCleans(JOB_ROWS) });
+  eq('the written blob is exactly the pure plan applied to the state it read',
+    JSON.stringify(upd.params[0]), JSON.stringify({ ...STATE_FIX(), clients: plan.clients }));
+
+  // G4: the backup lands on the gitignored pattern, and it parses
+  const backups = readdirSync(BACKUPS).filter((f) => /^orgstate-backup-.*\.json$/.test(f));
+  eq('G4: the write left exactly one backup', backups.length, 1);
+  eq('G4: the backup holds the version and the state as they were read',
+    JSON.parse(readFileSync(path.join(BACKUPS, backups[0]), 'utf8')),
+    { version: VERSION_FIX, state: STATE_FIX() });
+}
+
+// G4 again, ordered: the backup must be on disk by the time the UPDATE is issued
+{
+  let backupsAtWrite = -1;
+  const client = fakePg({
+    state: STATE_FIX(),
+    onUpdate: () => { backupsAtWrite = readdirSync(BACKUPS).filter((f) => /^orgstate-backup-/.test(f)).length; },
+  });
+  const { code } = await runPg(client, { now: new Date('2026-09-28T01:02:03.456Z') });
+  eq('the op still exits 0', code, 0);
+  ok(backupsAtWrite > 0, 'G4: a backup file is on disk before the UPDATE is issued');
+  ok(existsSync(path.join(BACKUPS, 'orgstate-backup-2026-09-28T01-02-03-456Z.json')),
+    'G4: the backup name is the run timestamp on the gitignored pattern');
+}
+
+// a CAS miss is loud, and never reads as success
+{
+  const client = fakePg({ state: STATE_FIX(), updated: [] });
+  const { code, out } = await runPg(client);
+  eq('0 rows updated exits 1', code, 1);
+  ok(/CAS conflict/.test(out), 'a CAS miss says so');
+  ok(!/✓ Converted/.test(out), 'a CAS miss prints no success line');
+}
+
+// the dry run is the default: it reads, prints, and writes nothing
+{
+  const client = fakePg({ state: STATE_FIX() });
+  const { code, out, calls } = await runPg(client, { apply: false });
+  eq('the dry run exits 0', code, 0);
+  eq('the dry run issues no UPDATE', updateOf(calls), undefined);
+  ok(/nothing written/.test(out), 'the dry run says nothing was written');
+}
+
+// a short read is refused rather than planned on
+{
+  const client = fakePg({ state: STATE_FIX(), count: JOB_ROWS.length + 1 });
+  const { code, out, calls } = await runPg(client);
+  eq('a jobs read that does not match the count exits 1', code, 1);
+  eq('…and issues no UPDATE', updateOf(calls), undefined);
+  ok(/re-run/.test(out), '…and says to re-run');
+}
+
+// the blob ceiling, behaviourally
+{
+  const state = STATE_FIX();
+  state.filler = 'x'.repeat(MAX_STATE_BYTES);
+  const client = fakePg({ state });
+  const { code, out, calls } = await runPg(client);
+  eq('a result over the ceiling exits 1', code, 1);
+  eq('…and issues no UPDATE', updateOf(calls), undefined);
+  ok(/ceiling/.test(out), '…and names the ceiling');
+}
+
+// an uninitialized org is a clean refusal, not a crash
+{
+  const client = fakePg({ state: null });
+  const { code, out, calls } = await runPg(client);
+  eq('no org_state row exits 1', code, 1);
+  eq('…and issues no UPDATE', updateOf(calls), undefined);
+  ok(/not initialized/.test(out), '…and says so');
+}
+
+rmSync(BACKUPS, { recursive: true, force: true });
 
 // the backup pattern the script writes must already be gitignored (§8.2 rule 4)
 {

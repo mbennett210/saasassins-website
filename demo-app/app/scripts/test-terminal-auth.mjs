@@ -43,14 +43,15 @@ eq('403 not-on-team → "not-on-team"',
 eq('403 account-disabled with no error string still classifies',
   terminalAuthCode(403, { code: 'account-disabled' }), 'account-disabled');
 
-console.log('\nterminalAuthCode — NOT terminal (must still fall back / retry as today):');
+console.log('\nterminalAuthCode — NOT terminal (a failed save, backed off and retried — CS-009):');
 // The field-guard 403 stays a `violations` answer, NOT terminal — the client handles it
-// separately (revert + adopt). Over-broadening here would wrongly sign out on a rejected
-// roles/permissions edit.
+// separately (drops that change alone and says so, CS-008). Over-broadening here would
+// wrongly sign out on a rejected roles/permissions edit.
 eq('403 with violations, no terminal code → null',
   terminalAuthCode(403, { error: 'refused', violations: [{ field: 'permissions' }] }), null);
-// A bare 403 with no known code keeps today's behaviour (transport fallback). This is the
-// guard against signing out on any unclassified 403.
+// A bare 403 with no known code stays a failed save, retried after a backoff (CS-009: there
+// is no direct-write fallback any more). This is the guard against signing out on any
+// unclassified 403.
 eq('403 bare (no code) → null', terminalAuthCode(403, { error: 'Forbidden' }), null);
 eq('403 unknown code → null', terminalAuthCode(403, { code: 'something-else' }), null);
 // Only 403 is terminal — a 401 is an auth blip indistinguishable from a real one (see

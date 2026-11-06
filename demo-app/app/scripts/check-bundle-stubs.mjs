@@ -53,7 +53,7 @@
 // USAGE
 //   node scripts/check-bundle-stubs.mjs --dist dist            # scan a built dir
 //   node scripts/check-bundle-stubs.mjs --build                # build prod to a temp dir, scan, clean up (OFFLINE)
-//   node scripts/check-bundle-stubs.mjs --url https://cleanspace-gilt.vercel.app   # scan the LIVE chunks (read-only GETs)
+//   node scripts/check-bundle-stubs.mjs --url https://www.cleancorner.app   # scan the LIVE chunks (read-only GETs)
 //   node scripts/check-bundle-stubs.mjs --dist dist --json     # machine-readable
 //
 // OFFLINE CONTRACT. `--dist` and `--build` never touch the network; `--build` shells out
@@ -65,7 +65,7 @@
 // unreachable). EXIT 2 = usage error.
 
 import { readdirSync, readFileSync, statSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, resolve as resolvePath } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -74,9 +74,19 @@ import { randomBytes } from 'node:crypto';
 const APP_DIR = fileURLToPath(new URL('..', import.meta.url)); // app/
 
 // ── the gating markers ────────────────────────────────────────────────────────
-const MARKERS = [
+// Exported (with scanText) so test-bundle-stubs.mjs proves each marker on fixtures, not only on a build.
+export const MARKERS = [
   // Durable, going-forward: present iff a stub adapter code path is reachable in the build.
-  { id: 'stub-sentinel',      re: /cs-stub:(quotes|integrations|team|twilio|email|connectedInboxes|oauthWorkspaces)/g, why: 'a browser-stub adapter code path is reachable (lib/demoMode.js markStub)' },
+  // (`customerDocuments`: lib/customerDocumentsApi, the client hub redesign's office documents.)
+  // (`supplies`: lib/suppliesApi marks its demo stub too; it was missing here until CS-637.)
+  { id: 'stub-sentinel',      re: /cs-stub:(quotes|integrations|team|twilio|email|connectedInboxes|oauthWorkspaces|qbo|contracts|scanCodes|hub|avatars|hrWarnings|hrIncidents|hrTerminations|client-messages|customerDocuments|supplies)/g, why: 'a browser-stub adapter code path is reachable (lib/demoMode.js markStub)' },
+  // The QR codes' demo (lib/scanCodesApi, QR-6): its seeded tokens live ONLY in
+  // data/demoScanCodes.js, which only the stub branch imports, so they must be gone from a
+  // production build along with the branch — a demo token there would be demo data shipped live.
+  { id: 'scan-demo-codes',    re: /demoCoralBay(Lobby|Restrooms|Floors)0{5}/g, why: 'the QR demo codes are bundled (data/demoScanCodes.js)' },
+  // …and the visitors' demo thumbs (QR-30): their phones' stand-in hashes live ONLY in
+  // data/demoAreaRatings.js, imported by the same dead branch.
+  { id: 'scan-demo-ratings',  re: /demoRatingPhone/g, why: 'the QR demo ratings are bundled (data/demoAreaRatings.js)' },
   { id: 'build-mode-nonprod', re: /cs-build-nonprod:(?!production)[a-z0-9_-]+/gi, why: 'the bundle was built in a non-production Vite mode (e.g. --mode demo)' },
   // Legacy stub-body strings — catch a PRE-FIX bundle (e.g. today's live site) with no
   // sentinels. Each is stub-adapter-body-only and DCE's from a fixed production build.
@@ -101,6 +111,24 @@ const MARKERS = [
   // observability vars). No source references a VITE_VERCEL_ name, so a clean build never
   // trips it; it is PRESENT in today's live store chunk and DCE's from the named-read fix.
   { id: 'vercel-env-leak',          re: /VITE_VERCEL_[A-Z0-9_]+/g,               why: 'a Vercel system env var is inlined in the bundle — a whole-object import.meta.env read (CS-398)' },
+  // QuickBooks stub FIXTURES (CS-066 C1). These class/department fixture names live ONLY inside
+  // lib/qboStubData.js — its customer names (Ball Harbor Village, …) are shared with the SHIPPED
+  // preview (data/dashboardLayoutPreview.js) and would false-positive, and its pure functions
+  // (stubSandboxCompany) already tree-shake. Pre-fix they ride into the bundle via the module's
+  // top-level `const FIXTURES = CLASSES.map(...)` side effect; qboStubData must be reachable only
+  // through qboApi's demo STUB branch (DCE'd in prod), so they vanish once the stub KEY moved to
+  // the fixtures-free data/stubKeys.js AND the fixtures build lazily (no top-level .map).
+  // Matched as the fixture ARRAYS' adjacent string literals (minified: [`Day Porter`,`Special
+  // Projects`]), never as bare words: "Day Porter" is ordinary janitorial vocabulary, and a brand
+  // pack's services ("Commercial Cleaning, Day Porter & Floor Care", the test brand Harbor & Pine's)
+  // ship in every production bundle, so the bare words turned a re-branded build's gate red.
+  { id: 'legacy-qbo-fixtures',      re: /([`'"])Day Porter\1\s*,\s*([`'"])Special Projects\2|([`'"])North Region\3\s*,\s*([`'"])Central Region\4/g, why: 'the QuickBooks demo stub module (lib/qboStubData.js) is reachable in the production bundle — it must be used only through qboApi\'s demo STUB branch (CS-066 C1)' },
+  // The CLIENT HUB's login-free demo (Phase 2 Wave 2 Round 2). lib/hubDemo.js answers the hub as
+  // a seeded customer contact; a pretend ACCESS CONTROL must never ship, so it is reached only by
+  // a dynamic import behind lib/clientHubApi's static MODE gate, and a production build emits no
+  // chunk for it. Its group's name lives in that module and nowhere else, so finding it in a
+  // scanned asset means the demo is in the bundle. (The `hub` sentinel above catches the branch.)
+  { id: 'hub-demo-fixtures',        re: /Royal Palm Property Management/g,      why: 'the client hub demo (lib/hubDemo.js) is in the production bundle — it must be reachable only behind clientHubApi\'s static demo gate' },
 ];
 
 function parseArgs(argv) {
@@ -118,7 +146,7 @@ function parseArgs(argv) {
 }
 
 // Scan one asset's text for every marker; return the list of hits.
-function scanText(name, text, markers = MARKERS) {
+export function scanText(name, text, markers = MARKERS) {
   const hits = [];
   for (const m of markers) {
     m.re.lastIndex = 0;
@@ -252,4 +280,7 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((e) => { console.error(`✖ check-bundle-stubs failed: ${e.message}`); process.exit(1); });
+// Run only when invoked as a script: test-bundle-stubs.mjs also imports MARKERS + scanText.
+if (process.argv[1] && fileURLToPath(import.meta.url).toLowerCase() === resolvePath(process.argv[1]).toLowerCase()) {
+  main().catch((e) => { console.error(`✖ check-bundle-stubs failed: ${e.message}`); process.exit(1); });
+}

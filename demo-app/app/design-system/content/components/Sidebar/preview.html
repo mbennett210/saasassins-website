@@ -1,4 +1,4 @@
-<!-- @dsCard group="Navigation" height=560 width=720 page subtitle="The black rail with the gold active pill" -->
+<!-- @dsCard group="Navigation" height=600 width=860 page subtitle="The Launcher: a few rows, then sections that open a panel of their pages" -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -10,41 +10,79 @@
 <div id="pv"></div>
 <script>
 var CS = window.CleanSpace, h = React.createElement;
-function Leaf(p) {
-  return h('a', { className: 'nav-btn' + (p.sub ? ' nav-sub' : '') + (p.active ? ' active' : ''), href: '#', onClick: function (e) { e.preventDefault(); } },
-    h(CS.Icon, { name: p.icon }), h('span', { className: 'nav-btn-label' }, p.label),
-    p.badge ? h('span', { className: 'nav-review nav-review-new' }, p.badge) : null);
+function stop(e) { e.preventDefault(); }
+function Count(p) { return p.n ? h('span', { className: 'nav-review nav-review-count nav-count' }, p.n) : null; }
+function Row(p) {
+  return h('a', { className: 'nav-btn' + (p.active ? ' active' : ''), href: '#', onClick: stop },
+    h(CS.Icon, { name: p.icon }), h('span', { className: 'nav-btn-label' }, p.label), h(Count, { n: p.count }));
 }
-function Group(p) {
-  var s = React.useState(!!p.open), open = s[0], setOpen = s[1];
-  return h('div', { className: 'nav-section-group' + (open ? ' open' : '') },
-    h('button', { type: 'button', className: 'nav-btn nav-section-toggle', onClick: function () { setOpen(!open); } },
-      h(CS.Icon, { name: p.icon }), h('span', { className: 'nav-btn-label' }, p.label),
-      h('span', { className: 'nav-chevron' }, h(CS.Icon, { name: 'chevronDown' }))),
-    h('div', { className: 'nav-section-items' }, p.children));
+function Section(p) {
+  return h('button', { type: 'button', className: 'launcher-cat' + (p.open ? ' open' : '') + (p.on ? ' has-on' : ''), 'aria-expanded': !!p.open, 'aria-haspopup': 'dialog' },
+    h('span', { className: 'launcher-cat-tile' }, h(CS.Icon, { name: p.icon })),
+    h('span', { className: 'launcher-cat-text' },
+      h('span', { className: 'launcher-cat-name' }, p.label),
+      h('span', { className: 'launcher-cat-blurb' }, p.line)),
+    h(Count, { n: p.count }),
+    h('span', { className: 'launcher-chev', 'aria-hidden': 'true' }, h(CS.Icon, { name: 'chevronRight', size: 14 })));
+}
+function Tile(p) {
+  var mark = p.count ? h(Count, { n: p.count })
+    : p.badge ? h('span', { className: 'nav-review nav-review-new' }, p.badge)
+    : null;
+  return h('a', { className: 'launcher-tile', href: '#', onClick: stop },
+    h('span', { className: 'launcher-tile-ic' }, h(CS.Icon, { name: p.icon, size: 16 })),
+    h('span', { className: 'launcher-tile-text' },
+      h('span', { className: 'launcher-tile-name' }, h('span', { className: 'launcher-tile-label' }, p.label), mark),
+      h('span', { className: 'launcher-tile-desc' }, p.desc)));
 }
 ReactDOM.createRoot(document.getElementById('pv')).render(
-  h('aside', { className: 'sidebar' },
-    h('div', { className: 'sidebar-brand sidebar-brand-image' },
-      h('img', { className: 'sidebar-brand-img', src: '/_blob/bb94a86ce508f494c3f0ec6e8f23137f', alt: 'Clean Space' })),
-    h('nav', { className: 'sidebar-nav' },
-      h('div', { className: 'nav-group' },
-        h(Leaf, { icon: 'dashboard', label: 'Dashboard' }),
-        h(Leaf, { icon: 'schedule', label: 'Schedule', active: true }),
-        h(Leaf, { icon: 'messaging', label: 'Messaging' }),
-        h(Leaf, { icon: 'clients', label: 'Customers' }),
-        h(Group, { icon: 'building', label: 'Operations', open: true },
-          h(Leaf, { icon: 'schedule', label: 'Time Clock', sub: true }),
-          h(Leaf, { icon: 'chart', label: 'Variance', sub: true }),
-          h(Leaf, { icon: 'invoices', label: 'Payroll', sub: true, badge: 'NEW' })),
-        h(Group, { icon: 'invoices', label: 'Finances' },
-          h(Leaf, { icon: 'tag', label: 'Quotes', sub: true }),
-          h(Leaf, { icon: 'invoices', label: 'Invoices', sub: true }))),
-      h('div', { className: 'nav-group' },
-        h('a', { className: 'nav-btn nav-btn-solo', href: '#', onClick: function (e) { e.preventDefault(); } },
-          h(CS.Icon, { name: 'settings' }), h('span', { className: 'nav-btn-label' }, 'Settings')))),
-    h('div', { className: 'sidebar-footer' },
-      h('button', { type: 'button', className: 'sidebar-footer-btn sidebar-report-btn' }, h(CS.Icon, { name: 'warning', size: 14 }), ' Report an issue'))
+  h(React.Fragment, null,
+    h('aside', { className: 'sidebar' },
+      h('div', { className: 'sidebar-brand sidebar-brand-image' },
+        h('img', { className: 'sidebar-brand-img', src: '/_blob/bb94a86ce508f494c3f0ec6e8f23137f', alt: 'Clean Space' })),
+      h('nav', { className: 'sidebar-nav' },
+        h('div', { className: 'nav-group' },
+          h(Row, { icon: 'dashboard', label: 'Dashboard' }),
+          h(Row, { icon: 'messaging', label: 'Messaging' })),
+        h('div', { className: 'nav-divider', role: 'separator' }),
+        h('div', { className: 'nav-group launcher' },
+          h(Section, { icon: 'building', label: 'Operations', line: 'Today · Service quality', on: true, count: 3 }),
+          h(Section, { icon: 'user', label: 'Team', line: 'Time · Pay & people', open: true, count: 4 }),
+          h(Section, { icon: 'clients', label: 'Customers', line: 'Directory · Sales' }),
+          h(Section, { icon: 'box', label: 'Supplies', line: 'Orders and deliveries' }),
+          h(Section, { icon: 'invoices', label: 'Finance', line: 'Invoices · Reports' }))),
+      h('div', { className: 'sidebar-footer' },
+        h('div', { className: 'sidebar-util-row' },
+          h('a', { className: 'sidebar-util', href: '#', onClick: stop },
+            h(CS.Icon, { name: 'settings', size: 16 }), h('span', { className: 'sidebar-util-label' }, 'Settings')),
+          h('a', { className: 'sidebar-util', href: '#', onClick: stop },
+            h(CS.Icon, { name: 'edit', size: 16 }), h('span', { className: 'sidebar-util-label' }, 'Review'),
+            h('span', { className: 'nav-review nav-review-count' }, 3, h('span', { className: 'nav-review-dot', 'aria-hidden': 'true' })))),
+        h('div', { className: 'sidebar-foot-row' },
+          h('div', { className: 'user-switcher' },
+            h('button', { type: 'button', className: 'user-chip' },
+              h(CS.Avatar, { initials: 'MR', size: 'sm' }),
+              h('span', { className: 'user-chip-text' },
+                h('span', { className: 'user-chip-name' }, 'Morgan Reyes'),
+                h('span', { className: 'user-chip-role' }, 'Super Admin')),
+              h('span', { className: 'user-chip-caret', 'aria-hidden': 'true' }, '▾'))),
+          h('button', { type: 'button', className: 'sidebar-icon-btn sidebar-scan-btn', title: 'Scan a QR code', 'aria-label': 'Scan a QR code' }, h(CS.Icon, { name: 'camera', size: 16 })),
+          h('button', { type: 'button', className: 'sidebar-icon-btn sidebar-report-btn', title: 'Report an issue', 'aria-label': 'Report an issue' }, h(CS.Icon, { name: 'warning', size: 16 }))))),
+    h('div', { className: 'launcher-panel', role: 'dialog', 'aria-label': 'Team', 'data-cols': '2', style: { left: '250px', top: '150px', width: '560px' } },
+      h('div', { className: 'launcher-panel-head' },
+        h('span', { className: 'launcher-panel-title' }, 'Team'),
+        h('span', { className: 'launcher-panel-count' }, '5 pages'),
+        h('button', { type: 'button', className: 'launcher-x', 'aria-label': 'Close', title: 'Close' }, h(CS.Icon, { name: 'x', size: 16 }))),
+      h('div', { className: 'launcher-cols' },
+        h('div', { className: 'launcher-col' },
+          h('div', { className: 'launcher-cap' }, 'Time'),
+          h(Tile, { icon: 'schedule', label: 'Time Clock', desc: 'Every punch in and out' }),
+          h(Tile, { icon: 'check', label: 'Approvals', desc: 'Hours to sign off before payroll', count: 4 }),
+          h(Tile, { icon: 'chart', label: 'Variance', desc: 'Scheduled hours against worked' })),
+        h('div', { className: 'launcher-col' },
+          h('div', { className: 'launcher-cap' }, 'Pay & people'),
+          h(Tile, { icon: 'invoices', label: 'Payroll', desc: 'Pay runs and exports', badge: 'NEW' }),
+          h(Tile, { icon: 'clients', label: 'HR', desc: 'Employees, PTO and documents', badge: 'NEW' }))))
   )
 );
 </script>

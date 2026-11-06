@@ -45,8 +45,9 @@ ok(DEMO_PATHS.size >= params.length && !DEMO_PATHS.has('/quotes/new'), `${DEMO_P
 
 console.log('the not-found probe');
 const probe = (text) => { const g = globalThis.document; globalThis.document = { body: { innerText: text } }; try { return missingRecord(); } finally { globalThis.document = g; } };
-for (const t of ['Company not found', 'Invoice not found', 'Job not found', 'Team member not found', 'Quote not found.', 'Document not found', 'Report not found']) ok(probe(`Back\n${t}\n`), `flags "${t}"`);
+for (const t of ['Company not found', 'Invoice not found', 'Job not found', 'Team member not found', 'Quote not found.', 'Document not found', 'Report not found', 'This code is no longer active.']) ok(probe(`Back\n${t}\n`), `flags "${t}"`);
 ok(!probe('Evergreen Medical Center\nMain Hospital\nWeekly janitorial'), 'passes a page that found its record');
+ok(!probe('Sunrise channel\nCreator’s account is no longer active'), 'passes a page that merely says someone is no longer active');
 
 console.log('the sweeps read it');
 for (const f of ['responsive-sweep.mjs', 'reskin-sweep.mjs', 'style-snapshot.mjs']) {

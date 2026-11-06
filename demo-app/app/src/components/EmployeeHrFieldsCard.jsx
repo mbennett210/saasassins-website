@@ -2,10 +2,11 @@
 // Self-contained (its own Save dispatching UPDATE_USER { patch:{hr} }), so it drops in
 // on the Settings → Team profile AND inside the HR employee panel with no coupling.
 // Gated: visible with hr.view, editable with hr.edit.
-import { useState, useCallback } from 'react';
-import { useDispatch, useSelector } from '../store';
+import { useState, useCallback, useEffect } from 'react';
+import { useDispatch, useSelector, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
 import { selectCurrentUser } from '../store/selectors';
+import { employeeIdRefusal } from '../lib/employeeId';
 import { usePermission } from '../hooks/usePermission';
 import { useToast } from './Toast';
 import FormField from './FormField';
@@ -33,10 +34,22 @@ export default function EmployeeHrFieldsCard({ user }) {
   const ownRecordLocked = !!currentUser && user.id === currentUser.id && !(currentUser.role === 'owner' || currentUser.role === 'admin');
   const canEditThis = canEdit && !ownRecordLocked;
   const [hr, setHr] = useState(() => ({ ...(user.hr || {}) }));
+  // CS-229: this card seeded `useState` ONCE, so switching to another member inside the same
+  // mount kept the FIRST member's HR record on screen — and saving it wrote their employee id
+  // onto this person. Reseed whenever the record shown changes.
+  useEffect(() => { setHr({ ...(user.hr || {}) }); }, [user.id, user.hr]);
+
+  // CS-229 / PAY-9: an employee ID identifies ONE person to the payroll company, so a duplicate
+  // is refused here AND by the server (orgStateGuard's roster rule). Two people sharing one is
+  // worse than neither having one: the payroll import pays one of them twice and the other
+  // nothing. The refusal names who already holds it.
+  const roster = useStore().users;
+  const dupRefusal = employeeIdRefusal(roster, hr.employeeId, user.id);
 
   const set = (next) => setHr((prev) => ({ ...prev, ...next }));
   const save = () => {
     if (!canEditThis) return;
+    if (dupRefusal) { toast.error(dupRefusal); return; }
     dispatch({ type: ACTIONS.UPDATE_USER, id: user.id, patch: { hr: { ...(user.hr || {}), ...hr } } });
     toast.success('HR details saved');
   };
@@ -48,7 +61,14 @@ export default function EmployeeHrFieldsCard({ user }) {
         Employee record. {!canEditThis && (ownRecordLocked ? 'Only a Super Admin can change your own HR record.' : 'Read-only — needs HR access to edit.')}
       </p>
       <div className="form-row">
-        <FormField label="Employee ID" value={hr.employeeId || ''} disabled={!canEditThis} onChange={(e) => set({ employeeId: e.target.value })} help="Auto-assigned on create; editable to match your payroll system." />
+        <FormField
+          label="Employee ID"
+          value={hr.employeeId || ''}
+          disabled={!canEditThis}
+          onChange={(e) => set({ employeeId: e.target.value })}
+          error={dupRefusal || undefined}
+          help={dupRefusal ? undefined : 'Auto-assigned on create; editable to match your payroll system. It must be unique — payroll matches people on it.'}
+        />
         <FormField label="Hire date" type="date" value={hr.hireDate || ''} disabled={!canEditThis} onChange={(e) => set({ hireDate: e.target.value })} />
       </div>
       <div className="form-row">
@@ -57,7 +77,7 @@ export default function EmployeeHrFieldsCard({ user }) {
       </div>
       {canEditThis && (
         <div className="modal-actions">
-          <button type="button" className="btn btn-primary" onClick={save}>Save HR details</button>
+          <button type="button" className="btn btn-primary" disabled={!!dupRefusal} onClick={save}>Save HR details</button>
         </div>
       )}
     </div>

@@ -5,20 +5,18 @@ import { ACTIONS } from '../store/reducer';
 import { selectContactById } from '../store/selectors';
 import ContactPicker from './ContactPicker';
 import { composeAddress } from '../lib/address';
+import { PAYMENT_TERMS, DEFAULT_PAYMENT_TERMS, paymentTermLabel } from '../lib/money';
 
 // Customer-level billing settings, shown on the client Overview. Read-first: an
 // "Edit" button flips the card into the form, then Save/Cancel commit (the shared
 // convention — UI_RULES §101). Saves via UPDATE_CLIENT (billing is NOT a CLIENT_OPS
 // field, so it fires no ops notification). "Same as location" mirrors the customer's
 // single location address instead of storing a separate remit-to address.
-const PAYMENT_TERMS = [
-  { value: 'due-on-receipt', label: 'Due on receipt' },
-  { value: 'net15', label: 'Net 15' },
-  { value: 'net30', label: 'Net 30' },
-  { value: 'net45', label: 'Net 45' },
-  { value: 'net60', label: 'Net 60' },
-];
-const termLabel = (v) => PAYMENT_TERMS.find((t) => t.value === v)?.label || 'Net 30';
+//
+// The terms list and its day counts live in lib/money.js, because invoice creation reads
+// the SAME table to set a due date (CS-044). This card used to carry its own copy with no
+// day counts at all, which is how "Net 15" could be displayed here while every invoice
+// went out at +30 days.
 
 export default function BillingCard({ client, location, canEdit }) {
   const state = useStore();
@@ -34,7 +32,7 @@ export default function BillingCard({ client, location, canEdit }) {
     billingCity: client.billingCity || '',
     billingState: client.billingState || '',
     billingZip: client.billingZip || '',
-    paymentTerms: client.paymentTerms || 'net30',
+    paymentTerms: client.paymentTerms || DEFAULT_PAYMENT_TERMS,
     poRequired: !!client.poRequired,
     poNumber: client.poNumber || '',
     taxExempt: !!client.taxExempt,
@@ -89,7 +87,7 @@ export default function BillingCard({ client, location, canEdit }) {
         <dl className="detail-dl">
           <div><dt>Billing contact</dt><dd>{billingContact ? `${billingContact.firstName} ${billingContact.lastName}` : '—'}</dd></div>
           <div><dt>Billing email</dt><dd>{client.billingEmail || '—'}</dd></div>
-          <div><dt>Payment terms</dt><dd>{termLabel(client.paymentTerms)}</dd></div>
+          <div><dt>Payment terms</dt><dd>{paymentTermLabel(client.paymentTerms)}</dd></div>
           <div><dt>PO number</dt><dd>{client.poNumber || '—'}{client.poRequired && <span className="text-muted"> · required on invoices</span>}</dd></div>
           <div><dt>Billing address</dt><dd>{savedBillingAddress || '—'}{client.billingSameAsLocation !== false && <span className="text-muted"> · same as location</span>}</dd></div>
           <div><dt>Tax treatment</dt><dd>{client.taxExempt ? 'Tax exempt' : (client.taxRateOverride != null ? `${client.taxRateOverride}%` : 'Default rate')}</dd></div>

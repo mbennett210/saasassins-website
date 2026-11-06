@@ -21,6 +21,7 @@ import { getSupabase } from '../supabase.js';
 import { CLEANSPACE_ORG_ID } from '../constants.js';
 import { selectAll, exactCount } from '../pagedSelect.js';
 import { checklistFor, clockOutGate, GATE } from '../../../src/lib/crewChecklist.js';
+import { checklistOpensAt } from '../../../src/lib/checklistWindow.js';
 
 // The refusal. A code the client can branch on, a plain message the crew can read, and the
 // progress so the button can say 12/46 without a second round trip. Nothing else: no
@@ -34,10 +35,12 @@ export {
 // A buffered clock-out is NEVER refused (THE LAW II.8 — fix instead of reject: the work
 // already happened and the punch is the only record of it). It is accepted and FLAGGED, so
 // the unfinished checklist shows where a manager will see it, at approval.
-export const checklistFlagNote = (done, total) => `checklist not finished at clock-out (${done}/${total})`;
-// …and when the gate could not be READ at all, the replay is still accepted — with a flag
-// that says exactly that, rather than accusing the cleaner of an unfinished checklist.
-export const CHECKLIST_UNKNOWN_NOTE = 'checklist status unknown at clock-out';
+//
+// The words live in src/lib/checklistFlag.js — with the PARSER that reads them back off a
+// punch — so the half that writes the flag and the half the Approvals queue reads it with
+// can never drift. That drift was the defect: the flag was written on every such replay and
+// nothing at approval read it, so an approver saw only "Edited" (W5-M F4).
+export { checklistFlagNote, CHECKLIST_UNKNOWN_NOTE } from '../../../src/lib/checklistFlag.js';
 
 // Narrow columns — the gate counts, it never renders items (a checklist row's `items`
 // JSONB is kilobytes).
@@ -82,8 +85,11 @@ export async function checklistGateFor({ ctx, userId, jobId, db = getSupabase() 
     maxRows: MAX_RESULTS,
   });
 
-  // clockOutGate sorts by performed_at itself, so an ascending read is fine.
-  return clockOutGate({ checklistId, rules, results: rows, userId, jobId });
+  // clockOutGate sorts by performed_at itself, so an ascending read is fine. `opensAt` (CS-690):
+  // a fill from before this clean's window opened never unlocks it — the submit route stores
+  // such a fill without the clean already; this also holds for a row stored before that rule.
+  const opensAt = checklistOpensAt(ctx?.job || null, { graceMins: ctx?.state?.opsSettings?.autoCloseGraceMins });
+  return clockOutGate({ checklistId, rules, results: rows, userId, jobId, opensAt });
 }
 
 export const checklistBlocks = (gate) => gate?.state === GATE.BLOCKED;

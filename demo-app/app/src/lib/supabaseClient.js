@@ -8,6 +8,8 @@
 // — handy for offline UI work. In a real deployment both vars are set, which
 // flips the app into authenticated + shared-data mode.
 import { createClient } from '@supabase/supabase-js';
+// Where the session lives on this device — one name, read back offline by lib/offlineSession.
+import { AUTH_STORAGE_KEY } from './offlineSession.js';
 
 const url = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_SUPABASE_URL : undefined;
 const anonKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_SUPABASE_ANON_KEY : undefined;
@@ -18,7 +20,7 @@ export const supabase = url && anonKey
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        storageKey: 'cleanspace.auth',
+        storageKey: AUTH_STORAGE_KEY,
       },
     })
   : null;

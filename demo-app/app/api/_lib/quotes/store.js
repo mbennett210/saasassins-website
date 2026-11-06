@@ -7,6 +7,7 @@ import { CLEANSPACE_ORG_ID } from '../constants.js';
 import { requireSafeSegment } from '../storagePaths.js';
 import { readOrgState, writeOrgState } from '../orgState.js';
 import { fanOutManagerAlert } from '../../../src/lib/notifications.js';
+import { QUOTE_DELETABLE_STATUSES } from '../../../src/lib/quoteRules.js';
 
 const BUCKET = 'quote-documents';
 
@@ -235,21 +236,32 @@ export async function voidQuote(id) {
   return data;
 }
 
-// Hard delete: remove the quote's storage objects (sigs + PDFs), then the row.
+// 🔴 ONLY A DRAFT IS DELETED (CS-028, lib/quoteRules). A sent quote is a record — the customer
+// holds its link, and a signed one is an executed agreement with its signed PDF — so it is voided,
+// never deleted. The status predicate rides ON the delete (a send landing mid-request must win;
+// a check-then-delete would destroy the quote the customer just received), and the files go only
+// AFTER the row did. → { ok: true } | { ok: false, status } (refused: not a draft) | { ok: false,
+// notFound: true }.
 export async function deleteQuote(id) {
   const db = getSupabase();
-  try {
-    // Same validation as storagePaths — this branch builds the folder itself and would
-    // otherwise be the one unguarded way in, on the destructive path of all things.
-    requireSafeSegment(id, 'quoteId');
-    const folder = `${CLEANSPACE_ORG_ID}/${id}`;
-    const { data: objs } = await db.storage.from(BUCKET).list(folder);
-    if (objs && objs.length) {
-      await db.storage.from(BUCKET).remove(objs.map((o) => `${folder}/${o.name}`));
-    }
-  } catch { /* best-effort storage cleanup — never block the row delete */ }
-  const { error } = await db.from('quotes').delete().eq('id', id);
+  // Same validation as storagePaths — the folder below is built from it.
+  requireSafeSegment(id, 'quoteId');
+  const { data, error } = await db.from('quotes').delete()
+    .eq('id', id).eq('organization_id', CLEANSPACE_ORG_ID).in('status', QUOTE_DELETABLE_STATUSES)
+    .select('id, doc_version');
   if (error) throw error;
+  if (!data || !data.length) {
+    const { data: still } = await db.from('quotes').select('status')
+      .eq('id', id).eq('organization_id', CLEANSPACE_ORG_ID).maybeSingle();
+    return still ? { ok: false, status: still.status } : { ok: false, notFound: true };
+  }
+  // A draft's files: the rep's signature and the admin-signed preview (a draft was never signed
+  // by the client, so it has no signed PDF; the paths are listed anyway, a missing one is a
+  // no-op). Best-effort: the record is already gone.
+  try {
+    const p = storagePaths(id, data[0].doc_version || 1);
+    await db.storage.from(BUCKET).remove([p.adminSig, p.previewPdf, p.clientSig, p.signedPdf]);
+  } catch { /* an orphaned object is harmless; the row it belonged to is gone */ }
   return { ok: true };
 }
 

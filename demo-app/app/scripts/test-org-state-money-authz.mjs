@@ -27,6 +27,7 @@ const ok = (label, cond, detail = '') => { if (cond) pass += 1; else fails.push(
 const ORG = '00000000-0000-0000-0000-000000000001';
 const USERS = {
   't-owner': { id: 'a-owner', email: 'owner@cs.co', app_metadata: { role: 'owner', org_user_id: 'u_owner' } },
+  't-admin': { id: 'a-admin', email: 'admin@cs.co', app_metadata: { role: 'admin', org_user_id: 'u_admin' } },
   't-crew': { id: 'a-crew', email: 'crew@cs.co', app_metadata: { role: 'crew', org_user_id: 'u_crew' } },
   't-mgr': { id: 'a-mgr', email: 'mgr@cs.co', app_metadata: {} }, // claim-less: resolves by email
 };
@@ -45,6 +46,11 @@ const { default: handler } = await import('../api/state/org-state.js');
 // jobs from public.jobs (getCrewJobs). Seed an empty jobs table so that read succeeds (these
 // money cases don't depend on job-based scope).
 fake.tables.jobs = [];
+// W2-L: the guard reads payroll_runs when a pay line's money or the pay schedule moves
+// (payrollLedgerFactNeeded). Seed it empty so the HTTP fake serves the table (unseeded → 404,
+// which would fail the closed-period rule closed on every money save). Closed-period /
+// cadence route cases below seed a run into it, then clear it.
+fake.tables.payroll_runs = [];
 
 const seedState = () => ({
   version: 56,
@@ -53,9 +59,13 @@ const seedState = () => ({
   userPermissionOverrides: [],
   timeOff: [],
   sites: [{ id: 's1', clientId: 'c1', name: 'HQ', standingCrewIds: [] }],
-  clients: [{ id: 'c1', name: 'Acme', standingCrewIds: [] }],
+  // c2 is supervised by u_mgr2 (a manager) so a manager removing that manager exercises the
+  // DELETE_USER supervisor cascade (MTA W1-G regression): the sweep nulls c2.supervisorId.
+  clients: [{ id: 'c1', name: 'Acme', standingCrewIds: [] }, { id: 'c2', name: 'Beta', standingCrewIds: [], supervisorId: 'u_mgr2' }],
   users: [
     { id: 'u_owner', role: 'owner', status: 'active', name: 'Owner', email: 'owner@cs.co', pay: { type: 'none' }, hr: { employeeId: 'EMP-0001' } },
+    { id: 'u_admin', role: 'admin', status: 'active', name: 'Admin', email: 'admin@cs.co', pay: { type: 'none' }, hr: { employeeId: 'EMP-0000' } },
+    { id: 'u_mgr2', role: 'manager', status: 'active', name: 'Mgr2', email: 'mgr2@cs.co', pay: { type: 'hourly', hourlyRate: 20 }, hr: { employeeId: 'EMP-0006' } },
     { id: 'u_mgr', role: 'manager', status: 'active', name: 'Mgr', email: 'mgr@cs.co', pay: { type: 'salary', salaryPerPeriod: 2800, otExempt: true },
       hr: { employeeId: 'EMP-0002', hireDate: '2025-09-19', employmentType: 'full_time', ptoAllowanceDays: 18 } },
     { id: 'u_crew', role: 'crew', status: 'active', name: 'Crew', email: 'crew@cs.co', phone: '555-0101', pay: { type: 'hourly', hourlyRate: 20 },
@@ -69,6 +79,7 @@ const seedState = () => ({
   reimbursements: [
     { id: 'rmb_member', userId: 'u_member', amount: 40, status: 'pending', periodKey: '2026-09-01', description: 'gas' },
     { id: 'rmb_mgr', userId: 'u_mgr', amount: 60, status: 'pending', periodKey: '2026-09-01', description: 'parking' },
+    { id: 'rmb_adm', userId: 'u_admin', amount: 30, status: 'pending', periodKey: '2026-09-01', description: 'supplies' },
   ],
   opsSettings: { otMultiplier: 1.5, payPeriodCadence: 'biweekly', payWeekStartDay: 0, payDriveTime: true, defaultGeofenceRadiusM: 120 },
   notes: [],
@@ -150,8 +161,23 @@ await freshOrg();
   ok('a manager (payroll.edit) CAN add a payroll line: 200', r.status === 200 && r.wrote, show(r));
 }
 {
+  // MTA W1-G: your OWN pay line is owner-only now (was a payroll.edit carve-out). RED pre-fix.
   const r = await measure('t-mgr', (s) => s.payrollLines.push(line({ id: 'plS', userId: 'u_mgr', category: 'bonus', amount: 200 })));
-  ok('a manager MAY add their OWN payroll line (no self-line carve-out): 200', r.status === 200 && r.wrote, show(r));
+  ok('a manager CANNOT add their OWN payroll line (owner-only, MTA W1-G): 403', refused(r, 'add or change your own pay line'), show(r));
+}
+{
+  const r = await measure('t-admin', (s) => s.payrollLines.push(line({ id: 'plAdOwn', userId: 'u_admin', category: 'bonus', amount: 200 })));
+  ok('an admin CANNOT add their OWN payroll line (owner-only; was allowed by role): 403', refused(r, 'add or change your own pay line'), show(r));
+}
+{
+  // CS-003 (2026-10-03): an Admin needs payroll.edit like everyone but the Super Admin — the
+  // Payroll screen asks them for it and Q24 gives an Admin no payroll key. Was 200 by role.
+  const r = await measure('t-admin', (s) => s.payrollLines.push(line({ id: 'plAdOther', userId: 'u_member', category: 'bonus', amount: 50 })));
+  ok("CS-003: an admin WITHOUT payroll.edit CANNOT add ANOTHER member's payroll line: 403", refused(r, 'add or change a payroll line'), show(r));
+  await freshOrg((s) => { s.userPermissionOverrides = [{ userId: 'u_admin', grants: ['payroll.edit'], revokes: [] }]; });
+  const g = await measure('t-admin', (s) => s.payrollLines.push(line({ id: 'plAdOther2', userId: 'u_member', category: 'bonus', amount: 50 })));
+  ok("  ...an admin GIVEN payroll.edit CAN: 200", g.status === 200 && g.wrote, show(g));
+  await freshOrg();
 }
 
 // ── reimbursements ─────────────────────────────────────────────────────────
@@ -173,6 +199,22 @@ await freshOrg();
 {
   const r = await measure('t-owner', (s) => { s.reimbursements.find((x) => x.userId === 'u_mgr').status = 'approved'; s.payrollLines.push(line({ id: 'plO', userId: 'u_mgr', category: 'reimbursement', amount: 60, taxable: false })); });
   ok('the owner CAN approve any reimbursement: 200', r.status === 200 && r.wrote, show(r));
+}
+{
+  // MTA W1-G: approving your OWN reimbursement is owner-only now (was owner/admin). RED pre-fix.
+  const r = await measure('t-admin', (s) => { s.reimbursements.find((x) => x.userId === 'u_admin').status = 'approved'; s.payrollLines.push(line({ id: 'plAdR', userId: 'u_admin', category: 'reimbursement', amount: 30, taxable: false })); });
+  ok('an admin CANNOT approve their OWN reimbursement (owner-only now, MTA W1-G): 403', refused(r, 'approve your own reimbursement'), show(r));
+}
+{
+  // CS-003 (2026-10-03): approving another member's reimbursement takes hr.edit for an Admin too
+  // (the Reimbursements tab gates every role on it). Was 200 by role.
+  const approveMember = (id) => (s) => { s.reimbursements.find((x) => x.userId === 'u_member').status = 'approved'; s.payrollLines.push(line({ id, userId: 'u_member', category: 'reimbursement', amount: 40, taxable: false })); };
+  const r = await measure('t-admin', approveMember('plAdRo'));
+  ok("CS-003: an admin WITHOUT hr.edit CANNOT approve ANOTHER member's reimbursement: 403", r.status === 403 && !r.wrote, show(r));
+  await freshOrg((s) => { s.userPermissionOverrides = [{ userId: 'u_admin', grants: ['hr.edit'], revokes: [] }]; });
+  const g = await measure('t-admin', approveMember('plAdRo2'));
+  ok("  ...an admin GIVEN hr.edit CAN: 200", g.status === 200 && g.wrote, show(g));
+  await freshOrg();
 }
 
 // ── pay + HR record on a user row (money / PII, 2026-09-23 — HANDOFF S79 FOUND 2) ──
@@ -236,6 +278,22 @@ await freshOrg((seed) => { seed.userPermissionOverrides = [{ userId: 'u_crew', g
     !(r.body?.violations || []).some((x) => /payroll line|reimbursement|pay-run config/.test(x)), show(r));
 }
 
+// ── MTA W1-G: DELETE_USER's supervisor cascade is authority-neutral (regression) ─────
+// sweepUserOrphans nulls a removed member's supervised customers. A manager may remove
+// another manager (teamLimits), so that removal save carries a supervisorId -> null cascade;
+// clearing a supervisor GONE from next.users is not an assignment, so the guard must not 403
+// it (a 403 drops the whole pending batch while Team still offers Remove). u_mgr2 (hourly,
+// nothing owed) supervises c2. RED pre-fix (403 'assign a location's manager'); GREEN after.
+await freshOrg();
+{
+  // The removal itself may still 403 on the "may still be owed pay" rule, which fails closed
+  // offline (no real time ledger) — the same caveat as the userName-stamp removal test above.
+  // So assert only that NO supervisor violation fired: RED pre-fix (it did), GREEN after.
+  const r = await measure('t-mgr', (s) => { s.users = s.users.filter((u) => u.id !== 'u_mgr2'); const c = s.clients.find((x) => x.id === 'c2'); if (c) c.supervisorId = null; });
+  ok("a manager removing a supervising MANAGER (cascade-clear) raises NO 'assign a location's manager' violation",
+    !(r.body?.violations || []).includes("assign a location's manager"), show(r));
+}
+
 // ── the first save after a fingerprint-format change: exactly one alarm ────────
 await freshOrg();
 row().protected_fingerprint = 'stale-pre-deploy-digest-0000000000000000000000000000000000000000';
@@ -247,6 +305,31 @@ row().protected_fingerprint = 'stale-pre-deploy-digest-0000000000000000000000000
   ok('the next save no longer alarms (the digest healed)', r2.status === 200 && r2.alerts.length === 0, show(r2));
 }
 
+// ── W2-L: closed payroll periods + the pay schedule are frozen (route end-to-end) ──
+// A closed run is seeded for '2026-09-01' (the seed's pay lines live there). The guard reads
+// payroll_runs because a pay line's money / the schedule moves (payrollLedgerFactNeeded) and
+// refuses the change for the office roles that reach it (owner AND manager). RED pre-fix: the
+// guard had no closed-period rule, so both committed.
+await freshOrg();
+fake.tables.payroll_runs.splice(0, fake.tables.payroll_runs.length, {
+  organization_id: ORG, id: 'run_sep1', period_key: '2026-09-01', cadence: 'biweekly',
+  from_key: '2026-09-01', to_key: '2026-09-14', from_iso: '2026-09-01T04:00:00Z', to_iso: '2026-09-15T03:59:59Z',
+  closed_at: '2026-09-16T14:00:00Z', held_ot: [],
+});
+{
+  const mgrClosed = await measure('t-mgr', (s) => s.payrollLines.push(line({ id: 'plClosed', userId: 'u_member', category: 'bonus', amount: 100 })));
+  ok('W2-L route: a MANAGER cannot add a pay line in a CLOSED period → 403', refused(mgrClosed, 'change pay in a closed payroll period'), show(mgrClosed));
+  const ownerClosed = await measure('t-owner', (s) => s.payrollLines.push(line({ id: 'plClosedO', userId: 'u_member', category: 'bonus', amount: 100 })));
+  ok('W2-L route: the OWNER cannot add a pay line in a CLOSED period → 403 (frozen for everyone)', refused(ownerClosed, 'change pay in a closed payroll period'), show(ownerClosed));
+  const editClosed = await measure('t-owner', (s) => { s.payrollLines.find((l) => l.id === 'pl_member').amount = 9999; });
+  ok('W2-L route: editing an existing CLOSED-period line is refused (owner) → 403', refused(editClosed, 'change pay in a closed payroll period'), show(editClosed));
+  const openOk = await measure('t-owner', (s) => s.payrollLines.push(line({ id: 'plOpen', userId: 'u_member', category: 'bonus', amount: 100, periodKey: '2026-09-16' })));
+  ok('W2-L route: a pay line in an OPEN period still commits (owner) → 200', openOk.status === 200 && openOk.wrote, show(openOk));
+  const cadence = await measure('t-owner', (s) => { s.opsSettings.payPeriodCadence = 'weekly'; });
+  ok('W2-L route: the OWNER cannot change the pay cadence once a run exists → 403', refused(cadence, 'change the pay schedule after a payroll is closed'), show(cadence));
+}
+fake.tables.payroll_runs.splice(0, fake.tables.payroll_runs.length);
+
 await fake.close();
 
 // ── UI wiring: ReimbursementsTab hides Approve on the caller's OWN row ─────────
@@ -256,7 +339,7 @@ await fake.close();
 {
   const src = readFileSync(new URL('../src/pages/hr/ReimbursementsTab.jsx', import.meta.url), 'utf8');
   const has = (n) => src.replace(/\s+/g, ' ').includes(n.replace(/\s+/g, ' '));
-  ok('UI: canApproveOwn is owner/admin only', has("const canApproveOwn = myRole === 'owner' || myRole === 'admin';"));
+  ok('UI: canApproveOwn is owner only (MTA W1-G; was owner/admin)', has("const canApproveOwn = myRole === 'owner';"));
   ok('UI: mayApprove blocks your own row unless canApproveOwn', has('const mayApprove = (r) => canEdit && (r.userId !== currentUserId || canApproveOwn);'));
   ok('UI: the Approve button sits behind mayApprove(r)', has('{mayApprove(r)') && has('onClick={() => approve(r)}'));
   ok('UI: approve() defends against own-approval (stale UI state)', has('if (r.userId === currentUserId && !canApproveOwn)'));
@@ -275,6 +358,37 @@ await fake.close();
   ok('UI: HR card computes ownRecordLocked (own row, not owner/admin)',
     hasH("const ownRecordLocked = !!currentUser && user.id === currentUser.id && !(currentUser.role === 'owner' || currentUser.role === 'admin');"));
   ok('UI: HR card gates fields + Save on canEditThis and save() defends', hasH('disabled={!canEditThis}') && hasH('{canEditThis && (') && hasH('if (!canEditThis) return;'));
+}
+
+// ── UI wiring: the W1-G separation-of-duties mirrors (MTA §8.6) ────────────────
+// The server (orgStateGuard) is the boundary; each card must offer only what it accepts,
+// with the reason in visible text. Source-shape checks (the JSX gate isn't rendered offline);
+// FALSE against the pre-fix sources. Role is resolved claims-first (currentUser?.role from
+// selectCurrentUser / the auth hooks), never a new source.
+{
+  const svc = readFileSync(new URL('../src/components/ServiceSetupCard.jsx', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+  const sup = readFileSync(new URL('../src/components/SupervisedCustomersCard.jsx', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+  const drw = readFileSync(new URL('../src/pages/payroll/PayrollLineDrawer.jsx', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+  const spc = readFileSync(new URL('../src/pages/hr/SpecialServicesTab.jsx', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+  const inc = (src, n) => src.includes(n.replace(/\s+/g, ' '));
+  // ServiceSetupCard: the supervisor select is owner/admin only, with the reason.
+  ok('UI: ServiceSetupCard computes canAssignManager = owner/admin', inc(svc, "const canAssignManager = currentUser?.role === 'owner' || currentUser?.role === 'admin';"));
+  ok('UI: ServiceSetupCard supervisor Select is gated on canAssignManager', inc(svc, 'disabled={!canEdit || !canAssignManager}'));
+  ok('UI: ServiceSetupCard shows the reason for a non-owner/admin', inc(svc, 'Only a Super Admin or Admin assigns a location'));
+  // SupervisedCustomersCard: the bulk mover is owner/admin only, with the reason.
+  ok('UI: SupervisedCustomersCard computes canAssignManager = owner/admin', inc(sup, "const canAssignManager = currentUser?.role === 'owner' || currentUser?.role === 'admin';"));
+  ok('UI: SupervisedCustomersCard gates edits on canAssign', inc(sup, 'const canAssign = canEdit && canAssignManager;'));
+  ok('UI: SupervisedCustomersCard shows the reason', inc(sup, 'Only a Super Admin or Admin assigns a location'));
+  // PayrollLineDrawer: your own row is read-only unless owner, with the reason.
+  ok('UI: PayrollLineDrawer locks your own row unless owner', inc(drw, "user.id === currentUserId && me?.role !== 'owner'"));
+  // W3-P §8.5 extended mayEditLines to ALSO lock a closed pay period (read-only; a correction
+  // is paid as arrears). This asserts the stronger rule, not a looser one.
+  ok('UI: PayrollLineDrawer gates line edits on mayEditLines (incl. closed period)', inc(drw, 'const mayEditLines = canEdit && !ownLineLocked && !periodClosed;'));
+  ok('UI: PayrollLineDrawer shows the reason', inc(drw, 'Only a Super Admin can add or change your own pay lines'));
+  ok('UI: PayrollLineDrawer locks a closed pay period', inc(drw, 'This pay period is closed. Lines can'));
+  // SpecialServicesTab: a non-owner can't pick themselves as the employee.
+  ok('UI: SpecialServicesTab drops self from the employee options for a non-owner', inc(spc, 'payableUsers.filter((u) => u.id !== currentUserId)'));
+  ok('UI: SpecialServicesTab defends add() against picking yourself', inc(spc, 'if (!isOwner && form.userId === currentUserId)'));
 }
 
 console.log(`\n${pass}/${pass + fails.length} passed`);

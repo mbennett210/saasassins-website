@@ -27,15 +27,14 @@ for (const l of leaks.slice(0, 25)) console.error(`      ${l.file}:${l.line}  ${
 ok(badAllows.length === 0, 'every design:allow no-raw-hex carries a reason');
 for (const b of badAllows) console.error(`      ${b.file}:${b.line}  ${b.why}`);
 
-// the universe reaches every surface that renders a colour. The server path is built from segments so
-// run-tests does not read a path literal here as "this suite needs the backend".
-const server = ['api', '_lib', 'quotes', 'emails.js'].join('/');
+// the universe reaches every surface that renders a colour. (The e-signature emails moved from the
+// server to src/lib/quoteEmails.js on 2026-10-20, shared with the Review section's Drafts.)
 const must = [
   'src/index.css', 'src/theme.css', 'src/lib/quoteTemplate.js', 'src/lib/inspectionReportTemplate.js',
+  'src/lib/quoteEmails.js', 'src/lib/signInEmail.js',
   'src/brand/doc.js', 'src/brand/logo.js', 'src/brand/tokens.generated.js', 'index.html',
   'public/manifest.json', 'public/sw.js', 'scripts/gen-brand-images.mjs',
 ];
-if (fs.existsSync(path.join(APP, 'api'))) must.push(server);
 const missing = must.filter((f) => !files.includes(f));
 ok(missing.length === 0, `the universe includes ${must.length} sentinel files${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`);
 ok(files.some((f) => f.endsWith('.jsx')) && files.some((f) => /^src\/pages\//.test(f)), 'the universe includes the pages and components');
@@ -135,14 +134,19 @@ console.log('rendered documents and emails');
     ['the inspection report (PDF)', buildInspectionReportHtml(report, { forPdf: true }), 10],
     ["the report's PDF footer", REPORT_PRINT_FOOTER, 1],
   ];
-  // the server's emails (skipped on a branch without the server)
-  if (fs.existsSync(path.join(APP, 'api'))) {
-    const srv = (...p) => pathToFileURL(path.join(APP, 'api', ...p)).href;
-    const { signRequestEmail, signedCopyEmail } = await import(srv('_lib', 'quotes', 'emails.js'));
+  // the e-signature emails and the sign-in emails (shared modules since 2026-10-20)
+  {
+    const { signRequestEmail, signedCopyEmail } = await import(pathToFileURL(path.join(APP, 'src', 'lib', 'quoteEmails.js')).href);
     const quote = { contact_name: 'Morgan Hayes', client_signer_name: 'Morgan Hayes', fields: { companyName: 'Northside Auto Group' } };
     docs.push(['the sign-request email', signRequestEmail({ quote, link: 'https://example.test/sign/abc' }).html, 3]);
     docs.push(['the signed-copy email (to the client)', signedCopyEmail({ quote, toClient: true }).html, 3]);
     docs.push(['the signed-copy email (internal)', signedCopyEmail({ quote, toClient: false }).html, 3]);
+    const { setPasswordEmail } = await import(pathToFileURL(path.join(APP, 'src', 'lib', 'signInEmail.js')).href);
+    docs.push(['the set-up-your-account email', setPasswordEmail('https://example.test/login#x', 'invite').html, 3]);
+  }
+  // the server's emails (skipped on a branch without the server)
+  if (fs.existsSync(path.join(APP, 'api'))) {
+    const srv = (...p) => pathToFileURL(path.join(APP, 'api', ...p)).href;
     const { buildUnsubscribeCompliance } = await import(srv('_lib', 'marketing', 'compliance.js'));
     const c = buildUnsubscribeCompliance({ recipient: 'morgan@example.test', isHtml: true, config: {}, companyName: 'Northside', inboxEmail: 'hello@example.test' });
     docs.push(['the marketing unsubscribe footer', typeof c === 'string' ? c : JSON.stringify(c), 2]);

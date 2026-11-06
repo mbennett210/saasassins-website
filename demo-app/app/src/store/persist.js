@@ -3,9 +3,9 @@
 // team user to ping when a contact replies) and `notifyOnReplyChannels`
 // ({ inApp: boolean }; channel toggles). The reducer's RECEIVE_MARKETING_REPLY
 // case writes a notification row directly into state.notifications when both
-// are configured. Email arm intentionally deferred (Resend transactional path
-// + DNS records still pending). Migration backfills the two fields onto
-// existing sequences. Purely additive.
+// are configured. Email arm intentionally deferred (not a transport question any
+// more — system email works through Google; the channel toggle was never built).
+// Migration backfills the two fields onto existing sequences. Purely additive.
 //
 // v42: Per-inbox signature blocks + per-step attachments. Adds `signature`
 // (string) to each marketing inbox and `attachments` (array) to each sequence
@@ -87,13 +87,17 @@
 // it. Purely additive; existing data is preserved.
 //
 // v27: Email System foundation. Two additive state surfaces in lockstep:
-//   1. company.integrations.email — system transactional provider (Resend)
-//      that powers invitations, reminder emails, and (later) billing.
-//      Mirrors company.integrations.twilio in shape and reducer pattern.
+//   1. company.integrations.email — a system transactional provider (Resend).
+//      ⚠️ VESTIGIAL since 2026-09-29: nothing reads this slice any more. Email goes
+//      through Google, as the connected mailbox marked SYSTEM SENDER on the server
+//      (api/_lib/systemSender.js), so the seed no longer ships the slice and the five
+//      reducer actions that wrote it are deleted (CS-012, CS-039). The migration below is
+//      HISTORY and stays exactly as it was — it defines what v27 meant — so a blob that
+//      passed through v27 still carries the key. Harmless; do not read it.
 //   2. connectedInboxes — per-user mailbox connections for the Messaging
-//      email channel. Each row pairs a userId with a provider (google /
-//      microsoft / smtp). Tokens + SMTP passwords NEVER live in client
-//      state; backend holds them encrypted at rest.
+//      email channel. Each row pairs a userId with a provider (google only since
+//      CS-220). OAuth tokens NEVER live in client state; the backend holds them
+//      encrypted at rest.
 // Migration is purely additive: slots in the default `email` block where
 // missing and ensures `connectedInboxes` exists as an array. Existing data
 // is preserved.
@@ -130,12 +134,13 @@
 // v21: Drop archive concept entirely (only deletion). Purges currently-archived
 // conversations/contacts/clients and strips archive flags from the schema.
 // Bump in lockstep with INITIAL_STATE.version.
-import { PERMISSIONS } from '../lib/roles';
+import { PERMISSIONS, withOpsManagerColumn } from '../lib/roles';
 import { collapseToSingleLocationV53 } from '../lib/location';
 import { correctOwnerIdentity } from '../lib/ownerRename';
 import { retireLocationDefaultsV57 } from '../lib/crewChecklist';
+import { IDENTITY } from '../brand/identity.generated.js';
 
-const STORAGE_KEY = 'pp.store.v57';
+const STORAGE_KEY = 'pp.store.v60';
 
 // FROZEN snapshot of the v28-era notification prefs — used ONLY by the historical
 // migrateV27toV28 below. These are NOT the current defaults (those live in
@@ -878,8 +883,9 @@ function migrateV48toV49(state) {
     // NB: v49 originally seeded a `complaints: []` default here. Complaints were later
     // folded into Work Orders (type:complaint, relational) and the blob slice retired, so
     // this migration no longer reintroduces it — a stale `complaints` array on an old blob
-    // is inert (no reader). See selectors.selectComplaintKpisFromWorkOrders.
-    reviews: s.reviews && typeof s.reviews === 'object' ? s.reviews : { indeedActual: 0 },
+    // is inert (no reader). See selectors.selectComplaintKpisFromWorkOrders. The same holds
+    // for the `reviews` slice (the Reviews page's manual Indeed count), retired with Google
+    // reviews on 2026-10-20: no longer seeded here, and a stale copy has no reader.
     // Swept-replacement slices: relational truth lives in Supabase, these are the
     // blob-side defaults readers fall back to (CLEANSPACE_SWEPT.md §2.3).
     inspectionTemplates: Array.isArray(s.inspectionTemplates) ? s.inspectionTemplates : [],
@@ -1061,6 +1067,107 @@ export function migrateV56toV57(state) {
   return { ...s, version: 57, clients };
 }
 
+// v58: the manager's book (the manager view redesign, 2026-10-09 — Daniel: "seed whatever a
+// manager can see"). The demo's manager, Renata Cruz, supervises the seven active SEED buildings,
+// and two of them assign their own checklists per cleaner (data/seed.js; the manager's day,
+// data/demoManagerDay.js, is about those buildings). A seed building moves to her only while it
+// still has the supervisor the seed gave it (none, Yolanda or Priya) — a building the viewer
+// re-assigned keeps their choice — and a pick is added only for a cleaner who has none there
+// (a cleaner's own pick is never overwritten, R3). Only the seed's own ids are touched; a
+// customer the viewer created is left exactly as it is. FROZEN literals, not the seed's
+// constants, so a later seed change cannot rewrite what this hop did. Lockstep with
+// STORAGE_KEY (pp.store.v58) and INITIAL_STATE.version. Local/demo mode only, like every hop.
+const V58_MANAGER = 'u_seed_mgr1';
+const V58_BOOK = {
+  cl_seed_evergreen: { was: ['u_seed_mgr1'], picks: { u_seed_crew4: 'it_md_medical', u_seed_crewdemo: 'it_md_medical' } },
+  cl_seed_lakeside: { was: [null] },
+  cl_seed_cascade: { was: [null] },
+  cl_seed_mtbaker: { was: ['u_seed_mgr1'] },
+  cl_seed_pacridge: { was: ['u_seed_heather'], picks: { u_seed_crew3: 'it_md_office', u_seed_crewdemo: 'it_md_office' } },
+  cl_seed_olympic: { was: ['u_seed_lauren'] },
+  cl_seed_salishan: { was: [null] },
+};
+export function migrateV57toV58(state) {
+  const s = state || {};
+  const clients = (Array.isArray(s.clients) ? s.clients : []).map((c) => {
+    const book = c && V58_BOOK[c.id];
+    if (!book) return c;
+    const next = { ...c };
+    if (book.was.includes(c.supervisorId ?? null)) next.supervisorId = V58_MANAGER;
+    if (book.picks) {
+      const picks = { ...(c.crewChecklists || {}) };
+      for (const [userId, templateId] of Object.entries(book.picks)) if (!picks[userId]) picks[userId] = templateId;
+      next.crewChecklists = picks;
+    }
+    return next;
+  });
+  return { ...s, version: 58, clients };
+}
+
+// v59 (S131, plan 2026-10-14 §0): the Operations Manager's team in the demo. The seed gained an
+// Operations Manager (Gabriel Ortiz, managerLevel 'operations'), a second account manager (Nadia
+// Brooks) and a supply manager (Wes Carter); Renata and Nadia report to Gabriel (opsManagerId) and
+// split the seven active buildings — Gulfstream, Bayshore and Flagler move to Nadia. A browser
+// seeded before gets the same: each new member only when no row has their id (a viewer's own
+// edits to the roster stay), Renata's pointer only when she has none, and a building moves only
+// while it is still Renata's (one the viewer re-assigned keeps their choice). Only the seed's own
+// ids are touched. FROZEN literals, not the seed's constants, so a later seed change cannot rewrite
+// what this hop did. Lockstep with STORAGE_KEY (pp.store.v59) and INITIAL_STATE.version.
+// Local/demo mode only, like every hop: production's people are added by Matt's team.
+// The matrix too: a STORED permission row wins over the schema's defaultRoles (lib/roles can()),
+// and a matrix saved before S131 lists no supply manager on any row, so the new role would hold
+// nothing (no dashboard.view: My Day). Its default keys' rows gain the role, after the roles each
+// row already lists (an office's own choices stay), as v54 → v55 seeded schedule.reset; a state
+// with no stored matrix is left without one (the defaults apply). Production's stored matrix
+// needs the same at release.
+const V59_OM = 'u_seed_ops1';
+const V59_RENATA = 'u_seed_mgr1';
+const V59_NADIA = 'u_seed_mgr2';
+// Every event toggle reads as ON when its key is absent (the fan-out helpers' rule, as for the keys
+// added after v28), so a new member needs only the device switch, off.
+const V59_PREFS = { mobilePushEnabled: false };
+// The demo's addresses are the brand's own domain (UI_RULES §129: code never writes a brand literal).
+const v59Email = (local) => `${local}@${IDENTITY.company.domain}`;
+const V59_MEMBERS = [
+  { id: V59_OM, name: 'Gabriel Ortiz', email: v59Email('gabriel'), phone: '1-754-555-0106', role: 'manager', managerLevel: 'operations', status: 'active', avatar: 3, initials: 'GO', pay: { type: 'salary', salaryPerPeriod: 3200, otExempt: true }, hr: { employeeId: 'EMP-0011', hireDate: '2025-08-11', employmentType: 'full_time', ptoAllowanceDays: 20 } },
+  { id: V59_NADIA, name: 'Nadia Brooks', email: v59Email('nadia'), phone: '1-754-555-0107', role: 'manager', opsManagerId: V59_OM, status: 'active', avatar: 5, initials: 'NB', pay: { type: 'salary', salaryPerPeriod: 2700, otExempt: true }, hr: { employeeId: 'EMP-0012', hireDate: '2026-01-12', employmentType: 'full_time', ptoAllowanceDays: 18 } },
+  { id: 'u_seed_supply1', name: 'Wes Carter', email: v59Email('wes'), phone: '1-754-555-0108', role: 'supply_manager', status: 'active', avatar: 4, initials: 'WC', pay: { type: 'salary', salaryPerPeriod: 2300, otExempt: true }, hr: { employeeId: 'EMP-0013', hireDate: '2026-02-23', employmentType: 'full_time', ptoAllowanceDays: 15 } },
+];
+const V59_MOVES = ['cl_seed_cascade', 'cl_seed_olympic', 'cl_seed_salishan'];
+const V59_SUPPLY_ROLE = 'supply_manager';
+const V59_SUPPLY_KEYS = ['dashboard.view', 'supplies.view', 'supplies.manage', 'supplies.deliver', 'reports.view'];
+export function migrateV58toV59(state) {
+  const s = state || {};
+  const have = new Set((Array.isArray(s.users) ? s.users : []).map((u) => u && u.id));
+  const added = V59_MEMBERS.filter((m) => !have.has(m.id))
+    .map((m) => ({ ...m, createdAt: new Date().toISOString(), notificationPrefs: { ...V59_PREFS } }));
+  const users = [...(Array.isArray(s.users) ? s.users : []), ...added].map((u) => (u && u.id === V59_RENATA && !u.opsManagerId && u.role === 'manager'
+    ? { ...u, opsManagerId: V59_OM } : u));
+  const clients = (Array.isArray(s.clients) ? s.clients : []).map((c) => (c && V59_MOVES.includes(c.id) && c.supervisorId === V59_RENATA
+    ? { ...c, supervisorId: V59_NADIA } : c));
+  const out = { ...s, version: 59, users, clients };
+  if (Array.isArray(s.permissions)) {
+    out.permissions = s.permissions.map((p) => (p && V59_SUPPLY_KEYS.includes(p.id) && Array.isArray(p.roles) && !p.roles.includes(V59_SUPPLY_ROLE)
+      ? { ...p, roles: [...p.roles, V59_SUPPLY_ROLE] } : p));
+  }
+  return out;
+}
+
+// v60 (CS-858, plan 2026-10-16 §7): the Operations Manager's own permission COLUMN. A STORED row wins
+// over the code default (lib/roles can()), so a matrix saved before the column existed gives every
+// Operations Manager nothing — the demo's Gabriel Ortiz included. Every saved row naming the manager
+// gains the column right after it, so OMs start with exactly what Account Managers have; a row the
+// viewer took the manager off stays without it, and a state with no stored matrix stays without one
+// (the code defaults carry the column). The SAME pure transform as production's release data-op
+// (scripts/dataop-om-permission-column.mjs), so the demo and production cannot drift. Lockstep with
+// STORAGE_KEY (pp.store.v60) and INITIAL_STATE.version. Local/demo mode only, like every hop.
+export function migrateV59toV60(state) {
+  const s = state || {};
+  const out = { ...s, version: 60 };
+  if (Array.isArray(s.permissions)) out.permissions = withOpsManagerColumn(s.permissions).permissions;
+  return out;
+}
+
 const toLatest = (s) => migrateV42toV43(migrateV41toV42(migrateV40toV41(migrateV39toV40(migrateV38toV39(migrateV37toV38(migrateV36toV37(migrateV35toV36(migrateV34toV35(migrateV33toV34(migrateV29toV33(migrateV28toV29(s))))))))))));
 
 function loadStateInner() {
@@ -1073,6 +1180,10 @@ function loadStateInner() {
       // key). Testing `=== 48` alone was the second half of the bug: a
       // correctly-versioned blob was REJECTED and fell through to a reseed.
       if (parsed && typeof parsed === 'object') {
+        if (parsed.version === 60) return parsed;
+        if (parsed.version === 59) return parsed;
+        // 58 and older come back at 58 or 57 here; the loadState() tail runs them on to v60.
+        if (parsed.version === 58) return parsed;
         if (parsed.version === 57) return parsed;
         if (parsed.version === 56) return migrateV56toV57(parsed);
         if (parsed.version === 55) return migrateV56toV57(migrateV55toV56(parsed));
@@ -1085,8 +1196,28 @@ function loadStateInner() {
         if (parsed.version === 48) return migrateV56toV57(migrateV55toV56(migrateV54toV55(migrateV53toV54(migrateV52toV53(migrateV51toV52(migrateV50toV51(migrateV49toV50(migrateV48toV49(parsed)))))))));
       }
     }
-    // v56 direct accept: the PREVIOUS storage key (pp.store.v56 — the version this build
-    // shipped before). An existing install has its data there, not yet under v57 — read it
+    // v59 direct accept: the PREVIOUS storage key (pp.store.v59 — the version this build shipped
+    // before CS-858). The loadState() tail runs v59 → v60 (the Operations Manager's column).
+    const v59Raw = window.localStorage.getItem('pp.store.v59');
+    if (v59Raw) {
+      const parsed = JSON.parse(v59Raw);
+      if (parsed && typeof parsed === 'object' && parsed.version === 59) return parsed;
+    }
+    // v58 direct accept: the storage key before that (pp.store.v58 — the version this build shipped
+    // before S131). The loadState() tail runs v58 → v59 (the Operations Manager's team) → v60.
+    const v58Raw = window.localStorage.getItem('pp.store.v58');
+    if (v58Raw) {
+      const parsed = JSON.parse(v58Raw);
+      if (parsed && typeof parsed === 'object' && parsed.version === 58) return parsed;
+    }
+    // v57 direct accept: the storage key before that (pp.store.v57). The loadState() tail runs
+    // v57 → v58 (the manager's book) → v59.
+    const v57Raw = window.localStorage.getItem('pp.store.v57');
+    if (v57Raw) {
+      const parsed = JSON.parse(v57Raw);
+      if (parsed && typeof parsed === 'object' && parsed.version === 57) return parsed;
+    }
+    // v56 direct accept: the storage key before that (pp.store.v56). An existing install has its data there, not yet under v57 — read it
     // and let the loadState() tail run v56 → v57 (the location default becomes per-cleaner
     // picks, then goes).
     const v56Raw = window.localStorage.getItem('pp.store.v56');
@@ -1391,6 +1522,9 @@ export function loadState() {
   if (st.version === 54) st = migrateV54toV55(st);
   if (st.version === 55) st = migrateV55toV56(st);
   if (st.version === 56) st = migrateV56toV57(st);
+  if (st.version === 57) st = migrateV57toV58(st);
+  if (st.version === 58) st = migrateV58toV59(st);
+  if (st.version === 59) st = migrateV59toV60(st);
   return st;
 }
 

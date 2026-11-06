@@ -5,16 +5,21 @@ import { useToast } from './Toast';
 import * as mediaApi from '../lib/accountMediaApi';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import Icon from './Icon';
+import { useT } from '../i18n/react';
+import { errorText } from '../i18n/errors';
 
 // In-app photo + VIDEO gallery for a site (replaces Swept's Google-Doc-link sprawl).
 // Bytes live in the private 'ops-media' bucket; large video uploads stream straight
 // to Storage via a signed URL (bypassing the serverless body limit) and play back
 // via short-lived signed URLs. The list is a component-local projection (useState),
 // never the synced blob. Gated ops.media.upload (add) / ops.edit (delete). §2.2 / §5.3.
+// Its own words are catalog lines in the viewer's language (CS-193); `label` and `hint`
+// come from the caller (already translated), with the catalog's defaults when omitted —
+// `hint={null}` still means "no hint".
 export default function MediaGallery({
   siteId, clientId, scope = 'cleaning_instruction', refId = null, areaId = null,
-  label = 'Photos & video',
-  hint = 'Viewable in-app. Crew see these on the account. Images up to 10MB, video up to 200MB.',
+  label = null,
+  hint,
   readOnly = false, hideWhenEmpty = false,
   // Optional imperative handle: the parent sets `openRef.current` to a fn that pops the
   // native file/camera picker, so a button elsewhere (e.g. a visit step) can trigger THIS
@@ -24,10 +29,34 @@ export default function MediaGallery({
   // Optional: reports the loaded item count to the parent whenever it changes (a visit step
   // uses it to check itself off once a photo lands). Null-safe.
   onCount = null,
+  // A caller that draws its OWN add control (the New Inspection form's Before / After tiles,
+  // 2026-10-09) passes `showUpload={false}`: the gallery's Upload button goes, while the
+  // hidden picker stays so `openRef` still opens it. `label=""` draws no label row, and
+  // `emptyText={null}` no "No photos yet" line (undefined keeps the default).
+  showUpload = true,
+  emptyText,
+  // S131 — a supply ORDER's delivery photos (scope `supply`): the order's own rules decide who adds
+  // and removes (supplies.manage, or the driver on a submitted order), not the site's ops keys, so
+  // the caller passes them (`canAdd` / `canRemove`; undefined keeps the ops keys). `accept` narrows
+  // the picker (an order's photo is a photo), and `captions={false}` drops the note editor (the
+  // caption route is a site's).
+  canAdd,
+  canRemove,
+  accept = 'image/*,video/*',
+  captions = true,
+  // The Upload button's words when the caller's are not the default "photo / video" (an order's
+  // photos are photos only); already translated.
+  uploadLabel = null,
 }) {
+  const t = useT();
+  const labelText = label ?? t('media.defaultLabel');
+  const hintText = hint === undefined ? t('media.defaultHint') : hint;
+  const emptyLine = emptyText === undefined ? t('media.empty') : emptyText;
   const toast = useToast();
-  const canUpload = usePermission('ops.media.upload') && !readOnly;
-  const canDelete = usePermission('ops.edit') && !readOnly;
+  const opsUpload = usePermission('ops.media.upload');
+  const opsDelete = usePermission('ops.edit');
+  const canUpload = (canAdd === undefined ? opsUpload : !!canAdd) && !readOnly;
+  const canDelete = (canRemove === undefined ? opsDelete : !!canRemove) && !readOnly;
   const online = useOnlineStatus();
   const [items, setItems] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -38,7 +67,7 @@ export default function MediaGallery({
 
   const load = useCallback(async () => {
     try { setItems(await mediaApi.listMedia({ siteId, refId, scope, areaId })); }
-    catch (e) { toast.error(e.message || 'Could not load media'); setItems([]); }
+    catch (e) { toast.error(errorText(t, e, 'media.loadFailed')); setItems([]); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId, refId, scope, areaId]);
   useEffect(() => { load(); }, [load]);
@@ -100,21 +129,19 @@ export default function MediaGallery({
         const res = await mediaApi.uploadMedia(f, { siteId, clientId, scope, refId, areaId });
         if (res?.pending_sync) pending += 1; else ok += 1;
       }
-      catch (err) { toast.error(`${f.name}: ${err.message || 'upload failed'}`); }
+      catch (err) { toast.error(`${f.name}: ${errorText(t, err, 'media.uploadFailed')}`); }
     }
     setBusy(false);
-    if (ok) { toast.success(ok === 1 ? 'Uploaded' : `${ok} uploaded`); load(); }
+    if (ok) { toast.success(t('media.uploaded', { count: ok })); load(); }
     if (pending) {
-      toast.success(pending === 1
-        ? 'Saved on this device. It’ll upload when you’re back online.'
-        : `${pending} saved on this device. They’ll upload when you’re back online.`);
+      toast.success(t('media.savedOffline', { count: pending }));
       refreshPending();
     }
   };
 
   const del = async (id) => {
     try { await mediaApi.removeMedia(id); load(); }
-    catch (e) { toast.error(e.message || 'Delete failed'); }
+    catch (e) { toast.error(errorText(t, e, 'media.deleteFailed')); }
   };
 
   // Seed the caption editor whenever the lightbox opens or pages to another item.
@@ -133,8 +160,8 @@ export default function MediaGallery({
     try {
       await mediaApi.updateMediaCaption(it.id, cap);
       setItems((prev) => prev.map((m) => (m.id === it.id ? { ...m, caption: cap || null } : m)));
-      toast.success('Note saved');
-    } catch (e) { toast.error(e.message || 'Could not save note'); }
+      toast.success(t('media.noteSaved'));
+    } catch (e) { toast.error(errorText(t, e, 'media.noteFailed')); }
   };
 
   // In a read-only strip (e.g. the Access tab) stay invisible until there's
@@ -145,12 +172,12 @@ export default function MediaGallery({
 
   return (
     <div className="form-group">
-      <label className="form-label">{label}</label>
-      {hint && <div className="text-xs text-muted" style={{ marginBottom: 8 }}>{hint}</div>}
+      {labelText && <label className="form-label">{labelText}</label>}
+      {hintText && <div className="text-xs text-muted" style={{ marginBottom: 8 }}>{hintText}</div>}
       {items === null ? (
-        <p className="text-muted text-sm">Loading…</p>
+        <p className="text-muted text-sm">{t('common.loading')}</p>
       ) : items.length === 0 ? (
-        <p className="text-muted text-sm">No photos or video yet.</p>
+        emptyLine ? <p className="text-muted text-sm">{emptyLine}</p> : null
       ) : (
         <div className="media-grid">
           {items.map((m, i) => (
@@ -167,12 +194,12 @@ export default function MediaGallery({
                     paint a tile. Rows uploaded before thumbnails existed have no
                     thumbUrl and fall back to the original behaviour. */}
                 {m.thumbUrl
-                  ? <img className="media-thumb" src={m.thumbUrl} alt={m.caption || (m.kind === 'video' ? 'video poster' : 'site photo')} loading="lazy" />
+                  ? <img className="media-thumb" src={m.thumbUrl} alt={m.caption || (m.kind === 'video' ? t('media.videoAlt') : t('media.photoAlt'))} loading="lazy" />
                   : (m.kind === 'video'
                     ? <video className="media-thumb" src={m.url} preload="metadata" muted />
-                    : <img className="media-thumb" src={m.url} alt={m.caption || 'site photo'} loading="lazy" />)}
+                    : <img className="media-thumb" src={m.url} alt={m.caption || t('media.photoAlt')} loading="lazy" />)}
                 {m.kind === 'video' && <span className="media-play" aria-hidden="true">▶</span>}
-                {canDelete && <button type="button" className="thumb-remove" aria-label="Delete media" onClick={(e) => { e.stopPropagation(); del(m.id); }}><Icon name="x" size={12} /></button>}
+                {canDelete && <button type="button" className="thumb-remove" aria-label={t('media.deleteAria')} onClick={(e) => { e.stopPropagation(); del(m.id); }}><Icon name="x" size={12} /></button>}
               </div>
               {m.caption && <div className="media-cap" title={m.caption}>{m.caption}</div>}
             </div>
@@ -181,46 +208,48 @@ export default function MediaGallery({
       )}
       {canUpload && !online && (
         <p className="text-xs" role="status" style={{ marginTop: 8, marginBottom: 0, color: 'var(--color-semantic-warning-700)' }}>
-          You’re offline. Photos and short videos still save on this device and upload automatically once you’re back online. Large videos (over 50MB) need a signal; those stay in your camera roll.
+          {t('media.offlineNote')}
         </p>
       )}
       {pendingCount > 0 && (
         <p className="text-xs" role="status" style={{ marginTop: 8, marginBottom: 0, color: 'var(--color-semantic-warning-700)' }}>
-          {pendingCount === 1 ? '1 photo/video saved on this device' : `${pendingCount} photos/videos saved on this device`}. Waiting to upload. This happens automatically when you’re back online.
+          {t('media.pendingNote', { count: pendingCount })}
         </p>
       )}
       {canUpload && (
         <>
-          <input ref={fileRef} type="file" accept="image/*,video/*" multiple hidden onChange={onFiles} />
-          <button type="button" className="btn btn-success" style={{ marginTop: 8 }} disabled={busy} onClick={() => fileRef.current?.click()}>
-            {busy ? 'Uploading…' : 'Upload photo / video'}
-          </button>
+          <input ref={fileRef} type="file" accept={accept} multiple hidden onChange={onFiles} />
+          {showUpload ? (
+            <button type="button" className="btn btn-success" style={{ marginTop: 8 }} disabled={busy} onClick={() => fileRef.current?.click()}>
+              {busy ? t('media.uploading') : (uploadLabel || t('media.upload'))}
+            </button>
+          ) : busy ? <p className="text-muted text-sm" role="status">{t('media.uploading')}</p> : null}
         </>
       )}
 
-      <Modal open={active != null} onClose={() => setViewIdx(null)} title={`${label} — ${(viewIdx ?? 0) + 1} / ${count}`} size="lg">
+      <Modal open={active != null} onClose={() => setViewIdx(null)} title={t('media.viewerTitle', { label: labelText, n: (viewIdx ?? 0) + 1, count })} size="lg">
         {active && (
           <div className="media-viewer">
-            {count > 1 && <button type="button" className="media-viewer-nav prev" aria-label="Previous" onClick={() => stepView(-1)}>‹</button>}
+            {count > 1 && <button type="button" className="media-viewer-nav prev" aria-label={t('common.previous')} onClick={() => stepView(-1)}>‹</button>}
             {active.kind === 'video'
               ? <video className="media-viewer-media" src={active.url} controls autoPlay />
-              : <img className="media-viewer-media" src={active.url} alt={active.caption || 'photo'} />}
-            {count > 1 && <button type="button" className="media-viewer-nav next" aria-label="Next" onClick={() => stepView(1)}>›</button>}
+              : <img className="media-viewer-media" src={active.url} alt={active.caption || t('media.photoAlt')} />}
+            {count > 1 && <button type="button" className="media-viewer-nav next" aria-label={t('common.next')} onClick={() => stepView(1)}>›</button>}
           </div>
         )}
-        {active && (canUpload ? (
+        {active && (canUpload && captions ? (
           <div className="media-caption-edit">
             <textarea
               className="input"
               rows={2}
-              placeholder="Add a note / caption for this photo…"
+              placeholder={t('media.captionPlaceholder')}
               value={captionDraft}
               onChange={(e) => setCaptionDraft(e.target.value)}
             />
             {captionDraft.trim() !== (active.caption || '') && (
               <div className="media-caption-actions">
-                <button type="button" className="btn btn-outline" onClick={() => setCaptionDraft(active.caption || '')}>Cancel</button>
-                <button type="button" className="btn btn-primary" onClick={saveCaption}>Save note</button>
+                <button type="button" className="btn btn-outline" onClick={() => setCaptionDraft(active.caption || '')}>{t('common.cancel')}</button>
+                <button type="button" className="btn btn-primary" onClick={saveCaption}>{t('media.saveNote')}</button>
               </div>
             )}
           </div>

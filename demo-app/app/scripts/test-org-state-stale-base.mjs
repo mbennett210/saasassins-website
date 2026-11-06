@@ -94,6 +94,10 @@ const orMatches = (expr) => {
   });
 };
 
+// The activity log this route writes (CS-379) — kept so a future check can read them.
+const activityRows = [];
+let activityBaseline = null;
+
 const server = http.createServer((req, res) => {
   let raw = '';
   req.on('data', (c) => { raw += c; });
@@ -141,6 +145,22 @@ const server = http.createServer((req, res) => {
       if (req.method === 'PATCH') return send(204);
     }
     if (u.pathname === '/rest/v1/webhook_deliveries' && req.method === 'POST') return send(201);
+    // The CS-379 activity log: every commit through this route writes an audit row when it
+    // changed something loggable, and always refreshes its change-detector baseline. Faked
+    // here because the route is REAL — without it the writer reports a failed audit write on
+    // every save, which lands in this suite's own [ALERT] collector.
+    if (u.pathname === '/rest/v1/activity_log' && req.method === 'POST') {
+      const add = [].concat(JSON.parse(raw || '[]'));
+      activityRows.push(...add);
+      return send(201, add);
+    }
+    if (u.pathname === '/rest/v1/activity_log_baseline') {
+      if (req.method === 'GET') return send(200, activityBaseline ? [activityBaseline] : []);
+      if (req.method === 'POST') { activityBaseline = JSON.parse(raw || '{}'); return send(201); }
+    }
+    // CS-851: an org-state read also loads this build's translated lines, once per process
+    // (api/_lib/i18n.js ensureStoredLines → one read of the build's fill row). None filled here.
+    if (u.pathname === '/rest/v1/machine_translation_fills' && req.method === 'GET') return send(200, []);
     unexpected.push(`${req.method} ${u.pathname}${u.search}`);
     return send(404, { message: 'not faked' });
   });

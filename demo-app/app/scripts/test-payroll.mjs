@@ -1,12 +1,17 @@
 // Headless unit checks for the payroll/OT engine (src/lib/payroll.js).
 // Run: node scripts/test-payroll.mjs
 import {
-  OT_WEEKLY_MINUTES, startOfPayWeek, splitRegularOt, isPayable, isHeldCancelled,
+  OT_WEEKLY_MINUTES, startOfPayWeek, splitRegularOt, isPayable,
   rollupWeeklyByUser, payrollByUser, currentWeekMinutesByUser, otStatus,
-  minutesToHours, payrollCsv,
+  minutesToHours, payrollPayCsv, csvCell,
   basePayForUser, lineTotals, grossForUser, payPeriodRange, payRunRoster,
 } from '../src/lib/payroll.js';
-import { dayOfWeekKey } from '../src/lib/dates.js';
+import { dayOfWeekKey, setOrgTimezone } from '../src/lib/dates.js';
+
+// Pin the org zone: this suite's date oracles (pay-week start, OT windows) are
+// LA-referenced, and startOfPayWeek reads the ambient org zone. The module default is
+// now Eastern (W1-R), so pin LA explicitly rather than inheriting the default.
+setOrgTimezone('America/Los_Angeles');
 
 let pass = 0, fail = 0;
 const eq = (name, got, want) => {
@@ -35,10 +40,6 @@ eq('cancelled-clean pending NOT payable even on the operational lens', isPayable
 eq('cancelled-clean approved IS payable', isPayable(cc('approved'), { approvedOnly: false }), true);
 eq('cancelled-clean rejected NOT payable', isPayable(cc('rejected'), { approvedOnly: false }), false);
 eq('non-cancelled pending unchanged (still pays on operational lens)', isPayable({ ...base, approvalStatus: 'pending' }, { approvedOnly: false }), true);
-eq('isHeldCancelled: pending flagged with real time -> held', isHeldCancelled(cc('pending')), true);
-eq('isHeldCancelled: approved -> released, not held', isHeldCancelled(cc('approved')), false);
-eq('isHeldCancelled: rejected -> not held', isHeldCancelled(cc('rejected')), false);
-eq('isHeldCancelled: not a cancelled clean -> not held', isHeldCancelled({ ...base, approvalStatus: 'pending' }), false);
 // payrollByUser: a pending cancelled-clean punch contributes 0 paid minutes; approving releases it
 eq('cancelled-clean pending -> no paid rows', payrollByUser([cc('pending')], { weekStartDay: 0, approvedOnly: false }).length, 0);
 eq('cancelled-clean approved -> counts 120m', payrollByUser([cc('approved')], { weekStartDay: 0, approvedOnly: false })[0].totalMinutes, 120);
@@ -109,13 +110,9 @@ eq('out-of-week excluded', cwOut.has('u4'), false);
 eq('minutesToHours 90m', minutesToHours(90), 1.5);
 eq('minutesToHours 2700m', minutesToHours(2700), 45);
 
-// --- CSV shape ---
-const csv = payrollCsv(r2, { fromIso: '2026-07-05T00:00:00Z', toIso: '2026-07-18T00:00:00Z' });
-const rows = csv.split('\n');
-eq('csv header', rows[0], '"Cleaner","Regular hours","OT hours","Total hours","Drive hours (in total)","Cleans","Pay period"');
-eq('csv has cleaner + totals footer', rows.length, 3); // header + Ann + ALL CLEANERS
-if (!rows[1].startsWith('"Ann","70","5","75","0","8"')) { fail++; console.error('FAIL csv Ann row:', rows[1]); } else pass++;
-if (!rows[2].startsWith('"ALL CLEANERS","70","5","75","0","8"')) { fail++; console.error('FAIL csv totals row:', rows[2]); } else pass++;
+// (The hours-only `payrollCsv` and its row-shape checks went with the retired
+// PayrollExportModal on 2026-09-29, II.5 — it had no caller left in the app. The pay run's
+// CSV is `payrollPayCsv`, covered below and in test-payroll-employee-id.mjs.)
 
 // --- Paid DRIVE time between jobs counts toward the SAME weekly 40h line ---
 // (inter-site travel is hours worked, so it can create OT — it must be bucketed
@@ -162,9 +159,9 @@ const cwDrive = currentWeekMinutesByUser(driveWeek, {
 });
 eq('OT watch counts drive minutes', cwDrive.get('u5').minutes, 2460);
 eq('OT watch reports the drive subset', cwDrive.get('u5').driveMinutes, 120);
-// CSV carries the drive column.
-const driveCsv = payrollCsv(withDrive, { fromIso: '2026-07-05T00:00:00Z', toIso: '2026-07-11T00:00:00Z' }).split('\n');
-if (!driveCsv[1].startsWith('"Eve","40","1","41","2","3"')) { fail++; console.error('FAIL csv drive row:', driveCsv[1]); } else pass++;
+// The drive MINUTES a CSV would print are the row's own subset, asserted just above
+// (driveMinutes 120 and the 40/1/41 split), so the deleted builder's row-shape check
+// loses no coverage of the math.
 
 // --- startOfPayWeek sanity (Sun-start) ---
 eq('startOfPayWeek Thu->Sun', startOfPayWeek('2026-07-09T14:00:00', 0).getDay(), 0);
@@ -251,6 +248,48 @@ eq('weekly period starts on a Sunday', dayOfWeekKey(payPeriodRange('weekly', 0, 
     [['gone', 'Removed Person', 120, 40], ['gone2', 'Other Removed', 0, -10]]);
   const unnamed = payRunRoster({ users, hoursRows: [{ userId: 'z', userName: '—', totalMinutes: 60 }], lines: [], periodKey: P, periodFromIso: PI });
   eq('ROSTER-C: an unknown name stays unknown (never "—" as a name)', unnamed.removed.map((r) => r.name), [null]);
+}
+
+// ─── payrollPayCsv: arrears columns + spreadsheet-formula neutralization (W2-L) ───
+// csvCell is the ONE escaper both payroll CSVs use (DEV_PLAYBOOK 3.6.9 / SEC-58). A finite
+// NUMBER stays a number (a negative deduction / arrears must import as money, not text);
+// only TEXT starting with a formula trigger is neutralized — same as reports/reportKit.jsx.
+eq('csvCell: a plain value is quote-escaped only', csvCell('Ann'), '"Ann"');
+eq('csvCell: an inner quote is doubled', csvCell('a"b'), '"a""b"');
+eq('csvCell: a negative NUMBER stays a number (no quote prefix)', csvCell(-30), '"-30"');
+eq('csvCell: a negative arrears/deduction number is money, not text', csvCell(-50), '"-50"');
+eq('csvCell: a positive number is a plain number', csvCell(176), '"176"');
+eq('csvCell: a leading = is neutralized (text)', csvCell('=cmd()'), '"\'=cmd()"');
+eq('csvCell: a formula-injection cleaner name is neutralized', csvCell("=cmd|' /C calc'!A0"), '"\'=cmd|\' /C calc\'!A0"');
+eq('csvCell: a leading + is neutralized (text)', csvCell('+1'), '"\'+1"');
+eq('csvCell: a leading - is neutralized when it is TEXT (not a number)', csvCell('-note'), '"\'-note"');
+eq('csvCell: a leading @ is neutralized (text)', csvCell('@ref'), '"\'@ref"');
+eq('csvCell: a leading TAB is neutralized (text)', csvCell('\tx'), '"\'\tx"');
+eq('csvCell: null/undefined → empty cell', [csvCell(null), csvCell(undefined)], ['""', '""']);
+
+{
+  // The pay CSV now carries the three arrears columns; Gross already INCLUDES arrears.
+  const payRows = [{
+    userName: 'Ann', payTypeLabel: 'Hourly', regularMinutes: 2400, otMinutes: 300, base: 950,
+    byCategory: { bonus: 100, deduction: -30 },
+    arrearsRegularMinutes: 120, arrearsOtMinutes: 60, arrearsPay: 85, gross: 1105,
+  }];
+  const csvLines = payrollPayCsv(payRows, { fromIso: '2026-07-05T00:00:00Z', toIso: '2026-07-18T00:00:00Z' }).split('\n');
+  eq('pay CSV header carries the arrears columns before Gross', csvLines[0],
+    '"Cleaner","Employee ID","Pay type","Regular hours","OT hours","Base pay","Bonus","Special service","Reimbursement (non-tax)","Tip","Deduction","Arrears regular hours","Arrears OT hours","Arrears pay","Gross","Pay period"');
+  // Ann: reg 40h, OT 5h, base 950, bonus 100, deduction −30 (a NUMBER, "-30" — not text),
+  // arrears 2h/1h/$85, gross 1105. startsWith through Gross — the trailing period cell is a
+  // locale/zone-formatted date.
+  const annPrefix = '"Ann","","Hourly","40","5","950","100","0","0","0","-30","2","1","85","1105",';
+  if (!csvLines[1].startsWith(annPrefix)) { fail++; console.error(`FAIL pay CSV arrears row\n  got : ${csvLines[1]}\n  want prefix: ${annPrefix}`); } else pass++;
+  // A negative ARREARS PAY (a clawback — voiding a paid earlier punch) is money, not text.
+  const clawback = payrollPayCsv([{ userName: 'Cy', payTypeLabel: 'Hourly', regularMinutes: 2400, otMinutes: 0, base: 800, byCategory: {}, arrearsRegularMinutes: -120, arrearsOtMinutes: 0, arrearsPay: -40, gross: 760 }], {}).split('\n');
+  const cyPrefix = '"Cy","","Hourly","40","0","800","0","0","0","0","0","-2","0","-40","760",';
+  if (!clawback[1].startsWith(cyPrefix)) { fail++; console.error(`FAIL pay CSV clawback row\n  got : ${clawback[1]}\n  want prefix: ${cyPrefix}`); } else pass++;
+  // A row with no arrears leaves those cells blank (W3-P passes them; the old client path did not).
+  const noArrears = payrollPayCsv([{ userName: 'Bo', payTypeLabel: 'Salary', regularMinutes: null, otMinutes: null, base: 1200, byCategory: {}, gross: 1200 }], {}).split('\n');
+  eq('pay CSV row: absent arrears fields render as empty cells', noArrears[1],
+    '"Bo","","Salary","","","1200","0","0","0","0","0","","","","1200","— – —"');
 }
 
 console.log(`\npayroll: ${pass} passed, ${fail} failed`);

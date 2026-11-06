@@ -4,7 +4,7 @@ A type-to-search combobox for picking one record from a long list, with an optio
 
 ## Props
 
-- `value`, `onChange(value | null)`, `options`: `[{ value, label, sublabel? }]`. The first 50 matches show.
+- `value`, `onChange(value | null)`, `options`: `[{ value, label, sublabel? }]`. The first 50 matches show, and a footnote under the search field says how many more there are ("Showing 50 of 768. Type to narrow.", UI_RULES §127); typing narrows before the cap, so every option stays reachable.
 - `placeholder` ("Select…"), `searchPlaceholder` ("Search…"), `emptyText` ("No matches").
 - `allowClear` (default true) adds a "Clear selection" row. `disabled` with `disabledText` explains why it can't open yet ("Pick a cleaner first").
 

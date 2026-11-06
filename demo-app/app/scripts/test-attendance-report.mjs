@@ -5,6 +5,10 @@ import {
   computeAttendanceReport, incompleteCount,
   ATT_COMPLETE, ATT_MISSING_OUT, ATT_NO_PUNCH,
 } from '../src/lib/attendanceReport.js';
+// Namespace import for the helpers added later (noPunchStatus, 2026-10-09), so this suite still
+// RUNS against a tree without them and reports each missing one as a failure.
+import * as attendance from '../src/lib/attendanceReport.js';
+import { missedAfterStartMins } from '../src/lib/opsAlerts.js';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass += 1; else { fail += 1; console.error('  ✗ ' + m); } };
@@ -171,6 +175,46 @@ const statusOf = (rows, userId) => rows.find((r) => r.userId === userId)?.status
   const e = [{ job_id: 'j9', user_id: 'u_a', clock_in_at: iso(to + 10 * 60000), clock_out_at: iso(to + 2 * HOUR), status: 'completed' }];
   const rows = computeAttendanceReport({ jobs: [night], timeEntries: e, usersById, clientsById, sitesById, fromMs: from, toMs: to, now: to + 24 * HOUR });
   ok(statusOf(rows, 'u_a') === ATT_COMPLETE, 'H1: a clean clocked into after midnight still matches its punch');
+}
+
+// ── entryId / entryVersion behind a missing_clock_out row (W1-B: "Fix clock-out") ──
+{
+  const jobs = [
+    job('j1', 'cl1', 's1', ['u_a']),   // still open → missing_clock_out
+    job('j2', 'cl1', 's2', ['u_t']),   // auto-closed, unfixed → missing_clock_out
+    job('j3', 'cl1', 's1', ['u_k']),   // complete
+    job('j4', 'cl2', 's2', ['u_a']),   // no punch → no_punch
+  ];
+  const openP = { job_id: 'j1', user_id: 'u_a', id: 'te_open', row_version: 3, clock_in_at: iso(DAY), clock_out_at: null };
+  const autoP = { job_id: 'j2', user_id: 'u_t', id: 'te_auto', row_version: 5, clock_in_at: iso(DAY), clock_out_at: iso(DAY + 2 * 3600 * 1000), status: 'auto_closed', edit_history: [{ field: 'status', from: 'in_progress', to: 'auto_closed' }] };
+  const doneP = { job_id: 'j3', user_id: 'u_k', id: 'te_done', row_version: 1, clock_in_at: iso(DAY), clock_out_at: iso(DAY + 3600 * 1000) };
+  const rows = computeAttendanceReport({ jobs, timeEntries: [openP, autoP, doneP], usersById, clientsById, sitesById, fromMs: from, toMs: to });
+  const byJob = Object.fromEntries(rows.map((r) => [r.jobId, r]));
+  ok(byJob.j1.status === ATT_MISSING_OUT && byJob.j1.entryId === 'te_open' && byJob.j1.entryVersion === 3, "F1: an open punch's missing_clock_out row carries its entryId + row_version");
+  ok(byJob.j2.status === ATT_MISSING_OUT && byJob.j2.entryId === 'te_auto' && byJob.j2.entryVersion === 5, 'F2: an auto-closed-unfixed missing_clock_out row carries the auto-closed punch');
+  ok(byJob.j3.status === ATT_COMPLETE && byJob.j3.entryId === null && byJob.j3.entryVersion === null, 'F3: a complete row carries no entryId/entryVersion');
+  ok(byJob.j4.status === ATT_NO_PUNCH && byJob.j4.entryId === null && byJob.j4.entryVersion === null, 'F4: a no_punch row carries no entryId/entryVersion');
+}
+
+// ── noPunchStatus: the ONE "nobody clocked in yet" rule, shared with lib/managerToday
+//    (2026-10-09, the manager's today view). The report's own rows and the helper must agree
+//    at every edge of the missed mark, or the Shift check-in screen and this report would call
+//    the same clean two different things. ──────────────────────────────────────────────
+{
+  const fn = attendance.noPunchStatus;
+  ok(typeof fn === 'function', 'I0: noPunchStatus is exported');
+  const grace = missedAfterStartMins({});
+  const MINUTE = 60000;
+  const row = (now) => statusOf(computeAttendanceReport({ jobs: [job('j1', 'cl1', 's1', ['u_a'])], timeEntries: [], usersById, clientsById, sitesById, fromMs: from, toMs: to, now, graceMins: grace }), 'u_a');
+  const edges = [-MINUTE, 0, MINUTE, (grace - 1) * MINUTE, grace * MINUTE, (grace + 1) * MINUTE];
+  for (const d of edges) {
+    const now = DAY + d;
+    const helper = typeof fn === 'function' ? fn(DAY, now, grace) : undefined;
+    ok(helper === row(now), `I1: at start${d >= 0 ? '+' : ''}${d / MINUTE}m the helper and the report agree (${helper} vs ${row(now)})`);
+  }
+  ok(typeof fn === 'function' && fn(DAY, DAY + grace * MINUTE, grace) === 'upcoming', 'I2: AT the mark is still upcoming (strictly past the mark is no_punch)');
+  ok(typeof fn === 'function' && fn(DAY, DAY + (grace + 1) * MINUTE, grace) === ATT_NO_PUNCH, 'I3: one minute past the mark is no_punch');
+  ok(typeof fn === 'function' && fn(DAY, DAY + (grace + 1) * MINUTE) === ATT_NO_PUNCH, 'I4: with no grace given it takes the shipped default (opsAlerts), never a restated number');
 }
 
 console.log(`\n${pass}/${pass + fail} attendance-report assertions passed`);

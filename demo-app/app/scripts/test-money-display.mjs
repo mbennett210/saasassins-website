@@ -127,5 +127,16 @@ const optsOf = (name) => {
   ok('round2 preserves cents through the arithmetic (the bug was NOT here)', /round2/.test(src));
 }
 
+// ── 🔴 C4 (CS-066): uninvoicedCompletedJobs' doc comment sits directly above ITS function ──
+// moneyCentsCompact was inserted BETWEEN that doc comment and the function it describes; a
+// doc comment must sit directly above the function it documents. No behaviour change.
+{
+  const src = read('../src/lib/money.js');
+  const m = /((?:^\/\/[^\n]*\n)+)export function uninvoicedCompletedJobs\(/m.exec(src);
+  ok('C4: uninvoicedCompletedJobs has a contiguous doc comment directly above it', Boolean(m));
+  ok("🔴 C4: that comment is uninvoicedCompletedJobs' OWN doc (not moneyCentsCompact's)",
+    Boolean(m) && /Completed \('done'\) jobs not yet attached/.test(m[1]) && !/moneyCentsCompact/.test(m[1]));
+}
+
 console.log(`\nmoney display + void guard: ${pass}/${pass + fails.length} passed`);
 if (fails.length) { for (const f of fails) console.error(`  FAIL: ${f}`); process.exit(1); }

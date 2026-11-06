@@ -119,14 +119,19 @@ if (TL) {
   // assignableRoles is lib/roles canGiveRole's list, on the matrix + overrides given (S80).
   const matrix = R.seedPermissions();
   const editable = Object.keys(R.PERMISSIONS).filter((k) => !R.ALWAYS_GRANTED.has(k));
-  const want = { owner: 'owner,admin,manager,crew', admin: 'admin,crew', manager: 'admin,manager,crew', crew: 'crew' };
-  ok('🔴 default matrix: a Super Admin gives any role, an Admin Admin / Crew, a Manager Admin / Manager / Crew; Super Admin only from a Super Admin',
+  // S131: the 5th role, supply_manager (supplies only) — every office tier holds its keys, so each may
+  // give it; a supply manager holds nothing a cleaner's role carries, so gives only their own role.
+  const want = {
+    owner: 'owner,admin,manager,supply_manager,crew', admin: 'admin,supply_manager,crew',
+    manager: 'admin,manager,supply_manager,crew', supply_manager: 'supply_manager', crew: 'crew',
+  };
+  ok('🔴 default matrix: a Super Admin gives any role, an Admin Admin / Supply Manager / Crew, a Manager Admin / Manager / Supply Manager / Crew; Super Admin only from a Super Admin',
     ROLES.every((r) => TL.assignableRoles({ id: `a_${r}`, role: r }, matrix, []).join() === want[r])
     && TL.assignableRoles(null, matrix, []).length === 0 && TL.assignableRoles({ id: 'n', role: null }, matrix, []).length === 0);
   ok('🔴 the matrix decides: pare Manager down to what an Admin holds and an Admin may give it',
     TL.assignableRoles({ id: 'a_admin', role: 'admin' }, matrix.map((p) => (p.roles.includes('admin') ? p : { ...p, roles: p.roles.filter((r) => r !== 'manager') })), []).includes('manager'));
   ok("  ...and the giver's own overrides: an Admin granted every key may give Manager (never Super Admin); a Manager missing one of its keys may not",
-    TL.assignableRoles({ id: 'a_admin', role: 'admin' }, matrix, [{ userId: 'a_admin', grants: editable, revokes: [] }]).join() === 'admin,manager,crew'
+    TL.assignableRoles({ id: 'a_admin', role: 'admin' }, matrix, [{ userId: 'a_admin', grants: editable, revokes: [] }]).join() === 'admin,manager,supply_manager,crew'
     && !TL.assignableRoles({ id: 'a_manager', role: 'manager' }, matrix, [{ userId: 'a_manager', grants: [], revokes: ['reports.view'] }]).includes('manager'));
   ok('your own status is not limited (the server allows it)', TL.teamLimit({ id: 'm', role: 'manager' }, { id: 'm', role: 'manager' }, 'status') === null);
   ok('no reason for "nothing blocked"', TL.teamLimitReason('role', null) === null);
@@ -212,7 +217,9 @@ if (TL) {
     U369('a369', 'admin'), U369('a2_369', 'admin'), U369('c369', 'crew')];
   const MATRIX369 = R.seedPermissions();
   const REDKEY = 'clients.view'; // every role carries it by default → a revoke is a real reduction for any target
-  ok('fixture: REDKEY is a real key every role carries', REDKEY in R.PERMISSIONS && ROLES.every((r) => R.PERMISSIONS[REDKEY].defaultRoles.includes(r)));
+  // Every role ON THIS ROSTER (a supply manager, S131, holds no customer key — none of the five
+  // shares one beyond the always-granted surfaces).
+  ok('fixture: REDKEY is a real key every role on the roster carries', REDKEY in R.PERMISSIONS && ROSTER369.every((u) => R.PERMISSIONS[REDKEY].defaultRoles.includes(u.role)));
   const holds369 = (actor, key, ov) => can(actor, key, MATRIX369, ov);
   // The page's Access-tab reduce decision, modeled from TeamDetail: the tab is reachable
   // (settings.team.view + staff.editOverrides), not blocked whole (teamLimit 'overrides' = self /
@@ -465,21 +472,23 @@ if (TL) {
 // ── D. The pages are wired to the model; every writer is classified ──────────
 {
   const td = read('src/pages/settings/TeamDetail.jsx');
-  ok('TeamDetail imports the limits', /import \{ assignableRoles, teamLimit, teamLimitReason \} from '\.\.\/\.\.\/lib\/teamLimits'/.test(td));
+  // The role picker's choices are lib/teamLimits roleChoices (the roles canGiveRole allows, the
+  // Manager role as its two levels — S131).
+  ok('TeamDetail imports the limits', /import \{ roleChoices, choiceOf, choiceRole, mayAssignTeams, teamLimit, teamLimitReason, ROLE_CHOICES as ROLE_CHOICE_LIST \} from '\.\.\/\.\.\/lib\/teamLimits'/.test(td));
   ok('TeamDetail computes each limit for (currentUser, user)',
     /const roleLimit = teamLimit\(currentUser, user, 'role'\)/.test(td)
     && /const statusLimit = teamLimit\(currentUser, user, 'status'\)/.test(td)
     && /const overrideLimit = teamLimit\(currentUser, user, 'overrides'\)/.test(td)
-    && /const assignable = assignableRoles\(currentUser, permissions, overrides\);/.test(td)
+    && /const choices = roleChoices\(currentUser, permissions, overrides, user\);/.test(td)
     && /const permissions = selectPermissions\(state\);/.test(td) && /const overrides = selectUserPermissionOverrides\(state\);/.test(td));
   ok('🔴 Role is disabled by the limit as well as the key', /disabled=\{!canAssignRoles \|\| !!roleLimit\}/.test(td));
   ok('🔴 Role offers only assignable roles (plus the one it shows, to read it)',
-    /options=\{ROLES\.filter\(\(r\) => r === roleValue \|\| assignable\.includes\(r\)\)\.map/.test(td) && !/options=\{ROLES\.map\(/.test(td));
+    /options=\{ROLE_CHOICE_LIST\.filter\(\(c\) => c\.value === roleValue \|\| choices\.some\(\(x\) => x\.value === c\.value\)\)\.map/.test(td) && !/options=\{ROLES\.map\(/.test(td));
   ok('🔴 the form holds only the viewer\'s edits; the rest reads the member as stored now',
     /const \[edits, setEdits\] = useState\(\{\}\);/.test(td) && /const current = \{ \.\.\.user, \.\.\.edits \};/.test(td)
     && !/useState\(user\)/.test(td) && !/setForm\(/.test(td));
   ok('  ...a locked field shows the member as stored, never an earlier edit',
-    /const roleValue = roleLimit \? user\.role : current\.role;/.test(td) && /const statusValue = statusLimit \? user\.status : current\.status;/.test(td)
+    /const roleValue = choiceOf\(roleLimit \? user : current\);/.test(td) && /const statusValue = statusLimit \? user\.status : current\.status;/.test(td)
     && /value=\{roleValue\}/.test(td) && /value=\{statusValue\}/.test(td));
   ok('Role says why, in visible help text', /help=\{!canAssignRoles \? "You don't have permission to assign roles\." : teamLimitReason\('role', roleLimit\) \|\| undefined\}/.test(td));
   ok('🔴 Status is disabled by the limit, with its reason', /disabled=\{!canEdit \|\| !!statusLimit\}/.test(td) && /teamLimitReason\('status', statusLimit\)/.test(td));
@@ -487,7 +496,7 @@ if (TL) {
   ok('🔴 save() sends only what the viewer edited; role / status only where the limits allow',
     /const patch = \{\};/.test(saveBody)
     && ['name', 'phone', 'initials'].every((f) => new RegExp(`if \\('${f}' in edits\\) patch\\.${f} = `).test(saveBody))
-    && /if \('role' in edits && !roleLimit\) patch\.role = current\.role;/.test(saveBody)
+    && /if \('role' in edits && !roleLimit\) \{\s*patch\.role = current\.role;/.test(saveBody)
     && /if \('status' in edits && !statusLimit\) patch\.status = current\.status;/.test(saveBody)
     && /if \(!authConfigured && 'email' in edits\) patch\.email = current\.email;/.test(saveBody)
     && /if \(canEditThisPay && 'pay' in edits\) patch\.pay = current\.pay;/.test(saveBody)
@@ -505,9 +514,12 @@ if (TL) {
     /const limit = teamLimit\(currentUser, user, 'remove'\);\s*if \(limit\) \{/.test(delBody)
     && delBody.indexOf("teamLimit(currentUser, user, 'remove')") < delBody.indexOf('checkRecentHours()')
     && delBody.indexOf("teamLimit(currentUser, user, 'remove')") < delBody.indexOf('deleteTeamLogin('));
-  ok('🔴 Access: override writes return early on the limit (toggle AND reset)', (td.match(/if \(!canEditOverrides \|\| overrideLimit\) return;/g) || []).length === 2);
+  // Three writers of a member's overrides: the Access tab's toggle and reset, and the Time tab's
+  // "Can request supplies" (the Cleaner Hub, D4) — each returns early on the limit.
+  ok('🔴 Access: override writes return early on the limit (toggle, reset AND the cleaner\'s supply switch)', (td.match(/if \(!canEditOverrides \|\| overrideLimit\) return;/g) || []).length === 3);
   const toggleBody = td.slice(td.indexOf('const togglePermOverride'), td.indexOf('const clearOverrides'));
-  const ownerOnlyBranch = toggleBody.slice(toggleBody.indexOf("if (OWNER_ONLY.has(permKey) && user.role !== 'owner') {"), toggleBody.indexOf('const perm = permissions.find'));
+  // The branch ends where the member's role default is read (lib/roles columnHolds since CS-858).
+  const ownerOnlyBranch = toggleBody.slice(toggleBody.indexOf("if (OWNER_ONLY.has(permKey) && user.role !== 'owner') {"), toggleBody.indexOf("// The member's COLUMN (lib/roles columnHolds"));
   ok('Access: on a non-Super-Admin member an OWNER_ONLY key is only ever cleared, never granted or revoked',
     ownerOnlyBranch.length > 0
     && /const keep = \(list\) => \(list \|\| \[\]\)\.filter\(\(k\) => k !== permKey\);/.test(ownerOnlyBranch)
@@ -556,8 +568,8 @@ if (TL) {
 
   const add = read('src/components/AddUserModal.jsx');
   ok('🔴 AddUserModal offers the same roles as TeamDetail (canGiveRole on the matrix + overrides), and refuses any other on submit',
-    /const roleChoices = assignableRoles\(currentUser, selectPermissions\(state\), selectUserPermissionOverrides\(state\)\);/.test(add)
-    && /options=\{roleChoices\.map\(/.test(add) && /if \(!roleChoices\.includes\(form\.role\)\) \{/.test(add)
+    /const choices = roleChoices\(currentUser, selectPermissions\(state\), selectUserPermissionOverrides\(state\)\);/.test(add)
+    && /options=\{choices\.map\(/.test(add) && /if \(!choices\.some\(\(c\) => c\.value === form\.role\)\) \{/.test(add)
     && !/\['admin', 'manager', 'crew'\]/.test(add));
 
   const css = read('src/index.css');
@@ -591,7 +603,6 @@ if (TL) {
   const PROTECTED_SLICES = ['users', 'userPermissionOverrides', 'permissions', 'company', 'timeOff'];
   const HELPERS = {
     sweepUserOrphans: () => DC.sweepUserOrphans(INITIAL_STATE, 'u_x', 'Gone'),
-    sweepClientOrphans: () => DC.sweepClientOrphans(INITIAL_STATE, 'cl_x', new Set()),
     removeReimbursement: () => DC.removeReimbursement(INITIAL_STATE, 'rmb_x'),
   };
   const unknownHelpers = new Set();
@@ -606,13 +617,14 @@ if (TL) {
   ok(`every helper spread into a reducer case is known (${[...unknownHelpers].join(', ') || 'none unknown'})`, unknownHelpers.size === 0);
   ok('the helper scan sees a helper write: DELETE_USER\'s sweepUserOrphans returns timeOff',
     Object.keys(HELPERS.sweepUserOrphans()).includes('timeOff'));
-  const TEAM_WRITERS = ['ADD_USER', 'UPDATE_USER', 'DELETE_USER', 'UPDATE_NOTIFICATION_PREFS', 'UPDATE_SIGNATURE_PREFS',
-    'REVOKE_INVITATION', 'SET_USER_PERMISSION_OVERRIDE', 'UPDATE_PERMISSION', 'UPDATE_COMPANY', 'ADD_TIME_OFF', 'DELETE_TIME_OFF'];
+  const TEAM_WRITERS = ['ADD_USER', 'UPDATE_USER', 'DELETE_USER', 'UPDATE_NOTIFICATION_PREFS', 'UPDATE_SIGNATURE_PREFS', 'SET_USER_LANGUAGE',
+    'SET_USER_PHOTO', 'REVOKE_INVITATION', 'SET_USER_PERMISSION_OVERRIDE', 'UPDATE_PERMISSION', 'UPDATE_COMPANY', 'ADD_TIME_OFF', 'DELETE_TIME_OFF'];
   // Integrations rewrite company.integrations only; proven below, so their many callers
   // (Integrations, Marketing, Messaging) need no classification here.
+  // The five CONNECT/DISCONNECT/UPDATE_EMAIL_* writers went with Resend (CS-012/CS-039,
+  // 2026-09-29): the system sender is a server-side mailbox mark, not a blob write.
   const INTEGRATION_WRITERS = ['CONNECT_TWILIO', 'DISCONNECT_TWILIO', 'UPDATE_TWILIO_NUMBER', 'UPDATE_TWILIO_WEBHOOK',
-    'UPDATE_TWILIO_ERROR', 'SUBMIT_A2P', 'UPDATE_A2P_STATUS', 'RESET_A2P', 'CONNECT_EMAIL_PROVIDER',
-    'DISCONNECT_EMAIL_PROVIDER', 'UPDATE_EMAIL_DOMAIN_STATUS', 'UPDATE_EMAIL_DEFAULT_FROM', 'UPDATE_EMAIL_ERROR'];
+    'UPDATE_TWILIO_ERROR', 'SUBMIT_A2P', 'UPDATE_A2P_STATUS', 'RESET_A2P'];
   const classified = new Set([...TEAM_WRITERS, ...INTEGRATION_WRITERS]);
   ok(`every reducer case writing a protected slice is classified (${enumerated.length} enumerated == ${classified.size} classified; unclassified: ${enumerated.filter((a) => !classified.has(a)).join(', ') || 'none'}; stale: ${[...classified].filter((a) => !enumerated.includes(a)).join(', ') || 'none'})`,
     enumerated.length === classified.size && enumerated.every((a) => classified.has(a)));
@@ -636,15 +648,66 @@ if (TL) {
   // Step 2: every dispatch site of a Team writer, file by file, with the rule that covers
   // it. A new site fails here until someone says which limit applies.
   const LEDGER = {
-    'src/components/AddUserModal.jsx': { ADD_USER: 2 }, // role from assignableRoles (canGiveRole); both halves refuse any other
+    'src/components/AddUserModal.jsx': { ADD_USER: 2, SET_USER_PERMISSION_OVERRIDE: 1 }, // role from roleChoices (canGiveRole; the operations level mayGiveLevel, CS-858); both halves refuse any other
+    // …and a new cleaner's "Can request supplies" (task #470): one supplies.request row for the member
+    // just added, offered only with staff.editOverrides, turned ON only by a holder of the key
+    // (canGrantPermission, CS-331), the Access tab's own guards (lib/newMemberSetup newMemberOverride);
+    // a brand-new Crew member is never a Super Admin or an Admin, so no Team limit applies.
+    // S131 — an Operations Manager's team: the assignment card's Assign / Remove and an account
+    // manager's "Reports to" picker, each `opsManagerId` only. Offered only to owner / admin with
+    // ops.edit (lib/teamLimits mayAssignTeams), the guard's own rule (teamViolations); no Team-kind
+    // limit applies (no role, status or overrides move).
+    'src/components/AccountManagerAssignmentCard.jsx': { UPDATE_USER: 2 },
+    // Task 471 — the onboarding bar's Assigned cleaners pop-up: a crew member's `worksAt` ONLY (the
+    // building added or taken off), offered only with settings.team.edit, the guard's rule for
+    // another member's fields. Only Crew are listed; no role, status or overrides move, so no
+    // Team limit applies.
+    'src/components/OnboardingBar.jsx': { UPDATE_USER: 1 },
     'src/components/EmployeeHrFieldsCard.jsx': { UPDATE_USER: 1 }, // hr only, gated hr.edit; the server gates it the same, with no Super Admin limit
+    // Super Clippy's idea #513 — a filed HR termination turns the member Disabled (and a void back
+    // on). ON THE DEMO ONLY: the stub's stand-in for the server's roster write (the setter returns
+    // unless lib/hrTerminationsApi runs its stub, and the real path never calls it; live, the
+    // server writes the roster after teamAuthority.loginRefusal('status')). Offered only with
+    // hr.edit AND settings.team.edit to someone lib/hrTerminations terminationTargetRefusal allows:
+    // teamLimit 'status' (never a Super Admin, never yourself, an Admin only by admin+).
+    'src/components/EmployeeTerminationCard.jsx': { UPDATE_USER: 1 },
+    // "Turn back on" on the Quality hub's Assignments tab: clockRules ONLY, and the same
+    // rule TeamDetail's Time tab applies — `time.clockRules` AND an office role (owner /
+    // admin / manager), which orgStateGuard.mayWriteClockRules enforces on save. No
+    // authority field of the Team kind moves, so no teamLimit applies.
+    'src/components/checklists/ChecklistAssignments.jsx': { UPDATE_USER: 1 },
     'src/components/TimeOffCard.jsx': { ADD_TIME_OFF: 1, DELETE_TIME_OFF: 1 }, // settings.team.edit, one of the guard's two time-off keys
     'src/pages/hr/PtoTab.jsx': { ADD_TIME_OFF: 1, DELETE_TIME_OFF: 1 }, // hr.edit, the guard's other time-off key
-    'src/pages/settings/Account.jsx': { UPDATE_USER: 1, UPDATE_NOTIFICATION_PREFS: 2, UPDATE_SIGNATURE_PREFS: 2 }, // your own row only; no authority field
+    // Your own row only; no authority field. The THIRD UPDATE_NOTIFICATION_PREFS is
+    // `AlertDeliveryCard` (NTF-2 quiet hours + NTF-1 "text me alerts", 2026-09-29): still the
+    // caller's OWN prefs, and the six keys it writes are DELIVERY-channel prefs, exempt from
+    // the crew mandatory-mute rule by `lib/roles.CHANNEL_PREF_KEYS` — the crew POLICY is in the
+    // reader (`lib/alertDelivery.quietHoursFor`), not a Team limit, because none of these is an
+    // authority field and none is in `protectedFingerprint`.
+    'src/pages/settings/Account.jsx': { UPDATE_USER: 1, UPDATE_NOTIFICATION_PREFS: 3, UPDATE_SIGNATURE_PREFS: 2 },
+    // CS-193 — the person's OWN language: the switch on the Account page, and the phone's
+    // language LanguageSync records on the signed-in person's own row. Neither is an
+    // authority field nor in `protectedFingerprint`; the value is checked at the write point
+    // (the reducer) and, for a crew save, by the server's merge allowlist (crewMerge §a).
+    'src/components/LanguageCard.jsx': { SET_USER_LANGUAGE: 1 },
+    'src/components/LanguageSync.jsx': { SET_USER_LANGUAGE: 1 },
+    // UI_RULES §141 — a member's photo version, after the upload / remove route decided WHO may
+    // (yourself, or `settings.team.edit` for anyone else; Account offers it for you, TeamDetail
+    // with that key or on your own record). No authority field, not in `protectedFingerprint`;
+    // the value is checked at the write point (the reducer) and by the crew merge.
+    'src/components/AvatarPhotoControl.jsx': { SET_USER_PHOTO: 2 },
     'src/pages/settings/Company.jsx': { UPDATE_COMPANY: 1 }, // the timezone rides only a Super Admin's save (can() OWNER_ONLY)
     'src/pages/settings/Roles.jsx': { UPDATE_PERMISSION: 2 }, // settings.roles.edit; OWNER_ONLY cells locked
     'src/pages/settings/Team.jsx': { REVOKE_INVITATION: 1 }, // teamLimit 'revoke'
-    'src/pages/settings/TeamDetail.jsx': { UPDATE_USER: 1, DELETE_USER: 1, SET_USER_PERMISSION_OVERRIDE: 3 }, // teamLimit role / status / remove / overrides
+    // teamLimit role / status / remove / overrides — the overrides' 4th site is the Time tab's "Can
+    // request supplies" (the Cleaner Hub, D4): the same limit, staff.editOverrides and canGrantPermission.
+    'src/pages/settings/TeamDetail.jsx': { UPDATE_USER: 1, DELETE_USER: 1, SET_USER_PERMISSION_OVERRIDE: 4 },
+    // CS-008 — READS ONLY, dispatches nothing: the words the "not saved" message uses to NAME
+    // a change the server refused (one `case` per writer). No limit applies to naming one.
+    'src/store/syncProblems.js': {
+      UPDATE_USER: 1, ADD_USER: 1, DELETE_USER: 1, UPDATE_PERMISSION: 1, SET_USER_PERMISSION_OVERRIDE: 1,
+      ADD_TIME_OFF: 1, DELETE_TIME_OFF: 1, UPDATE_COMPANY: 1,
+    },
   };
   const names = TEAM_WRITERS.join('|');
   const WRITES = new RegExp(`\\bACTIONS\\.(${names})\\b|type:\\s*['"](${names})['"]`, 'g');

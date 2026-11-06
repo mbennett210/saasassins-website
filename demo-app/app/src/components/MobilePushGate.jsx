@@ -6,6 +6,9 @@ import { useToast } from './Toast';
 import {
   isPushSupported, isCurrentDeviceSubscribed, isIOS, isStandalonePWA, enableMobilePush,
 } from '../lib/push';
+import { useT } from '../i18n/react';
+import { errorText } from '../i18n/errors';
+import { useInstallWelcomeHold } from '../lib/installApp';
 
 // Strong-but-skippable mobile push enrollment prompt. On a phone / installed PWA,
 // it nudges an un-subscribed user to turn on notifications so they don't miss
@@ -13,6 +16,8 @@ import {
 // session until a device is actually subscribed). It CANNOT force the OS grant, so
 // the iOS-needs-install and OS-denied cases show instructions instead of a button.
 // Mounted authed-only (App AuthedShell), so currentUser is available.
+// One pop-up per visit: while the Home Screen welcome is due in this browser, or once it has shown
+// this visit, this waits (UI_RULES §178) — on an iPhone push needs the installed app anyway.
 
 const DISMISS_KEY = 'cs.pushGate.dismissed'; // per-session skip flag
 
@@ -33,16 +38,18 @@ function currentPermission() {
 }
 
 export default function MobilePushGate() {
+  const t = useT();
   const state = useStore();
   const currentUser = selectCurrentUser(state);
   const toast = useToast();
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [perm, setPerm] = useState(currentPermission());
+  const heldByInstallWelcome = useInstallWelcomeHold();
 
   useEffect(() => {
     let alive = true;
-    if (!currentUser?.id || !isPushSupported() || !isMobileContext() || dismissedThisSession()) {
+    if (heldByInstallWelcome || !currentUser?.id || !isPushSupported() || !isMobileContext() || dismissedThisSession()) {
       setShow(false);
       return () => { alive = false; };
     }
@@ -51,7 +58,7 @@ export default function MobilePushGate() {
       .then((sub) => { if (alive) setShow(!sub); })
       .catch(() => { if (alive) setShow(true); });
     return () => { alive = false; };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, heldByInstallWelcome]);
 
   const iosNeedsInstall = isIOS() && !isStandalonePWA();
   const denied = perm === 'denied';
@@ -62,15 +69,15 @@ export default function MobilePushGate() {
     try {
       await enableMobilePush({ userId: currentUser.id });
       setPerm(currentPermission());
-      toast.success('Notifications are on for this device.');
+      toast.success(t('pushGate.on'));
       setShow(false);
     } catch (err) {
       setPerm(currentPermission());
-      toast.error(err?.message || 'Could not enable notifications.');
+      toast.error(errorText(t, err, 'pushGate.failed'));
     } finally {
       setBusy(false);
     }
-  }, [currentUser?.id, toast]);
+  }, [currentUser?.id, toast, t]);
 
   const notNow = useCallback(() => {
     try { sessionStorage.setItem(DISMISS_KEY, '1'); } catch { /* ignore */ }
@@ -80,27 +87,27 @@ export default function MobilePushGate() {
   if (!show) return null;
 
   return (
-    <Modal open onClose={notNow} title="Turn on notifications" size="sm">
+    <Modal open onClose={notNow} title={t('pushGate.title')} size="sm">
       <div className="text-sm" style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
         {iosNeedsInstall ? (
           <>
-            <p>To get alerts on this iPhone or iPad, add the app to your Home Screen first.</p>
-            <p>Tap the Share button, choose <strong>Add to Home Screen</strong>, open the app from there, then come back to turn notifications on.</p>
+            <p>{t('pushGate.iosInstall')}</p>
+            <p>{t.rich('pushGate.iosSteps')}</p>
           </>
         ) : denied ? (
           <>
-            <p>Notifications are currently blocked for this app in your device settings.</p>
-            <p>Turn them on in your browser or site settings, then reopen the app.</p>
+            <p>{t('pushGate.blocked')}</p>
+            <p>{t('pushGate.blockedFix')}</p>
           </>
         ) : (
-          <p>Get alerted about late or missed shifts, new work orders, and job updates even when the app is closed. It takes one tap.</p>
+          <p>{t('pushGate.why')}</p>
         )}
       </div>
       <div className="modal-actions">
-        <button type="button" className="btn btn-outline" onClick={notNow} disabled={busy}>Not now</button>
+        <button type="button" className="btn btn-outline" onClick={notNow} disabled={busy}>{t('pushGate.notNow')}</button>
         {!iosNeedsInstall && !denied && (
           <button type="button" className="btn btn-primary" onClick={enable} disabled={busy}>
-            {busy ? 'Enabling…' : 'Enable notifications'}
+            {busy ? t('pushGate.enabling') : t('pushGate.enable')}
           </button>
         )}
       </div>

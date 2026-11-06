@@ -256,7 +256,13 @@ ok('no protected change escapes the fingerprint',
 
   // Admin keeps everything it could do; what it holds by default now follows the matrix
   // (disable + remove ride settings.team.edit, the owner's call 2026-09-23).
-  ok('an admin can still add a member and edit a profile', allows(invite, 'admin', ADMIN) && allows(rephone, 'admin', ADMIN) && allows(repay, 'admin', ADMIN));
+  ok('an admin can still add a member and edit a profile', allows(invite, 'admin', ADMIN) && allows(rephone, 'admin', ADMIN));
+  // CS-003 (2026-10-03): a PAY RATE is money, and money follows the matrix for everyone but the
+  // Super Admin — the Pay card asks an Admin for payroll.rates.edit like everyone else, and an
+  // Admin holds no money key by default (Q24). Was allowed by role.
+  ok("CS-003: an admin WITHOUT payroll.rates.edit cannot change another member's pay", v(repay, 'admin', ADMIN).includes("change another member's pay"));
+  ok('  ...and an admin GIVEN payroll.rates.edit can',
+    allows(repay, 'admin', ADMIN, tweak(team(), (s) => { s.userPermissionOverrides = [{ userId: ADMIN, grants: ['payroll.rates.edit'], revokes: [] }]; })));
   ok('an admin can now disable a member (settings.team.edit)', allows(disable, 'admin', ADMIN));
   ok('an admin can now remove a member (settings.team.edit)', allows(remove, 'admin', ADMIN));
 
@@ -543,13 +549,13 @@ ok('no protected change escapes the fingerprint',
     vf(rephone, 'manager', MGR, facts(), tweak(team(), (s) => { row(s, OWNER).role = 'admin'; })).length === 0);
 }
 
-// ── customer (account) removal follows clients.delete (2026-09-23) ───────────
-// Deleting a customer cascades to its sites / contacts / invoices / jobs; the blob
-// half commits here. DELETION is a restricted capability (clients.delete: owner /
-// admin / manager by default), so the server refuses a customer removal from anyone
-// who does not hold it — owner+admin by role, else clients.delete in the COMMITTED
-// matrix + overrides. Editing or creating a customer stays ordinary data. The digest
-// must move on a removal (even a crew-less account) or the guard silently skips.
+// ── customers are ARCHIVED, never deleted (CS-663; was "removal follows clients.delete") ──
+// Matt: "Never delete customers." A save that REMOVES a customer row is refused for everyone,
+// the Super Admin included (there is no customer delete in the app any more; until 2026-10-13 a
+// clients.delete holder could). ARCHIVING or RESTORING one is the capability the delete was:
+// clients.delete ("Archive customers") — the Super Admin by role, everyone else by the COMMITTED
+// matrix + overrides. Editing or creating a customer stays as it was. The digest must move on a
+// removal (even a crew-less account) and on an archive, or the guard silently skips.
 {
   const MGR = 'u_mgr';
   // A manager on the roster + the REAL default matrix (not a restated literal), and a
@@ -567,28 +573,53 @@ ok('no protected change escapes the fingerprint',
   const editClient = (from) => { const s = JSON.parse(JSON.stringify(from)); s.clients[0].name = 'Renamed'; return s; };
   const v = (from, role, self) => protectedFieldViolations(from, removeC1(from), role, self);
 
-  ok('crew CANNOT delete a customer (no clients.delete)', v(withMgr(), 'crew', CREW).includes('delete a customer'));
-  ok('owner CAN delete a customer (by role)', v(withMgr(), 'owner', OWNER).length === 0);
-  ok('admin CAN delete a customer (by role)', v(withMgr(), 'admin', ADMIN).length === 0);
-  ok('a default manager CAN delete a customer (holds clients.delete)', v(withMgr(), 'manager', MGR).length === 0);
+  // 🔴 A REMOVAL is refused for every caller — there is nobody it is "theirs" to make.
+  ok('crew CANNOT remove a customer', v(withMgr(), 'crew', CREW).includes('remove a customer'));
+  ok('🔴 nor the Super Admin (customers are archived, never deleted)', v(withMgr(), 'owner', OWNER).includes('remove a customer'));
+  ok('🔴 nor an Admin holding clients.delete', v(withMgr(), 'admin', ADMIN).includes('remove a customer'));
+  ok('🔴 nor a default manager holding clients.delete', v(withMgr(), 'manager', MGR).includes('remove a customer'));
+
+  // ARCHIVE / RESTORE follow clients.delete ("Archive customers"), exactly as the delete did.
+  const archiveC1 = (from) => {
+    const s = JSON.parse(JSON.stringify(from));
+    Object.assign(s.clients[0], { statusOverride: 'archived', archivedAt: '2026-10-13T12:00:00.000Z', archivedBy: MGR, statusBeforeArchive: null });
+    return s;
+  };
+  const a = (from, role, self) => protectedFieldViolations(from, archiveC1(from), role, self);
+  const WORDS = 'archive or restore a customer';
+  ok('crew CANNOT archive a customer (no clients.delete)', a(withMgr(), 'crew', CREW).includes(WORDS));
+  ok('owner CAN archive a customer (by role)', a(withMgr(), 'owner', OWNER).length === 0);
+  ok('admin CAN archive a customer (holds clients.delete by default)', a(withMgr(), 'admin', ADMIN).length === 0);
+  ok('a default manager CAN archive a customer (holds clients.delete)', a(withMgr(), 'manager', MGR).length === 0);
   // Reads the MATRIX, not the role name: clients.delete taken off managers → refused.
   const paredMgr = () => { const s = withMgr(); s.permissions = s.permissions.map((p) => (p.id === 'clients.delete' ? { ...p, roles: p.roles.filter((r) => r !== 'manager') } : p)); return s; };
-  ok('a manager with clients.delete off managers CANNOT delete a customer', v(paredMgr(), 'manager', MGR).includes('delete a customer'));
+  ok('a manager with clients.delete off managers CANNOT archive a customer', a(paredMgr(), 'manager', MGR).includes(WORDS));
   // A per-user REVOKE outranks the default.
   const revokedMgr = () => { const s = withMgr(); s.userPermissionOverrides = [{ userId: MGR, grants: [], revokes: ['clients.delete'] }]; return s; };
-  ok('a manager with clients.delete revoked per-user CANNOT delete a customer', v(revokedMgr(), 'manager', MGR).includes('delete a customer'));
+  ok('a manager with clients.delete revoked per-user CANNOT archive a customer', a(revokedMgr(), 'manager', MGR).includes(WORDS));
   // A GRANT is the other direction: the grant's intent.
   const grantedCrew = () => { const s = withMgr(); s.userPermissionOverrides = [{ userId: CREW, grants: ['clients.delete'], revokes: [] }]; return s; };
-  ok("crew GRANTED clients.delete may delete a customer (the grant's intent)", v(grantedCrew(), 'crew', CREW).length === 0);
+  ok("crew GRANTED clients.delete may archive a customer (the grant's intent)", a(grantedCrew(), 'crew', CREW).length === 0);
   // The COMMITTED matrix decides: granting crew the key in the SAME save does not count.
-  ok('the committed matrix decides: granting clients.delete to crew in the same save does not admit the delete',
-    protectedFieldViolations(withMgr(), (() => { const s = removeC1(withMgr()); s.permissions = s.permissions.map((p) => (p.id === 'clients.delete' ? { ...p, roles: [...p.roles, 'crew'] } : p)); return s; })(), 'crew', CREW).includes('delete a customer'));
-  // Create + edit stay ordinary data (never gated as a delete) — proves it is not over-gated.
-  ok('crew CAN create a customer (create is not gated here)', protectedFieldViolations(withMgr(), addClient(withMgr()), 'crew', CREW).length === 0);
+  ok('the committed matrix decides: granting clients.delete to crew in the same save does not admit the archive',
+    protectedFieldViolations(withMgr(), (() => { const s = archiveC1(withMgr()); s.permissions = s.permissions.map((p) => (p.id === 'clients.delete' ? { ...p, roles: [...p.roles, 'crew'] } : p)); return s; })(), 'crew', CREW).includes(WORDS));
+  // RESTORE is the same key, and so is rewriting an archived customer's stamps.
+  const restored = (from) => { const s = JSON.parse(JSON.stringify(from)); Object.assign(s.clients[0], { statusOverride: null, archivedAt: null, archivedBy: null, statusBeforeArchive: null }); return s; };
+  ok('restoring needs clients.delete too', protectedFieldViolations(archiveC1(revokedMgr()), restored(archiveC1(revokedMgr())), 'manager', MGR).includes(WORDS));
+  ok('  ...which a holder has', protectedFieldViolations(archiveC1(withMgr()), restored(archiveC1(withMgr())), 'manager', MGR).length === 0);
+  const restamp = (from) => { const s = JSON.parse(JSON.stringify(from)); s.clients[0].archivedBy = CREW; return s; };
+  ok("an archived customer's stamps are not ordinary data", protectedFieldViolations(archiveC1(withMgr()), restamp(archiveC1(withMgr())), 'crew', CREW).includes(WORDS));
+  // EDITING stays ordinary data (never gated as a delete) — proves it is not over-gated. CREATING
+  // a customer is "Create / edit customers" since 2026-10-03 (the Customers import brings in ~750
+  // of them): crew hold no such key (and a crew save is a merge that drops a new customer anyway);
+  // a manager holds it by default. test-customer-import-guard.mjs drives it at the save route.
+  ok('crew CANNOT create a customer (clients.edit, 2026-10-03)', protectedFieldViolations(withMgr(), addClient(withMgr()), 'crew', CREW).includes('add a customer'));
+  ok('a default manager CAN create a customer (holds clients.edit)', protectedFieldViolations(withMgr(), addClient(withMgr()), 'manager', MGR).length === 0);
   ok('crew CAN edit a customer field (ordinary data)', protectedFieldViolations(withMgr(), editClient(withMgr()), 'crew', CREW).length === 0);
 
   // Fingerprint: a removal MUST move the digest, or the guard is silently skipped.
   ok('fingerprint CHANGES on a customer removal (even a crew-less account)', protectedFingerprint(withMgr()) !== protectedFingerprint(removeC1(withMgr())));
+  ok('fingerprint CHANGES on an archive (so the archive rule runs)', protectedFingerprint(withMgr()) !== protectedFingerprint(archiveC1(withMgr())));
   ok('fingerprint CHANGES on a customer add (accepted cost of a snapshot digest)', protectedFingerprint(withMgr()) !== protectedFingerprint(addClient(withMgr())));
   ok('fingerprint IGNORES a customer field rename (stays off the hot path)', protectedFingerprint(withMgr()) === protectedFingerprint(editClient(withMgr())));
 }
@@ -642,12 +673,35 @@ ok('no protected change escapes the fingerprint',
     (s) => { s.payrollLines = s.payrollLines.slice(1); }, 'crew', CREW);
   allowed('a manager (payroll.edit) CAN add a payroll line for a crew member',
     (s) => s.payrollLines.push(line({ id: 'plZ', userId: CREW, category: 'bonus', amount: 200 })), 'manager', MGR);
-  allowed('a manager MAY add their OWN payroll line (owner: no self-line carve-out)',
+  // MTA W1-G (2026-09-27): your OWN pay line is owner-ONLY, EVERY category — this SUPERSEDES
+  // the 2026-09-23 "no self-line carve-out" call for a non-owner (a reimbursement/bonus typed
+  // straight onto your own row was the way around HR's own-approval rule, spec §8.6). Admin is
+  // refused too (only role owner passes). RED pre-fix: the guard allowed a manager's own line.
+  blocked('a MANAGER (payroll.edit) CANNOT add their OWN payroll line (owner-only, MTA W1-G)', 'add or change your own pay line',
     (s) => s.payrollLines.push(line({ id: 'plS', userId: MGR, category: 'bonus', amount: 200 })), 'manager', MGR);
+  blocked('an ADMIN CANNOT add their OWN payroll line (owner-only; was allowed by role)', 'add or change your own pay line',
+    (s) => s.payrollLines.push(line({ id: 'plAX', userId: ADMIN, category: 'bonus', amount: 200 })), 'admin', ADMIN);
+  for (const category of ['bonus', 'special', 'reimbursement', 'tip', 'deduction']) {
+    blocked(`a manager CANNOT add their OWN ${category} line (every category)`, 'add or change your own pay line',
+      (s) => s.payrollLines.push(line({ id: `plOwn_${category}`, userId: MGR, category, amount: 25, taxable: category !== 'reimbursement' })), 'manager', MGR);
+  }
+  blocked('a manager CANNOT edit their OWN payroll line amount', 'add or change your own pay line',
+    (s) => { s.payrollLines.find((l) => l.userId === MGR).amount = 9999; }, 'manager', MGR);
+  blocked('a manager CANNOT remove their OWN payroll line', 'add or change your own pay line',
+    (s) => { s.payrollLines = s.payrollLines.filter((l) => l.userId !== MGR); }, 'manager', MGR);
+  allowed('the OWNER MAY add their own payroll line (the top tier is exempt)',
+    (s) => s.payrollLines.push(line({ id: 'plSelfO', userId: OWNER, category: 'bonus', amount: 200 })), 'owner', OWNER);
+  ok("a userName stamp on the caller's OWN kept line is NOT an own-line change (DELETE_USER-neutral)",
+    v((s) => { s.payrollLines.find((l) => l.userId === MGR).userName = 'X'; }, 'manager', MGR).length === 0);
   allowed('owner CAN add a payroll line', (s) => s.payrollLines.push(line({ id: 'plO', userId: CREW, category: 'bonus', amount: 1 })), 'owner', OWNER);
-  allowed('admin CAN add a payroll line (by role)', (s) => s.payrollLines.push(line({ id: 'plA', userId: CREW, category: 'bonus', amount: 1 })), 'admin', ADMIN);
-  allowed("crew GRANTED payroll.edit MAY add a line (the grant's intent)",
-    (s) => s.payrollLines.push(line({ id: 'plG', userId: CREW, category: 'bonus', amount: 10 })), 'crew', CREW, crewGranted('payroll.edit'));
+  // CS-003 (2026-10-03): an Admin needs payroll.edit like everyone but the Super Admin (the
+  // Payroll screen gates them on it; Q24 gives an Admin no payroll key). Was allowed by role.
+  blocked('CS-003: an admin WITHOUT payroll.edit CANNOT add a payroll line', 'add or change a payroll line',
+    (s) => s.payrollLines.push(line({ id: 'plA', userId: CREW, category: 'bonus', amount: 1 })), 'admin', ADMIN);
+  allowed('  ...an admin GIVEN payroll.edit CAN', (s) => s.payrollLines.push(line({ id: 'plA2', userId: CREW, category: 'bonus', amount: 1 })), 'admin', ADMIN,
+    tweak(money(), (s) => { s.userPermissionOverrides = [{ userId: ADMIN, grants: ['payroll.edit'], revokes: [] }]; }));
+  allowed("crew GRANTED payroll.edit MAY add a line for ANOTHER member (the grant's intent)",
+    (s) => s.payrollLines.push(line({ id: 'plG', userId: MGR, category: 'bonus', amount: 10 })), 'crew', CREW, crewGranted('payroll.edit'));
   allowed('an hr.edit holder MAY add a special-service line (HR category)',
     (s) => s.payrollLines.push(line({ id: 'plSp', userId: MGR, category: 'special', amount: 75 })), 'crew', CREW, crewGranted('hr.edit'));
   allowed('an hr.edit holder MAY add a reimbursement line (HR category)',
@@ -674,12 +728,20 @@ ok('no protected change escapes the fingerprint',
   allowed("an hr.edit holder (no payroll.edit) CAN approve ANOTHER member's reimbursement incl. its pay line",
     (s) => { const r = s.reimbursements.find((x) => x.userId === MGR); r.status = 'approved'; r.payrollLineId = 'plH'; s.payrollLines.push(line({ id: 'plH', userId: MGR, category: 'reimbursement', amount: 60, taxable: false })); }, 'crew', CREW, crewGranted('hr.edit'));
   allowed('a manager (hr.edit) CAN reject a reimbursement', (s) => { s.reimbursements[0].status = 'rejected'; }, 'manager', MGR);
-  blocked('a manager CANNOT approve their OWN reimbursement (owner/admin only)', 'approve your own reimbursement',
+  blocked('a manager CANNOT approve their OWN reimbursement (owner only)', 'approve your own reimbursement',
     (s) => { const r = s.reimbursements.find((x) => x.userId === MGR); r.status = 'approved'; r.payrollLineId = 'plM2'; s.payrollLines.push(line({ id: 'plM2', userId: MGR, category: 'reimbursement', amount: 60, taxable: false })); }, 'manager', MGR);
   blocked('an hr.edit holder CANNOT approve their OWN reimbursement', 'approve your own reimbursement',
     (s) => { const r = s.reimbursements.find((x) => x.userId === CREW); r.status = 'approved'; r.payrollLineId = 'plC2'; s.payrollLines.push(line({ id: 'plC2', userId: CREW, category: 'reimbursement', amount: 40, taxable: false })); }, 'crew', CREW, crewGranted('hr.edit'));
-  allowed('an admin CAN approve their OWN reimbursement (by role, never tightened)',
+  // MTA W1-G (2026-09-27): approving your OWN reimbursement is now owner-ONLY (was owner/admin).
+  // RED pre-fix: an admin's own-approval was allowed. (The minted own reimbursement line is also
+  // an own pay line, refused above; either violation refuses the save.)
+  blocked('an ADMIN CANNOT approve their OWN reimbursement (owner-only now, MTA W1-G)', 'approve your own reimbursement',
     (s) => { const r = s.reimbursements.find((x) => x.userId === ADMIN); r.status = 'approved'; r.payrollLineId = 'plAd'; s.payrollLines.push(line({ id: 'plAd', userId: ADMIN, category: 'reimbursement', amount: 30, taxable: false })); }, 'admin', ADMIN);
+  {
+    const withOwnerReimb = () => { const s = money(); s.reimbursements.push({ id: 'rmb_own', userId: OWNER, amount: 15, status: 'pending', periodKey: '2026-09-01' }); return s; };
+    allowed('the OWNER CAN approve their OWN reimbursement (top tier exempt)',
+      (s) => { const r = s.reimbursements.find((x) => x.id === 'rmb_own'); r.status = 'approved'; r.payrollLineId = 'plOwnR'; s.payrollLines.push(line({ id: 'plOwnR', userId: OWNER, category: 'reimbursement', amount: 15, taxable: false })); }, 'owner', OWNER, withOwnerReimb());
+  }
   allowed("crew GRANTED hr.edit MAY submit a reimbursement (the grant's intent)",
     (s) => s.reimbursements.push({ id: 'rG', userId: MGR, amount: 15, status: 'pending', periodKey: '2026-09-01' }), 'crew', CREW, crewGranted('hr.edit'));
   ok('the committed matrix decides: granting hr.edit to crew in the same save does not admit the reimbursement',
@@ -733,7 +795,13 @@ ok('no protected change escapes the fingerprint',
     (s) => payRow(s, MGR, { salaryPerPeriod: 9999 }), 'manager', MGR, (() => { const s = money(); s.userPermissionOverrides = [{ userId: MGR, grants: ['payroll.rates.edit'], revokes: [] }]; return s; })());
   blocked('crew CANNOT change their OWN HR record', 'edit your own HR record', (s) => { s.users.find((x) => x.id === CREW).hr = { employeeId: 'EMP-0003', ptoAllowanceDays: 99 }; }, 'crew', CREW);
   allowed('the owner CAN change their own pay', (s) => payRow(s, OWNER, { salaryPerPeriod: 100 }), 'owner', OWNER);
-  allowed('an admin CAN change their own pay (owner/admin by role, never tightened)', (s) => { s.users.find((x) => x.id === ADMIN).pay = { type: 'hourly', hourlyRate: 40 }; }, 'admin', ADMIN);
+  // CS-003 (2026-10-03): an Admin's OWN pay rate takes payroll.rates.edit too (TeamDetail
+  // canEditThisPay asks the key of every role but the Super Admin). Was allowed by role.
+  blocked('CS-003: an admin WITHOUT payroll.rates.edit CANNOT change their own pay', 'change your own pay',
+    (s) => { s.users.find((x) => x.id === ADMIN).pay = { type: 'hourly', hourlyRate: 40 }; }, 'admin', ADMIN);
+  allowed('  ...an admin GIVEN payroll.rates.edit CAN (owner/admin keep their own row, with the key)',
+    (s) => { s.users.find((x) => x.id === ADMIN).pay = { type: 'hourly', hourlyRate: 40 }; }, 'admin', ADMIN,
+    tweak(money(), (s) => { s.userPermissionOverrides = [{ userId: ADMIN, grants: ['payroll.rates.edit'], revokes: [] }]; }));
   allowed('crew CAN edit their own name (cosmetic, free)', (s) => { s.users.find((x) => x.id === CREW).name = 'Renamed'; }, 'crew', CREW);
   blocked("a manager without payroll.rates.edit CANNOT change ANOTHER member's pay", 'change another member\'s pay',
     (s) => payRow(s, CREW, { hourlyRate: 5 }), 'manager', MGR, (() => { const s = money(); s.userPermissionOverrides = [{ userId: MGR, grants: [], revokes: ['payroll.rates.edit'] }]; return s; })());
@@ -741,6 +809,127 @@ ok('no protected change escapes the fingerprint',
   ok('fingerprint CHANGES on an OWN pay edit (so the guard fires)', fp(money()) !== fp(tweak(money(), (s) => payRow(s, CREW, { hourlyRate: 999 }))));
   ok('fingerprint CHANGES on an HR-record edit', fp(money()) !== fp(tweak(money(), (s) => { s.users.find((x) => x.id === CREW).hr = { employeeId: 'X' }; })));
   ok('fingerprint IGNORES an own name / phone edit (cosmetic, stays off the read)', fp(money()) === fp(tweak(money(), (s) => { const u = s.users.find((x) => x.id === CREW); u.name = 'Renamed'; u.phone = '555-0000'; })));
+
+  // ── closed payroll periods + the pay schedule (MTA W2-L, 2026-09-27) ─────────
+  // A pay line whose periodKey is a CLOSED run's period_key can't be added / changed / removed
+  // by ANYONE (owner included — the run already priced it); and the pay cadence / week-start
+  // can't change once any run exists. Both need the closed-run facts the route reads only when
+  // a line's money or those opsSettings fields moved (§5.2); a read that FAILED fails closed.
+  // The money() fixture's lines are all in '2026-09-01', so treat that as the one closed period.
+  // RED pre-fix: the guard had no closed-period rule, so owner (and everyone) could edit paid pay.
+  const runsFact = (periodKeys) => ({ payrollRuns: { ok: true, periodKeys, anyRun: periodKeys.length > 0 } });
+  const closedRuns = runsFact(['2026-09-01']);
+  const openRuns = runsFact([]);
+  const addClosedLine = (s) => s.payrollLines.push(line({ id: 'plClosed', userId: CREW, category: 'bonus', amount: 100 }));       // periodKey defaults to '2026-09-01'
+  const addOpenLine = (s) => s.payrollLines.push(line({ id: 'plOpen', userId: CREW, category: 'bonus', amount: 100, periodKey: '2026-10-01' }));
+  const NEEDC = 'change pay in a closed payroll period';
+  const NEEDS = 'change the pay schedule after a payroll is closed';
+  for (const [role, self] of [['owner', OWNER], ['manager', MGR], ['admin', ADMIN], ['crew', CREW]]) {
+    ok(`W2-L: adding a pay line in a CLOSED period is refused for ${role}`,
+      protectedFieldViolations(money(), tweak(money(), addClosedLine), role, self, closedRuns).includes(NEEDC));
+  }
+  ok('W2-L: editing a line IN a closed period is refused (owner too)',
+    protectedFieldViolations(money(), tweak(money(), (s) => { s.payrollLines[0].amount = 9999; }), 'owner', OWNER, closedRuns).includes(NEEDC));
+  ok('W2-L: removing a line from a closed period is refused (owner too)',
+    protectedFieldViolations(money(), tweak(money(), (s) => { s.payrollLines = s.payrollLines.slice(1); }), 'owner', OWNER, closedRuns).includes(NEEDC));
+  ok('W2-L: a line in an OPEN period is NOT refused by the closed-period rule (owner)',
+    !protectedFieldViolations(money(), tweak(money(), addOpenLine), 'owner', OWNER, closedRuns).includes(NEEDC));
+  ok('W2-L: a userName stamp on a closed-period line is NOT a closed-period change (DELETE_USER-neutral)',
+    !protectedFieldViolations(money(), tweak(money(), (s) => { s.payrollLines[0].userName = 'X'; }), 'owner', OWNER, closedRuns).includes(NEEDC));
+  ok('W2-L: changing the pay cadence once a run exists is refused (owner too)',
+    protectedFieldViolations(money(), tweak(money(), (s) => { s.opsSettings.payPeriodCadence = 'weekly'; }), 'owner', OWNER, closedRuns).includes(NEEDS));
+  ok('W2-L: changing the pay week start once a run exists is refused (owner too)',
+    protectedFieldViolations(money(), tweak(money(), (s) => { s.opsSettings.payWeekStartDay = 3; }), 'owner', OWNER, closedRuns).includes(NEEDS));
+  ok('W2-L: changing the cadence BEFORE any run exists is allowed',
+    !protectedFieldViolations(money(), tweak(money(), (s) => { s.opsSettings.payPeriodCadence = 'weekly'; }), 'owner', OWNER, openRuns).includes(NEEDS));
+  ok('W2-L: the OT multiplier is NOT frozen by the schedule rule (only cadence/week-start are)',
+    !protectedFieldViolations(money(), tweak(money(), (s) => { s.opsSettings.otMultiplier = 2; }), 'owner', OWNER, closedRuns).includes(NEEDS));
+  ok('W2-L: a FAILED runs read fails closed on a closed-period-eligible change',
+    protectedFieldViolations(money(), tweak(money(), addClosedLine), 'owner', OWNER, { payrollRuns: { ok: false } }).length > 0);
+  ok('W2-L: with NO runs fact (backward compat) the closed-period/schedule rules do not fire',
+    !protectedFieldViolations(money(), tweak(money(), addOpenLine), 'owner', OWNER).some((x) => x === NEEDC || x === NEEDS));
+}
+
+// ── a location's manager (client.supervisorId) is owner/admin only (MTA W1-G, 2026-09-27) ──
+// Assigning / changing / clearing which manager oversees a customer sets scope() for time
+// approval (spec §2), so it is authority: owner or admin BY ROLE, never a key — a manager
+// holding ops.edit + clients.edit (both theirs by default) is STILL refused. RED pre-fix:
+// the guard had no supervisor check, so any caller could set it, and the fingerprint didn't
+// move on a supervisor-only change (the guard would have silently skipped it).
+{
+  const MGR = 'u_mgr';
+  ok('fixture: a manager holds ops.edit + clients.edit by default (so the refusal is BY ROLE, not lack of key)',
+    PERMISSIONS['ops.edit'].defaultRoles.includes('manager') && PERMISSIONS['clients.edit'].defaultRoles.includes('manager'));
+  const world = () => ({
+    ...base(),
+    permissions: seedPermissions(),
+    users: [...base().users, { id: MGR, role: 'manager', status: 'active', name: 'Mgr' }],
+    clients: [{ id: 'c1', standingCrewIds: [], supervisorId: null }, { id: 'c2', standingCrewIds: [], supervisorId: OWNER }],
+  });
+  const tweak = (s, fn) => { const c = JSON.parse(JSON.stringify(s)); fn(c); return c; };
+  const v = (fn, role, self, from = world()) => protectedFieldViolations(from, tweak(from, fn), role, self);
+  const NEED = "assign a location's manager";
+  const setSup = (s) => { s.clients[0].supervisorId = MGR; };
+  const changeSup = (s) => { s.clients[1].supervisorId = MGR; };
+  const clearSup = (s) => { s.clients[1].supervisorId = null; };
+  ok('🔴 a MANAGER (holding ops.edit + clients.edit) CANNOT assign a location manager', v(setSup, 'manager', MGR).includes(NEED));
+  ok('🔴  ...nor change one', v(changeSup, 'manager', MGR).includes(NEED));
+  ok('🔴  ...nor clear one', v(clearSup, 'manager', MGR).includes(NEED));
+  ok('crew CANNOT assign a location manager', v(setSup, 'crew', CREW).includes(NEED));
+  ok('  ...not even granted clients.edit + ops.edit + time.config (role, not key)',
+    v(setSup, 'crew', CREW, (() => { const s = world(); s.userPermissionOverrides = [{ userId: CREW, grants: ['clients.edit', 'ops.edit', 'time.config'], revokes: [] }]; return s; })()).includes(NEED));
+  ok('an ADMIN CAN assign a location manager (by role)', v(setSup, 'admin', ADMIN).length === 0);
+  ok('  ...change one', v(changeSup, 'admin', ADMIN).length === 0);
+  ok('  ...and clear one', v(clearSup, 'admin', ADMIN).length === 0);
+  ok('the OWNER CAN assign a location manager', v(setSup, 'owner', OWNER).length === 0);
+  ok('creating a customer WITH a supervisor is refused for a manager', v((s) => { s.clients.push({ id: 'c3', standingCrewIds: [], supervisorId: MGR }); }, 'manager', MGR).includes(NEED));
+  ok('creating a customer with NO supervisor is fine for a manager (ordinary data)', v((s) => { s.clients.push({ id: 'c4', standingCrewIds: [] }); }, 'manager', MGR).length === 0);
+  ok("clearing a supervisor to '' (not null) is still a change a manager can't make", v((s) => { s.clients[1].supervisorId = ''; }, 'manager', MGR).includes(NEED));
+  ok('an ordinary customer field edit (rename) is NOT a supervisor change (crew)', v((s) => { s.clients[0].name = 'Renamed'; }, 'crew', CREW).length === 0);
+  // fingerprint: a supervisor-only change moves the digest, so the guard actually fires
+  ok('🔴 fingerprint CHANGES when ONLY a supervisor changes (else the guard silently skips)',
+    protectedFingerprint(world()) !== protectedFingerprint(tweak(world(), setSup)));
+  ok('fingerprint CHANGES when a supervisor is cleared', protectedFingerprint(world()) !== protectedFingerprint(tweak(world(), clearSup)));
+  ok('fingerprint IGNORES a customer rename with the supervisor unchanged (stays off the hot path)',
+    protectedFingerprint(world()) === protectedFingerprint(tweak(world(), (s) => { s.clients[0].name = 'Renamed'; })));
+}
+
+// ── MTA W1-G: DELETE_USER's supervisor cascade is authority-neutral ──────────
+// deleteCascade.sweepUserOrphans (DELETE_USER) sets supervisorId -> null on every customer
+// the removed member supervised. A manager holding settings.team.edit may remove ANOTHER
+// manager (teamLimits: only Admin/Super Admin targets have the role floor), so that removal
+// save carries a supervisorId -> null cascade from a non-owner/admin. Clearing a supervisor
+// whose user is GONE from next.users is NOT an assignment (the removal itself is guarded by
+// the Team rules); setting/pointing at a real id, or clearing one whose supervisor is still
+// on the roster, stay owner/admin only. RED pre-fix: the guard refused the cascade clear.
+{
+  const MGR = 'u_mgr'; const MGR2 = 'u_mgr2';
+  const world2 = () => ({
+    ...base(),
+    permissions: seedPermissions(),
+    users: [
+      { id: OWNER, role: 'owner', status: 'active', name: 'Owner', email: 'owner@cs.co' },
+      { id: MGR, role: 'manager', status: 'active', name: 'Mgr', email: 'mgr@cs.co' },
+      { id: MGR2, role: 'manager', status: 'active', name: 'Mgr2', email: 'mgr2@cs.co' },
+    ],
+    clients: [{ id: 'c1', standingCrewIds: [], supervisorId: MGR2 }, { id: 'c2', standingCrewIds: [], supervisorId: null }],
+  });
+  const tweak = (s, fn) => { const c = JSON.parse(JSON.stringify(s)); fn(c); return c; };
+  const v2 = (fn, role, self, from = world2()) => protectedFieldViolations(from, tweak(from, fn), role, self);
+  const NEED = "assign a location's manager";
+  const removeSweep = (s) => { s.users = s.users.filter((u) => u.id !== MGR2); s.clients[0].supervisorId = null; };
+  ok('🔴 a MANAGER removing a MANAGER cascade-clears their supervised customer WITHOUT a supervisor violation (DELETE_USER sweep)',
+    !v2(removeSweep, 'manager', MGR).includes(NEED));
+  ok('🔴  ...and the whole removal save is allowed for the manager', v2(removeSweep, 'manager', MGR).length === 0);
+  ok('a MANAGER clearing a supervisor whose user is STILL on the team is refused (a real manual clear)',
+    v2((s) => { s.clients[0].supervisorId = null; }, 'manager', MGR).includes(NEED));
+  ok('a MANAGER pointing a customer at THEMSELVES while removing another is refused',
+    v2((s) => { s.users = s.users.filter((u) => u.id !== MGR2); s.clients[0].supervisorId = null; s.clients[1].supervisorId = MGR; }, 'manager', MGR).includes(NEED));
+  ok('a MANAGER cascade-clear is refused if the "removed" supervisor is actually still on the roster',
+    v2((s) => { s.clients[0].supervisorId = null; /* MGR2 NOT removed */ }, 'manager', MGR).includes(NEED));
+  ok('the owner can still set a supervisor (unaffected)', v2((s) => { s.clients[1].supervisorId = MGR; }, 'owner', OWNER).length === 0);
+  ok('crew removing a supervising member also cascade-clears without a supervisor violation (if the removal is theirs to make)',
+    !v2(removeSweep, 'crew', CREW, (() => { const s = world2(); s.userPermissionOverrides = [{ userId: CREW, grants: ['settings.team.edit'], revokes: [] }]; s.users.push({ id: CREW, role: 'crew', status: 'active', name: 'Crew', email: 'crew@cs.co' }); return s; })()).includes(NEED));
 }
 
 // ── CS-331: a grant is valid only when the caller holds that permission (owner (b) 2026-09-24) ──

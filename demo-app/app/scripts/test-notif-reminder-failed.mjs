@@ -1,4 +1,4 @@
-// NOTIF-01 regression, reminderFailed is emitted (reducer UPDATE_REMINDER_EVENT) and
+// NOTIF-01 regression, reminderFailed is emitted (the reminders cron, api/reminders/run.js alertExhausted, since 2026-10-19) and
 // seeded on, but had NO catalog entry in NOTIFICATION_GROUPS, so isNotificationVisibleForUser
 // returned false for everyone and the office alert reached nobody. Assert it now delivers to
 // an opted-in manager and stays off crew's bell. Pure client-side (no app/api).

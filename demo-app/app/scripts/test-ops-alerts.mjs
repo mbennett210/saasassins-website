@@ -6,7 +6,7 @@ import {
   getDueShiftAlerts, getDueChecklistReminders, getDueInspectionReminders,
   opsAlertId, OPS_ALERT_DEFAULTS, opsAlertReadWindows,
   INSPECTION_LOOKBACK_DAYS, MAX_SHIFT_LOOKBACK_HOURS, MAX_INSPECTION_REMINDER_DAYS,
-  shiftLookbackHours, inspectionReminderDays, isReminderClient,
+  shiftLookbackHours, inspectionReminderDays,
   SEED_JOB_ID_RE, SEED_CLIENT_ID_RE, isSeedJobId, isSeedClientId,
   liveChecklistIdsFrom,
 } from '../src/lib/opsAlerts.js';
@@ -14,6 +14,8 @@ import {
 // literal (THE LAW II.3): seedId('j'|'cl', k) is what seed.js writes; newId('j'|'cl')
 // is what the app writes for a real record.
 import { newId, seedId } from '../src/lib/ids.js';
+// CS-683: the walkers' "is this a building we clean now?" is lib/customerStatus's ONE rule.
+import { isActiveBuilding } from '../src/lib/customerStatus.js';
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass += 1; else { fail += 1; console.error('  ✗ ' + msg); } };
@@ -21,6 +23,9 @@ const ok = (cond, msg) => { if (cond) pass += 1; else { fail += 1; console.error
 const MIN = 60 * 1000;
 const DAY = 24 * 60 * MIN;
 const NOW = new Date('2026-09-18T20:00:00.000Z').getTime();
+// ALR-11: THE missed-shift mark, from the source default — every timing below is built
+// from it, so retuning the setting retunes the suite rather than breaking it.
+const MARK = OPS_ALERT_DEFAULTS.missedAfterStartMins;
 const at = (minsFromNow) => new Date(NOW + minsFromNow * MIN).toISOString();
 const iso = (ms) => new Date(ms).toISOString();
 // A job scheduled to start `startMinsAgo` before now and run `lenMins`.
@@ -33,16 +38,16 @@ const kinds = (due) => due.map((d) => d.kind).sort();
 
 // ── LATE: past start + grace, within the shift, nobody clocked in ─────────────
 {
-  const due = getDueShiftAlerts({ jobs: [job('j_late', 20)], timeEntries: [], now: NOW });
-  ok(due.length === 1 && due[0].kind === 'shiftLate', 'A1: a shift 20m past start with no clock-in raises shiftLate');
-  ok(due[0].id === opsAlertId('shiftLate', 'j_late'), 'A2: the alert carries the deterministic per-(kind,job) id');
+  const due = getDueShiftAlerts({ jobs: [job('j_late', MARK + 10)], timeEntries: [], now: NOW });
+  ok(due.length === 1 && due[0].kind === 'shiftMissed', 'A1: a shift past the mark with no clock-in raises shiftMissed, mid-shift');
+  ok(due[0].id === opsAlertId('shiftMissed', 'j_late'), 'A2: the alert carries the deterministic per-(kind,job) id');
   ok(due[0].jobId === 'j_late' && due[0].clientId === 'cl1', 'A3: the alert carries job + account routing context');
 }
 
 // ── NOT late yet: within the grace window ─────────────────────────────────────
 {
-  const due = getDueShiftAlerts({ jobs: [job('j_grace', 5)], timeEntries: [], now: NOW }); // 5m < 10m default grace
-  ok(due.length === 0, 'B1: a shift only 5m past start (inside the 10m grace) does not alert');
+  const due = getDueShiftAlerts({ jobs: [job('j_grace', MARK - 5)], timeEntries: [], now: NOW });
+  ok(due.length === 0, 'B1: a shift still inside the missed-shift mark does not alert');
 }
 
 // ── COVERED: someone clocked in → never late or missed ────────────────────────
@@ -54,10 +59,10 @@ const kinds = (due) => due.map((d) => d.kind).sort();
 
 // ── MISSED: past the whole window + grace, no clock-in → missed (not late) ─────
 {
-  // start 200m ago, 90m long → ended 110m ago, well past the 15m missed grace.
+  // start 200m ago, 90m long → ended 110m ago.
   const due = getDueShiftAlerts({ jobs: [job('j_missed', 200)], timeEntries: [], now: NOW });
   ok(due.length === 1 && due[0].kind === 'shiftMissed', 'D1: a fully-elapsed uncovered shift raises shiftMissed');
-  ok(!kinds(due).includes('shiftLate'), 'D2: a missed shift does not also raise shiftLate on the same tick');
+  ok(kinds(due).join(',') === 'shiftMissed', 'D2: ALR-11 — one kind, never a second alert on the same tick');
 }
 
 // ── BACK-BLAST GUARD: a shift older than the lookback window never alerts ──────
@@ -80,18 +85,18 @@ const kinds = (due) => due.map((d) => d.kind).sort();
 
 // ── DEDUP: an already-fired id is not returned again ──────────────────────────
 {
-  const jobs = [job('j_dedup', 20)];
-  const fired = new Set([opsAlertId('shiftLate', 'j_dedup')]);
+  const jobs = [job('j_dedup', MARK + 10)];
+  const fired = new Set([opsAlertId('shiftMissed', 'j_dedup')]);
   const due = getDueShiftAlerts({ jobs, timeEntries: [], firedIds: fired, now: NOW });
-  ok(due.length === 0, 'G1: a shift whose shiftLate already fired is not re-raised');
+  ok(due.length === 0, 'G1: a shift whose shiftMissed already fired is not re-raised');
 }
 
 // ── SETTINGS override: a tuned grace is honored ───────────────────────────────
 {
   const jobs = [job('j_tuned', 5)]; // 5m past start
-  const strict = getDueShiftAlerts({ jobs, timeEntries: [], now: NOW, settings: { lateAlertGraceMins: 2 } });
-  ok(strict.length === 1 && strict[0].kind === 'shiftLate', 'H1: a 2m late grace makes a 5m-late shift alert (operator-tunable)');
-  ok(OPS_ALERT_DEFAULTS.lateAlertGraceMins === 10, 'H2: the shipped default late grace is 10 minutes');
+  const strict = getDueShiftAlerts({ jobs, timeEntries: [], now: NOW, settings: { missedAfterStartMins: 2 } });
+  ok(strict.length === 1 && strict[0].kind === 'shiftMissed', 'H1: a 2m mark makes a 5m-late shift alert (operator-tunable)');
+  ok(OPS_ALERT_DEFAULTS.missedAfterStartMins === 30, 'H2: the shipped default mark is 30 minutes (ALR-11)');
 }
 
 // ── #3 CHECKLIST reminders — PER CLEANER (CS-404) ─────────────────────────────
@@ -128,7 +133,7 @@ const kinds = (due) => due.map((d) => d.kind).sort();
   const looseOld = getDueChecklistReminders({ jobs: [j], clientsById: boundClient, checklists: [{ ...doneRow, job_id: null, performed_at: at(-(90 + 19 * 60)) }], now: NOW });
   ok(looseOld.length === 1, 'I3e: …but not one performed outside the 18h match window');
 
-  const shiftFired = new Set([opsAlertId('shiftLate', 'j_cl')]);
+  const shiftFired = new Set([opsAlertId('shiftMissed', 'j_cl')]);
   const suppressed = getDueChecklistReminders({ jobs: [j], clientsById: boundClient, checklists: [], firedIds: shiftFired, now: NOW });
   ok(suppressed.length === 0, 'I4: a job already flagged late/missed does not also raise a checklist reminder');
 
@@ -290,12 +295,12 @@ const kinds = (due) => due.map((d) => d.kind).sort();
 // The client tick + cron now pass the server's covered-job set (every real clock-in in
 // the window) instead of a capped slice of punches, and read the SAME windows.
 {
-  const jobs = [job('j_cov', 30), job('j_open', 30)];
+  const jobs = [job('j_cov', MARK + 10), job('j_open', MARK + 10)];
   const viaSet = getDueShiftAlerts({ jobs, coveredJobIds: new Set(['j_cov']), now: NOW });
-  ok(viaSet.length === 1 && viaSet[0].jobId === 'j_open', 'K1: a clean in the covered-job set is not late; one missing from it is');
+  ok(viaSet.length === 1 && viaSet[0].jobId === 'j_open', 'K1: a clean in the covered-job set is not missed; one missing from it is');
   const viaSetEmptyEntries = getDueShiftAlerts({ jobs, coveredJobIds: new Set(['j_cov', 'j_open']), timeEntries: [], now: NOW });
   ok(viaSetEmptyEntries.length === 0, 'K2: the covered-job set wins over (empty) timeEntries');
-  const viaEntries = getDueShiftAlerts({ jobs, timeEntries: [{ job_id: 'j_cov', clock_in_at: at(-25) }], now: NOW });
+  const viaEntries = getDueShiftAlerts({ jobs, timeEntries: [{ job_id: 'j_cov', clock_in_at: at(-(MARK + 5)) }], now: NOW });
   ok(viaEntries.length === 1 && viaEntries[0].jobId === 'j_open', 'K3: without a set, coverage still comes from punches (unchanged)');
 }
 {
@@ -328,7 +333,9 @@ const kinds = (due) => due.map((d) => d.kind).sort();
   ok(inspectionReminderDays(huge) === MAX_INSPECTION_REMINDER_DAYS && MAX_INSPECTION_REMINDER_DAYS < INSPECTION_LOOKBACK_DAYS, 'M3: the inspection cadence is capped inside the latest-inspection look-back');
   const lapsed = getDueInspectionReminders({ clients: [{ id: 'cl1' }], inspections: [{ client_id: 'cl1', performed_at: iso(NOW - 365.5 * DAY) }], now: NOW, settings: huge });
   ok(lapsed.length === 1, 'M3b: …so even at the cap an account can still come due (a 900-day cadence could never fire)');
-  ok(isReminderClient({ id: 'a' }) && isReminderClient({ id: 'b', status: 'active' }) && !isReminderClient({ id: 'c', status: 'inactive' }) && !isReminderClient(null), 'M4: every account not explicitly inactive is watched');
+  ok(isActiveBuilding({ id: 'a' }) && isActiveBuilding({ id: 'b', statusOverride: 'active' }) && !isActiveBuilding({ id: 'c', statusOverride: 'inactive' })
+    && !isActiveBuilding({ id: 'd', statusOverride: 'archived' }) && !isActiveBuilding({ id: 'e', status: 'inactive' }) && !isActiveBuilding(null),
+  'M4: every account not marked Inactive or Archived (the status menu’s statusOverride, or the retired status) is watched (CS-683)');
 }
 
 // ── SEED-DATA SKIP (CS-011 / CS-030) — PARTIAL as of 2026-09-26 ──────────────────
@@ -356,22 +363,22 @@ const kinds = (due) => due.map((d) => d.kind).sort();
   ok(isSeedClientId(seedClient) && SEED_CLIENT_ID_RE.test(seedClient), 'N4: cl_seed_* is a seed client id');
   ok(!isSeedClientId(realClient), 'N5: a real newId(\'cl\') client id is NOT a seed client id');
 
-  // Shift (late/missed): as of 2026-09-26 a seed job DOES alert (owner call — the client
+  // The missed-shift alert: as of 2026-09-26 a seed job DOES alert (owner call — the client
   // demo must prove missed-clean notifications reach the mobile app). Checklist +
   // inspection reminders still skip the seed book (N10, N12 below).
   {
-    const due = getDueShiftAlerts({ jobs: [job(seedJob, 20)], timeEntries: [], now: NOW });
-    ok(due.length === 1 && due[0].kind === 'shiftLate',
-      'N6: a SEED job (j_seed_*) 20m late now RAISES shiftLate (skip removed 2026-09-26)');
+    const due = getDueShiftAlerts({ jobs: [job(seedJob, MARK + 10)], timeEntries: [], now: NOW });
+    ok(due.length === 1 && due[0].kind === 'shiftMissed',
+      'N6: a SEED job (j_seed_*) past the mark now RAISES shiftMissed (skip removed 2026-09-26)');
   }
   {
-    const due = getDueShiftAlerts({ jobs: [job(bkseedJob, 20)], timeEntries: [], now: NOW });
-    ok(due.length === 1 && due[0].kind === 'shiftLate',
-      'N7: a SEED job (j_bkseed_*) 20m late now RAISES shiftLate');
+    const due = getDueShiftAlerts({ jobs: [job(bkseedJob, MARK + 10)], timeEntries: [], now: NOW });
+    ok(due.length === 1 && due[0].kind === 'shiftMissed',
+      'N7: a SEED job (j_bkseed_*) past the mark now RAISES shiftMissed');
   }
   {
-    const due = getDueShiftAlerts({ jobs: [job(realJob, 20)], timeEntries: [], now: NOW });
-    ok(due.length === 1 && due[0].kind === 'shiftLate', 'N8: a REAL job 20m late still raises shiftLate');
+    const due = getDueShiftAlerts({ jobs: [job(realJob, MARK + 10)], timeEntries: [], now: NOW });
+    ok(due.length === 1 && due[0].kind === 'shiftMissed', 'N8: a REAL job past the mark still raises shiftMissed');
   }
   // A REAL job on a SEED client still alerts — the skip is by JOB id, not client
   // (so a test shift can be run on a fake customer).

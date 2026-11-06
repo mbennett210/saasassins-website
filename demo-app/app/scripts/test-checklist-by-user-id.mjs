@@ -18,7 +18,14 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { opsAlertCopy } from '../src/lib/opsAlertCopy.js';
+import { opsAlertCopy as opsAlertCopyMessages } from '../src/lib/opsAlertCopy.js';
+import { renderText } from '../src/i18n/core.js';
+// CS-193: the alert copy is catalog MESSAGES now, rendered for each recipient in their own
+// language by the fan-out. Read here in English — the catalog's English is the source of truth.
+const opsAlertCopy = (...a) => {
+  const c = opsAlertCopyMessages(...a);
+  return { ...c, title: renderText(c.title, 'en'), body: renderText(c.body, 'en') };
+};
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.resolve(HERE, '..');          // app/
@@ -132,7 +139,15 @@ ok(SOURCES.length > 300, `enumerated the app source (${SOURCES.length} files und
   const keys = readOr(path.join(APP, 'src/data/stubKeys.js'));
   const m = /QC_CHECKLISTS_STUB_KEY\s*=\s*'([^']+)'/.exec(keys);
   ok(!!m, 'STUB KEY: data/stubKeys.js declares QC_CHECKLISTS_STUB_KEY');
-  ok(/_v2$/.test(m ? m[1] : ''), `STUB KEY: it is bumped past the row-shape change (${m ? m[1] : 'missing'}) so every demo browser reseeds`);
+  // v3 (2026-10-03): the row grew `client_submit_id` + `area_completions` (CS-547 / QR-1).
+  // v4 (2026-10-04): the same shape, a new demo story (QR-5's fresh / stale / never areas).
+  // The version is pinned deliberately — a bump has to be a decision somebody made, and
+  // the retired key has to be listed with it, which the next assertions check.
+  ok(/_v4$/.test(m ? m[1] : ''), `STUB KEY: it is bumped past the row change (${m ? m[1] : 'missing'}) so every demo browser reseeds`);
+  ok(/'cleanspace_qc_checklists_stub_v2'/.test(keys), 'STUB KEY: the superseded v2 key is listed as retired so its rows are cleared');
+  // Read INSIDE the retired list: a whole-file match would also find v3 as the live key.
+  const retired = (/RETIRED_STUB_KEYS\s*=\s*\[([\s\S]*?)\]/.exec(keys) || [])[1] || '';
+  ok(/'cleanspace_qc_checklists_stub_v3'/.test(retired), 'STUB KEY: the superseded v3 key is listed in RETIRED_STUB_KEYS so its rows are cleared');
   // Only the declaring file may spell the literal (it also lists the retired keys).
   const literals = SOURCES.filter((p) => !p.endsWith(path.join('data', 'stubKeys.js')) && /cleanspace_qc_checklists_stub/.test(read(p))).map(rel);
   ok(literals.length === 0, `STUB KEY: no other file hardcodes the literal (found: ${literals.join(', ') || 'none'})`);

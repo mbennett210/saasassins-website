@@ -40,7 +40,8 @@ const seedState = () => ({
 
 fake.tables.org_state.push({ organization_id: ORG, state: seedState(), version: 3, min_client_build: null, freeze_strip: [] });
 // The crew's assigned job (public.jobs) — puts c1/s1 in scope for the projection.
-fake.tables.jobs = [{ id: 'j1', organization_id: ORG, data: { id: 'j1', crewIds: ['u_crew'], clientId: 'c1', siteId: 's1' } }];
+// A clean tomorrow: a cleaner's scope is the cleans in the jobs window (CS-677), so the row carries its start.
+fake.tables.jobs = [{ id: 'j1', organization_id: ORG, start_at: new Date(Date.now() + 86400000).toISOString(), data: { id: 'j1', crewIds: ['u_crew'], clientId: 'c1', siteId: 's1', startAt: new Date(Date.now() + 86400000).toISOString() } }];
 
 async function get(token) {
   const req = { method: 'GET', headers: token ? { authorization: `Bearer ${token}` } : {} };

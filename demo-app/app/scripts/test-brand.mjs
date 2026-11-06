@@ -68,7 +68,7 @@ rejects('a domain with a scheme', 'company.domain', 'https://example.com', 'comp
 rejects('an email without a domain', 'company.email', 'office', 'company.email:');
 rejects('an app URL with a path', 'appUrl', 'https://example.com/app', 'appUrl:');
 rejects('an app URL over http', 'appUrl', 'http://example.com', 'appUrl:');
-rejects('a sender without its address', 'email.quotesFrom', 'quotes@example.com', 'email.quotesFrom:');
+rejects('a sender without its address', 'email.authFrom', 'login@example.com', 'email.authFrom:');
 rejects('a value on two lines', 'company.tagline', 'One\nTwo', 'company.tagline:');
 // a Unicode line break ends a line for a pattern's `.` and `$`: the next run would rewrite only part of sw.js's
 // APP_NAME line and leave it broken (CS-394)
@@ -83,6 +83,18 @@ const accepts = (label, key, v) => { const errs = validate(set(clone(), key, v))
 accepts('an ampersand and an apostrophe in a name', 'name', "Smith & O'Neil Cleaning");
 accepts('letters outside ASCII', 'wordmark', 'Nørdrén');
 accepts('a port on the app URL', 'appUrl', 'https://localhost:5213');
+// email.quotesFrom left the packs and IDENTITY: nothing has read it since email moved to Google (Wave 0,
+// 2026-09-29). A pack that still carries it (Forge's pack writer writes it into every new copy) is
+// accepted, and the field goes nowhere; any other unknown email field is still refused.
+accepts("a legacy email.quotesFrom, as Forge's pack writer still writes it", 'email.quotesFrom', 'Acme <quotes@acme.example>');
+rejects('a malformed legacy email.quotesFrom', 'email.quotesFrom', 'quotes@acme.example', 'email.quotesFrom:');
+rejects('an unknown email field', 'email.billingFrom', 'Acme <billing@acme.example>', 'email.billingFrom:');
+ok(ids.every((id) => !('quotesFrom' in (loadBrand(id).brand?.email || {}))), 'no brand pack in the repo carries email.quotesFrom');
+{
+  const legacy = { ...clone(), email: { ...clone().email, quotesFrom: 'Acme <quotes@acme.example>' } };
+  ok(!('quotesFrom' in identityOf(legacy).email) && !identityStrings(legacy).some(([, v]) => v === 'quotes@acme.example'),
+    'a legacy email.quotesFrom reaches neither IDENTITY nor the identity strings');
+}
 // the address line carries the locale the form hints read (CS-392): "City, ST 12345"
 rejects('a city without its state and ZIP', 'company.city', 'Fort Lauderdale', 'company.city:');
 rejects('a state spelled out', 'company.city', 'Portland, Maine 04101', 'company.city:');
@@ -108,13 +120,19 @@ rejects('no lockup', 'logos.lockup', undefined, 'logos.lockup:');
 rejects('a logo file with a path', 'logos.mark.file', '../elsewhere/mark.png', 'logos.mark.file:');
 rejects('a crop box in fractions', 'logos.mark.box', { left: 0.5, top: 0, width: 10, height: 10 }, 'logos.mark.box:');
 rejects('an unknown logo field', 'logos.mark.tint', '#ffffff', 'logos.mark.tint:');
+// the optional colour logo (the client's own logo for light grounds) and the mark's tile choice
+accepts('a colour mark and lockup with a white tile', 'logos', { mark: { file: 'm.png', color: 'm.png', tile: 'white' }, lockup: { file: 'l.png', color: 'l.png' } });
+rejects('a colour file that is jpg (no transparency)', 'logos.mark.color', 'm.jpg', 'logos.mark.color:');
+rejects('tile "white" without a colour mark', 'logos', { mark: { file: 'm.png', tile: 'white' }, lockup: { file: 'l.png' } }, 'logos.mark.tile:');
+rejects('a tile on the lockup (mark-only)', 'logos.lockup.tile', 'white', 'logos.lockup.tile:');
 // loadBrand: the file, its JSON, and its folder
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'test-brand-'));
 try {
   const put = (id, text, logos = true, quote = true) => {
     fs.mkdirSync(path.join(tmp, id), { recursive: true });
     fs.writeFileSync(path.join(tmp, id, 'brand.json'), text);
-    if (logos) for (const k of ['mark', 'lockup']) fs.writeFileSync(path.join(tmp, id, BRAND.logos[k].file), '');
+    // every logo file the active pack names: each one-colour file and, in a colour pack, its colour file too
+    if (logos) for (const k of ['mark', 'lockup']) for (const f of [BRAND.logos[k].file, BRAND.logos[k].color]) if (f) fs.writeFileSync(path.join(tmp, id, f), '');
     if (quote) fs.writeFileSync(path.join(tmp, id, 'quote.html'), `${readQuote(BRAND.id)}\n`);
   };
   put('good', JSON.stringify({ ...clone(), id: 'good' }));
@@ -167,11 +185,13 @@ ok(JSON.stringify(mod.IDENTITY) === JSON.stringify(identityOf(BRAND)), 'the gene
 ok(Object.isFrozen(mod.IDENTITY) && Object.isFrozen(mod.IDENTITY.company) && Object.isFrozen(mod.IDENTITY.company.signatory), 'IDENTITY is frozen all the way down');
 ok(identityText(BRAND).includes(`brands/${BRAND.id}/brand.json`) && /Do not edit/.test(identityText(BRAND)), 'the generated file names its source and says not to edit it');
 ok(fs.readFileSync(IDENTITY_OUT, 'utf8').includes(`"id": "${activeId}"`), 'identity.generated.js records the active brand id');
-// the static outputs: a throwaway brand changes exactly the owned lines, escaped for each file, and round-trips
-const PROBE = {
-  ...clone(), id: 'probe', name: "Nørd & O'Hara Facility Care", shortName: "Nørd & O'Hara", appTitle: "Nørd & O'Hara Ops",
+// the static outputs: a throwaway brand changes exactly the owned lines, escaped for each file, and round-trips.
+// It names no product (the active pack's product block is dropped), so its company names are the software's
+// too and drive every owned line (test-product-name.mjs covers a pack with a product of its own).
+const PROBE = (({ product: _ignored, ...rest }) => ({
+  ...rest, id: 'probe', name: "Nørd & O'Hara Facility Care", shortName: "Nørd & O'Hara", appTitle: "Nørd & O'Hara Ops",
   description: "Operations for Nørd & O'Hara.", slug: 'nord-care',
-};
+}))(clone());
 const owned = { 'index.html': 3, 'public/manifest.json': 3, 'public/sw.js': 1 };
 for (const [rel, n] of Object.entries(owned)) {
   const text = fs.readFileSync(path.join(APP, rel), 'utf8');
@@ -246,7 +266,7 @@ console.log('the palette');
   // readable (4.5:1, R5) under every brand's palette. A rule's ground is its own background, or GROUND names the
   // one it sits on; MARKS paint a glyph in the accent, not text (R3's gold marker).
   const GROUND = {
-    '.avatar': ['primary-500', "the avatar's fill: --avatar-1…5 are the ink in the client theme"],
+    // .avatar left this list: its initials read --avatar-text, chosen for the ink (CS-578, test-avatar-text.mjs)
     '.pay-rail-total-l': ['primary-500', "on .pay-rail-total's ink"],
     '.pay-foot-l': ['primary-500', "on .pay-drawer-foot's ink"],
     '.review-hero-num': ['primary-500', "the Review hub's gold attention number on .review-hero's ink"],
@@ -283,7 +303,7 @@ try { execFileSync(process.execPath, [path.join(APP, 'scripts', 'brand.mjs'), '-
 ok(/no brand file at brands\/no-such-brand/.test(refused), 'the CLI refuses a brand that has no file');
 // identity strings: what the ledger and the sweep forbid once another brand is active
 const strs = new Map(identityStrings(BRAND).map(([k, v]) => [k, v]));
-ok(strs.get('name') === BRAND.name && strs.get('signatory') === BRAND.company.signatory.name && strs.get('quotes sender') === /<([^>]+)>/.exec(BRAND.email.quotesFrom)[1], 'identity strings carry the name, the owner and the sender addresses');
+ok(strs.get('name') === BRAND.name && strs.get('signatory') === BRAND.company.signatory.name && strs.get('auth sender') === /<([^>]+)>/.exec(BRAND.email.authFrom)[1], "identity strings carry the name, the owner and the sign-in mails' reply-to address");
 ok(![...strs.values()].includes(BRAND.monogram) && ![...strs.values()].includes(BRAND.company.signatory.role), 'short values (the monogram, the role) are not identity strings, so they cannot match ordinary words');
 // a description — the signatory title, the services, the tagline — is the brand's identity only at three words
 // or more, as needleFor reads words (a hyphen or an ampersand splits two words as a space does); a one- or

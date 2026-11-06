@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom';
 import { useDispatch, useStore } from '../../store';
 import { ACTIONS } from '../../store/reducer';
 import { selectPermissions, selectCurrentUser, selectUserPermissionOverrides } from '../../store/selectors';
-import { ROLES, ROLE_LABELS, ROLE_DESCRIPTIONS, PERMISSIONS, ALWAYS_GRANTED, OWNER_ONLY, OWNER_CORE, PERM_GROUPS, canGrantPermission, canEndAccess, canReduceRole } from '../../lib/roles';
+import { PERMISSION_COLUMNS, OPS_MANAGER_COLUMN, PERMISSIONS, ALWAYS_GRANTED, OWNER_ONLY, OWNER_CORE, PERM_GROUPS, canGrantPermission, canEndAccess, canReduceRole, columnLabel, defaultColumnsOf } from '../../lib/roles';
+import { useT } from '../../i18n/react';
 import { useFromHere } from '../../hooks/useFromHere';
-import { MARKETING_ENABLED } from '../../lib/features';
+import { MARKETING_ENABLED, QUOTES_ENABLED } from '../../lib/features';
 import Badge from '../../components/Badge';
 
 // PERM_GROUPS (the canonical section grouping) lives in lib/roles.js next to PERMISSIONS
@@ -49,7 +50,21 @@ function Toggle({ state, disabled, onClick, label }) {
   );
 }
 
+// One column per PERMISSION COLUMN (lib/roles PERMISSION_COLUMNS): every role, and since CS-858
+// (2026-10-16) the Operations Manager's own column after the Account Manager's, so the two manager
+// levels can hold different permissions. The manager role's column is the Account Managers' alone
+// now. Literal keys (a key is never built at run time).
+const COLUMN_DESC_KEYS = {
+  owner: 'role.owner.desc',
+  admin: 'role.admin.desc',
+  manager: 'role.managerColumn.desc',
+  [OPS_MANAGER_COLUMN]: 'role.opsManager.desc',
+  supply_manager: 'role.supply_manager.desc',
+  crew: 'role.crew.desc',
+};
+
 export default function SettingsRoles() {
+  const t = useT();
   const state = useStore();
   const permissions = selectPermissions(state);
   const currentUser = selectCurrentUser(state);
@@ -63,10 +78,15 @@ export default function SettingsRoles() {
   // default and read-only, so the matrix never silently omits a permission that is
   // live via can()'s defaultRoles fallback. UPDATE_PERMISSION replaces an existing
   // row and cannot create one, hence read-only.
-  const byKey = (key) => permissions.find((p) => p.id === key)
-    || (PERMISSIONS[key]
-      ? { id: key, label: PERMISSIONS[key].label, roles: [...(PERMISSIONS[key].defaultRoles || [])], schemaDefault: true }
-      : undefined);
+  // The LABEL is always the schema's: a saved row carries the label it was written with, and a
+  // permission whose meaning moved (clients.delete became "Archive customers", CS-663) would
+  // otherwise keep saying what it no longer does.
+  const byKey = (key) => {
+    const row = permissions.find((p) => p.id === key);
+    const def = PERMISSIONS[key];
+    if (row) return def ? { ...row, label: def.label } : row;
+    return def ? { id: key, label: def.label, roles: [...defaultColumnsOf(key)], schemaDefault: true } : undefined;
+  };
 
   // A Super-Admin-only key (OWNER_ONLY) can't be given to another role: can() ignores it
   // for them, as the server does. Those cells show a "Super Admin only" status badge, not a
@@ -144,8 +164,10 @@ export default function SettingsRoles() {
 
   const resetDefaults = () => {
     permissions.forEach((p) => {
-      const def = PERMISSIONS[p.id]?.defaultRoles;
-      if (!def) return;
+      // A stale key (no longer in the schema) is left alone. The default is the key's COLUMNS —
+      // the Operations Manager's included wherever the manager's is (CS-858).
+      if (!PERMISSIONS[p.id]) return;
+      const def = defaultColumnsOf(p.id);
       // CS-331: a reset must never GRANT a key the caller doesn't hold. When they hold it,
       // reset to the default outright; otherwise keep only roles the default also carries — a
       // revoke-only reset that removes but never re-adds. (An owner holds everything: no-op.)
@@ -168,9 +190,9 @@ export default function SettingsRoles() {
   const groupedKeys = new Set(PERM_GROUPS.flatMap((g) => g.keys));
   const ungrouped = permissions.filter((p) => !groupedKeys.has(p.id) && !ALWAYS_GRANTED.has(p.id));
   const sections = PERM_GROUPS
-    // Marketing is dormant (MARKETING_ENABLED, lib/features.js) — hide its permission
-    // section from the editor while off. The marketing.* keys stay defined in roles.js.
-    .filter((g) => MARKETING_ENABLED || g.id !== 'marketing')
+    // Marketing and Quotes are dormant (MARKETING_ENABLED, QUOTES_ENABLED, lib/features.js) —
+    // hide their permission sections from the editor while off. Their keys stay defined in roles.js.
+    .filter((g) => (MARKETING_ENABLED || g.id !== 'marketing') && (QUOTES_ENABLED || g.id !== 'quotes'))
     .map((g) => ({ id: g.id, label: g.label, rows: g.keys.map(byKey).filter(Boolean).filter((p) => !ALWAYS_GRANTED.has(p.id)) }))
     .filter((s) => s.rows.length > 0);
   if (ungrouped.length > 0) sections.push({ id: '__other', label: 'Other', rows: ungrouped });
@@ -182,7 +204,8 @@ export default function SettingsRoles() {
   };
 
   return (
-    <div className="roles-page">
+    // --rp-columns: the grid's column count, from the one list (index.css .rp-legend / .rp-row).
+    <div className="roles-page" style={{ '--rp-columns': PERMISSION_COLUMNS.length }}>
       <div className="section-head">
         <div className="page-head-text">
           <h1 className="page-head-title">Roles &amp; Permissions</h1>
@@ -192,13 +215,13 @@ export default function SettingsRoles() {
 
       {/* Legend — one black band, each role a name-above-description block (no overlap). */}
       <div className="rp-legend">
-        {ROLES.map((r) => (
-          <div key={r} className={`rp-legend-item${r === 'manager' ? ' is-new' : ''}`}>
+        {PERMISSION_COLUMNS.map((r) => (
+          <div key={r} className={`rp-legend-item${r === 'supply_manager' ? ' is-new' : ''}`}>
             <div className="rp-legend-name">
-              {ROLE_LABELS[r]}
-              {r === 'manager' && <span className="rp-legend-tag">New</span>}
+              {columnLabel(t, r)}
+              {r === 'supply_manager' && <span className="rp-legend-tag">New</span>}
             </div>
-            <div className="rp-legend-desc">{ROLE_DESCRIPTIONS[r]}</div>
+            <div className="rp-legend-desc">{COLUMN_DESC_KEYS[r] ? t(COLUMN_DESC_KEYS[r]) : ''}</div>
           </div>
         ))}
       </div>
@@ -255,13 +278,13 @@ export default function SettingsRoles() {
                     <span className="rp-caret" aria-hidden>▸</span>
                     <span className="rp-title-text">{sec.label}</span>
                   </button>
-                  {ROLES.map((r) => (
-                    <div key={r} className={`rp-cell rp-cell--master${r === 'manager' ? ' is-mgr' : ''}`}>
-                      <span className="rp-master-label">{ROLE_LABELS[r]}</span>
+                  {PERMISSION_COLUMNS.map((r) => (
+                    <div key={r} className={`rp-cell rp-cell--master${r === 'supply_manager' ? ' is-new' : ''}`}>
+                      <span className="rp-master-label">{columnLabel(t, r)}</span>
                       <Toggle
                         state={masterState(sec.rows, r)}
                         onClick={() => toggleMaster(sec.rows, r)}
-                        label={`All of ${sec.label} for ${ROLE_LABELS[r]}`}
+                        label={`All of ${sec.label} for ${columnLabel(t, r)}`}
                       />
                     </div>
                   ))}
@@ -278,7 +301,7 @@ export default function SettingsRoles() {
                         </span>
                       )}
                     </div>
-                    {ROLES.map((r) => (
+                    {PERMISSION_COLUMNS.map((r) => (
                       <div key={r} className="rp-cell">
                         {locked(p, r) ? (
                           <span className="rp-locked"><Badge variant="slate">Super Admin only</Badge></span>
@@ -287,7 +310,7 @@ export default function SettingsRoles() {
                             state={p.roles.includes(r) ? 'on' : 'off'}
                             disabled={!!p.schemaDefault || grantLocked(p, r) || reduceLocked(p, r)}
                             onClick={() => togglePerm(p, r)}
-                            label={`${p.label} for ${ROLE_LABELS[r]}`}
+                            label={`${p.label} for ${columnLabel(t, r)}`}
                           />
                         )}
                       </div>

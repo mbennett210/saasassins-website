@@ -2,11 +2,13 @@
 //
 // Each user wires their own mailbox(es) here so messages they send through
 // the Messaging email channel come from their real address — not a generic
-// system sender. Gmail / Google Workspace only for now (Microsoft 365 and
-// SMTP/IMAP are planned — see ConnectInboxModal for status).
+// system sender. Gmail / Google Workspace ONLY: the Microsoft and SMTP connectors were
+// deleted with their non-existent endpoints (CS-220, 2026-09-29), and Clean Space is a
+// Google shop.
 //
 // What this page is NOT:
-//   - The system Resend provider (that's at Settings → Integrations).
+//   - The app's OWN sending mailbox (that is Settings → Integrations → System Email; one of
+//     the mailboxes connected here can be marked as it).
 //   - A marketing / drip / broadcast tool — marketing email accounts are
 //     connected in the Marketing tab.
 //
@@ -91,7 +93,7 @@ export default function SettingsConnectedInboxes() {
           <strong>account email</strong> at{' '}
           <strong>Settings → Your Account</strong>, which is used to sign you
           in and to send you app notifications, password resets, etc. The two
-          can be the same person, but they're stored separately and {IDENTITY.name}{' '}
+          can be the same person, but they're stored separately and {IDENTITY.product.name}{' '}
           never assumes one matches the other.
         </div>
       </div>

@@ -6,7 +6,7 @@
 // same windows the cron reads — plus each account's latest inspection), runs them, and
 // dispatches RAISE_OPS_ALERT per due alert. Dedup: the reducer refuses a duplicate id
 // and the module-level inFlight set guards the brief window before the dispatch lands
-// (same shape as ReminderScheduler).
+// (the shape the retired client ReminderScheduler had).
 import { useEffect, useRef } from 'react';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
@@ -17,6 +17,8 @@ import {
 import * as timeApi from '../lib/timeApi';
 import * as qcApi from '../lib/qcApi';
 import { opsAlertCopy } from '../lib/opsAlertCopy';
+import { ensureCatalog } from '../i18n/runtime';
+import { userLanguage } from '../i18n/languages';
 
 const TICK_MS = 60 * 1000;
 // Each account's latest inspection moves on a days scale (the reminder cadence is in
@@ -109,7 +111,12 @@ export default function OpsAlertScheduler() {
     }
 
     if (!alerts.length) return;
-    const clientName = (id) => (s.clients || []).find((c) => c.id === id)?.name || 'a customer';
+    // The reducer writes each bell row in its RECIPIENT's language (CS-193, LANG-4), so the
+    // catalogs of the languages on this roster must be loaded first — an office tab only
+    // loaded its own. A failed download leaves that row in English, never blank.
+    await Promise.all([...new Set((s.users || []).map(userLanguage))].map((lang) => ensureCatalog(lang)));
+    // No name → null, and opsAlertCopy says "a customer" in the reader's own language.
+    const clientName = (id) => (s.clients || []).find((c) => c.id === id)?.name || null;
     // The checklist escalation carries ids only (CS-403); names come from the roster.
     const userName = (id) => (s.users || []).find((u) => u.id === id)?.name || null;
     for (const al of alerts) {

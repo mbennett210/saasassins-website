@@ -3,8 +3,11 @@ import Icon from './Icon';
 import ClockControl from './ClockControl';
 import MediaGallery from './MediaGallery';
 import CleanChecklist from './CleanChecklist';
+import CrewSupplyNote from './CrewSupplyNote';
+import { useOnsiteSupplies } from '../hooks/useOnsiteSupplies';
 import * as timeApi from '../lib/timeApi';
 import { fmtTime, fmtDuration } from '../lib/dates';
+import { useT } from '../i18n/react';
 
 // Crew "Guided Visit" — the step timeline that replaces the stale "Start" button on
 // JobDetail. The real geofence clock-in (ClockControl) IS the start: it verifies the
@@ -20,6 +23,7 @@ import { fmtTime, fmtDuration } from '../lib/dates';
 //
 // Clock state is a component-local projection (timeApi.mine), same as My Day — the store
 // holds only the job.status side effect the punch dispatches, never the entry.
+// Every word is a catalog line in the cleaner's language (CS-193).
 function Step({ n, icon, state, name, sub, children }) {
   return (
     <div className={`visit-step is-${state}`}>
@@ -37,6 +41,7 @@ function Step({ n, icon, state, name, sub, children }) {
 }
 
 export default function CrewJobVisit({ job, ctx, site, client, userId }) {
+  const t = useT();
   const [entry, setEntry] = useState(null);
   // Imperative picker triggers for the two galleries — a step's "Add photos" pops the
   // matching gallery's native camera/file picker directly (no section-toggle).
@@ -46,6 +51,9 @@ export default function CrewJobVisit({ job, ctx, site, client, userId }) {
   const [beforeCount, setBeforeCount] = useState(0);
   const [afterCount, setAfterCount] = useState(0);
   const [checklist, setChecklist] = useState({ hasChecklist: false, complete: false });
+  // The building's supplies line (the delivery step, 2026-10-12, S6): only for a building the
+  // cleaner cleans TODAY — the read answers for no other, so an upcoming visit shows none.
+  const supplies = useOnsiteSupplies();
 
   const reload = useCallback(async () => {
     if (!job) return;
@@ -80,13 +88,14 @@ export default function CrewJobVisit({ job, ctx, site, client, userId }) {
 
   return (
     <div className="card visit-card">
-      <h3 className="dash-card-title">Visit checklist</h3>
+      <h3 className="dash-card-title">{t('visit.title')}</h3>
+      <CrewSupplyNote entry={clientId ? supplies.get(clientId) : null} />
       <div className="visit-steps">
         <Step
           n="1"
           state={clockedIn ? 'done' : 'current'}
-          name="Clock in & start"
-          sub={clockedIn ? `On the clock since ${fmtTime(entry.clock_in_at)}` : "Verify you're on site — this starts the clean and your time."}
+          name={t('visit.step.clockIn')}
+          sub={clockedIn ? t('visit.step.clockInSince', { time: fmtTime(entry.clock_in_at) }) : t('visit.step.clockInSub')}
         >
           {!clockedIn && (
             <div className="visit-action">
@@ -95,22 +104,22 @@ export default function CrewJobVisit({ job, ctx, site, client, userId }) {
           )}
         </Step>
 
-        <Step n="2" icon={camIcon} state={step2State} name="Before photos" sub="Snap the space before you start.">
+        <Step n="2" icon={camIcon} state={step2State} name={t('visit.step.before')} sub={t('visit.step.beforeSub')}>
           {isOpen && (
             <button type="button" className="btn btn-gold visit-inline" onClick={() => beforePicker.current?.()}>
-              <Icon name="camera" size={14} /> Add photos
+              <Icon name="camera" size={14} /> {t('visit.addPhotos')}
             </button>
           )}
         </Step>
 
-        <Step n="3" icon="3" state={step3State} name="Do the clean" sub={site?.address ? `${site.address} · see instructions below.` : 'See the instructions below.'}>
-          <CleanChecklist job={job} client={client} variant="button" onStatus={setChecklist} />
+        <Step n="3" icon="3" state={step3State} name={t('visit.step.clean')} sub={site?.address ? t('visit.step.cleanSubAt', { address: site.address }) : t('visit.step.cleanSub')}>
+          <CleanChecklist job={job} client={client} variant="button" onStatus={setChecklist} clockedIn={isOpen} />
         </Step>
 
-        <Step n="4" icon={camIcon} state={step4State} name="After photos" sub="Show the finished result.">
+        <Step n="4" icon={camIcon} state={step4State} name={t('visit.step.after')} sub={t('visit.step.afterSub')}>
           {isOpen && (
             <button type="button" className="btn btn-gold visit-inline" onClick={() => afterPicker.current?.()}>
-              <Icon name="camera" size={14} /> Add photos
+              <Icon name="camera" size={14} /> {t('visit.addPhotos')}
             </button>
           )}
         </Step>
@@ -119,8 +128,8 @@ export default function CrewJobVisit({ job, ctx, site, client, userId }) {
           n="5"
           icon={clockIcon}
           state={isDone ? 'done' : isOpen ? 'current' : 'upcoming'}
-          name="Clock out"
-          sub={isDone ? `Clocked out · ${fmtDuration(entry.duration_minutes)}` : 'Wraps the clean and marks it done.'}
+          name={t('visit.step.clockOut')}
+          sub={isDone ? t('visit.step.clockedOut', { duration: fmtDuration(entry.duration_minutes) }) : t('visit.step.clockOutSub')}
         >
           {isOpen && (
             <div className="visit-action">
@@ -137,14 +146,14 @@ export default function CrewJobVisit({ job, ctx, site, client, userId }) {
           <div className="visit-photo-area">
             <MediaGallery
               siteId={job.siteId} clientId={clientId} scope="clean" refId={job.id} areaId="before"
-              label="Before photos" hint="The space before you start — images up to 10MB, video up to 200MB."
+              label={t('visit.step.before')} hint={t('visit.beforeHint')}
               openRef={beforePicker} onCount={setBeforeCount}
             />
           </div>
           <div className="visit-photo-area">
             <MediaGallery
               siteId={job.siteId} clientId={clientId} scope="clean" refId={job.id} areaId="after"
-              label="After photos" hint="The finished result — images up to 10MB, video up to 200MB."
+              label={t('visit.step.after')} hint={t('visit.afterHint')}
               openRef={afterPicker} onCount={setAfterCount}
             />
           </div>

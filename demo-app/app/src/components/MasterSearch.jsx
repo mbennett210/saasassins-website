@@ -12,6 +12,8 @@ import PopMenu from './PopMenu';
 import EmptyState from './EmptyState';
 import { rankEntries, groupRanked, normalize, terms } from '../lib/masterSearch/rank';
 import { buildNavEntries, visiblePrimaryPages, buildLaunchpad } from '../lib/masterSearch/registry';
+import { seesTeamPages } from '../lib/teamScope';
+import { isSupplyRole } from '../lib/navData';
 import { buildRecordCandidates, resolveRecordCandidate } from '../lib/masterSearch/sources';
 import { loadRecents, pushRecent } from '../lib/masterSearch/recents';
 import { IDENTITY } from '../brand/identity.generated.js';
@@ -80,12 +82,14 @@ function layout(groupsIn, q, mode) {
 // there is no separate "search mode"); desktop shows Recent + Pages.
 function computeView(state, isMobile, query) {
   const user = selectCurrentUser(state);
-  const isCrew = user?.role === 'crew';
   const check = (key) => can(user, key, state.permissions, state.userPermissionOverrides);
   const opts = { isMobile };
+  // The team pages (Accounts, S131) are the owner's, an admin's and an Operations Manager's; a supply
+  // manager's phone bar is their own (S131 Wave 2), which the launchpad skips like any bar.
+  const nav = { team: seesTeamPages(user), supply: isSupplyRole(user) };
   const q = query.trim();
   if (!q) {
-    const navVisible = buildNavEntries(check, isMobile, isCrew);
+    const navVisible = buildNavEntries(check, isMobile, nav);
     const liveByTo = new Map(navVisible.map((e) => [e.to, e]));
     // Recents re-validate against LIVE data and visibility: a deleted or now-hidden record,
     // or a page the viewer lost access to, drops out; renamed things show their new label.
@@ -96,17 +100,17 @@ function computeView(state, isMobile, query) {
       .filter(Boolean)
       .slice(0, RECENT_SHOWN);
     if (isMobile) {
-      const { actions, pages } = buildLaunchpad(check, isMobile, isCrew);
+      const { actions, pages } = buildLaunchpad(check, isMobile, nav);
       return { ...EMPTY_VIEW, mode: 'launchpad', user, recents, actions, pages };
     }
     const recentTos = new Set(recents.map((r) => r.to));
-    const pages = visiblePrimaryPages(check, isMobile, isCrew).filter((p) => !recentTos.has(p.to)).slice(0, PAGES_SHOWN);
+    const pages = visiblePrimaryPages(check, isMobile, nav).filter((p) => !recentTos.has(p.to)).slice(0, PAGES_SHOWN);
     const groupsIn = [];
     if (recents.length) groupsIn.push({ key: 'recent', label: 'Recent', items: recents, showType: true });
     if (pages.length) groupsIn.push({ key: 'pages', label: 'Pages', items: pages });
     return { mode: 'empty', user, ...layout(groupsIn, '', 'empty') };
   }
-  const candidates = [...buildNavEntries(check, isMobile, isCrew), ...buildRecordCandidates(state, user, check, opts)];
+  const candidates = [...buildNavEntries(check, isMobile, nav), ...buildRecordCandidates(state, user, check, opts)];
   return { mode: 'query', user, ...layout(groupRanked(rankEntries(candidates, q)), q, 'query') };
 }
 
@@ -401,7 +405,7 @@ function SearchInput({ ref, s, listId, iconSize = 15 }) {
         type="search"
         className="msearch-input"
         placeholder={PLACEHOLDER}
-        aria-label={`Search ${IDENTITY.name}`}
+        aria-label={`Search ${IDENTITY.product.name}`}
         value={query}
         onChange={onChange}
         onKeyDown={onKeyDown}
@@ -497,14 +501,11 @@ function Launchpad({ s }) {
 }
 
 // Crew don't get global search at all, desktop or mobile (owner decision, 2026-09-22): no
-// field, no magnifier, no hotkey, no FloatingNav "Search" row. The desktop bar band stays —
-// the bell sits in it and every page is laid out beneath it — it's just empty. The gate reads
-// the EFFECTIVE (view-as) user, like the rest of the UI, and only non-crew mount the search
-// itself, so crew never register its listeners.
+// field, no magnifier, no hotkey, no "Search" row. Since the Cleaner Hub (2026-10-14) that is
+// the crew SHELL's doing — layouts/AppLayout mounts this component only in the office shell
+// (a crew viewer, or the owner viewing as one, gets the crew shell) — so the gate that used to
+// stand here, and its empty desktop bar band, went with it (replace means delete).
 export default function MasterSearch() {
-  const user = useSelector(selectCurrentUser);
-  const isMobile = useIsMobile();
-  if (user?.role === 'crew') return isMobile ? null : <div className="topbar" />;
   return <GlobalSearch />;
 }
 

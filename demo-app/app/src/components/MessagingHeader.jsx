@@ -4,6 +4,7 @@ import Icon from './Icon';
 import Select from './Select';
 import TagPicker from './TagPicker';
 import NotificationsBell from './NotificationsBell';
+import { useT } from '../i18n/react';
 
 export const EMPTY_FILTERS = {
   channels: [],        // [] = all
@@ -13,27 +14,29 @@ export const EMPTY_FILTERS = {
   starredOnly: false,  // true → only starred threads
 };
 
+// Labels are catalog keys, shown in the reader's language (CS-193).
 const INBOXES = [
-  { key: 'inbox',    label: 'Inbox' },
-  { key: 'internal', label: 'Channels' },
-  { key: 'dm',       label: 'DMs' },
+  { key: 'inbox',    labelKey: 'messages.inbox' },
+  { key: 'internal', labelKey: 'messages.channels' },
+  { key: 'dm',       labelKey: 'messages.dms' },
 ];
 
 const DATE_OPTIONS = [
-  { value: '24h', label: 'Last 24h' },
-  { value: '7d',  label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: 'all', label: 'All time' },
+  { value: '24h', labelKey: 'messages.date.24h' },
+  { value: '7d',  labelKey: 'messages.date.7d' },
+  { value: '30d', labelKey: 'messages.date.30d' },
+  { value: 'all', labelKey: 'messages.date.all' },
 ];
 
 const CHANNEL_CHIPS = [
-  { key: 'sms',      label: 'SMS' },
-  { key: 'email',    label: 'Email' },
-  { key: 'internal', label: 'Internal' },
-  { key: 'dm',       label: 'DM' },
+  { key: 'sms',      labelKey: 'messages.channel.sms' },
+  { key: 'email',    labelKey: 'messages.channel.email' },
+  { key: 'internal', labelKey: 'messages.channel.internal' },
+  { key: 'dm',       labelKey: 'messages.channel.dm' },
 ];
 
 function FiltersPopover({ open, anchorRef, filters, onFiltersChange, onClose }) {
+  const t = useT();
   const toggleChannel = (ch) => {
     const set = new Set(filters.channels);
     if (set.has(ch)) set.delete(ch); else set.add(ch);
@@ -47,19 +50,19 @@ function FiltersPopover({ open, anchorRef, filters, onFiltersChange, onClose }) 
     filters.starredOnly;
 
   return (
-    <PopMenu open={open} onClose={onClose} anchorRef={anchorRef} className="filters-popover" role="dialog" aria-label="Filters" sheetTitle="Filters">
+    <PopMenu open={open} onClose={onClose} anchorRef={anchorRef} className="filters-popover" role="dialog" aria-label={t('messages.filters')} sheetTitle={t('messages.filters')}>
       <div className="filters-popover-head">
-        <span>Filters</span>
+        <span>{t('messages.filters')}</span>
         {anyFilter && (
           <button type="button" className="linklike" onClick={() => onFiltersChange(EMPTY_FILTERS)}>
-            Clear all
+            {t('messages.clearAll')}
           </button>
         )}
       </div>
 
       <div className="filters-popover-body">
         <div className="filter-block">
-          <div className="filter-label">Channels</div>
+          <div className="filter-label">{t('messages.filter.channels')}</div>
           <div className="filter-chips">
             {CHANNEL_CHIPS.map((c) => (
               <button
@@ -68,7 +71,7 @@ function FiltersPopover({ open, anchorRef, filters, onFiltersChange, onClose }) 
                 className={`chip ${filters.channels.includes(c.key) ? 'on' : ''}`}
                 onClick={() => toggleChannel(c.key)}
               >
-                {c.label}
+                {t(c.labelKey)}
               </button>
             ))}
           </div>
@@ -81,32 +84,32 @@ function FiltersPopover({ open, anchorRef, filters, onFiltersChange, onClose }) 
               checked={filters.starredOnly}
               onChange={(e) => onFiltersChange({ ...filters, starredOnly: e.target.checked })}
             />
-            <span>Pinned only</span>
+            <span>{t('messages.filter.pinnedOnly')}</span>
           </label>
         </div>
 
         <div className="filter-block">
-          <div className="filter-label">Tags</div>
+          <div className="filter-label">{t('messages.filter.tags')}</div>
           <TagPicker
             value={filters.tagIds}
             onChange={(ids) => onFiltersChange({ ...filters, tagIds: ids })}
             canCreate={false}
-            placeholder="Filter by tag…"
+            placeholder={t('messages.filter.tagPlaceholder')}
           />
         </div>
 
         <div className="filter-block">
-          <div className="filter-label">Date range</div>
+          <div className="filter-label">{t('messages.filter.dateRange')}</div>
           <Select
-            ariaLabel="Date range"
+            ariaLabel={t('messages.filter.dateRange')}
             value={filters.dateRange}
             onChange={(v) => onFiltersChange({ ...filters, dateRange: v })}
-            options={DATE_OPTIONS}
+            options={DATE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))}
           />
         </div>
 
         <div className="filter-block">
-          <div className="filter-label">Combine filters</div>
+          <div className="filter-label">{t('messages.filter.combine')}</div>
           <div className="segmented">
             {['and', 'or'].map((v) => (
               <button
@@ -115,7 +118,7 @@ function FiltersPopover({ open, anchorRef, filters, onFiltersChange, onClose }) 
                 className={`segmented-btn ${filters.logic === v ? 'active' : ''}`}
                 onClick={() => onFiltersChange({ ...filters, logic: v })}
               >
-                {v === 'and' ? 'Match all' : 'Match any'}
+                {v === 'and' ? t('messages.filter.matchAll') : t('messages.filter.matchAny')}
               </button>
             ))}
           </div>
@@ -142,6 +145,7 @@ export default function MessagingHeader({
   orphanCount = 0,
   onOpenOrphans,
 }) {
+  const t = useT();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersWrapRef = useRef(null);
 
@@ -153,7 +157,7 @@ export default function MessagingHeader({
 
   return (
     <header className="messaging-header">
-      <div className="messaging-inbox-toggle" role="tablist" aria-label="Inbox">
+      <div className="messaging-inbox-toggle" role="tablist" aria-label={t('messages.inbox')}>
         {(visibleInboxes || INBOXES).map((ib) => {
           const active = selectedInbox === ib.key;
           const count = unread[ib.key] || 0;
@@ -166,7 +170,7 @@ export default function MessagingHeader({
               className={`inbox-toggle-btn ${active ? 'active' : ''}`}
               onClick={() => onInboxChange(ib.key)}
             >
-              <span>{ib.label}</span>
+              <span>{t(ib.labelKey)}</span>
               {count > 0 && <span className="inbox-toggle-unread">{count}</span>}
             </button>
           );
@@ -174,6 +178,9 @@ export default function MessagingHeader({
       </div>
 
       <div className="messaging-header-actions">
+        {/* The Customers tab (client hub redesign) filters its own list by Manager and Customer,
+            server-side; these channel/tag/date filters are the store inboxes'. */}
+        {selectedInbox !== 'customers' && (
         <div className="filters-wrap" ref={filtersWrapRef}>
           <button
             type="button"
@@ -182,8 +189,8 @@ export default function MessagingHeader({
             aria-expanded={filtersOpen}
           >
             <Icon name="filter" size={14} />
-            <span>Filters</span>
-            {anyFilter && <span className="filter-active-dot" aria-label="filters active" />}
+            <span>{t('messages.filters')}</span>
+            {anyFilter && <span className="filter-active-dot" aria-label={t('messages.filtersActive')} />}
           </button>
           <FiltersPopover
             open={filtersOpen}
@@ -193,15 +200,16 @@ export default function MessagingHeader({
             onClose={() => setFiltersOpen(false)}
           />
         </div>
+        )}
 
         {selectedInbox === 'dm' && (
           <button
             type="button"
             className="btn btn-primary"
             onClick={onNewDm}
-            title="Start a direct message with another user"
+            title={t('messages.newDmTitle')}
           >
-            <span>New DM</span>
+            <span>{t('messages.newDm')}</span>
           </button>
         )}
         {selectedInbox === 'internal' && orphanCount > 0 && onOpenOrphans && (
@@ -209,10 +217,10 @@ export default function MessagingHeader({
             type="button"
             className="btn btn-outline"
             onClick={onOpenOrphans}
-            title="Channels whose creator was removed or is no longer active"
+            title={t('messages.orphanedTitle')}
           >
             <Icon name="warning" size={14} />
-            <span>Orphaned ({orphanCount})</span>
+            <span>{t('messages.orphaned', { count: orphanCount })}</span>
           </button>
         )}
         {selectedInbox === 'internal' && (
@@ -221,9 +229,9 @@ export default function MessagingHeader({
             className="btn btn-primary"
             onClick={onNewInternalThread}
             disabled={!canStartInternalThread}
-            title={canStartInternalThread ? 'Start a new channel' : 'You lack permission to start channels'}
+            title={canStartInternalThread ? t('messages.newChannelTitle') : t('messages.noChannelPermission')}
           >
-            <span>New channel</span>
+            <span>{t('messages.newChannel')}</span>
           </button>
         )}
         {selectedInbox === 'inbox' && (
@@ -232,9 +240,9 @@ export default function MessagingHeader({
             className="btn btn-primary"
             onClick={onNewConversation}
             disabled={!canStart}
-            title={canStart ? 'Start a new conversation' : 'You lack permission to start conversations'}
+            title={canStart ? t('messages.newConversationTitle') : t('messages.noConversationPermission')}
           >
-            <span>New conversation</span>
+            <span>{t('messages.newConversation')}</span>
           </button>
         )}
         {/* Notifications bell lives in the header on mobile (CSS-shown ≤640) so it

@@ -18,7 +18,7 @@
 // credentials. requireRole reads the service-role-only claim instead.
 import { requirePermission } from '../_lib/authz.js';
 import {
-  listWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace,
+  createWorkspace, updateWorkspace, deleteWorkspace,
   workspaceInUse, getWorkspaceCreds,
 } from '../_lib/oauthWorkspaces.js';
 
@@ -56,9 +56,10 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, workspace });
     }
 
-    if (seg0 === 'list' && req.method === 'GET') {
-      return res.status(200).json({ ok: true, workspaces: await listWorkspaces() });
-    }
+    // GET /list and POST /:id (update) were DELETED (CS-220, 2026-09-29): no caller ever
+    // existed for either. The update branch also spread `req.body` straight into
+    // updateWorkspace, so a door nobody used was the widest one here. The Workspaces UI
+    // reads the roster from the shared record and uses create / :id/test / DELETE :id.
 
     // /:id and /:id/:action  ('create'/'list' keywords above can't collide with ws_ ids)
     const id = seg0;
@@ -76,11 +77,6 @@ export default async function handler(req, res) {
       // active so the admin can proceed and the connect warnings clear.
       const workspace = await updateWorkspace(id, { status: 'active', lastError: null });
       return res.status(200).json({ ok: true, status: 'active', workspace });
-    }
-
-    if (!action && req.method === 'POST') {
-      const workspace = await updateWorkspace(id, req.body || {});
-      return res.status(200).json({ ok: true, workspace });
     }
 
     if (!action && req.method === 'DELETE') {

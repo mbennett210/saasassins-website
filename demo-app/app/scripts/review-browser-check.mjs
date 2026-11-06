@@ -342,14 +342,16 @@ await step('I Change answer → Cancel keeps it; → Confirm changes it and hist
 
 await step('J a draft verdict from an earlier visit is LOCKED; Change → Confirm records the new verdict and keeps the old one', async () => {
   await reset();
-  await seedSignoff('drafts', 'quote-email', { status: 'accepted' }); await sleep(150);
-  await openArea('Drafts to sign off'); await walkTo('quote-email'); await page.waitForSelector('.drafts-verdict-locked', { timeout: 8000 });
+  // Not the first draft: the area opens at its first OPEN draft and walkTo only goes forward, so a
+  // signed-off first draft is never reached (lead-ack was, from 74d4a4d1 until 2026-10-23).
+  await seedSignoff('drafts', 'walkthrough-confirm', { status: 'accepted' }); await sleep(150);
+  await openArea('Drafts to sign off'); await walkTo('walkthrough-confirm'); await page.waitForSelector('.drafts-verdict-locked', { timeout: 8000 });
   const lockedMsg = await page.$eval('.drafts-verdict-msg', (el) => el.textContent).catch(() => '');
   await page.evaluate(() => document.querySelector('.drafts-verdict-change').click()); await sleep(200);
   const dlg = await dialogText();
   await clickConfirmBtn(); await sleep(250);
   await page.evaluate(() => { const b = document.querySelector('.drafts-changes'); if (b) b.click(); }); await sleep(300);
-  const e = (await review()).drafts['quote-email'];
+  const e = (await review()).drafts['walkthrough-confirm'];
   const histOk = Array.isArray(e?.history) && e.history.length === 1 && e.history[0].status === 'accepted';
   check('J draft verdict lock + Change→Confirm keeps the prior verdict in history',
     lockedMsg.includes('Accepted') && !!dlg && e?.status === 'changes' && histOk,
@@ -372,19 +374,14 @@ await step('K notes: add two, both listed, no edit or delete control', async () 
     `items=${items.length} btns=${btnsInItems} notes=${notes.length}`);
 });
 
-await step('M sidebar un-approve asks to confirm; Cancel keeps it approved', async () => {
+await step('M the menu carries no In Review or Approved marker; an approval already given stays (UI_RULES §185)', async () => {
   await reset();
-  // approve the first in-review section (one click), then read which route it was
-  await page.evaluate(() => { const m = document.querySelector('.nav-review-ir'); if (m) m.click(); }); await sleep(250);
-  const approvedRoute = await page.evaluate(() => { const s = window.__ppGetState().clientReview.sections; return Object.keys(s).find((k) => s[k]?.status === 'approved') || null; });
-  // clicking the now-green marker opens a confirm dialog (does NOT flip immediately)
-  await page.evaluate(() => { const m = document.querySelector('.nav-review-approved'); if (m) m.click(); }); await sleep(250);
-  const dlg = await dialogText();
-  await clickCancelBtn(); await sleep(250);
-  const stillApproved = await page.evaluate((r) => window.__ppGetState().clientReview.sections[r]?.status === 'approved', approvedRoute);
-  check('M un-approve confirms; Cancel keeps the approval',
-    !!approvedRoute && !!dlg && dlg.includes('approved on') && stillApproved,
-    `route=${approvedRoute} dlg=${!!dlg} stillApproved=${stillApproved}`);
+  await dispatch({ type: 'UPDATE_CLIENT_REVIEW', kind: 'sections', id: '/requests', patch: { status: 'approved' }, sitting: 'seed-old-sitting' });
+  await sleep(250);
+  await page.waitForSelector('.sidebar', { timeout: 8000 });
+  const markers = await page.$$eval('.sidebar .nav-review-ir, .sidebar .nav-review-approved, .sidebar .nav-review-compact, .nav-review[role="button"]', (els) => els.length);
+  const kept = await page.evaluate(() => window.__ppGetState().clientReview.sections['/requests']?.status === 'approved');
+  check('M no marker in the menu; the approval stays in the record', markers === 0 && kept, `markers=${markers} kept=${kept}`);
 });
 
 await step('N a layout pick from an earlier visit locks, and its Change asks to confirm', async () => {
@@ -416,6 +413,99 @@ await step('O a misclick fix within the SAME visit needs no confirm and adds no 
   check('O same-visit misclick fix: choice changed, no confirm dialog, no history',
     noDialog && e?.choice === 'b' && (!Array.isArray(e?.history) || e.history.length === 0),
     `dialog=${!noDialog} choice=${e?.choice} hist=${JSON.stringify(e?.history)}`);
+});
+
+// ── P. one card per item (task #130, CS-885): what is typed for an item stays with that item ───
+// ReviewFocus drew the cards with no key, so Next / Back / Skip kept the card: a note typed but not
+// added sat in the next item's box (Add note or leaving then posted it there), a confirmed Change
+// unlocked the next item, and a text answer typed on a tap that did not blur was saved on the next
+// question. Each item now gets its own card, and leaving it is leaving the visit.
+const notesOf = (bucket, id) => (bucket?.[id]?.notes || []).map((n) => n.text);
+const clickBackDom = () => page.evaluate(() => { const b = document.querySelector('.review-nav .btn-secondary'); if (b) b.click(); });
+const clickAllAreas = () => page.evaluate(() => { const b = document.querySelector('.review-focus-head .detail-back'); if (b) b.click(); });
+
+await step('P1 a draft note typed but not added is saved on THAT draft by Next; the next draft opens with an empty box', async () => {
+  await reset(); await openArea('Drafts to sign off'); await page.waitForSelector('.review-note-input', { timeout: 8000 });
+  const a = itemInUrl();
+  const txt = 'P1-NOTE-' + Date.now();
+  await page.type('.review-note-input', txt);
+  await clickNextRealMouse();
+  const b = itemInUrl();
+  const r = await review();
+  const box = await val('.review-note-input');
+  check('P1 draft note: saved on its own draft by Next; the next draft\'s box empty, its notes untouched',
+    !!a && !!b && a !== b && notesOf(r.drafts, a).includes(txt) && !notesOf(r.drafts, b).includes(txt) && box === '',
+    `${a} -> ${b} onA=${notesOf(r.drafts, a).includes(txt)} onB=${notesOf(r.drafts, b).includes(txt)} box=${JSON.stringify(box)}`);
+});
+
+await step('P2 a question note typed but not added is saved on THAT question by a Next that never blurs the box', async () => {
+  await reset(); await openArea('Contract tracking'); await page.waitForSelector('.review-note-input', { timeout: 8000 });
+  const a = itemInUrl();
+  const txt = 'P2-NOTE-' + Date.now();
+  await page.type('.review-note-input', txt);
+  await clickNextDom(); await sleep(250);   // a tap that leaves the box focused (no blur first)
+  const b = itemInUrl();
+  const r = await review();
+  const box = await val('.review-note-input');
+  check('P2 question note: saved on its own question; the next question\'s box empty, its notes untouched',
+    !!a && !!b && a !== b && notesOf(r.decisions, a).includes(txt) && !notesOf(r.decisions, b).includes(txt) && box === '',
+    `${a} -> ${b} onA=${notesOf(r.decisions, a).includes(txt)} onB=${notesOf(r.decisions, b).includes(txt)} box=${JSON.stringify(box)}`);
+});
+
+await step('P3 Back is the same: a note typed on the second item is saved there, and the first opens with an empty box', async () => {
+  await reset(); await openArea('Contract tracking'); await page.waitForSelector('.review-note-input', { timeout: 8000 });
+  const first = itemInUrl();
+  await clickNextDom(); await sleep(250);
+  const second = itemInUrl();
+  const txt = 'P3-NOTE-' + Date.now();
+  await page.type('.review-note-input', txt);
+  await clickBackDom(); await sleep(250);
+  const r = await review();
+  const box = await val('.review-note-input');
+  check('P3 Back: the note is saved on the item it was typed on; the item returned to shows an empty box',
+    first !== second && itemInUrl() === first && notesOf(r.decisions, second).includes(txt) && !notesOf(r.decisions, first).includes(txt) && box === '',
+    `${first} <- ${second} onSecond=${notesOf(r.decisions, second).includes(txt)} onFirst=${notesOf(r.decisions, first).includes(txt)} box=${JSON.stringify(box)}`);
+});
+
+await step('P4 a text answer typed, then Next with no blur: saved on its own question, never on the next one', async () => {
+  await reset(); await openArea('Time clock & payroll'); await page.waitForSelector('.review-answer', { timeout: 8000 });
+  const a = itemInUrl();
+  const txt = 'P4-TEXT-' + Date.now();
+  await page.focus('.review-answer'); await page.type('.review-answer', txt);
+  await clickNextDom(); await sleep(250);   // the box keeps focus: no blur-save
+  const b = itemInUrl();
+  await clickAllAreas(); await sleep(300); // leaving the area unmounts the card that is showing
+  const r = await review();
+  check('P4 text answer: saved on its own question; the next question gets no text, even once the area is left',
+    !!a && !!b && a !== b && r.decisions[a]?.text === txt && !r.decisions[b]?.text,
+    `${a} -> ${b} a.text=${JSON.stringify(r.decisions[a]?.text)} b.text=${JSON.stringify(r.decisions[b]?.text)}`);
+});
+
+await step('P5 a confirmed Change on one locked question does not unlock the next one', async () => {
+  await reset();
+  await seedSignoff('decisions', 'HUB-3', { choice: 'a' }); await seedSignoff('decisions', 'HUB-4', { choice: 'a' }); await sleep(150);
+  await openArea('Client Hub'); await walkTo('HUB-3'); await page.waitForSelector('.review-status-change', { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('.review-status-change').click()); await sleep(200);
+  await clickConfirmBtn(); await sleep(250);
+  const unlocked = (await page.$('.review-status-change')) == null;
+  await clickNextDom(); await sleep(250);
+  const atNext = itemInUrl() === 'HUB-4';
+  const hasChange = (await page.$('.review-status-change')) != null;
+  const disabled = await page.$eval('.review-opts input', (el) => el.disabled).catch(() => false);
+  check('P5 confirm on HUB-3 stays on HUB-3: HUB-4 still shows Change answer with its options disabled',
+    unlocked && atNext && hasChange && disabled, `unlocked=${unlocked} atHUB-4=${atNext} change=${hasChange} disabled=${disabled}`);
+});
+
+await step('P6 one visit = one card: Back to an item answered a moment ago is a new visit, so changing it asks first (§130)', async () => {
+  await reset(); await openArea('Client Hub'); await walkTo('HUB-1'); await page.waitForSelector('.review-opts', { timeout: 8000 });
+  await page.evaluate(() => { const ins = [...document.querySelectorAll('.review-opts input')]; if (ins[0]) ins[0].click(); }); await sleep(200);
+  await clickNextDom(); await sleep(250);
+  await clickBackDom(); await sleep(250);
+  const back = itemInUrl() === 'HUB-1';
+  const hasChange = (await page.$('.review-status-change')) != null;
+  const kept = (await review()).decisions['HUB-1']?.choice === 'a';
+  check('P6 Back to HUB-1 after answering it: the answer is kept and Change answer stands in front of it',
+    back && hasChange && kept, `back=${back} change=${hasChange} kept=${kept}`);
 });
 
 const passed = results.filter((r) => r.pass).length;

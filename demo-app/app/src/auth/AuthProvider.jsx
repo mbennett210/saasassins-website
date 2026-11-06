@@ -11,6 +11,11 @@ import { clearCache } from '../store/offlineCache';
 import { flushSyncBeforeSignOut, markSyncCacheWipeForSignOut, unmarkSyncCacheWipeForSignOut } from '../store/sync';
 import { flushClockQueues } from '../lib/offlineFlush';
 import { clearGateMemo } from '../lib/checklistGateMemo';
+import { clearAllChecklistDrafts } from '../lib/checklistDraft';
+import { clearAvatarLinks } from '../lib/avatarUrls';
+import { requestPasswordReset } from '../lib/passwordReset';
+import { offlineSessionFallback, storedSession } from '../lib/offlineSession';
+import { clearPunchProjection } from '../lib/punchProjection';
 
 const SessionCtx = createContext(null);
 
@@ -56,12 +61,28 @@ export function AuthProvider({ children }) {
     // /login to retry instead of showing a frozen "Loading…".
     const settle = (s) => { if (!mounted) return; if (s) wasAuthedRef.current = true; setSession(s ?? null); setLoading(false); };
     const failsafe = setTimeout(() => { if (mounted) setLoading(false); }, 8000);
+    // CS-665: with no signal, an expired token cannot be refreshed and getSession() answers no
+    // session although it is on the phone — an installed app opened in a basement went to the
+    // sign-in page. The phone's own session renders the app then (lib/offlineSession); the
+    // server is still the boundary, and the refresh happens the moment the signal is back.
+    // `firstRead` remembers how the first read ended, for the INITIAL auth event below.
+    let firstRead = 'pending'; // 'pending' | 'session' | 'offline' | 'none'
+    const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+    const firstSession = (session, error) => {
+      const s = offlineSessionFallback({ session, error, online: isOnline(), stored: storedSession() });
+      firstRead = session ? 'session' : (s ? 'offline' : 'none');
+      settle(s);
+    };
     supabase.auth.getSession()
-      .then(({ data }) => settle(data?.session ?? null))
-      .catch(() => settle(null))
+      .then(({ data, error }) => firstSession(data?.session ?? null, error))
+      .catch((e) => firstSession(null, e))
       .finally(() => clearTimeout(failsafe));
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       if (!mounted) return;
+      // The INITIAL event re-reads the session exactly as getSession() above did, and with no
+      // signal answers none for an expired token. That answer is the first read's to give:
+      // wait for it, and keep the phone's own session when the first read fell back to it.
+      if (event === 'INITIAL_SESSION' && !s && (firstRead === 'pending' || firstRead === 'offline')) return;
       setSession(s ?? null);
       setLoading(false);
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
@@ -136,6 +157,7 @@ export function AuthProvider({ children }) {
       try { markSyncCacheWipeForSignOut(); } catch { /* ignore */ }
       try { await unsubscribeCurrentDevice(); } catch { /* ignore */ }
       try { await clearCache(); } catch { /* ignore */ }
+      try { clearAvatarLinks(); } catch { /* ignore */ }
       let res;
       try { res = await supabase.auth.signOut(); } catch (e) { res = { error: e }; }
       // On success, SIGNED_OUT (onAuthStateChange) resets signingOutRef and drops us to the
@@ -222,6 +244,15 @@ export function AuthProvider({ children }) {
       // owner on a shared phone (SEC-23 / DATA-62). Unlike a buffered punch there is
       // nothing to lose: the verdict is re-derivable from the server on the next read.
       try { clearGateMemo(); } catch { /* ignore */ }
+      // The checklist page's drafts (lib/checklistDraft, UI_RULES §166) are the same kind of
+      // record — who ticked what, and why a task could not be done — so they leave too.
+      try { clearAllChecklistDrafts(); } catch { /* ignore */ }
+      // The phone's copy of this cleaner's own punches (lib/punchProjection, CS-666) is their
+      // hours; it leaves with them too. Re-read from the server at the next sign-in.
+      try { clearPunchProjection(); } catch { /* ignore */ }
+      // The team photos' signed links (lib/avatarUrls) are bearer links to private photos
+      // for hours: on a shared phone they leave with the person too (UI_RULES §141).
+      try { clearAvatarLinks(); } catch { /* ignore */ }
       // AWAITED, with an error reset: auth-js resolves { error } WITHOUT emitting
       // SIGNED_OUT on a network failure, so nothing downstream would ever reset
       // signingOutRef — every later Sign out tap silently no-ops via the
@@ -241,11 +272,13 @@ export function AuthProvider({ children }) {
       }
       return res;
     },
+    // "Forgot password?" asks the app's own server (POST /api/public/auth/forgot, lib/passwordReset.js),
+    // which emails the office's reset email from the Google system sender, its link landing on the
+    // app's /login (the server's appPublicUrl, so never this tab's alias) — not Supabase's built-in
+    // mailer (CS-122). The same { error } answer as before; it never says whether the address has a login.
     sendPasswordReset: (email) =>
       supabase
-        ? supabase.auth.resetPasswordForEmail(email.trim(), {
-            redirectTo: `${window.location.origin}/login`,
-          })
+        ? requestPasswordReset(email)
         : Promise.resolve({ error: { message: 'Auth is not configured.' } }),
     updatePassword: (password) =>
       supabase

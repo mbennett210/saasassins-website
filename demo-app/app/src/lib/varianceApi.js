@@ -59,6 +59,8 @@ function mapRow(r) {
     overrideReason: r.override_reason ?? null,
     distanceM: r.clock_in_distance_m,
     approvalStatus: r.approval_status,
+    // Twin of api/_lib/variance/compute.js — carries the version for the demo Approve CAS.
+    rowVersion: r.row_version ?? null,
     editHistory: r.edit_history,
     // Twin of api/_lib/variance/compute.js mapRow — see the note there. Both dropped
     // `note`, so BOTH the deployed path and the local/demo path hid the reason a

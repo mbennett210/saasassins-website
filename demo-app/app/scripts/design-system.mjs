@@ -104,10 +104,36 @@ fs.writeFileSync(entry, [
   ...comps.exports.map((e, i) => (e.named ? `import { ${e.name} as x${i} } from ${abs(e.from)};` : `import x${i} from ${abs(e.from)};`)),
   `var g = window; g.${comps.namespace} = Object.assign(g.${comps.namespace} || {}, { ${comps.exports.map((e, i) => `${e.name}: x${i}`).join(', ')} });`,
 ].join('\n'));
+// The components read their words through the translation layer (CS-193, src/i18n). Its
+// browser runtime loads Spanish and Creole lazily (a dynamic import), which a classic script
+// cannot carry, so the design system's previews read a static ENGLISH runtime instead: the
+// catalog's English, exactly what an English reader sees.
+const I18N_RUNTIME_SHIM = `var snap = { choice: 'auto', phone: null, lang: 'en', version: 0 };
+export function subscribeLanguage() { return function () {}; }
+export function getLanguageSnapshot() { return snap; }
+export function currentLanguage() { return 'en'; }
+export function setLanguageChoice() {}
+export function ensureCatalog() { return Promise.resolve(true); }
+export function preloadCurrentLanguage() { return Promise.resolve(true); }`;
+const isI18nRuntime = (id, importer) => /(^|[\\/])runtime(\.js)?$/.test(id)
+  && (/(^|[\\/])i18n[\\/]runtime(\.js)?$/.test(id) || /[\\/]src[\\/]i18n[\\/]/.test(importer || ''));
+// The Avatar asks the team-photo link cache for a member's photo (UI_RULES §141), whose fetcher
+// is the API client, and through it the Supabase client — whose own lazy `import()` a classic
+// script cannot carry. The previews have no backend and no team photos, so the fetcher answers
+// "no photos" and every preview avatar shows its initials, exactly as a member without a photo.
+const AVATAR_API_SHIM = 'export function fetchAvatarUrls() { return Promise.resolve({ urls: {} }); }';
+const isAvatarApi = (id, importer) => /(^|[\\/])avatarApi(\.js)?$/.test(id) && /[\\/]src[\\/]lib[\\/]/.test(importer || '');
 const shimPlugin = {
   name: 'design-system-globals',
-  resolveId: (id) => (Object.hasOwn(SHIMS, id) ? '\0shim:' + id : null),
-  load: (id) => (id.startsWith('\0shim:') ? SHIMS[id.slice(6)] : null),
+  resolveId: (id, importer) => {
+    if (Object.hasOwn(SHIMS, id)) return '\0shim:' + id;
+    if (isI18nRuntime(id, importer)) return '\0shim-i18n-runtime';
+    if (isAvatarApi(id, importer)) return '\0shim-avatar-api';
+    return null;
+  },
+  load: (id) => (id === '\0shim-i18n-runtime' ? I18N_RUNTIME_SHIM
+    : id === '\0shim-avatar-api' ? AVATAR_API_SHIM
+      : id.startsWith('\0shim:') ? SHIMS[id.slice(6)] : null),
 };
 const web = await rolldown({ input: entry, platform: 'browser', cwd: APP, transform: { jsx: 'react-jsx', define: { 'process.env.NODE_ENV': '"production"' } }, plugins: [shimPlugin], logLevel: 'warn' });
 await web.write({ file: path.join(tmp, 'bundle.js'), format: 'iife', minify: true });

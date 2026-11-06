@@ -5,7 +5,8 @@
 //    segmented class pairs "render identically": until 2026-09-25 `.segmented` was the retired flush fill (a glass
 //    track, square segments with dividers, 12px) and `.messaging-inbox-toggle` had a grey track. Now each group is
 //    checked property by property, so a divergence fails here instead of reading as a fourth style. The segments
-//    also lay out an icon or a count alike (display, alignment, gap).
+//    also lay out an icon or a count alike (display, alignment, gap). The tracks share the floor (2026-10-30, UI_RULES
+//    §184, CS-956): a column never narrower than its words, and a row too long for its room scrolls in place.
 // 2. Retired names: one-off controls that duplicated a kit control were migrated to it (the pager, the attach
 //    picker, "Read & Reply", the retry buttons, New conversation's "more", Messaging's second icon square, the
 //    10px-text btn-xs, the compact segmented, and the fourth tab styles: Marketing's glass pills, the customer
@@ -41,7 +42,7 @@ const declared = (sel) => topLevel(CSS_RAW, sel);
 
 const GROUPS = [
   { name: 'the §7 segmented tracks', sels: ['.tab-container-line', '.messaging-inbox-toggle', '.segmented'],
-    props: ['display', 'grid-auto-flow', 'grid-auto-columns', 'background', 'border', 'border-radius', 'padding', 'gap'] },
+    props: ['display', 'grid-auto-flow', 'grid-auto-columns', 'max-width', 'overflow-x', 'scrollbar-width', 'background', 'border', 'border-radius', 'padding', 'gap'] },
   { name: 'the §7 segments', sels: ['.tab-btn', '.inbox-toggle-btn', '.segmented-btn'],
     props: ['display', 'align-items', 'justify-content', 'gap', 'padding', 'border', 'border-radius', 'font-size', 'font-weight', 'color', 'background', 'white-space'] },
   { name: 'the §7 active segments', sels: ['.tab-btn.active', '.inbox-toggle-btn.active', '.segmented-btn.active'],
@@ -173,12 +174,21 @@ const SIZERS = {
     '@media (max-width: 640px)|.btn-icon, .modal-close': ['width', 'height'],
     '@media (max-width: 640px)|.thread-row .btn-icon': ['width', 'height'],
     '@container msgpane (max-width: 640px)|.message-pane-actions .btn-icon': ['width', 'height'],
+    // The cleaner's checklist page (UI_RULES §166): every control a cleaner taps there is 44px, the
+    // Cleaner Hub's phone floor, worked one-handed on a cart — one class, `.crew-chk-tap`.
+    '|.crew-chk-tap.btn-icon': ['width', 'height'],
   } },
   '.modal-close': { props: BOX, allowed: { '|.modal-close': '*', '@media (max-width: 640px)|.btn-icon, .modal-close': ['width', 'height'] } },
   // the add tile's look lives in .add-tile; its containers (a sequence's flow row) only place and size the slot
   '.add-tile': { props: ['padding', 'border', 'border-width', 'border-style', 'border-radius', 'font-size', 'font-weight'], allowed: { '|.add-tile': '*' } },
   // .chip-sm is its own class; the job editor's day picker is the one dense exception (a week fits one row)
-  '.chip': { props: [...BOX, 'padding', 'font-size'], allowed: { '|.chip': '*', '|.day-picker .chip': ['min-width', 'padding', 'font-size'] } },
+  // …and the cleaner's checklist page takes the 44px floor for its N/A chip and its reason picks (UI_RULES §166),
+  // as do the public QR page's two thumbs, a stranger's one-handed tap (UI_RULES §174)
+  '.chip': { props: [...BOX, 'padding', 'font-size'], allowed: { '|.chip': '*', '|.day-picker .chip': ['min-width', 'padding', 'font-size'], '|.crew-chk-tap.chip': ['min-height', 'height'], '|.chip.scan-rate-btn': ['min-height', 'height'] } },
+  // The × inside a chip or a holder: its desktop rule sets no box at all (it is text), and
+  // the ONE rule that may give it a box is the phone tap-target rule — 44px, the touch
+  // floor, because on the Assignments screen it is the only way to remove a holder.
+  '.chip-remove': { props: BOX, allowed: { '@media (max-width: 640px)|.chip-remove': ['width', 'height'] } },
 };
 console.log('one size per kit control');
 {

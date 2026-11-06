@@ -1,74 +1,38 @@
-// MobileNotificationList — the mobile (≤640px) notifications surface rendered
-// inside the bell's MobileSheet (NotificationsBell gates on useIsMobile). A
-// triage inbox: an All / Unread segmented filter (the kit .segmented, UI_RULES
-// §7), day sections (Today / Yesterday / Earlier) with an unread tally, and slim
-// rows carrying a type-colour icon + a left accent. Each row swipes: LEFT to
-// dismiss, RIGHT (unread only) to mark read; tapping opens it. The anchored
-// desktop dropdown (.bell-list / .bell-item in NotificationsBell) is unchanged —
-// this replaces ONLY the sheet body, so the dead-link handling there is untouched.
+// MobileNotificationList — the phone (≤640px) notifications list rendered inside the bell's
+// MobileSheet (NotificationsBell gates on useIsMobile). A QUIET list (owner pick 2026-10-03:
+// mockup "A, quiet list" with "C"'s filter chips): plain rows on the white sheet, a neutral
+// icon disc that turns red only for an ALERT, unread shown ONCE (a dot and a bold title; no
+// row tint, no colour bar), two lines of detail, and day labels.
 //
-// Colour + icon per event come from EVENT_META below, keyed by the notification
-// eventKey (lib/notifications.js catalog). The colour is applied as the CSS var
-// --mn via the mnotif--<cat> class, so every hue is a theme token (the re-skin
-// guarantee, UI_RULES §121) — no literal reaches this component.
+// Filter chips (the kit .chip + .control-count) narrow the list to one kind: Alerts,
+// Messages, Work, Supplies, Money. A chip appears only when it has something to show, and
+// the chip row is left out when everything is one kind, so a cleaner who only ever gets
+// schedule news never sees five empty filters.
+//
+// Each row swipes: LEFT to dismiss, RIGHT (unread only) to mark read; tapping opens it.
+// "Clear all" sits at the foot of the list and asks there, in place, before it runs. The anchored
+// desktop dropdown (.bell-list in NotificationsBell) is unchanged, and so is its dead-link
+// handling: this component only renders what isDeadLink says.
+//
+// Icon, chip and alert per event come from lib/notificationMeta (every catalog event has a
+// row: test-notification-meta.mjs). Every colour is a theme token (UI_RULES §121).
 
 import { useRef, useState } from 'react';
 import Icon from './Icon';
+import { useT } from '../i18n/react';
+import { timeAgo } from '../i18n/relative';
+import { dayKey, addDaysKey } from '../lib/dates';
+import { NOTIFICATION_FILTERS, notificationMeta } from '../lib/notificationMeta';
 
-// eventKey -> { icon (Icon name), cat (drives --mn via .mnotif--<cat>) }.
-// Categories reuse the app's existing semantic/accent palette (the same hues as
-// the Badge variants), so type-colour is consistent with the rest of the app.
-const EVENT_META = {
-  newClientMessage:       { icon: 'mail',         cat: 'message' },
-  newDM:                  { icon: 'messaging',    cat: 'message' },
-  newInternalMessage:     { icon: 'messaging',    cat: 'message' },
-  jobCreatedOrRescheduled:{ icon: 'schedule',     cat: 'schedule' },
-  jobCancelled:           { icon: 'schedule',     cat: 'alert' },
-  shiftLate:              { icon: 'warning',      cat: 'alert' },
-  shiftMissed:            { icon: 'warning',      cat: 'alert' },
-  accountOpsUpdated:      { icon: 'settings',     cat: 'account' },
-  keyCustody:             { icon: 'lock',         cat: 'keys' },
-  keyLost:                { icon: 'lock',         cat: 'alert' },
-  reminderFailed:         { icon: 'warning',      cat: 'alert' },
-  supplyRequestSubmitted: { icon: 'box',          cat: 'supplies' },
-  supplyRequestCompleted: { icon: 'box',          cat: 'supplies' },
-  problemReported:        { icon: 'warning',      cat: 'quality' },
-  inspectionFailed:       { icon: 'forms',        cat: 'quality' },
-  newGoogleReview:        { icon: 'star',         cat: 'reviews' },
-  checklistDue:           { icon: 'forms',        cat: 'quality' },
-  inspectionDue:          { icon: 'forms',        cat: 'quality' },
-  invoicePaid:            { icon: 'dollarCircle', cat: 'paid' },
-  invoiceOverdue:         { icon: 'invoices',     cat: 'alert' },
-  marketingReplyAssigned: { icon: 'mail',         cat: 'message' },
-  inboxExpired:           { icon: 'warning',      cat: 'alert' },
-  newLead:                { icon: 'user',         cat: 'sales' },
-  quoteSigned:            { icon: 'check',        cat: 'sales' },
-};
-const metaFor = (eventKey) => EVENT_META[eventKey] || { icon: 'bell', cat: 'account' };
-
-// Relative age. Kept in sync with NotificationsBell's timeAgo (display-only).
-function timeAgo(iso) {
-  if (!iso) return '';
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return 'just now';
-  const m = Math.floor(ms / 60_000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
-// Bucket a timestamp into Today / Yesterday / Earlier (local time).
-const DAY_MS = 86_400_000;
+// Relative age: the shared, translated one (src/i18n/relative — the bell's too).
+// Bucket a timestamp into Today / Yesterday / Earlier, on the ORG's calendar (lib/dates) —
+// the same "today" My Day and the schedule use, not the device's. The label is a catalog key.
 function dayBucket(iso) {
-  const now = new Date();
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const t = new Date(iso).getTime();
-  if (t >= startToday) return { key: 'today', label: 'Today' };
-  if (t >= startToday - DAY_MS) return { key: 'yesterday', label: 'Yesterday' };
-  return { key: 'earlier', label: 'Earlier' };
+  const today = dayKey(new Date());
+  const day = dayKey(iso);
+  if (day === today) return { key: 'today', labelKey: 'notif.today' };
+  if (day === addDaysKey(today, -1)) return { key: 'yesterday', labelKey: 'notif.yesterday' };
+  return { key: 'earlier', labelKey: 'notif.earlier' };
 }
 
 // One swipeable row. Horizontal intent is decided against the first move so the
@@ -77,7 +41,8 @@ function dayBucket(iso) {
 // per-move React render). Past the threshold: left dismisses, right (unread)
 // marks read; otherwise it snaps back.
 function SwipeRow({ n, unread, dead, onOpen, onDismiss, onMarkRead }) {
-  const meta = metaFor(n.eventKey);
+  const t = useT();
+  const meta = notificationMeta(n.eventKey);
   const rowRef = useRef(null);
   const fgRef = useRef(null);
   const g = useRef({ sx: 0, sy: 0, dx: 0, drag: false, decided: false, moved: false, live: false });
@@ -149,9 +114,9 @@ function SwipeRow({ n, unread, dead, onOpen, onDismiss, onMarkRead }) {
   return (
     <li
       ref={rowRef}
-      className={`mnotif-row mnotif--${meta.cat}${unread ? ' is-unread' : ''}${dead ? ' is-dead' : ''}${removing ? ' is-removing' : ''}`}
+      className={`mnotif-row${unread ? ' is-unread' : ''}${meta.alert ? ' is-alert' : ''}${dead ? ' is-dead' : ''}${removing ? ' is-removing' : ''}`}
     >
-      <span className="mnotif-action mnotif-action-lead" aria-hidden="true"><Icon name="check" size={20} />Read</span>
+      <span className="mnotif-action mnotif-action-lead" aria-hidden="true"><Icon name="check" size={20} />{t('notif.read')}</span>
       <span className="mnotif-action mnotif-action-trail" aria-hidden="true"><Icon name="trash" size={20} /></span>
       <button
         type="button"
@@ -162,100 +127,108 @@ function SwipeRow({ n, unread, dead, onOpen, onDismiss, onMarkRead }) {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onClick={onClick}
-        title={dead ? 'This clean was removed from the schedule' : undefined}
+        title={dead ? t('notif.removedTitle') : undefined}
       >
-        <span className="mnotif-chip"><Icon name={meta.icon} size={17} /></span>
-        <span className="mnotif-text">
-          <span className="mnotif-title">{n.title}</span>
-          {n.body && <span className="mnotif-body">{n.body}</span>}
-          {dead && <span className="mnotif-removed">clean removed</span>}
-        </span>
-        <span className="mnotif-meta">
-          <span className="mnotif-time">{timeAgo(n.createdAt)}</span>
+        <span className="mnotif-icon">
           {unread && <span className="mnotif-dot" aria-hidden="true" />}
+          <Icon name={meta.icon} size={18} />
+        </span>
+        <span className="mnotif-main">
+          <span className="mnotif-text">
+            <span className="mnotif-title">{n.title}</span>
+            {n.body && <span className="mnotif-body">{n.body}</span>}
+            {dead && <span className="mnotif-removed"><Icon name="x" size={12} />{t('notif.cleanDeleted')}</span>}
+          </span>
+          <span className="mnotif-time">{timeAgo(t, n.createdAt)}</span>
         </span>
       </button>
     </li>
   );
 }
 
-export default function MobileNotificationList({ items, isDeadLink, onOpen, onDismiss, onMarkRead }) {
+export default function MobileNotificationList({ items, isDeadLink, onOpen, onDismiss, onMarkRead, onClearAll }) {
+  const t = useT();
   const [filter, setFilter] = useState('all');
+  const [confirming, setConfirming] = useState(false);
 
   if (!items.length) {
-    return <div className="bell-empty">You&apos;re all caught up.</div>;
+    return <div className="bell-empty">{t('notif.allCaughtUp')}</div>;
   }
 
-  const unreadTotal = items.reduce((a, n) => a + (n.readAt ? 0 : 1), 0);
-  const view = filter === 'unread' ? items.filter((n) => !n.readAt) : items;
+  const filterOf = (n) => notificationMeta(n.eventKey).filter;
+  // The kinds actually present, in the chips' fixed order. One kind (or none) needs no chips.
+  const present = NOTIFICATION_FILTERS.filter((f) => items.some((n) => filterOf(n) === f.id));
+  const showChips = present.length > 1;
+  // A chip whose last row was just dismissed falls back to All rather than an empty list.
+  const active = showChips && present.some((f) => f.id === filter) ? filter : 'all';
+  const view = active === 'all' ? items : items.filter((n) => filterOf(n) === active);
+  const unreadIn = (id) => items.reduce((a, n) => a + (!n.readAt && (id === 'all' || filterOf(n) === id) ? 1 : 0), 0);
+  const chips = [{ id: 'all', labelKey: 'notif.all' }, ...present];
 
   // Group in the order the selector already sorted (createdAt desc).
   const groups = [];
   for (const n of view) {
     const b = dayBucket(n.createdAt);
     let grp = groups.find((x) => x.key === b.key);
-    if (!grp) { grp = { key: b.key, label: b.label, rows: [] }; groups.push(grp); }
+    if (!grp) { grp = { key: b.key, labelKey: b.labelKey, rows: [] }; groups.push(grp); }
     grp.rows.push(n);
   }
 
   return (
     <div className="mnotif">
-      <div className="mnotif-toolbar">
-        <div className="segmented" role="tablist" aria-label="Filter notifications">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filter === 'all'}
-            className={`segmented-btn ${filter === 'all' ? 'active' : ''}`}
-            onClick={() => setFilter('all')}
-          >
-            All
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={filter === 'unread'}
-            className={`segmented-btn ${filter === 'unread' ? 'active' : ''}`}
-            onClick={() => setFilter('unread')}
-          >
-            Unread{unreadTotal > 0 && <span className="control-count">{unreadTotal}</span>}
-          </button>
-        </div>
-      </div>
-
-      {view.length === 0 ? (
-        <div className="bell-empty">No unread notifications.</div>
-      ) : (
-        <>
-          <p className="mnotif-hint" aria-hidden="true">
-            <Icon name="arrowLeft" size={14} />Swipe to dismiss, or right to mark read
-          </p>
-          {groups.map((grp) => {
-            const grpUnread = grp.rows.reduce((a, n) => a + (n.readAt ? 0 : 1), 0);
+      {showChips && (
+        <div className="mnotif-chips" role="tablist" aria-label={t('notif.filterAria')}>
+          {chips.map((c) => {
+            const count = unreadIn(c.id);
             return (
-              <section className="mnotif-day-sec" key={grp.key}>
-                <header className="mnotif-day">
-                  <span className="mnotif-day-label">{grp.label}</span>
-                  {grpUnread > 0 && <span className="mnotif-day-count">{grpUnread} unread</span>}
-                </header>
-                <ul className="mnotif-list">
-                  {grp.rows.map((n) => (
-                    <SwipeRow
-                      key={n.id}
-                      n={n}
-                      unread={!n.readAt}
-                      dead={isDeadLink(n)}
-                      onOpen={onOpen}
-                      onDismiss={onDismiss}
-                      onMarkRead={onMarkRead}
-                    />
-                  ))}
-                </ul>
-              </section>
+              <button
+                key={c.id}
+                type="button"
+                role="tab"
+                aria-selected={active === c.id}
+                className={`chip${active === c.id ? ' on' : ''}`}
+                onClick={() => setFilter(c.id)}
+              >
+                {t(c.labelKey)}{count > 0 && <span className="control-count">{count}</span>}
+              </button>
             );
           })}
-        </>
+        </div>
       )}
+
+      {groups.map((grp) => (
+        <section className="mnotif-day-sec" key={grp.key}>
+          <h4 className="mnotif-day">{t(grp.labelKey)}</h4>
+          <ul className="mnotif-list">
+            {grp.rows.map((n) => (
+              <SwipeRow
+                key={n.id}
+                n={n}
+                unread={!n.readAt}
+                dead={isDeadLink(n)}
+                onOpen={onOpen}
+                onDismiss={onDismiss}
+                onMarkRead={onMarkRead}
+              />
+            ))}
+          </ul>
+        </section>
+      ))}
+
+      {/* Clear all asks IN PLACE: a Modal (z 100) would open underneath this sheet (z 400). */}
+      <div className="mnotif-foot">
+        {confirming ? (
+          <div className="mnotif-confirm" role="group" aria-label={t('notif.clearAllTitle')}>
+            <p className="mnotif-confirm-text"><strong>{t('notif.clearAllTitle')}</strong> {t('notif.clearAllBody')}</p>
+            <div className="mnotif-confirm-actions">
+              <button type="button" className="btn btn-outline" onClick={() => setConfirming(false)}>{t('common.cancel')}</button>
+              <button type="button" className="btn btn-danger" onClick={() => { setConfirming(false); onClearAll(); }}>{t('notif.clearAll')}</button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="btn btn-link" onClick={() => setConfirming(true)}>{t('notif.clearAll')}</button>
+        )}
+      </div>
     </div>
   );
 }

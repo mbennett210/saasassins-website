@@ -1,3 +1,4 @@
+import { assetUrl } from '../lib/assetUrl'; // polishpoint-demo
 // Gentle self-update. Polls the deployed index.html for a changed asset hash and,
 // when a new build is live, reloads the tab so rollout changes (e.g. the jobs
 // migration stages) reach everyone within minutes — no one has to hit refresh.
@@ -24,7 +25,7 @@ const COOLDOWN_MS = 2 * 60 * 1000;  // never auto-reload twice within 2 min (loo
 // deployed index.html references. Changes whenever a new build is deployed.
 async function fetchAssetSig() {
   try {
-    const res = await fetch(`/index.html?ts=${Date.now()}`, { cache: 'no-store' });
+    const res = await fetch(assetUrl(`/index.html?ts=${Date.now()}`), { cache: 'no-store' });
     if (!res.ok) return null;
     const html = await res.text();
     const set = new Set();

@@ -3,6 +3,7 @@ import {
   selectVisibleSitesFor, selectClientById, selectActiveUsers, selectServices,
   selectEffectiveTagIds, selectEffectiveJobStatus, selectIsJobUnassignedActionable,
 } from '../../store/selectors';
+import { JOB_STATUS_LABELS, JOB_STATUS_VALUES } from '../jobStatus.js';
 
 // FilterSpec[] for the Schedule page (and reused, as a subset, by the Variance
 // report). ctx = { state, user }. Option providers read live data; match
@@ -10,13 +11,11 @@ import {
 // CLEANSPACE_SWEPT.md §5.2 / §2.6.
 
 // Exported: the ONE status → label vocabulary for cleans (global search reuses it).
-export const STATUS_OPTIONS = [
-  { value: 'upcoming', label: 'Upcoming' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'done', label: 'Done' },
-  { value: 'missed', label: 'Missed' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
+// DERIVED from lib/jobStatus.js, which is the pure, import-free declaration node tests
+// and api/ routes can read — this file cannot be loaded outside Vite (it imports
+// selectors), which is how `reminderScheduler` came to restate the list by hand and get
+// it wrong (CS-056). Add a status THERE, not here.
+export const STATUS_OPTIONS = JOB_STATUS_VALUES.map((value) => ({ value, label: JOB_STATUS_LABELS[value] }));
 
 export const scheduleFilterSpecs = [
   {

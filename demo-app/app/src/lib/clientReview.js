@@ -131,6 +131,47 @@ export function isDraftResolved(entry) {
   return entry.status === DRAFT_ACCEPTED || hasAnyNote(entry);
 }
 
+// A draft is CURRENT when it is resolved AND that answer is not older than the draft itself:
+// `changedOn` is the day its words or state last changed (data/emailDraftIds EMAIL_DRAFT_CHANGED,
+// 'YYYY-MM-DD'), and a verdict or a note given before it no longer counts as reviewing it, so the
+// draft is open again. The answer is never touched: it stays attached and shown (the review is
+// add-only). An ISO timestamp compares with a 'YYYY-MM-DD' day as text, so an answer on the day of
+// the change or later counts. No `changedOn` = resolved is current.
+export function draftAnsweredAt(entry) {
+  if (!entry) return null;
+  let latest = typeof entry.at === 'string' ? entry.at : null;
+  for (const n of Array.isArray(entry.notes) ? entry.notes : []) {
+    if (n && typeof n.at === 'string' && (!latest || n.at > latest)) latest = n.at;
+  }
+  return latest;
+}
+export function isDraftCurrent(entry, changedOn = null) {
+  if (!isDraftResolved(entry)) return false;
+  if (!changedOn) return true;
+  const at = draftAnsweredAt(entry);
+  return !!at && at >= changedOn;
+}
+
+// A draft is WAITING ON US when the client sent it back: a note on the words as they are now
+// (current) with no acceptance, whether or not they also pressed Request changes. It owes the
+// client nothing, so it is never in the attention count, but it must not vanish either (CS-864:
+// Matt's ten change requests of 2026-09-30 sat unseen until 2026-10-17). It leaves when we change
+// the words (an EMAIL_DRAFT_CHANGED day after the note puts it back in Drafts to sign off as New)
+// or the client accepts it. "Changes requested" with no note yet is not here: it still owes a note.
+export function isDraftWaitingOnUs(entry, changedOn = null) {
+  return isDraftCurrent(entry, changedOn) && entry.status !== DRAFT_ACCEPTED;
+}
+
+// The notes a waiting draft was sent back with: those given on its current words (on or after
+// `changedOn`), oldest first; a draft never changed keeps them all. If none is that new (a Request
+// changes after the change, on an older note), the newest note, so the list always has the reason.
+export function waitingNotes(entry, changedOn = null) {
+  const all = reviewNotes(entry);
+  if (!changedOn) return all;
+  const since = all.filter((n) => n.at && n.at >= changedOn);
+  return since.length ? since : all.slice(-1);
+}
+
 // A pick is RESOLVED once the client has chosen a variant OR left any note (mirrors the
 // draft rule) — an unmade pick is what a "layout in review" banner surfaces.
 export function isPickResolved(entry) {
@@ -153,41 +194,51 @@ export function isDecisionAnswered(entry) {
 }
 
 // A PURE summary of the whole review layer, for the hub hero, the tiles and the nav count.
-// `decisionIndex` is BUILD_DECISION_INDEX ([{ id, added }]) and `draftAdded` is
-// EMAIL_DRAFT_ADDED (draftId -> 'YYYY-MM-DD'); both are the heavy-import-free indexes, so the
-// full question/template text never enters the common chunk. `draftIds` is EMAIL_DRAFT_IDS.
+// `decisionIndex` is BUILD_DECISION_INDEX ([{ id, added }]), `draftAdded` is EMAIL_DRAFT_ADDED
+// and `draftChanged` EMAIL_DRAFT_CHANGED (draftId -> 'YYYY-MM-DD'); all are the heavy-import-free
+// indexes, so the full question/template text never enters the common chunk. `draftIds` is
+// EMAIL_DRAFT_IDS.
 //
-// "New" is SHARED (one login) and date-driven: an item is new iff its `added` equals the
-// LATEST `added` across BOTH catalogs AND it is still OPEN (a question unanswered, a draft
-// unresolved). So "new" clears by answering or resolving, never by viewing, and an item with
-// no `added` is never new. Returns counts plus the exact new-id lists (order = catalog order).
-export function reviewSummary(review, decisionIndex, draftIds, draftAdded) {
+// "New" is SHARED (one login) and date-driven: an item is new iff its `added` — or, for a draft,
+// the day it CHANGED — equals the LATEST such date across BOTH catalogs AND it is still OPEN (a
+// question unanswered; a draft not current: unresolved, or answered before it changed). So "new"
+// clears by answering or resolving, never by viewing, and an item with no date is never new.
+// Returns counts plus the exact new-id lists (order = catalog order).
+export function reviewSummary(review, decisionIndex, draftIds, draftAdded, draftChanged) {
   const r = review || emptyReview();
   const decisions = normalizeMap(r.decisions);
   const drafts = normalizeMap(r.drafts);
   const idx = Array.isArray(decisionIndex) ? decisionIndex : [];
   const ids = Array.isArray(draftIds) ? draftIds : [];
   const added = draftAdded && typeof draftAdded === 'object' ? draftAdded : {};
+  const changed = draftChanged && typeof draftChanged === 'object' ? draftChanged : {};
+  const current = (id) => isDraftCurrent(drafts[id], changed[id] || null);
 
   const openDecisions = idx.reduce((n, d) => n + (isDecisionAnswered(decisions[d.id]) ? 0 : 1), 0);
-  const pendingDrafts = ids.reduce((n, id) => n + (isDraftResolved(drafts[id]) ? 0 : 1), 0);
+  const pendingDrafts = ids.reduce((n, id) => n + (current(id) ? 0 : 1), 0);
 
   // The latest update: the max `added` date across BOTH catalogs. Date-only 'YYYY-MM-DD'
   // strings compare correctly lexicographically. Items with no `added` never move it.
   let latestUpdate = null;
   for (const d of idx) if (d.added && (!latestUpdate || d.added > latestUpdate)) latestUpdate = d.added;
-  for (const id of ids) { const a = added[id]; if (a && (!latestUpdate || a > latestUpdate)) latestUpdate = a; }
+  for (const id of ids) {
+    for (const a of [added[id], changed[id]]) if (a && (!latestUpdate || a > latestUpdate)) latestUpdate = a;
+  }
 
   const newDecisionIds = latestUpdate
     ? idx.filter((d) => d.added === latestUpdate && !isDecisionAnswered(decisions[d.id])).map((d) => d.id)
     : [];
   const newDraftIds = latestUpdate
-    ? ids.filter((id) => added[id] === latestUpdate && !isDraftResolved(drafts[id]))
+    ? ids.filter((id) => (added[id] === latestUpdate || changed[id] === latestUpdate) && !current(id))
     : [];
+  // Sent back to us (catalog order): its own count, never part of `attention` (CS-864).
+  const waitingDraftIds = ids.filter((id) => isDraftWaitingOnUs(drafts[id], changed[id] || null));
 
   return {
     openDecisions,
     pendingDrafts,
+    waitingDrafts: waitingDraftIds.length,
+    waitingDraftIds,
     attention: openDecisions + pendingDrafts,
     latestUpdate,
     newDecisionIds,

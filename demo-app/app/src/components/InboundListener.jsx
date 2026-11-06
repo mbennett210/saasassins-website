@@ -1,13 +1,7 @@
-// Polls the backend inbound endpoint and routes each buffered reply so it's
-// handled exactly once:
-//   • landed on a per-user personal inbox (Settings → Connected Inboxes)
-//     → RECEIVE_EMAIL: threads into the 1:1 Messaging conversation
-//   • anything else (the shared marketing rotation inboxes, or unknown)
-//     → RECEIVE_MARKETING_REPLY: correlates to an enrollment, halts the drip,
-//       routes the contact — exactly as before.
-// Personal and marketing inboxes are always distinct addresses, so the
-// `toInboxEmail` the backend records on each reply is an unambiguous router —
-// no fragile Message-ID matching needed.
+// Polls the backend inbound endpoint and files each buffered email the server hasn't threaded:
+// RECEIVE_EMAIL for one that landed on a personal inbox (a 1:1 Messaging thread),
+// RECEIVE_MARKETING_REPLY for anything else (halts the drip, routes the contact). The decision
+// is lib/inboundCursor.js `inboundActions`, shared with the offline suite.
 //
 // Replaces the marketing-only listener. Dev (stub mode, no VITE_EMAIL_BACKEND_URL):
 // no-op — marketing replies are exercised via the "Simulate a reply" affordance
@@ -15,11 +9,19 @@
 //
 // One fixed 60s tick (the backend self-throttles its own Gmail polling). The
 // cursor (last inbound `seq` seen) is persisted so a reload doesn't replay.
+//
+// 🔴 NEVER AT OR BELOW THE SERVER'S CURSOR (CS-968). The ingest cron threads every buffered email
+// into the record in the run that buffered it and stores how far it got (`inboundIngestSeq`).
+// This tab polls from the later of its own cursor and that one (`pollFrom`), files nothing at or
+// below it, and passes each email's `seq` to the reducer, which checks it again against the state
+// it lands on. Before, a browser polling from 0 (a new phone on the shared login) filed again a
+// reply whose thread had been deleted.
 
 import { useEffect, useRef } from 'react';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
 import { pollInbound, INBOX_BACKEND_URL } from '../lib/connectedInboxes';
+import { inboundActions, pollFrom } from '../lib/inboundCursor.js';
 
 // Key unchanged from the former marketing-only listener so live deployments
 // resume from their existing cursor instead of replaying buffered mail.
@@ -43,51 +45,10 @@ export default function InboundListener() {
       if (busyRef.current) return;
       busyRef.current = true;
       try {
-        const res = await pollInbound(cursorRef.current);
+        const res = await pollInbound(pollFrom(cursorRef.current, stateRef.current));
         if (cancelled || !res || !Array.isArray(res.emails)) return;
 
-        // Addresses of the personal mailboxes. Mail that landed on one of
-        // these belongs in a 1:1 Messaging thread; everything else is a reply
-        // to a shared marketing send. The set comes from the SERVER (the
-        // inbox_accounts table, piggybacked on the poll response) — the blob's
-        // connectedInboxes was EMPTY in prod, so this fork matched nothing and
-        // diverted every inbound message to marketing (the 2026-06-21
-        // Messaging blackout). Blob fallback only for an older-deploy server
-        // response that omits the field.
-        const personalInboxes = new Set(
-          (Array.isArray(res.personalInboxes) && res.personalInboxes.length
-            ? res.personalInboxes
-            : (stateRef.current.connectedInboxes || []).map((i) => i.email))
-            .map((e) => (e || '').toLowerCase())
-            .filter(Boolean)
-        );
-
-        for (const email of res.emails) {
-          const landedOn = (email.toInboxEmail || '').toLowerCase();
-          if (landedOn && personalInboxes.has(landedOn)) {
-            dispatch({
-              type: ACTIONS.RECEIVE_EMAIL,
-              messageId: email.messageId || undefined,
-              fromEmail: email.fromEmail,
-              toInboxEmail: email.toInboxEmail,
-              subject: email.subject,
-              body: email.body,
-              inReplyTo: email.inReplyTo,
-              references: email.references,
-              receivedAt: email.receivedAt || undefined,
-            });
-          } else {
-            dispatch({
-              type: ACTIONS.RECEIVE_MARKETING_REPLY,
-              id: email.messageId || undefined,
-              enrollmentId: email.enrollmentId || null,
-              fromEmail: email.fromEmail,
-              subject: email.subject,
-              body: email.body,
-              receivedAt: email.receivedAt || undefined,
-            });
-          }
-        }
+        for (const action of inboundActions(res, stateRef.current, ACTIONS)) dispatch(action);
 
         if (typeof res.cursor === 'number' && res.cursor > cursorRef.current) {
           cursorRef.current = res.cursor;

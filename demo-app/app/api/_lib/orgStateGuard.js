@@ -16,18 +16,44 @@
 // Every write the app makes is routed here (Increment 1d). 1e itself is the
 // migration 20260803150000_increment_1e_revoke_browser_writes.sql (it drops the
 // browser's org_state write policies); on a database where it is applied this is
-// the real boundary, and the direct-write fallback in store/sync.js fails RLS and
-// retries through here. Where it is not applied, the browser can still write
-// around this check. Whether it is applied is a fact of the live database, not of
-// this repo.
+// the real boundary. The app no longer has any other way to write (store/sync.js's
+// direct-write fallback was deleted, CS-009); where 1e were not applied, a browser
+// could still write around this check by hand. Whether it is applied is a fact of
+// the live database, not of this repo.
 //
 // DESIGN: deny by exception, not by allowlist. The blob has ~47 slices and most
 // are ordinary business data any authenticated user legitimately edits (jobs,
 // clients, notes...). Enumerating those would be a maintenance trap that fails
 // OPEN on every new slice. Instead we name the small set of fields that confer
-// AUTHORITY and check only those — a new slice is unprotected by default, which
-// is the correct default for data but must never be true for authority. If you
-// add an authority-bearing field, add it here.
+// AUTHORITY — and, since CS-003, every slice that is MONEY or a DELETE of a customer —
+// and check only those: a new slice is unprotected by default, which is the correct
+// default for data but must never be true for authority or money. If you add an
+// authority- or money-bearing field, add it here AND to protectedFingerprint.
+// (A crew login never reaches this as a policy: its save is a merge through an
+// allowlist, api/_lib/crewMerge.js, CS-002; the guard re-runs there only as a backstop.)
+//
+// 🔴 MONEY AND CUSTOMER ARCHIVES FOLLOW THE MATRIX FOR EVERYONE BUT THE SUPER ADMIN (CS-003,
+// 2026-10-03; the archive replaced the customer delete on 2026-10-13, CS-663). The checks below
+// that predate the 4th tier let OWNER AND ADMIN pass by role
+// ("never tightened"), and invoices had no check at all. But the screens gate an Admin on
+// the same keys as everyone (Invoices on invoices.edit / invoices.recordPayment, Payroll on
+// payroll.edit, a pay rate on payroll.rates.edit, Reimbursements on hr.edit, a customer
+// archive on clients.delete) and by Q24 an Admin holds none of the money keys by default — so
+// the role pass was a server path the app never used, open to a crafted save. Now:
+//   invoices (create, the bill, delete) <- invoices.edit    payments <- invoices.recordPayment
+//   void <- invoices.edit · un-void <- owner only (InvoiceDetail canUnvoid) · a stored
+//   status move otherwise (bulk "Mark paid") <- invoices.edit or invoices.recordPayment
+//   payroll lines <- payroll.edit (or hr.edit for special / reimbursement lines)
+//   any member's pay rate, an Admin's own included <- payroll.rates.edit
+//   reimbursements <- hr.edit · archiving or restoring a customer <- clients.delete
+// the Super Admin by role (the recoverable top tier), everyone else by the COMMITTED matrix +
+// overrides. REMOVING a customer is refused for everyone (customers are archived, never
+// deleted — CS-663 / CS-027). The Team checks below keep their owner+admin role lists.
+// And since 2026-10-03 (the Customers import; CS-622's contacts half), the same way:
+//   adding a customer <- clients.edit · adding a contact, or changing a contact's details
+//   (name, email, phone, title, the customer it belongs to) <- contacts.edit
+// A contact's other fields (do-not-contact, reminder opt-out, tags, notes) and its removal stay
+// as they were (CS-622).
 
 // WHO MAY CHANGE WHAT — the server agrees with the app. Each check passes for the
 // roles that always could (owner, or owner+admin; never tightened), OR for whoever
@@ -60,6 +86,14 @@
 //   permissions             <- settings.roles.edit (rows in the shape the Roles page writes)
 //   userPermissionOverrides <- staff.editOverrides (other members only; never a Super Admin's; well-formed rows)
 //   company.timezone        <- owner only          (owner's call, 2026-09-23)
+//   users[].managerLevel, users[].opsManagerId <- owner+admin holding ops.edit (S131: who is an
+//                                                   Operations Manager, and whose team an account
+//                                                   manager is on — a valid pointer for everyone);
+//                                                   a level change ALSO takes holding everything
+//                                                   the target column carries, and never your own
+//                                                   (CS-858: the level picks a permission column)
+//   clients[].supervisorId  <- owner+admin; an Operations Manager holding ops.edit only between
+//                              members of their own (committed) team (S131)
 //   standingCrewIds, sites[].clientId <- owner+admin (nothing in the app writes them since 2026-09-09)
 //   timeOff                 <- settings.team.edit or hr.edit
 //   the roster's shape      <- owner only          (no new row without an id, second row for an id or
@@ -91,17 +125,27 @@
 // _lib/teamAuthority.js.
 import { createHash } from 'node:crypto';
 import { jsonEq } from './jsonEq.js';
-import { canEndAccess, canReduceRole, can as roleCan, ROLES, PERMISSIONS } from '../../src/lib/roles.js';
+import {
+  canEndAccess, canReduceRole, can as roleCan, columnMember, PERMISSION_COLUMNS, OPS_MANAGER_COLUMN, PERMISSIONS, OFFICE_ROLES,
+} from '../../src/lib/roles.js';
 import { matrixForCan, overridesForCan } from './permissionSlices.js';
 import { matrixAuthority, owedPayFor } from './teamAuthority.js';
+import { worsenedEmployeeIds } from '../../src/lib/employeeId.js';
+import { supplyBudgetFor } from '../../src/lib/supplies.js';
+import { archiveTuple, carriesArchiveState } from '../../src/lib/customerStatus.js';
+import {
+  isOpsManager, isAccountManager, isActiveOpsManager, opsManagerIdOf, validOpsPointer, isOpsManagerIn, teamMemberIds,
+} from '../../src/lib/teamScope.js';
 
 const OWNER = ['owner'];
 const MANAGER = ['owner', 'admin'];
-// The OFFICE tiers, manager included. Distinct from MANAGER above, whose name predates the
-// 4th tier and still means owner+admin only. Used where a rule needs a ROLE floor no grant
-// can cross: can() puts no key out of a grant's reach, so "a cleaner must not be able to do
-// X" cannot be expressed as a key (the same reasoning as canEndAccess's admin+ floor).
-const OFFICE = ['owner', 'admin', 'manager'];
+// The OFFICE tiers — every role but crew (lib/roles OFFICE_ROLES, the server's and the browser's
+// one list; the supply manager joined it in S131 and is office here as everywhere). Distinct from
+// MANAGER above, whose name predates the 4th tier and still means owner+admin only. Used where a
+// rule needs a ROLE floor no grant can cross: can() puts no key out of a grant's reach, so "a
+// cleaner must not be able to do X" cannot be expressed as a key (the same reasoning as
+// canEndAccess's admin+ floor).
+const OFFICE = OFFICE_ROLES;
 // Another member's row, field by field, gated like the control that edits it
 // (TeamDetail › Pay, EmployeeHrFieldsCard, TeamDetail › Time). Any other field is profile,
 // which is settings.team.edit (TeamDetail › Profile). Maps, so a crafted key can't reach
@@ -158,6 +202,46 @@ function rosterDefects(users) {
   return out;
 }
 
+// 🔴 AN EMPLOYEE ID IDENTIFIES ONE PERSON (CS-229 / PAY-9, Matt 2026-09-29). It is what the
+// payroll company matches a row in the export on, so two members sharing one is worse than
+// neither having one: the import pays one of them twice and the other nothing. This is a
+// DATA-INTEGRITY check, not an authority one — like the closed-pay-period freeze, it holds for
+// the owner too, and like `rosterDefects` it only answers for a duplicate the save CREATES or
+// WORSENS (a roster that already holds one is not this caller's to fix, and refusing it would
+// wedge every save until someone repaired the data through a path the guard also refused). The
+// rule is the app's own — `worsenedEmployeeIds` in `src/lib/employeeId`, which the HR card runs
+// too, so the two halves cannot drift — and it counts HOLDERS rather than keys, so adding a
+// third person to an already-duplicated id is refused as well.
+
+// Is the ONLY opsSettings change a DELETE_USER cascade clearing a field that NAMES the member
+// being removed — ALR-4's operations manager, or SUP-9's named supply approver? True when every
+// OTHER key of the slice is byte-equal and each field that moved went from a member who is GONE
+// from `next.users` to null. Authority-neutral for the same reason the supervisorId clear is:
+// the save that removes the member is the one that has to clear it, and the person doing the
+// removal may not hold `time.config` — without this, a member removal by a settings.team.edit
+// holder pared off that key would 403 and DROP THE WHOLE pending batch.
+const OPS_MEMBER_FIELDS = ['operationsManagerUserId', 'supplyApproverUserId'];
+const namedMemberId = (settings, key) => {
+  const v = settings?.[key];
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+};
+function opsManagerCascadeClearOnly(prev, next) {
+  const gone = byId(next?.users);
+  let anyCleared = false;
+  for (const key of OPS_MEMBER_FIELDS) {
+    const was = namedMemberId(prev?.opsSettings, key);
+    const now = namedMemberId(next?.opsSettings, key);
+    if (was === now) continue;                 // this field did not move
+    if (now !== null) return false;            // re-pointed, not cleared — that stays time.config's
+    if (gone.has(was)) return false;           // the holder is still on the roster
+    anyCleared = true;
+  }
+  if (!anyCleared) return false;
+  // nothing ELSE in the slice may move
+  const strip = (o) => { const c = { ...(o || {}) }; for (const k of OPS_MEMBER_FIELDS) delete c[k]; return c; };
+  return jsonEq(canonical(strip(prev?.opsSettings)), canonical(strip(next?.opsSettings)));
+}
+
 // Did any row whose id is DUPLICATED in the committed roster change? byId() keeps only
 // the LAST copy for an id, so a change to any earlier one is invisible to every check
 // above, while a claim-less login resolves by the FIRST row with its email — so setting a
@@ -177,8 +261,59 @@ function duplicateIdRowsChanged(prevUsers, nextUsers) {
   return canonical(run(prevUsers)) !== canonical(run(nextUsers));
 }
 
+// ── supplies: the monthly budget (SUP-7), and the two slices that LEFT the record (SUP-13) ──
+// Since SUP-13 (Matt, 2026-10-05) the request queue and the approved lists live in their own
+// tables behind /api/supplies, which holds the approval state machine and SUP-11's per-building
+// approver; this guard no longer judges requests at all. What stays here is a customer's SUPPLY
+// SETTINGS (below) — they are fields on `clients`, which is still the shared record.
+//
+// 🔴 THE RETIRED SLICES ARE THE SERVER'S, NOT THE BROWSER'S. `supplyItems` / `supplyRequests`
+// stay in the committed blob until scripts/supplies-move.mjs has copied them into the tables and
+// `--strip` removes them — and an INSTALLED iOS PWA runs a stale bundle for weeks, whose reducer
+// still writes them. So no browser save may change them in either direction: a save that differs
+// from the committed value (an old bundle submitting a request, a new one that never had the keys)
+// is put back to exactly what is committed — kept while the blob still holds them, dropped once
+// --strip has removed them (restoreRetiredSlices). Not a refusal: a 403 would make store/sync drop
+// every OTHER edit in the same batch, for a slice nobody can see any more. The fingerprint carries
+// them (retiredSlicesInput), so a save that leaves them alone stays on the fast path and one that
+// moves them pays the deep read, where the committed values are in hand.
+export const RETIRED_SLICES = Object.freeze(['supplyItems', 'supplyRequests']);
+const retiredSlicesInput = (state) => RETIRED_SLICES.map((k) => canonical(state?.[k] ?? null));
+// Put the retired keys of `next` back to the committed `prev` (mutates and returns next). A key
+// prev does not carry is DELETED from next. Returns { next, changed } so the caller knows to
+// recompute the digest it stores.
+export function restoreRetiredSlices(prev, next) {
+  let changed = false;
+  for (const k of RETIRED_SLICES) {
+    const has = prev && Object.prototype.hasOwnProperty.call(prev, k) && prev[k] != null;
+    const want = has ? prev[k] : undefined;
+    const now = next ? next[k] : undefined;
+    if (jsonEq(canonical(want ?? null), canonical(now ?? null)) && (has === (now !== undefined))) continue;
+    changed = true;
+    if (has) next[k] = want; else delete next[k];
+  }
+  return { next, changed };
+}
+
+// A customer's SUPPLY SETTINGS: the monthly budget (money the office commits to) and the order
+// day the reminder is timed off. Normalized through the app's own reader, so a blank and a
+// missing field are the same value and an ordinary customer save stays off the deep read.
+const supplySettings = (c) => [c?.id ?? null, supplyBudgetFor(c), Number(c?.supplyOrderDayOfMonth) || null];
+// The fingerprint input, sorted by id so jsonb's order is irrelevant. A customer with NO supply
+// settings contributes nothing, so creating or renaming one never moves this (the clientIds set
+// already covers a create/delete).
+const supplyClientSettings = (arr) => (Array.isArray(arr) ? arr : [])
+  .map(supplySettings)
+  .filter(([, budget, day]) => budget !== null || day !== null)
+  .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+
 // Assignment ids for one entity, order-insensitive (the UI reorders freely).
 const crewSet = (x) => JSON.stringify([...new Set(Array.isArray(x?.standingCrewIds) ? x.standingCrewIds : [])].sort());
+// A location's assigned manager (client.supervisorId), normalized so '' and a missing field
+// both read as "no manager". Assigning / changing / clearing it is authority (it sets
+// scope() for time approval, MTA §2) — owner/admin only, checked below; its fingerprint
+// input is the `supervisors` projection in protectedFingerprint.
+const supervisorId = (c) => (c && typeof c.supervisorId === 'string' && c.supervisorId ? c.supervisorId : null);
 
 // ── money slices (payroll lines · reimbursements · pay-run config) ─────────────
 // Projections that carry ONLY what makes a record cost money on the pay run
@@ -196,6 +331,98 @@ const payLineMoney = (l) => (l && typeof l === 'object'
 const reimbMoney = (r) => (r && typeof r === 'object'
   ? [r.userId ?? null, r.amount ?? null, r.status ?? null, r.periodKey ?? null]
   : null);
+// INVOICES (CS-003). An invoice's MONEY: who it bills (clientId), what (the line items, whole —
+// only the invoice editor writes them), the tax rate, the issue and due dates (the due date
+// decides "overdue"), its stored status (`void` is authoritative in deriveInvoiceStatus) and its
+// payments. Notes, the PO number, the attachment, the billing contact, the linked cleans
+// (`jobIds`, which a job delete prunes) and the overdue stamp (`overdueNotifiedAt`, written by
+// the cron) are display or provenance: a change to them moves nothing and stays off the
+// protected read. ONE projection feeds protectedFingerprint and the check below.
+const invoiceBill = (inv) => [inv?.clientId ?? null, canonical(inv?.lineItems ?? []), inv?.taxRate ?? null,
+  inv?.issueDate ?? null, inv?.dueDate ?? null];
+const invoiceMoney = (inv) => (inv && typeof inv === 'object'
+  ? [...invoiceBill(inv), inv.status ?? null, canonical(inv.payments ?? [])]
+  : null);
+// The refusals an invoice change can draw, judged per invoice against the COMMITTED one. (A
+// customer delete's invoice cascade used to be judged neutral here; customers are archived, never
+// deleted, since CS-663 — a save removing one is refused outright below.) Robust to rows the by-id
+// view can't see (no id, a duplicated id): if the multiset of money projections moved and no
+// per-invoice rule named it, the change still needs invoices.edit.
+function invoiceViolations(prev, next, { isOwner, holds }) {
+  if (isOwner) return [];
+  const freq = new Map();
+  const bump = (inv, d) => { const k = canonical([inv && typeof inv === 'object' ? (inv.id ?? null) : null, invoiceMoney(inv)]); freq.set(k, (freq.get(k) || 0) + d); };
+  for (const inv of Array.isArray(prev?.invoices) ? prev.invoices : []) bump(inv, -1);
+  for (const inv of Array.isArray(next?.invoices) ? next.invoices : []) bump(inv, +1);
+  if (![...freq.values()].some((n) => n !== 0)) return [];
+  const holdsEdit = holds('invoices.edit');
+  const holdsPay = holds('invoices.recordPayment');
+  const words = new Set();
+  let attributed = false; // a per-invoice rule saw the change (allowed or not)
+  const before = byId(prev?.invoices);
+  const after = byId(next?.invoices);
+  for (const [id, inv] of after) {
+    const was = before.get(id);
+    if (!was) { attributed = true; if (!holdsEdit) words.add('create an invoice'); continue; }
+    if (canonical(invoiceBill(was)) !== canonical(invoiceBill(inv))) { attributed = true; if (!holdsEdit) words.add('change an invoice'); }
+    if (canonical(was.payments ?? []) !== canonical(inv.payments ?? [])) { attributed = true; if (!holdsPay) words.add('record a payment on an invoice'); }
+    const from = was.status ?? null;
+    const to = inv.status ?? null;
+    if (from !== to) {
+      attributed = true;
+      // Un-voiding is the Super Admin's (InvoiceDetail offers it to the owner alone): a void is
+      // the ledger's correction mechanism, and undoing one resurrects a debt.
+      if (from === 'void') words.add('un-void an invoice');
+      else if (to === 'void') { if (!holdsEdit) words.add('void an invoice'); }
+      // The bulk "Mark paid" (Invoices, invoices.recordPayment) stores 'paid' with the payment.
+      else if (!holdsEdit && !holdsPay) words.add('change an invoice');
+    }
+  }
+  for (const id of before.keys()) {
+    if (after.has(id)) continue;
+    attributed = true;
+    if (!holdsEdit) words.add('delete an invoice');
+  }
+  // The money moved somewhere the by-id view can't see (a row with no id, a duplicated id).
+  if (!attributed && !holdsEdit) words.add('change an invoice');
+  return [...words];
+}
+
+// A CONTACT's details — who the person is and which customer they belong to: what the Add
+// contact form, the conversation panel's contact card and the Customers import write, and what
+// "Create / edit contacts" (contacts.edit) gates (2026-10-03). Normalized so a blank and a
+// missing field are the same value. Deliberately NOT here: the do-not-contact and reminder
+// flags, tags, notes and timestamps — a marketing reply tags a person, a cron stamps one, and
+// those saves must stay off the deep read. ONE projection feeds protectedFingerprint and the
+// check below.
+const text = (v) => (v == null ? '' : String(v).trim());
+const contactPerson = (c) => (c && typeof c === 'object'
+  ? [c.id ?? null, text(c.firstName), text(c.lastName), text(c.email).toLowerCase(), text(c.phone), text(c.title), c.companyId ?? null]
+  : null);
+// Which contacts a save ADDS and whether it CHANGES one's details, judged against the committed
+// ones. A contact removed (on its own, or with its customer) is neither: removals stay as they
+// were. Robust to rows the by-id view can't see (no id, an id two rows share): if THEIR details
+// moved, that is a change nobody can attribute to a known contact, so it needs the key too.
+function contactPeopleDelta(prev, next) {
+  const before = byId(prev?.contacts);
+  let added = false;
+  let changed = false;
+  for (const [id, after] of byId(next?.contacts)) {
+    const was = before.get(id);
+    if (!was) added = true;
+    else if (canonical(contactPerson(was)) !== canonical(contactPerson(after))) changed = true;
+  }
+  const loose = (arr) => {
+    const list = Array.isArray(arr) ? arr : [];
+    const n = new Map();
+    for (const c of list) if (c && typeof c.id === 'string' && c.id) n.set(c.id, (n.get(c.id) || 0) + 1);
+    return list.filter((c) => !c || typeof c.id !== 'string' || !c.id || n.get(c.id) > 1)
+      .map((c) => canonical(contactPerson(c))).sort();
+  };
+  if (canonical(loose(prev?.contacts)) !== canonical(loose(next?.contacts))) changed = true;
+  return { added, changed };
+}
+
 // A sorted digest input for a list of records under a money projection: id kept first
 // so a projection two rows happen to share still counts twice, then the money fields.
 const moneyList = (arr, project) => (Array.isArray(arr) ? arr : [])
@@ -228,16 +455,110 @@ function reimbursementsMoneyChanged(prev, next) {
   for (const n of freq.values()) if (n !== 0) return true;
   return false;
 }
+// True when any payroll line whose userId is `selfId` was added, changed or removed — MTA
+// W1-G: your OWN pay line is owner-only, every category. MONEY projection, so a DELETE_USER
+// userName stamp nets to zero (and a member can't remove themselves, so their own kept lines
+// are never userName-stamped either); an id-less own line still pays out (grossForUser filters
+// by userId), so it counts.
+function ownPayrollLineChanged(prev, next, selfId) {
+  if (!selfId) return false;
+  const freq = new Map();
+  const bump = (l, d) => {
+    if (!l || typeof l !== 'object' || l.userId !== selfId) return;
+    const k = canonical(payLineMoney(l));
+    freq.set(k, (freq.get(k) || 0) + d);
+  };
+  for (const l of Array.isArray(prev?.payrollLines) ? prev.payrollLines : []) bump(l, -1);
+  for (const l of Array.isArray(next?.payrollLines) ? next.payrollLines : []) bump(l, +1);
+  for (const n of freq.values()) if (n !== 0) return true;
+  return false;
+}
+// The periodKeys of payroll lines whose MONEY projection was added, changed or removed (net
+// multiset diff; a userName-only stamp nets to zero, like changedPayrollCategories). Feeds
+// the W2-L closed-period rule and payrollLedgerFactNeeded.
+function changedPayrollLinePeriodKeys(prev, next) {
+  const freq = new Map();
+  const bump = (l, d) => {
+    if (!l || typeof l !== 'object') return;
+    const e = freq.get(canonical(payLineMoney(l))) || { n: 0, periodKey: l.periodKey ?? null };
+    e.n += d; freq.set(canonical(payLineMoney(l)), e);
+  };
+  for (const l of Array.isArray(prev?.payrollLines) ? prev.payrollLines : []) bump(l, -1);
+  for (const l of Array.isArray(next?.payrollLines) ? next.payrollLines : []) bump(l, +1);
+  const keys = new Set();
+  for (const e of freq.values()) if (e.n !== 0 && e.periodKey != null) keys.add(e.periodKey);
+  return keys;
+}
+// The pay-SCHEDULE fields frozen once a run exists (W2-L §2): the cadence and the pay-week
+// start day. otMultiplier / geofence / the rest of opsSettings are NOT frozen.
+const PAY_SCHEDULE_FIELDS = ['payPeriodCadence', 'payWeekStartDay'];
+function payScheduleChanged(prev, next) {
+  const p = prev?.opsSettings || {}; const n = next?.opsSettings || {};
+  return PAY_SCHEDULE_FIELDS.some((k) => !jsonEq(p[k] ?? null, n[k] ?? null));
+}
+// Whether the org-state route must read payroll_runs for this save (W2-L §5.2): only when a
+// payroll line's money moved or the pay schedule changed. The route passes the result as
+// facts.payrollRuns, which protectedFieldViolations then enforces (closed periods / schedule).
+export function payrollLedgerFactNeeded(prev, next) {
+  return changedPayrollLinePeriodKeys(prev, next).size > 0 || payScheduleChanged(prev, next);
+}
 
 // The fields that differ between two versions of a member's row, other than role and
-// status (checked on their own). Key order is ignored: jsonb hands a nested object's
-// keys back in its own order, so a tab's copy can differ from the committed row in
-// order alone. A missing field and a null one are the same, as in norm().
+// status (checked on their own) and the two team fields (teamViolations, below). Key order is
+// ignored: jsonb hands a nested object's keys back in its own order, so a tab's copy can differ
+// from the committed row in order alone. A missing field and a null one are the same, as in norm().
+const OWN_RULE_FIELDS = new Set(['role', 'status', 'managerLevel', 'opsManagerId']);
 function changedFields(before, after) {
   const out = [];
   for (const k of new Set([...Object.keys(before || {}), ...Object.keys(after || {})])) {
-    if (k === 'role' || k === 'status') continue;
+    if (OWN_RULE_FIELDS.has(k)) continue;
     if (!jsonEq(own(before, k), own(after, k))) out.push(k);
+  }
+  return out;
+}
+
+// ── the Operations Manager's TEAM (S131, plan 2026-10-14 §0) ────────────────────────────────
+// `users[].managerLevel` ('operations' makes a manager an Operations Manager) and
+// `users[].opsManagerId` (the OM an account manager reports to) decide whose buildings an OM
+// approves, edits and adds time for and moves between account managers (lib/teamScope.js). That
+// is AUTHORITY of the same kind as `client.supervisorId`, so changing either takes owner / admin
+// holding ops.edit (`mayAssign`; lib/teamLimits mayAssignTeams is the app's twin) — a manager,
+// an OM included, is refused. Judged on the NORMALIZED values (lib/teamScope: a missing level
+// reads 'account', '' and a missing pointer are no pointer), so writing a default is no change.
+// Two carve-outs keep a legitimate save from being refused for the cascade it carries (the
+// reducer writes them: lib/teamScope teamCascade, lib/deleteCascade clearOpsManagerPointers):
+//   · a pointer CLEARED because its OM stopped being an active OM in the same save (removed,
+//     demoted by the level or the role, disabled), or because the row stopped being an account
+//     manager — the change that caused it is judged on its own (the removal, the role, the level);
+//   · OM-ness lost through a ROLE change is the role branch's (staff.assignRoles), not this one's.
+// And for EVERY caller, the owner included — data integrity, like the employee ID: a pointer this
+// save sets must be valid in the saved roster (on an account manager, at an ACTIVE OM, never the
+// row itself).
+// 🔴 THE LEVEL PICKS A PERMISSION COLUMN (CS-858): an Operations Manager's permissions come from
+// their own column in Settings → Roles, so a level change can give access the way a role change can,
+// and it is guarded like one — giving the operations level (or moving an OM back to account) also
+// takes holding every permission the TARGET column carries (lib/roles canGiveColumn, canGiveRole's
+// rule; the Super Admin holds everything), and NOBODY changes their own level, the Super Admin
+// included (the role's rule: the login route refuses a self role change for everyone).
+function teamViolations(prev, next, { mayAssign, mayGiveColumn, selfId }) {
+  const out = [];
+  const before = byId(prev?.users);
+  const after = byId(next?.users);
+  for (const [id, a] of after) {
+    const b = before.get(id) || null;
+    const was = isOpsManager(b);
+    const now = isOpsManager(a);
+    if (was !== now && id === selfId) out.push('change your own manager level');
+    else if (!was && now && !(mayAssign && mayGiveColumn(OPS_MANAGER_COLUMN))) out.push('make a member an Operations Manager');
+    else if (was && !now && a.role === 'manager' && !(mayAssign && mayGiveColumn('manager'))) out.push("change an Operations Manager's level");
+    const p0 = opsManagerIdOf(b);
+    const p1 = opsManagerIdOf(a);
+    if (p0 === p1) continue;
+    const cascade = p1 === null && (!isActiveOpsManager(after.get(p0)) || !isAccountManager(a));
+    if (!cascade && !mayAssign) out.push('change who an account manager reports to');
+    if (p1 !== null && !validOpsPointer(next?.users, a, p1)) {
+      out.push('point an account manager at someone who is not an active Operations Manager');
+    }
   }
   return out;
 }
@@ -280,10 +601,13 @@ function overrideTargets(before, after) {
  * @param role    the caller's role, resolved from the JWT claim
  * @param selfId  the caller's `u_*` id, from the claim — used so a user may
  *                still edit their OWN non-authority profile fields
- * @param facts   { removal }: what the pay rule needs about the members this save
- *                removes (memberRemoval.removalPayFacts: the committed pay slices + the
- *                time ledger). Required when removedMemberIds(prev, next) is non-empty;
- *                without it every removal is refused, since the pay check can't run.
+ * @param facts   { removal, payrollRuns }: async facts the route reads and passes in.
+ *                `removal` (memberRemoval.removalPayFacts: the committed pay slices + the time
+ *                ledger) is REQUIRED when removedMemberIds(prev, next) is non-empty, else every
+ *                removal is refused. `payrollRuns` ({ ok, periodKeys, anyRun }) is read only
+ *                when payrollLedgerFactNeeded(prev, next) is true (a pay line's money or the pay
+ *                schedule moved); a failed read ({ ok:false }/null) fails the closed-period /
+ *                schedule rules closed; an absent fact leaves them silent (no run to protect).
  * @returns string[] of human-readable violations; empty means allowed
  */
 export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
@@ -296,7 +620,9 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
   // the keys asked for here (can() fails closed on anything outside ALWAYS_GRANTED, and
   // none of these are in it). A malformed committed row reads as a MISSING one, so it
   // can't throw inside can() and 500 every save (permissionSlices.js through teamAuthority, the reading jobsGuard shares).
-  const { holds, mayGive } = matrixAuthority(prev, role, selfId);
+  // Each read at the caller's permission COLUMN: a manager's level comes off the committed roster
+  // (prev.users), so an Operations Manager is judged on the OM column (CS-858).
+  const { holds, mayGive, mayGiveColumn } = matrixAuthority(prev, role, selfId);
   // ONE rule for `users[].clockRules`, wherever it appears — a new row, your own row or
   // another member's (checklists step 4b; the coordinator's ruling after the L3 review,
   // 2026-09-27). The field turns the clock-out checklist block and the clock-in geofence OFF
@@ -346,6 +672,10 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
         if (Object.keys(own(after, 'hr') ?? {}).some((k) => k !== 'employeeId') && !holds('hr.edit')) {
           violations.push("set a new member's HR record");
         }
+      } else if (!can(OWNER) && own(after, 'pay') !== null && !holds('payroll.rates.edit')) {
+        // CS-003: a pay rate is payroll.rates.edit's for an Admin too (money follows the matrix
+        // for everyone but the Super Admin; the invite form sets no pay at all).
+        violations.push("set a new member's pay");
       }
       continue;
     }
@@ -419,6 +749,13 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
         else if (!holds(FIELD_KEYS.get(field) || 'settings.team.edit')) violations.push(FIELD_WORDS.get(field) || "edit another member's profile");
       }
     }
+    // 🔴 CS-003: an ADMIN's pay-rate edits follow payroll.rates.edit — another member's AND their
+    // own. The two blocks above skip owner+admin by role (never tightened for the Team fields),
+    // but a pay rate is money, the Pay card asks an Admin for the key like everyone else
+    // (TeamDetail canEditThisPay), and an Admin holds none of the money keys by default (Q24).
+    if (can(MANAGER) && !can(OWNER) && changedFields(before, after).includes('pay') && !holds('payroll.rates.edit')) {
+      violations.push(id === selfId ? 'change your own pay' : FIELD_WORDS.get('pay'));
+    }
   }
   for (const [id, before] of prevUsers) {
     if (nextUsers.has(id)) continue;
@@ -448,6 +785,11 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
   const anyOwner = (list) => Array.isArray(list) && list.some((u) => u && u.role === 'owner');
   if (anyOwner(prev?.users) && !anyOwner(next?.users)) violations.push('leave the team without a Super Admin');
 
+  // ── the Operations Manager's team: a manager's level and who an AM reports to (S131) ────────
+  // owner / admin holding ops.edit, as for a building's manager; a level change also takes the
+  // target column, and never your own (CS-858) — teamViolations, above.
+  violations.push(...teamViolations(prev, next, { mayAssign: can(MANAGER) && holds('ops.edit'), mayGiveColumn, selfId }));
+
   // ── the roster's shape ─────────────────────────────────────────────────────
   // A login with no role claim (every manager's until the 2026-09-23 claims fix and its
   // data-op) is matched to the FIRST row carrying its email (users.js getOrgUserByEmail), but byId()
@@ -467,6 +809,14 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
     } else if (duplicateIdRowsChanged(prev?.users, next?.users)) {
       violations.push('edit a duplicated team-member row');
     }
+  }
+
+  // ── the employee ID is unique per person (CS-229 / PAY-9) ─────────────────
+  // For EVERYONE, the owner included: it is data integrity, not authority (see the note above
+  // `duplicateIdRowsChanged`). Only a duplicate this save CREATES or WORSENS is refused.
+  {
+    const dupes = worsenedEmployeeIds(prev?.users, next?.users);
+    if (dupes.length) violations.push('give two people the same employee ID');
   }
 
   // ── the live permission matrix + per-user overrides ───────────────────────
@@ -518,9 +868,13 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
           && !canReduceRole(role, 'owner')) {
           violations.push("reduce the Super Admin role's permissions");
         }
-        for (const r of ROLES) {
-          if (roleCan({ id: null, role: r }, key, nextMatrix, null)
-            && !roleCan({ id: null, role: r }, key, prevMatrix, null)
+        // Every permission COLUMN, the Operations Manager's included (CS-858): a row naming
+        // `operations_manager` is a column like any other, so switching it on for a key takes
+        // holding that key — before CS-858 this loop read ROLES and never saw the OM column.
+        for (const col of PERMISSION_COLUMNS) {
+          const member = columnMember(col);
+          if (roleCan(member, key, nextMatrix, null)
+            && !roleCan(member, key, prevMatrix, null)
             && !holds(key)) {
             violations.push(`give a permission you don't have (${key})`);
           }
@@ -633,6 +987,44 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
         break;
       }
     }
+
+    // 🔴 A LOCATION'S MANAGER (client.supervisorId) IS AUTHORITY, not data (MTA W1-G).
+    //
+    // supervisorId assigns which manager oversees a customer — it decides scope() for time
+    // approval (who may approve / correct / void that customer's punches and approve its
+    // overtime, spec §2), so setting, changing or clearing it is authority. Owner/admin ONLY
+    // by the role list (never a key): a manager holding clients.edit / ops.edit / time.config
+    // — all theirs by default — must not assign themselves a location. ServiceSetupCard and
+    // SupervisedCustomersCard disable it for everyone else with the reason; the fingerprint's
+    // `supervisors` projection makes a supervisor-only save move the digest so this fires.
+    // ⚠️ ONE OTHER WAY THROUGH (S131, Daniel 2026-10-14: "an OM moves buildings between their
+    // AMs"): an OPERATIONS MANAGER holding ops.edit may change a building's supervisor from one
+    // member of their team to another — themselves included — and nowhere else: never from or to
+    // someone off the team, never to nobody. The team is the COMMITTED one (prev), so a save cannot
+    // pull an account manager onto the team and move a building to them at once; the OM-ness is the
+    // claim role (`role`) plus the committed roster's level (lib/teamScope isOpsManagerIn). The
+    // building was already in the OM's scope through the AM, so the move widens nobody.
+    const omTeam = holds('ops.edit') && isOpsManagerIn(prev?.users, { id: selfId, role })
+      ? new Set(teamMemberIds(prev?.users, selfId)) : null;
+    const beforeClientsSup = byId(prev?.clients);
+    for (const [id, a] of byId(next?.clients)) {
+      const prevSup = supervisorId(beforeClientsSup.get(id));
+      const nextSup = supervisorId(a);
+      if (prevSup === nextSup) continue;
+      if (omTeam && prevSup !== null && nextSup !== null && omTeam.has(prevSup) && omTeam.has(nextSup)) continue;
+      // A CASCADE CLEAR is authority-neutral: DELETE_USER's sweepUserOrphans
+      // (src/lib/deleteCascade) sets supervisorId -> null on every customer a REMOVED member
+      // supervised, and a manager holding settings.team.edit may remove another manager
+      // (teamLimits: only Admin/Super Admin targets carry the role floor). The removal itself
+      // is guarded by the member-removal rules above, so clearing a supervisor whose row is
+      // GONE from next.users must not be refused here as an assignment — or a legitimate
+      // manager-removes-manager save would 403 and store/sync would drop the whole batch.
+      // Setting / pointing at a real id, or clearing one whose supervisor is still on the
+      // roster, stay owner/admin only. (Same spirit as the DELETE_USER userName-stamp being
+      // authority-neutral in the money projections above.)
+      const cascadeClear = nextSup === null && prevSup !== null && !nextUsers.has(prevSup);
+      if (!cascadeClear) { violations.push("assign a location's manager"); break; }
+    }
   }
 
   // ── time off (Sept 1) ────────────────────────────────────────────────────
@@ -651,30 +1043,83 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
     violations.push('change time off');
   }
 
-  // ── customer (account) removal (2026-09-23, owner's call) ──────────────────
-  // Deleting a customer CASCADES in the reducer (DELETE_CLIENT) to its sites,
-  // contacts, invoices, activities and jobs. The blob half of that — the client
-  // row plus its sites / contacts / invoices — commits HERE; the jobs half rides
-  // /api/state/jobs-delta (jobsGuard, which for anyone without schedule.edit puts
-  // the job deletes back, orphaning them). EDITING a customer is ordinary business
-  // data any authenticated user may do, but DELETION is a restricted capability the
-  // product gates on `clients.delete` (owner/admin/manager by default): both the
-  // single-record delete (ClientDetail) and the Customers bulk delete gate on it,
-  // and the server now agrees — owner+admin by role (never tightened), else whoever
-  // holds clients.delete in the COMMITTED matrix + overrides, by the same can() the
-  // app runs. Without this a crew user with clients.view (crew hold it by default)
-  // could POST a blob with a customer removed and wipe the book past the UI gate —
-  // the UI is not the boundary (BUILD_INTEGRITY §1.4). Only the client ROW is
-  // checked: a customer removal always drops it, and its cascade siblings ride the
-  // same refused save; standalone contact / site deletion is a separate capability,
-  // not gated here. This is the guard's first DATA-integrity (not authority) check —
-  // deliberate, because a mass customer wipe is destructive enough to warrant a
-  // server floor even though clients are otherwise ordinary data.
-  if (!can(MANAGER) && !holds('clients.delete')) {
+  // ── customers are ARCHIVED, never deleted (CS-663 / CS-027) ───────────────────────────────
+  // Matt, kickoff 2026-09-10: "Never delete customers — reactivating a former customer keeps the
+  // same ID." The app no longer has a customer delete (ARCHIVE_CLIENT replaced it), so a save that
+  // REMOVES a customer row is refused for EVERYONE, the Super Admin included: it can only be a
+  // crafted save or a bug, and what it would orphan — the contract still in the book, the open
+  // requests still escalating, the documents, messages, hub logins and inspections keyed to a
+  // customer that no longer exists — is exactly what CS-663 found. (Until 2026-10-13 a holder of
+  // clients.delete could remove one here; the guard's first data-integrity check, 2026-09-23.)
+  {
     const nextClientIds = new Set(byId(next?.clients).keys());
     for (const id of byId(prev?.clients).keys()) {
-      if (!nextClientIds.has(id)) { violations.push('delete a customer'); break; }
+      if (!nextClientIds.has(id)) { violations.push('remove a customer'); break; }
     }
+  }
+  // ── ARCHIVING or RESTORING one is `clients.delete`'s ("Archive customers") ──
+  // The archive takes a customer out of every working surface and cuts its customer logins off,
+  // so it stays the capability the delete was: the Super Admin by role, everyone else by the
+  // COMMITTED matrix + overrides — as the customer page and the Customers bulk bar gate it. The
+  // archive state is one tuple (lib/customerStatus archiveTuple: archived?, archivedAt, archivedBy,
+  // statusBeforeArchive), so its stamps cannot be rewritten as ordinary data either; a NEW customer
+  // created already archived counts too. Editing an archived customer's other fields stays data.
+  if (!can(OWNER) && !holds('clients.delete')) {
+    const before = byId(prev?.clients);
+    for (const [id, after] of byId(next?.clients)) {
+      if (!jsonEq(archiveTuple(before.get(id) || null), archiveTuple(after))) {
+        violations.push('archive or restore a customer');
+        break;
+      }
+    }
+  }
+
+  // ── adding customers and contacts, and a contact's details (2026-10-03) ──────────────────
+  // Customers → Import customers brings in Matt's ~750 buildings, gated on "Create / edit
+  // customers" and, for its contacts, "Create / edit contacts" — as Add customer and Add contact
+  // are. Until now both were ordinary data any office login could POST, so the Roles page did not
+  // bind them (CS-622 named the contacts half). The Super Admin passes by role; everyone else by
+  // the COMMITTED matrix + overrides, as the money rules above. Editing a customer's other fields
+  // stays ordinary data (each card has its own key: Service setup, supplies, billing…).
+  if (!can(OWNER)) {
+    const prevClients = byId(prev?.clients);
+    if ([...byId(next?.clients).keys()].some((id) => !prevClients.has(id)) && !holds('clients.edit')) {
+      violations.push('add a customer');
+    }
+    const { added, changed } = contactPeopleDelta(prev, next);
+    if (added && !holds('contacts.edit')) violations.push('add a contact');
+    if (changed && !holds('contacts.edit')) violations.push("change a contact's details");
+  }
+
+  // ── supplies: a building's budget and order day (SUP-7 / SUP-8) ──
+  // (The request state machine and who may decide or cancel moved to /api/supplies with SUP-13.)
+  {
+    // The BUDGET is money the office commits to per building, and the order day decides when
+    // its supervisor is chased — both are the supply module's, so they take its fulfil key
+    // (owner/admin by role, as everywhere here). Only the Supplies card writes them, so an
+    // ordinary customer save re-sends them unchanged and is never refused.
+    if (!can(OWNER) && !holds('supplies.manage')) {
+      const prevClients = byId(prev?.clients);
+      for (const [id, after] of byId(next?.clients)) {
+        const before = prevClients.get(id);
+        if (!before) continue; // a NEW customer carries no supply history; creating one is ordinary data
+        if (!jsonEq(canonical(supplySettings(before)), canonical(supplySettings(after)))) {
+          violations.push("change a building's supply budget");
+          break;
+        }
+      }
+    }
+  }
+
+  // ── your OWN pay line is a Super Admin's (MTA W1-G, 2026-09-27) ──────────────
+  // Adding, changing or removing a payroll line for YOURSELF is owner-only, every category
+  // (bonus, tip, special, reimbursement, deduction) — a reimbursement / bonus typed straight
+  // onto your own row was the way around HR's own-approval rule (spec §8.6). This SUPERSEDES
+  // the 2026-09-23 "no self-line carve-out" call for a non-owner: admin is refused too, so
+  // this check sits ABOVE the owner+admin payroll block below (only role owner passes). The
+  // money projection keeps a DELETE_USER userName stamp authority-neutral.
+  if (!can(OWNER) && ownPayrollLineChanged(prev, next, selfId)) {
+    violations.push('add or change your own pay line');
   }
 
   // ── payroll lines (money) ───────────────────────────────────────────────────
@@ -688,7 +1133,9 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
   // its approval mints). The owner's call (2026-09-23): a payroll.edit holder may add
   // their OWN line too — no self-line carve-out; that is what the permission is for, and
   // revoking payroll.edit is how you stop it. A userName-only stamp nets to no change.
-  if (!can(MANAGER)) {
+  // CS-003 (2026-10-03): an ADMIN needs the key too (the Payroll screen gates them on it, and
+  // by Q24 they hold no payroll key by default); only the Super Admin passes by role.
+  if (!can(OWNER)) {
     const cats = changedPayrollCategories(prev, next);
     if (cats.length && !(holds('payroll.edit')
       || (cats.every((c) => c === 'special' || c === 'reimbursement') && holds('hr.edit')))) {
@@ -699,21 +1146,31 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
   // ── reimbursements (money) ──────────────────────────────────────────────────
   // Reimbursements are an HR feature (HR › Reimbursements, hr.edit): submit / edit /
   // reject / delete. Approving one ADDS a reimbursement payroll line (money out), so
-  // approving your OWN is owner/admin only (owner's call 2026-09-23) — a manager may
-  // submit their own but not approve it. Others' approvals and every other reimbursement
-  // edit need hr.edit. A userName stamp (DELETE_USER) nets to no change. The money itself
-  // is the payroll line above, judged in its own right, so an id-less forged
-  // reimbursement pays nothing on its own.
-  if (!can(MANAGER)) {
+  // approving your OWN is OWNER-ONLY (MTA W1-G, 2026-09-27; was owner/admin) — a manager or
+  // admin may submit their own but not approve it. Because the own-approval floor is now
+  // owner-only while others' approvals stay owner/admin+hr.edit, the own check sits ABOVE the
+  // owner+admin block. Others' approvals and every other reimbursement edit need hr.edit. A
+  // userName stamp (DELETE_USER) nets to no change; the money itself is the payroll line
+  // above, judged in its own right, so an id-less forged reimbursement pays nothing.
+  let ownReimbApproval = false;
+  if (!can(OWNER)) {
     const rprev = byId(prev?.reimbursements);
-    let ownApproval = false;
     for (const [, a] of byId(next?.reimbursements)) {
       const b = rprev.get(a.id);
-      if (a?.status === 'approved' && b?.status !== 'approved' && a?.userId === selfId) ownApproval = true;
+      if (a?.status === 'approved' && b?.status !== 'approved' && a?.userId === selfId) { ownReimbApproval = true; break; }
     }
-    if (ownApproval) violations.push('approve your own reimbursement');
-    else if (reimbursementsMoneyChanged(prev, next) && !holds('hr.edit')) violations.push('change a reimbursement');
+    if (ownReimbApproval) violations.push('approve your own reimbursement');
   }
+  // CS-003: hr.edit for an ADMIN too (the Reimbursements tab gates every role on it).
+  if (!can(OWNER) && !ownReimbApproval && reimbursementsMoneyChanged(prev, next) && !holds('hr.edit')) {
+    violations.push('change a reimbursement');
+  }
+
+  // ── invoices + their payments (money) — CS-003, 2026-10-03 ────────────────────────
+  // Unguarded until now, and outside the fingerprint, so an invoice-only save never even
+  // reached this function. The rules are invoiceViolations' (above), keyed to what the
+  // Invoices screens gate on; the Super Admin passes by role.
+  violations.push(...invoiceViolations(prev, next, { isOwner: can(OWNER), holds }));
 
   // ── operations settings: the pay-run config AND the geofence / variance / alert knobs ──
   // The whole Operations page is gated on time.config (owner + admin + manager). The
@@ -722,11 +1179,45 @@ export function protectedFieldViolations(prev, next, role, selfId, facts = {}) {
   // radius and variance thresholds decide every clock-in verdict and who is flagged late,
   // so a crafted crew save loosening them games attendance. One UI gate, so the server
   // agrees for the whole slice: owner/admin by role, else time.config (2026-09-23 — was
-  // the pay-run projection only in S90). Only the Operations page writes opsSettings
-  // (UPDATE_OPS_SETTINGS), so an ordinary save re-sends it unchanged and is never refused
-  // here; compared key-order-insensitively (jsonb reorders keys).
-  if (!can(MANAGER) && !holds('time.config') && !jsonEq(prev?.opsSettings ?? null, next?.opsSettings ?? null)) {
+  // the pay-run projection only in S90). Two screens write opsSettings, both through
+  // UPDATE_OPS_SETTINGS and both behind time.config: the Operations page, and the QR codes
+  // panel on a location's Cleaning instructions card, whose label-sheet picker remembers
+  // `scanLabelFormat` for the whole office (UI_RULES §139). Any other save re-sends the slice
+  // unchanged and is never refused here; compared key-order-insensitively (jsonb reorders keys).
+  // ⚠️ ONE EXCEPTION — the DELETE_USER cascade clear (ALR-4, 2026-09-29), the same shape
+  // `clients[].supervisorId` already has: `sweepUserOrphans` nulls
+  // `opsSettings.operationsManagerUserId` when that member is the one being REMOVED, and a
+  // manager may remove another member (`teamLimits`), so a clear whose previous holder is GONE
+  // from `next.users` is authority-neutral — else a member removal by a `settings.team.edit`
+  // holder pared off `time.config` would 403 and DROP THE WHOLE pending batch. Only that field,
+  // only to null, and only for a departing member: setting or re-pointing it, or clearing one
+  // who is still on the roster, stays `time.config`'s.
+  if (!can(MANAGER) && !holds('time.config')
+    && !jsonEq(prev?.opsSettings ?? null, next?.opsSettings ?? null)
+    && !opsManagerCascadeClearOnly(prev, next)) {
     violations.push('change operations settings');
+  }
+
+  // ── closed payroll periods + the pay schedule are frozen for EVERYONE (MTA W2-L §2/§5.2) ──
+  // A pay line whose periodKey is a CLOSED run's period_key (add / change / remove), and the
+  // pay cadence / pay-week start once ANY run exists, are refused for every caller, the owner
+  // included: that run already priced those weeks (a later change is paid as arrears on the
+  // NEXT run, never by rewriting a closed one). The route reads payroll_runs only when
+  // payrollLedgerFactNeeded is true and passes it as facts.payrollRuns; a read that FAILED
+  // (null / { ok:false }) fails closed. An ABSENT fact (undefined — a save in a no-run world,
+  // or a unit test) leaves the rule silent: there is nothing closed to protect. The money
+  // projection keeps a DELETE_USER userName stamp neutral (changedPayrollLinePeriodKeys).
+  const closedLineKeys = changedPayrollLinePeriodKeys(prev, next);
+  const scheduleMoved = payScheduleChanged(prev, next);
+  if (closedLineKeys.size || scheduleMoved) {
+    const rf = facts?.payrollRuns;
+    if (rf === null || rf?.ok === false) {
+      violations.push('change pay while the payroll records are unavailable');
+    } else if (rf && rf.ok) {
+      const closed = new Set(Array.isArray(rf.periodKeys) ? rf.periodKeys : []);
+      for (const pk of closedLineKeys) { if (closed.has(pk)) { violations.push('change pay in a closed payroll period'); break; } }
+      if (scheduleMoved && (rf.anyRun || closed.size > 0)) violations.push('change the pay schedule after a payroll is closed');
+    }
   }
 
   return [...new Set(violations)];
@@ -748,7 +1239,18 @@ export const PROTECTED_SELECT =
   + 'userPermissionOverrides:state->userPermissionOverrides,'
   + 'sites:state->sites,clients:state->clients,company:state->company,'
   + 'timeOff:state->timeOff,payrollLines:state->payrollLines,'
-  + 'reimbursements:state->reimbursements,opsSettings:state->opsSettings';
+  + 'reimbursements:state->reimbursements,opsSettings:state->opsSettings,'
+  // The two RETIRED supply slices (SUP-13): read only so a save that moved them can be put back
+  // to the committed value (restoreRetiredSlices). Tiny until --strip, absent after it.
+  + 'supplyItems:state->supplyItems,supplyRequests:state->supplyRequests,'
+  // `invoices` (CS-003): the money check judges a change against the COMMITTED invoice. Paid
+  // only when an invoice's money projection moved (an invoice saved, a payment recorded), which
+  // is human-paced; a note or the cron's overdue stamp stays off this read.
+  + 'invoices:state->invoices,'
+  // `contacts` (2026-10-03): adding one, or changing a contact's details, is judged against the
+  // committed contacts. Paid only when a contact's details or the customer list moved (a person
+  // added or edited, a customer created or removed) — never for a flag, a tag or a note.
+  + 'contacts:state->contacts';
 
 /**
  * A stable CRYPTOGRAPHIC (SHA-256) digest of every authority-bearing field,
@@ -770,14 +1272,16 @@ export const PROTECTED_SELECT =
  * re-pointing one is an authority change.
  * Before, a save that changed only another member's email skipped the guard, and a
  * manager could set the owner row's email to their own and run as a Super Admin.
- * The MONEY slices are covered too (HANDOFF S87): the money projection of every payroll
- * line and reimbursement, plus the pay-run knobs in opsSettings — a projection, so a
+ * The MONEY slices are covered too (HANDOFF S87; invoices and their payments since CS-003):
+ * the money projection of every payroll line, reimbursement and invoice, plus the pay-run
+ * knobs in opsSettings — a projection, so a
  * userName stamp on a removed member's kept row is authority-neutral and does not force
  * the read. Before, a crafted save adding a $5,000 bonus line, approving one's own
  * reimbursement, or setting the OT multiplier to 5 committed with NO guard run.
  * The row tuple covers exactly the AUTHORITY / MONEY fields protectedFieldViolations judges:
  * id, role, status, email, pay, hr, disabledAt and clockRules (2026-09-27 — the per-cleaner
- * checklist-block / geofence exemption).
+ * checklist-block / geofence exemption), and on a row carrying them managerLevel / opsManagerId
+ * (S131 — an Operations Manager's team).
  * ⚠️ STILL NOT COVERED: a member's COSMETIC fields (name, phone, notification + signature
  * prefs) are left out so an Account-page save stays off the 314 KB read, which means the
  * "another member's profile" check fires for them only when something else in the same save
@@ -791,9 +1295,16 @@ export function protectedFingerprint(state) {
   // without its fingerprint input SILENTLY STOPS FIRING, which is the failure mode this whole
   // function exists to prevent. canonical, because jsonb hands its two keys back in its own
   // order and a reorder is not a change.
+  // managerLevel / opsManagerId (S131, the Operations Manager's team) join the tuple ONLY for a
+  // row carrying either, so a roster that carries neither digests exactly as before — no
+  // org_state.baseline_mismatch on the deploy (test-ops-manager-guard.mjs pins the golden digest).
   const users = (Array.isArray(state?.users) ? state.users : [])
-    .map((u) => [u?.id, u?.role, u?.status, u?.email ?? null, canonical(u?.pay ?? null), canonical(u?.hr ?? null),
-      u?.disabledAt ?? null, canonical(u?.clockRules ?? null)])
+    .map((u) => {
+      const tuple = [u?.id, u?.role, u?.status, u?.email ?? null, canonical(u?.pay ?? null), canonical(u?.hr ?? null),
+        u?.disabledAt ?? null, canonical(u?.clockRules ?? null)];
+      return (u?.managerLevel != null || u?.opsManagerId != null)
+        ? [...tuple, u?.managerLevel ?? null, u?.opsManagerId ?? null] : tuple;
+    })
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   // Only entities that actually CARRY an assignment. A site or account with no
   // standing crew grants no authority, so creating or deleting one is
@@ -814,17 +1325,29 @@ export function protectedFingerprint(state) {
     .map((s) => [s?.id, s?.clientId ?? null])
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
-  // Customer (account) EXISTENCE. protectedFieldViolations now refuses a customer
-  // REMOVAL from anyone without clients.delete, so a delete must move the digest or
+  // Customer (account) EXISTENCE. protectedFieldViolations refuses a customer REMOVAL from
+  // everyone (CS-663: archived, never deleted), so a removal must move the digest or
   // the guard silently stops firing — the failure mode this whole function exists to
   // prevent. assign(clients) above only lists crew-BEARING accounts, so it does not
-  // move when a crew-less customer is deleted; this id set does. A snapshot digest
+  // move when a crew-less customer is removed; this id set does. A snapshot digest
   // can't tell a removal from an addition, so a customer CREATE moves it too and pays
   // one deep read — accepted: customers are created far less often than the job / note
   // / status saves the fast path protects, and a CSV import is a single save.
+  // CS-663: a customer carrying archive state is [id, archiveTuple] instead of its bare id, so an
+  // archive or a restore moves the digest (the guard's archive rule then runs) while a book with
+  // nothing archived digests exactly as before — no stored digest changes with this deploy.
   const clientIds = (Array.isArray(state?.clients) ? state.clients : [])
-    .map((c) => c?.id ?? null)
-    .sort((a, b) => String(a).localeCompare(String(b)));
+    .map((c) => (carriesArchiveState(c) ? [c?.id ?? null, archiveTuple(c)] : (c?.id ?? null)))
+    .sort((a, b) => String(Array.isArray(a) ? a[0] : a).localeCompare(String(Array.isArray(b) ? b[0] : b)));
+
+  // Customer -> assigned manager (client.supervisorId). protectedFieldViolations now refuses a
+  // supervisor set / change / clear from anyone but owner/admin, so a save that changes ONLY a
+  // supervisor must move the digest or the guard SILENTLY STOPS FIRING (this function's whole
+  // reason to exist). '' and a missing field normalize to null (supervisorId()), so an ordinary
+  // save that never touches a supervisor stays off the deep read.
+  const supervisors = (Array.isArray(state?.clients) ? state.clients : [])
+    .map((c) => [c?.id ?? null, supervisorId(c)])
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
   // Keys sorted (canonical), because the same content arrives in two key orders: a
   // browser sends canonicalJson (keys sorted) and jsonb hands a read back shortest key
@@ -862,6 +1385,40 @@ export function protectedFingerprint(state) {
     // jsonb key order never false-alarms. Only Operations writes it (rare), so the deep
     // read it can force is not on the hot path.
     canonical(state?.opsSettings ?? null),
+    // A location's manager (MTA W1-G): protectedFieldViolations refuses a non-owner/admin
+    // supervisor change, so its input must be here or the guard silently stops firing. A
+    // customer create/rename with no supervisor keeps every entry null, so it stays off the
+    // deep read (the clientIds set above already moves the digest on a create/delete).
+    supervisors,
+    // (Here sat the `reviews` slice, the Reviews page's Indeed count (MISC-4); it left with
+    // Google reviews on 2026-10-20. Dropping a position changes every digest: the first save per
+    // org after that deploy takes the full check and raises ONE org_state.baseline_mismatch
+    // alert, then the commit heals the stored digest, as the additions below did.)
+    // SUP-13 (2026-10-05): the RETIRED supply slices, WHOLE — a save that changes them in either
+    // direction must reach the deep read, where restoreRetiredSlices puts them back. A save that
+    // leaves them as committed stays on the fast path. (Until SUP-13 this position held the
+    // request projection the state-machine check judged; that check moved to /api/supplies.)
+    retiredSlicesInput(state),
+    // SUP-7 (Matt, 2026-09-29): the monthly budget and order day are judged by
+    // protectedFieldViolations, so their input belongs here or the guard SILENTLY STOPS FIRING.
+    // A PROJECTION: a customer's name / address / tags are not in it.
+    supplyClientSettings(state?.clients),
+    // INVOICES + their payments (CS-003): protectedFieldViolations judges both now, so their input
+    // belongs here or the guard SILENTLY STOPS FIRING — and it did: with no invoice input, a save
+    // changing only an invoice matched the stored digest and committed with no guard run at all.
+    // The MONEY projection (invoiceMoney), so a note, a PO number, a job delete pruning `jobIds` or
+    // the cron's `overdueNotifiedAt` stamp stays off the deep read. Appended LAST (positional).
+    // ⚠️ Adding it changes every digest: the first save per org after the deploy takes the full
+    // check and raises one org_state.baseline_mismatch alert, then the commit heals the stored
+    // digest — the same one-time cost the MISC-4 and SUP-1 additions paid.
+    moneyList(state?.invoices, invoiceMoney),
+    // A CONTACT's details (2026-10-03): protectedFieldViolations judges adding one and changing
+    // one now, so the input belongs here or the guard SILENTLY STOPS FIRING. The contactPerson
+    // projection, so a do-not-contact flag, a tag, a note or a timestamp stays off the deep read.
+    // Appended LAST (positional); like the invoices addition, the first save after the deploy
+    // raises ONE org_state.baseline_mismatch alert, then the commit heals the stored digest.
+    (Array.isArray(state?.contacts) ? state.contacts : []).map(contactPerson)
+      .sort((a, b) => String(a && a[0]).localeCompare(String(b && b[0]))),
   ]);
   // CRYPTOGRAPHIC (SHA-256), and it has to be. This digest is NOT a mere change
   // detector: the write endpoint SKIPS the field-authorization guard entirely when a

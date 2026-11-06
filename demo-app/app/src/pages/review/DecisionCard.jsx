@@ -7,6 +7,8 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import ReviewNotes from './ReviewNotes';
 import Badge from '../../components/Badge';
 import { fmtDate } from '../../lib/dates';
+import { REVIEW_MOCKUPS } from '../../review-mockups';
+import MockupFrame from './MockupFrame';
 
 // One build-decision in the focus flow. A single question is native radios, a multi is
 // native checkboxes (choice is an array), a text question is a saved-on-blur textarea. The
@@ -18,8 +20,14 @@ import { fmtDate } from '../../lib/dates';
 // unlocks the card for THIS sitting (a fresh id created on mount); the first save then carries
 // `confirm: true`, and the reducer keeps the prior answer in history. A misclick fix within
 // the same visit needs no confirm. Notes are add-only (never an answer).
+//
+// A DESIGN question (`mockup` set, UI_RULES §179) draws its mockup between the question and the
+// answers, opened on the chosen answer's view. Picking an answer switches the mockup to that view
+// (an answer with no view, "another way", leaves it be); a view tab in the mockup only shows a
+// view and never answers. The line over the mockup says what was chosen, and when.
 export default function DecisionCard({ question: q }) {
-  // One sitting per card mount (one uninterrupted edit visit for this item).
+  // One sitting per card mount (one uninterrupted edit visit for this item): ReviewFocus mounts one
+  // card per item (keyed by its id), which is also what gives the answer box one instance per item.
   const sitting = useMemo(() => newSitting(), []);
   const rev = useDecisionReview(q.id, sitting);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -39,6 +47,18 @@ export default function DecisionCard({ question: q }) {
   const hasRec = recIds.length > 0;
 
   const selected = isMulti ? (Array.isArray(rev.choice) ? rev.choice : []) : rev.choice;
+
+  // The mockup's view: the chosen answer's, else its first. A new choice (here or from another
+  // seat) moves it to that answer's view; a tab pressed in the mockup moves it too.
+  const mockup = q.mockup ? REVIEW_MOCKUPS[q.mockup] : null;
+  const views = mockup?.views || [];
+  const [view, setView] = useState(() => (views.includes(rev.choice) ? rev.choice : views[0]));
+  const [seenChoice, setSeenChoice] = useState(rev.choice);
+  if (rev.choice !== seenChoice) {
+    setSeenChoice(rev.choice);
+    if (views.includes(rev.choice)) setView(rev.choice);
+  }
+  const chosen = !isMulti && answered ? (q.options || []).find((o) => o.id === rev.choice) : null;
   const isSel = (id) => (isMulti ? selected.includes(id) : selected === id);
   const toggle = (id) => {
     if (!editable) return;
@@ -70,10 +90,24 @@ export default function DecisionCard({ question: q }) {
       <div className="review-q">{q.q}</div>
       {q.why && <p className="review-why">{q.why}</p>}
 
+      {mockup && (
+        <div className="review-mockup">
+          {/* Both lines stack in one cell (the other hidden), so choosing never moves the mockup. */}
+          <div className="review-mockup-pick">
+            <span className="review-mockup-pick-state" data-hidden={chosen ? 'true' : undefined} aria-hidden={chosen ? 'true' : undefined}>
+              Nothing chosen yet. The tabs show each view; the answer you pick under the views is what’s saved.
+            </span>
+            <span className="review-mockup-pick-state review-mockup-pick-chosen" data-hidden={chosen ? undefined : 'true'} aria-hidden={chosen ? undefined : 'true'}>
+              Chosen: ({chosen?.id}) {chosen?.label}{rev.at ? `, ${fmtDate(rev.at)}` : ''}
+            </span>
+          </div>
+          <MockupFrame id={q.mockup} view={view} onView={setView} title={q.q} />
+        </div>
+      )}
+
       {isText ? (
         <textarea
           className="input textarea-md review-answer"
-          key={q.id}
           placeholder="Type your answer (saved for everyone)"
           disabled={!editable}
           {...answerField}

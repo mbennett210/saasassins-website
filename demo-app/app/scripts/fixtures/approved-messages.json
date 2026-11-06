@@ -1,0 +1,113 @@
+{
+  "_source": "The wording Matt accepted in Review (production org_state.clientReview.drafts, read 2026-10-19), rendered from app/src/data/emailDrafts.js at 811e54eb with its SAMPLE data. Brand values are written as «NAME», «PHONE», «SIGNATORY», «APP_URL», «MONOGRAM» so a re-brand does not change the record. app/scripts/test-customer-message-catalog.mjs holds the templates to it.",
+  "drafts": {
+    "lead-ack": {
+      "subject": "Thanks for reaching out to «NAME»",
+      "body": "Hi Jordan,\n\nThanks for getting in touch with «NAME». We have your request, and a member of our team will follow up within one business day to learn about your space and the right next step.\n\nIf it is easier to talk now, call us at «PHONE».\n\nThe «NAME» team"
+    },
+    "walkthrough-confirm": {
+      "subject": "Your walkthrough with «NAME» is set",
+      "body": "Hi Jordan,\n\nYou are on the calendar. We will meet you at Bayside Tower, Suite 400 on Friday, Sep 12 at 6:00 PM to walk the space and put together the right cleaning plan.\n\nIt takes about 20 minutes. If anything changes, reply here or call «PHONE».\n\nThe «NAME» team"
+    },
+    "service-setup": {
+      "subject": "You are all set with «NAME»",
+      "body": "Hi Jordan,\n\nWelcome aboard. Here is your setup at a glance:\n\nSite: Bayside Tower, Suite 400\nService: Janitorial cleaning, weekly (Wednesdays)\nFirst visit: Friday, Sep 12\n\nYour crew lead is «SIGNATORY». You will get a reminder before each visit and a quick check-in after. Questions any time at «PHONE».\n\nThe «NAME» team"
+    },
+    "reminder-booking": {
+      "subject": "Your cleaning is booked",
+      "body": "Hi Jordan Ellis, your Janitorial cleaning at Bayside Tower, Suite 400 is booked for Friday, Sep 12 at 6:00 PM.\n\n«NAME»"
+    },
+    "sms-24h": {
+      "subject": null,
+      "body": "Reminder: «NAME» will be at Bayside Tower, Suite 400 tomorrow at 6:00 PM for Janitorial cleaning."
+    },
+    "sms-day-of": {
+      "subject": null,
+      "body": "Reminder: «NAME» is scheduled at Bayside Tower, Suite 400 today at 6:00 PM for your Janitorial cleaning."
+    },
+    "on-the-way": {
+      "subject": null,
+      "body": "«NAME»: your crew is on the way to Bayside Tower, Suite 400 and will arrive around 6:00 PM. Reply here with any access notes."
+    },
+    "reschedule": {
+      "subject": "We have moved your cleaning",
+      "body": "Hi Jordan,\n\nYour cleaning at Bayside Tower, Suite 400 has been rescheduled to Friday, Sep 12 at 6:00 PM. No action needed on your end.\n\nIf that time does not work, reply here or call «PHONE» and we will find a better window.\n\nThe «NAME» team"
+    },
+    "cancellation": {
+      "subject": "Your cleaning has been cancelled",
+      "body": "Hi Jordan,\n\nWe have cancelled the cleaning scheduled for Bayside Tower, Suite 400 on Friday, Sep 12. If this was a mistake or you would like to rebook, let us know and we will get it back on the calendar.\n\nThe «NAME» team"
+    },
+    "visit-summary": {
+      "subject": "Your space was cleaned today",
+      "body": "Hi Jordan,\n\nYour crew completed today's cleaning at Bayside Tower, Suite 400. Everything on the checklist was covered, and your crew lead noted the space is in good shape.\n\nIf anything needs a second look, reply here and we will take care of it right away.\n\nThe «NAME» team"
+    },
+    "missed-visit": {
+      "subject": "We missed today, and we are on it",
+      "body": "Hi Jordan,\n\nWe are sorry. Our crew was not able to complete today's scheduled cleaning at Bayside Tower, Suite 400. That is not our standard, and we want to make it right.\n\nWe would like to reschedule at the earliest time that works for you. Reply here or call «PHONE».\n\nThe «NAME» team"
+    },
+    "upcoming-due": {
+      "subject": "Invoice «MONOGRAM»-1042 is due soon",
+      "body": "Hi Jordan,\n\nA friendly reminder that invoice «MONOGRAM»-1042 for $1,160.00 is due in 7 days under your Net-30 terms.\n\nYou can pay online here: «APP_URL»/quote/SAMPLE. If you have already sent payment, thank you, and please disregard.\n\nThe «NAME» team"
+    },
+    "payment-reminder-sms": {
+      "subject": null,
+      "body": "«NAME»: a friendly reminder that invoice «MONOGRAM»-1042 ($1,160.00) is due. Pay here: «APP_URL»/quote/SAMPLE. Reply with any questions."
+    },
+    "statement": {
+      "subject": "Your «NAME» statement",
+      "body": "Hi Jordan,\n\nAttached is your monthly account statement for Bayside Property Group, covering all invoices and payments for the period.\n\nCurrent balance: $1,160.00. Let us know if anything looks off.\n\nThe «NAME» team"
+    },
+    "reminder-post-service": {
+      "subject": "How did your first clean go?",
+      "body": "Hi Jordan Ellis,\n\nThanks for letting «NAME» handle Bayside Tower, Suite 400 today. We hope it went well! We always like to check in after a first visit. Reply with anything we should adjust for the next time, and we'll make sure your crew sees it.\n\nThe «NAME» team"
+    },
+    "review-request": {
+      "subject": "How are we doing?",
+      "body": "Hi Jordan,\n\nWe hope «NAME» has been keeping Bayside Tower, Suite 400 looking its best. If you have been happy with the service, a quick Google review would mean a lot and helps other local businesses find us.\n\nIt takes about a minute: «APP_URL»/quote/SAMPLE. And if anything has fallen short, please tell us first so we can fix it.\n\nThe «NAME» team"
+    },
+    "review-request-sms": {
+      "subject": null,
+      "body": "«NAME»: hope your space is looking great! If you have a minute, we would love a quick Google review: «APP_URL»/quote/SAMPLE. Thank you!"
+    },
+    "complaint-ack": {
+      "subject": "We hear you, and we are on it",
+      "body": "Hi Jordan,\n\nThank you for letting us know. We have logged your concern about Bayside Tower, Suite 400, and it is with our team now.\n\nWe will follow up shortly with next steps. If it is urgent, call us directly at «PHONE».\n\nThe «NAME» team"
+    },
+    "complaint-resolution": {
+      "subject": "Here is how we resolved it",
+      "body": "Hi Jordan,\n\nFollowing up on the concern you raised, here is what we did: our crew lead reviewed the area and corrected it on the next visit, and we have added a note so the team keeps an eye on it going forward.\n\nPlease let us know if it is fully resolved on your end. Thank you for giving us the chance to make it right.\n\nThe «NAME» team"
+    },
+    "satisfaction-survey": {
+      "subject": "Two minutes to tell us how we are doing?",
+      "body": "Hi Jordan,\n\nWe are always working to give Bayside Property Group real oversight, not constant follow-up. Would you take two minutes to tell us how we are doing?\n\nStart the short survey here: «APP_URL»/quote/SAMPLE. Your feedback goes straight to our operations team.\n\nThe «NAME» team"
+    },
+    "renewal-notice": {
+      "subject": "Your «NAME» agreement is up for renewal",
+      "body": "Hi Jordan,\n\nYour service agreement for Bayside Property Group is coming up for renewal. We have valued keeping your space clean and would love to continue.\n\nNothing changes on your end unless you would like it to. We will reach out with renewal details shortly, or reply here any time.\n\nThe «NAME» team"
+    },
+    "renewal-offer": {
+      "subject": "Let us keep your space covered",
+      "body": "Hi Jordan,\n\nAs we renew your «NAME» agreement, we want to make sure the plan still fits. If your needs have changed, whether that is frequency, scope, or an added location, this is a great time to adjust.\n\nWant to hop on a quick call? Reply here or call «PHONE».\n\nThe «NAME» team"
+    },
+    "upsell": {
+      "subject": "A few ways we can do more for you",
+      "body": "Hi Jordan,\n\nYour crew is already on site regularly, so a few extras are easy to add: floor stripping and waxing, carpet care, or restroom deep-cleans on a schedule.\n\nIf any of those would help, reply here and we will add them to your plan with clear pricing.\n\nThe «NAME» team"
+    },
+    "service-change": {
+      "subject": "Your «NAME» service has been updated",
+      "body": "Hi Jordan,\n\nThis confirms the change to your cleaning plan for Bayside Tower, Suite 400:\n\nNew schedule: twice weekly (Tuesdays and Fridays)\nEffective: Friday, Sep 12\n\nEverything else stays the same. If this does not match what you expected, reply here right away.\n\nThe «NAME» team"
+    },
+    "price-increase": {
+      "subject": "An update to your «NAME» pricing",
+      "body": "Hi Jordan,\n\nWe want to give you plenty of notice: starting next month, your monthly rate for Bayside Tower, Suite 400 will adjust to reflect rising labor and supply costs. Your service and crew stay exactly the same.\n\nWe have worked to keep the change as small as possible. Happy to walk through the details, just reply or call «PHONE».\n\nThe «NAME» team"
+    },
+    "win-back": {
+      "subject": "We would love to have you back",
+      "body": "Hi Jordan,\n\nIt has been a while since «NAME» cleaned Bayside Tower, Suite 400, and we would love the chance to earn your business again. A lot of clients come back for the oversight. We do not just clean, we make sure it is done right.\n\nIf you are open to it, reply here and we will put together a fresh quote, no pressure.\n\nThe «NAME» team"
+    },
+    "offboarding": {
+      "subject": "Thank you from all of us at «NAME»",
+      "body": "Hi Jordan,\n\nWe have processed the cancellation of your cleaning service for Bayside Property Group, effective at the end of your current term. It has been a pleasure keeping your space clean.\n\nIf we can ever help again, the door is always open. Reply here or call «PHONE».\n\nThe «NAME» team"
+    }
+  }
+}

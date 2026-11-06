@@ -129,18 +129,32 @@ const server = http.createServer(async (req, res) => {
       return send(201);
     }
     if (req.method === 'DELETE' && table === 'crew_assignments') return send(204);
-    if (req.method !== 'GET') return send(405, { message: `fake: ${req.method} ${table}` });
+    if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, { message: `fake: ${req.method} ${table}` });
     if (failRosterRead && table === 'org_state' && select === 'users:state->users') return send(500, { code: 'XX000', message: 'fake: roster read failed' });
-    let q = db.from(table).select(select);
+    // HEAD is a count read (`select(col, { count: 'exact', head: true })`, the count half of a
+    // complete read — _lib/pagedSelect selectAll, which GET /api/state/heartbeat uses since
+    // CS-727): its answer is the Content-Range header, not a body.
+    const head = req.method === 'HEAD';
+    let q = head ? db.from(table).select(select, { count: 'exact', head: true }) : db.from(table).select(select);
     for (const [key, raw] of u.searchParams) {
       if (['select', 'offset', 'limit', 'order'].includes(key)) continue;
       q = applyParam(q, key, raw);
+    }
+    if (head) {
+      const c = await q;
+      if (c.error) return send(400, c.error);
+      res.writeHead(200, { 'Content-Range': `*/${c.count}` });
+      return res.end();
     }
     for (const part of (u.searchParams.get('order') || '').split(',').filter(Boolean)) {
       const [col, dir] = part.split('.');
       q = q.order(col, { ascending: dir !== 'desc' });
     }
-    if (u.searchParams.has('limit')) q = q.range(0, Number(u.searchParams.get('limit')) - 1);
+    // `.range(from, to)` arrives as offset + limit: a page past the first starts at its offset.
+    if (u.searchParams.has('limit')) {
+      const offset = Number(u.searchParams.get('offset')) || 0;
+      q = q.range(offset, offset + Number(u.searchParams.get('limit')) - 1);
+    }
     const r = await q;
     return r.error ? send(400, r.error) : send(200, r.data);
   } catch (e) {
@@ -156,7 +170,7 @@ process.env.SUPABASE_ANON_KEY = 'anon-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
 process.env.CLEANSPACE_ORG_ID = ORG;
 process.env.FORMS_ORG_ID = ORG; // the org-id trio is ONE value
-for (const k of ['RESEND_API_KEY', 'RESEND_VERIFIED_DOMAIN', 'RESEND_DEFAULT_FROM', 'GOOGLE_MAPS_API_KEY', 'ALERT_WEBHOOK_URL']) delete process.env[k];
+for (const k of ['SYSTEM_SENDER_EMAIL', 'GOOGLE_MAPS_API_KEY', 'ALERT_WEBHOOK_URL']) delete process.env[k];
 
 const load = async (rel) => (await import(pathToFileURL(path.join(APP, ...rel.split('/'))).href)).default;
 const heartbeat = await load('api/state/heartbeat.js');
@@ -352,10 +366,16 @@ try {
   ok('🔴 B25 the settings section (GET snapshot) refuses a disabled member',
     refusedDisabled(await quiet(() => call(settings, { token: 'tok-admin', query: { subpath: 'snapshot' } }))));
   reset();
+  // The snapshot half of this control uses the OWNER: GET snapshot now also gates on the
+  // FINANCIAL permission (CS-019 — `invoices.view`, owner + manager, deliberately NOT
+  // admin per Q24), so an active admin is refused there on merit, not on status. This pair
+  // is about status enforcement, so it asks with a token that clears the merit gate.
   ok('B26 control: an active member still passes those gates (email health 200, geo reaches its key check 503, snapshot 200)',
     (await quiet(() => call(emailHealth, { token: 'tok-admin' }))).status === 200
       && (await quiet(() => call(geo, { token: 'tok-admin', query: { address: '1 Main St' } }))).status === 503
-      && (await quiet(() => call(settings, { token: 'tok-admin', query: { subpath: 'snapshot' } }))).status === 200);
+      && (await quiet(() => call(settings, { token: 'tok-owner', query: { subpath: 'snapshot' } }))).status === 200);
+  ok('🔴 B26b and an ACTIVE admin is still refused the snapshot — by its permission gate, not by status (CS-019)',
+    (await quiet(() => call(settings, { token: 'tok-admin', query: { subpath: 'snapshot' } }))).status === 403);
   ok('B27 control: no session is still 401 on them', (await quiet(() => call(geo, { query: { address: 'x' } }))).status === 401
     && (await quiet(() => call(inbound, { query: {} }))).status === 401);
 

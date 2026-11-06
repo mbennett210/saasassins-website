@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  DEFAULT_INVOICE_RANGE, INVOICE_RANGES, INVOICE_STATUS_FILTERS, invoiceListFilter,
+} from '../lib/money';
 import { useFromHere } from '../hooks/useFromHere';
 import Badge, { statusBadgeVariant } from '../components/Badge';
 import StatCard from '../components/StatCard';
@@ -17,10 +20,13 @@ import {
   invoicePaid, deriveInvoiceStatus, selectAgingBuckets, selectUninvoicedCompletedJobs,
   selectServiceById, selectSiteById,
 } from '../store/selectors';
+import { paymentTermLabel } from '../lib/money';
 import { fmtDate, money, todayIso } from '../lib/dates';
 import { newId } from '../lib/ids';
 import { usePagedRows } from '../hooks/usePagedRows';
 import ListPager from '../components/ListPager';
+import { JOBS_WINDOW_BACK_DAYS } from '../lib/jobsWindow';
+import { useT } from '../i18n/react';
 
 export default function Invoices() {
   const state = useStore();
@@ -33,11 +39,10 @@ export default function Invoices() {
   const invoices = selectInvoices(state);
   const clients = selectClients(state);
 
-  // Sweep for newly-overdue invoices on mount here too (not only the Dashboard),
-  // so overdue notifications fire even in an org whose active users live on the
-  // Invoices page and rarely open the Dashboard. Idempotent (one-shot per invoice
-  // via overdueNotifiedAt), same as the Dashboard sweep.
-  useEffect(() => { dispatch({ type: ACTIONS.MARK_INVOICES_OVERDUE }); }, [dispatch]);
+  // (No mount-time overdue sweep here any more. 'overdue' is DERIVED on every read, so
+  // nothing on this page needs a write to display it — and the one-shot notification is
+  // now raised by /api/cron/ops-alerts, tab-independently, so it reaches an owner who
+  // never opens this page at all. CS-288; the shared rule is lib/invoiceSweep.js.)
 
   const [searchParams, setSearchParams] = useSearchParams();
   const setParam = (key, value, defaultValue) => {
@@ -64,7 +69,12 @@ export default function Invoices() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const statusFilter = searchParams.get('status') || 'all';
   const clientFilter = searchParams.get('client') || '';
-  const dateRange = searchParams.get('range') || '30';
+  // 🔴 ALL TIME BY DEFAULT (CS-047). This defaulted to a 30-day ISSUE-DATE window, so the
+  // Dashboard's "Past Due 30+" card — which by definition counts invoices issued more than
+  // 30 days ago — opened a list that could not contain one of them, and the Overdue KPI
+  // above disagreed with the rows beneath it. An unpaid invoice is outstanding however old
+  // it is; hiding one behind a date default is never the safe direction for money.
+  const dateRange = searchParams.get('range') || DEFAULT_INVOICE_RANGE;
   const [selection, setSelection] = useState(new Set());
   const [confirmPaid, setConfirmPaid] = useState(false);
 
@@ -76,21 +86,17 @@ export default function Invoices() {
     return m;
   }, [clients]);
 
+  // Status + date range come from the shared pure filter (lib/money.invoiceListFilter), so
+  // the rule the Dashboard cards link into is the rule this list applies — and it is unit
+  // tested without driving the page. The company-name search stays here: it needs the
+  // client map, which is state.
   const filtered = useMemo(() => {
-    const now = new Date();
     const clientQuery = clientFilter.trim().toLowerCase();
-    return withStatus.filter((inv) => {
-      if (statusFilter !== 'all' && inv.derivedStatus !== statusFilter) return false;
-      if (clientQuery) {
-        const c = clientById.get(inv.clientId);
-        if (!c?.name?.toLowerCase().includes(clientQuery)) return false;
-      }
-      if (dateRange !== 'all') {
-        const days = Number(dateRange);
-        const cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - days);
-        if (new Date(inv.issueDate) < cutoff) return false;
-      }
-      return true;
+    const byStatusAndDate = invoiceListFilter(withStatus, { status: statusFilter, range: dateRange });
+    if (!clientQuery) return byStatusAndDate;
+    return byStatusAndDate.filter((inv) => {
+      const c = clientById.get(inv.clientId);
+      return !!c?.name?.toLowerCase().includes(clientQuery);
     });
   }, [withStatus, statusFilter, clientFilter, dateRange, clientById]);
 
@@ -116,8 +122,15 @@ export default function Invoices() {
   ];
 
   // Completed jobs not yet on any invoice — one-click to invoice, seeding the
-  // modal from the job's client / site / service and stamping invoice.jobIds.
-  const uninvoicedJobs = useMemo(() => selectUninvoicedCompletedJobs(state), [state]);
+  // modal from the job's client / site / service and stamping invoice.jobIds. Over the last
+  // JOBS_WINDOW_BACK_DAYS days: the app holds the jobs window, not the table (CS-676), so an
+  // older clean is in memory only when some other screen happened to load it — the list
+  // keeps to the stretch it can always see, and says so.
+  const t = useT();
+  const uninvoicedJobs = useMemo(() => {
+    const since = new Date(Date.now() - JOBS_WINDOW_BACK_DAYS * 86400000).toISOString();
+    return selectUninvoicedCompletedJobs(state).filter((j) => typeof j.startAt === 'string' && j.startAt >= since);
+  }, [state]);
   const uninvoicedPager = usePagedRows(uninvoicedJobs);
   const [showUninvoiced, setShowUninvoiced] = useState(false);
   const invoiceJob = (job) => {
@@ -166,11 +179,16 @@ export default function Invoices() {
     setConfirmPaid(false);
   };
 
+  // 🔴 EXPORT WHAT IS SELECTED (CS-239). This button lives in the SELECTION bar — it
+  // appears because rows are selected and it is labelled next to "N selected" — and it
+  // exported every filtered row instead, so picking three invoices and clicking Export
+  // handed out the whole filtered book. `rows` is the selection when there is one.
   const exportCsv = () => {
-    const rows = [['Invoice', 'Company', 'Issued', 'Due', 'Total', 'Balance', 'Status']];
-    filtered.forEach((inv) => {
+    const chosen = selection.size > 0 ? filtered.filter((inv) => selection.has(inv.id)) : filtered;
+    const rows = [['Invoice', 'Company', 'Issued', 'Due', 'PO', 'Terms', 'Total', 'Balance', 'Status']];
+    chosen.forEach((inv) => {
       const c = selectClientById(state, inv.clientId);
-      rows.push([inv.id, c?.name || '', inv.issueDate, inv.dueDate, invoiceTotal(inv), invoiceBalance(inv), inv.derivedStatus]);
+      rows.push([inv.id, c?.name || '', inv.issueDate, inv.dueDate, inv.poNumber || '', paymentTermLabel(inv.paymentTerms), invoiceTotal(inv), invoiceBalance(inv), inv.derivedStatus]);
     });
     const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -236,7 +254,7 @@ export default function Invoices() {
             <h3 className="dash-card-title">Completed work to invoice</h3>
             <span className="badge amber">{uninvoicedJobs.length}</span>
             <span className="text-sm text-muted" style={{ marginLeft: 'auto' }}>
-              Done jobs not yet on an invoice
+              {t('invoiceList.uninvoicedSince', { days: JOBS_WINDOW_BACK_DAYS })}
             </span>
           </button>
           {showUninvoiced && (
@@ -272,9 +290,9 @@ export default function Invoices() {
 
       <div className="filter-bar">
         <FormField label="Status" as="select" value={statusFilter} onChange={(e) => setParam('status', e.target.value, 'all')}
-          options={[{ value: 'all', label: 'All statuses' }, { value: 'pending', label: 'Pending' }, { value: 'overdue', label: 'Overdue' }, { value: 'paid', label: 'Paid' }, { value: 'void', label: 'Void' }]} />
-        <FormField label="Date range" as="select" value={dateRange} onChange={(e) => setParam('range', e.target.value, '30')}
-          options={[{ value: 'all', label: 'All time' }, { value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }, { value: '90', label: 'Last 90 days' }]} />
+          options={INVOICE_STATUS_FILTERS} />
+        <FormField label="Date range" as="select" value={dateRange} onChange={(e) => setParam('range', e.target.value, DEFAULT_INVOICE_RANGE)}
+          options={INVOICE_RANGES} />
         <div className="filter-client-search">
           <FormField label="Company" type="text" placeholder="Search by company name…" value={clientFilter}
             onChange={(e) => setParam('client', e.target.value, '')} />
@@ -285,8 +303,12 @@ export default function Invoices() {
         <div className="bulk-bar">
           <span className="text-sm">{selection.size} selected</span>
           {canPay && <button className="btn btn-primary" onClick={() => setConfirmPaid(true)}>Mark Paid</button>}
-          <button className="btn btn-outline" onClick={exportCsv}>Export CSV</button>
-          <button className="btn btn-danger" onClick={() => setSelection(new Set())}>Clear</button>
+          <button className="btn btn-outline" onClick={exportCsv}>
+            Export CSV ({selection.size})
+          </button>
+          {/* Clear only drops the SELECTION — it destroys nothing, so it must not wear the
+              danger colour that every destructive control in this app uses (CS-239). */}
+          <button className="btn btn-outline" onClick={() => setSelection(new Set())}>Clear</button>
         </div>
       )}
 
@@ -294,7 +316,12 @@ export default function Invoices() {
         invoices.length === 0 ? (
           <EmptyState icon={<Icon name="invoices" size={28} />} title="No invoices yet" message="Add your first invoice to start tracking payments." action={canCreate && <button className="btn btn-primary" onClick={() => setModalOpen(true)}>Add Invoice</button>} />
         ) : (
-          <EmptyState title="No matches" message="Try adjusting filters or date range." />
+          // Name the active filters, so "no matches" can never be read as "no invoices" —
+          // the confusion the 30-day default used to create (CS-047).
+          <EmptyState
+            title="No matches"
+            message={`No invoices for ${INVOICE_STATUS_FILTERS.find((s) => s.value === statusFilter)?.label || statusFilter} · ${INVOICE_RANGES.find((r) => r.value === dateRange)?.label || dateRange}${clientFilter.trim() ? ` · “${clientFilter.trim()}”` : ''}. Try widening the filters.`}
+          />
         )
       ) : (
         <div className="table-wrap mobile-stack">

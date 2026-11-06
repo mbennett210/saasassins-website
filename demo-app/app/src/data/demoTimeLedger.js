@@ -7,15 +7,21 @@
 // PURE. `buildDemoLedgerEntries(now)` takes the reference Date from the caller and
 // NEVER reads the clock at module scope, so the same import is safe to evaluate at
 // build time. All dates are RUNTIME-RELATIVE off `now` (a helper `at(...)` walks
-// day-offsets in the machine's LOCAL tz) — "last night", 7d and 30d always have
-// data no matter which day the demo is opened.
+// day-offsets on the ORG wall clock — Eastern, company.timezone — not the machine's, so
+// the story reads the same on any laptop) — "last night", 7d and 30d always have data no
+// matter which day the demo is opened.
 //
-// Ids are ALL SYNTHETIC (job `j_demo_*`, entry `te_demo_*`): historical rows must
-// NOT reference real "today" jobs, or a live crew clock-in would group with a stale
-// seeded clean. Site/client/user ids + denormalized names + each site's expected
-// minutes are resolved from the REAL seed so the rows join correctly to the store.
+// The HISTORY's ids are SYNTHETIC (job `j_demo_*`, entry `te_demo_*`): a past row must NOT
+// reference a real "today" job, or a live crew clock-in would group with a stale seeded
+// clean. TODAY's punches are the manager's day (data/demoManagerDay.js, entries
+// `te_demo_md_*`): they ARE on the real seed jobs of today's visits, which the same plan
+// puts in the store, so the manager's board, the Schedule and the client hub read one visit.
+// Site/client/user ids + denormalized names + each site's expected minutes are resolved from
+// the REAL seed so the rows join correctly to the store.
 import { INITIAL_STATE } from './seed';
 import { seedId } from '../lib/ids';
+import { DEFAULT_ORG_TIMEZONE, composeIso, addDaysKey, dayKey } from '../lib/dates';
+import { buildManagerDay, MD_ON_SITE, MANAGER_DAY_PREFIX } from './demoManagerDay';
 
 // ── seed resolvers (pure lookups over the already-imported INITIAL_STATE) ────────
 const usersById = new Map((INITIAL_STATE.users || []).map((u) => [u.id, u]));
@@ -26,10 +32,15 @@ const userByKey = (key) => usersById.get(seedId('u', key)) || null;
 const siteByKey = (key) => sitesById.get(seedId('st', key)) || null;
 
 // ── runtime-relative clock ───────────────────────────────────────────────────────
-// Build a LOCAL-time instant `dayOffset` days from `now` at h:m. Date normalizes
-// day under/overflow, so month boundaries are handled. Returns epoch ms.
+// Build an ORG-zone instant `dayOffset` days from `now` at h:m — composed on the
+// business's wall clock (company.timezone === DEFAULT_ORG_TIMEZONE, Eastern), NOT the
+// machine's, so the story lands on the same instants and Variance's "last night" groups
+// the same cleans on a Pacific or an Eastern laptop (test-demo-ledger-tz.mjs). Goes
+// through the lib/dates org-zone helpers — no hand-rolled calendar math. Returns epoch ms.
+const ORG_TZ = DEFAULT_ORG_TIMEZONE;
+const hhmm = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 const at = (now, dayOffset, h, m) =>
-  new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset, h, m, 0, 0).getTime();
+  new Date(composeIso(addDaysKey(dayKey(now, ORG_TZ), dayOffset), hhmm(h, m), ORG_TZ)).getTime();
 
 // Build ONE stub row. Field names + shape mirror stubClockIn() in lib/timeApi.js
 // exactly (completed rows additionally carry clock_out_lat/lng, as stubClockOut()
@@ -41,7 +52,11 @@ function mk(now, spec) {
   if (!site || !user) return null;
   const client = site.clientId ? clientsById.get(site.clientId) : null;
 
-  const inMs = spec.openMinsAgo != null ? now.getTime() - spec.openMinsAgo * 60000 : at(now, spec.day, spec.inH, spec.inM);
+  // Three ways to say when: minutes ago (an open punch), an instant the manager's day computed,
+  // or a day offset and a wall-clock time (the history).
+  const inMs = spec.openMinsAgo != null ? now.getTime() - spec.openMinsAgo * 60000
+    : Number.isFinite(spec.inAt) ? spec.inAt
+      : at(now, spec.day, spec.inH, spec.inM);
   const open = spec.dur == null;
   const outMs = open ? null : inMs + spec.dur * 60000;
   const hasCoords = Number.isFinite(site.lat) && Number.isFinite(site.lng);
@@ -91,9 +106,9 @@ function mk(now, spec) {
 //   day -1 (17:00–23:45 "last night", ≥6h inside a noon-noon window so a PT/ET
 //   machine-tz skew can't drop rows): the hero set — 1 red overrun, 1 amber
 //   shortfall, on-targets, a 2-cleaner clean, a geofence override — all PENDING so
-//   approve/reject is demoable. day 0: 1 OPEN row (~45m ago). day -2: an 'outside'
-//   geofence row. days -2..-6: filler + Andre's nightly warehouse deep cleans that
-//   push his week to ~34h (near the 40h OT-watch threshold). Older rows APPROVED.
+//   approve/reject is demoable. day -2: an 'outside' geofence row. days -2..-6: filler +
+//   Andre's nightly warehouse deep cleans that push his week to ~34h (near the 40h OT-watch
+//   threshold). Older rows APPROVED. TODAY is the manager's day (managerDaySpecs below).
 function ledgerSpecs() {
   return [
     // ---- LAST NIGHT (day -1) — pending, awaiting supervisor review ----
@@ -109,10 +124,8 @@ function ledgerSpecs() {
     { id: 'te_demo_5', job: 'j_demo_5', user: 'crew1', site: 'pac-tower', day: -1, inH: 21, inM: 0, dur: 58, geo: 'inside', dist: 9, appr: 'pending' },
     { id: 'te_demo_6', job: 'j_demo_5', user: 'crew4', site: 'pac-tower', day: -1, inH: 21, inM: 2, dur: 62, geo: 'inside', dist: 11, appr: 'pending' },
     // 7) GEOFENCE OVERRIDE: clocked in offsite w/ override, 115 vs 120 on target.
-    { id: 'te_demo_7', job: 'j_demo_6', user: 'crew3', site: 'evgrn-main', day: -1, inH: 21, inM: 30, dur: 115, geo: 'override', dist: 125, overrideReason: 'crew_override_offsite', appr: 'pending' },
+    { id: 'te_demo_7', job: 'j_demo_6', user: 'crew3', site: 'evgrn-main', day: -1, inH: 21, inM: 30, dur: 115, geo: 'outside', dist: 420, appr: 'pending' },   // PAY-17: an off-site punch is recorded as it is, and held
 
-    // ---- NOW (day 0) — 1 OPEN row, someone on the clock (~45 min in) ----
-    { id: 'te_demo_8', job: 'j_demo_7', user: 'crew4', site: 'oly-main', openMinsAgo: 45, dur: null, geo: 'inside', dist: 14, appr: 'pending' },
 
     // ---- day -2 — 'outside' geofence flag (~640m), on-target by minutes ----
     { id: 'te_demo_9', job: 'j_demo_8', user: 'crew2', site: 'pac-tower', day: -2, inH: 10, inM: 0, dur: 88, exp: 90, geo: 'outside', dist: 640, appr: 'approved' },
@@ -127,7 +140,7 @@ function ledgerSpecs() {
     { id: 'te_demo_14', job: 'j_demo_13', user: 'crew1', site: 'csc-main', day: -6, inH: 17, inM: 40, dur: 364, exp: 360, geo: 'inside', dist: 10, appr: 'approved' },
 
     // ---- filler across days -2..-6 (mixed flags, approved) ----
-    { id: 'te_demo_15', job: 'j_demo_14', user: 'crew2', site: 'lake-main', day: -2, inH: 9,  inM: 0,  dur: 125, geo: 'inside', dist: 10, appr: 'approved' }, // on target
+    { id: 'te_demo_15', job: 'j_demo_14', user: 'crew2', site: 'lake-main', day: -2, inH: 7,  inM: 30, dur: 125, geo: 'inside', dist: 10, appr: 'approved' }, // on target (ends before his 10:00 at Palmetto, te_demo_9)
     { id: 'te_demo_16', job: 'j_demo_15', user: 'crew3', site: 'mtb-clbhs', day: -3, inH: 9,  inM: 0,  dur: 78,  geo: 'inside', dist: 12, appr: 'approved' }, // on target (-12)
     { id: 'te_demo_17', job: 'j_demo_16', user: 'crew4', site: 'evgrn-main', day: -3, inH: 13, inM: 0,  dur: 130, geo: 'inside', dist: 9,  appr: 'approved' }, // on target (+10)
     { id: 'te_demo_18', job: 'j_demo_17', user: 'crew2', site: 'evgrn-main', day: -4, inH: 9,  inM: 0,  dur: 82,  exp: 60, geo: 'inside', dist: 11, appr: 'approved' }, // RED +22
@@ -138,12 +151,35 @@ function ledgerSpecs() {
   ];
 }
 
+// ── today: the manager's day (data/demoManagerDay.js) ───────────────────────────────
+// Its closed punches and Demo Crew's overtime week come from the plan; the two OPEN punches
+// are written here. They are the client hub's "who's on site now" at Coral Bay HOA (HUB-5) and
+// the manager's "on site": Tomas, whose clock-in passed the location check, and Keisha, whose
+// phone gave no location — so the hub shows both "location verified" and "not verified". The
+// plan starts that visit MD_ON_SITE.earlyMins after Tomas's clock-in, and lib/demoBootstrap
+// re-places the whole day (these included) once it is over two hours old, so the demo always
+// has someone on site and nobody "on site" since yesterday.
+function managerDaySpecs(day) {
+  const onSite = seedId('j', 'cbay-w1');
+  const placed = new Set(day.jobs.map((j) => j.id));
+  return [
+    ...(placed.has(onSite) ? [
+      { id: `${MANAGER_DAY_PREFIX.entry}cbay_w1_crew2`, job: onSite, user: 'crew2', site: 'mtb-clbhs', openMinsAgo: MD_ON_SITE.firstInMinsAgo, dur: null, geo: 'inside', dist: 11, appr: 'pending' },
+      { id: `${MANAGER_DAY_PREFIX.entry}cbay_w1_crew3`, job: onSite, user: 'crew3', site: 'mtb-clbhs', openMinsAgo: MD_ON_SITE.secondInMinsAgo, dur: null, geo: 'unavailable', appr: 'pending' },
+    ] : []),
+    ...day.entries,
+  ];
+}
+
 // Build the demo ledger entries. `now` is the reference instant (the bootstrap
-// passes new Date() at first load). Rows whose site/user can't resolve are dropped
-// so seed drift degrades gracefully instead of blanking the app.
-export function buildDemoLedgerEntries(now) {
+// passes new Date() at first load). `day` is the manager's day placed at that same instant
+// (lib/demoBootstrap builds it once and hands the same plan to the store, so the punches and
+// the visits they belong to agree to the minute). Rows whose site/user can't resolve are
+// dropped so seed drift degrades gracefully instead of blanking the app.
+export function buildDemoLedgerEntries(now, day = null) {
   const ref = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
-  return ledgerSpecs()
+  const plan = day || buildManagerDay(ref, { tz: ORG_TZ, weekStartDay: INITIAL_STATE.opsSettings?.payWeekStartDay ?? 0 });
+  return [...ledgerSpecs(), ...managerDaySpecs(plan)]
     .map((spec) => mk(ref, spec))
     .filter(Boolean);
 }

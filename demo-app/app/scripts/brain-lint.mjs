@@ -4,8 +4,9 @@
  *
  * The brain is only worth its tokens if a wrong card is impossible to miss.
  * Three tiers:
- *   structure — caps (cards ≤120 lines, INDEX ≤80), required frontmatter,
- *               canonical section order for module cards, ≤5 landmines.
+ *   structure — caps (cards ≤120 lines and ≤40 KB, INDEX ≤80 lines), required
+ *               frontmatter, canonical section order for module cards, ≤5 landmines.
+ *               Cards over the 8 KB target are counted in one warning line.
  *   truth     — every route/action/selector/permission a card names exists in
  *               code; every `sources` path exists; every INITIAL_STATE key is
  *               owned by exactly one card's `slices:` (no orphans, no doubles).
@@ -23,7 +24,8 @@
  *
  * Exit: 0 pass / 1 violations / 2 internal error. Unstamped cards (null
  * verified_sha) are a warning, not a failure — they simply have no freshness.
- * Run by the /ship ritual: a failure blocks the ritual, never a deploy.
+ * Run by /push before it pushes (the global push skill, step 4): cards whose
+ * sources the push changed are re-checked and stamped then. CI does not run it.
  */
 import fs from 'fs';
 import path from 'path';
@@ -49,6 +51,13 @@ const MEGAFILES = new Set([
   'app/src/data/seed.js',
 ]);
 const CAPS = { index: 80, default: 120 };
+// Size caps. Cards kept under the line cap with lines of up to 7,700 characters, so
+// lines alone never bounded what a card costs to read: every byte a session reads is
+// re-sent on each later turn. Over BYTE_CAP is a structure violation; over BYTE_TARGET
+// is counted in one warning line. Lower BYTE_CAP as the big cards come down (next:
+// 32 KB) until it meets the target.
+const BYTE_CAP = 40 * 1024;
+const BYTE_TARGET = 8 * 1024;
 const MODULE_SECTION_ORDER = ['Surfaces', 'State', 'Backend', 'Permissions', 'Cross-module FKs', 'Landmines', 'Pointers'];
 
 // ---- code-truth extraction ----------------------------------------------
@@ -144,7 +153,7 @@ function parseCard(file) {
   const lines = text.split('\n');
   const rel = path.relative(ROOT, file).replace(/\\/g, '/');
   const card = {
-    file: rel, text, fm, lineCount: lines.length,
+    file: rel, text, fm, lineCount: lines.length, bytes: Buffer.byteLength(text, 'utf8'),
     routes: [], actions: [], selectors: [], bodySlices: [], perms: [], landmineCount: 0, sections: [],
   };
   let section = null;
@@ -205,6 +214,7 @@ function main() {
     const kind = c.fm.kind || 'module';
     const cap = kind === 'index' ? CAPS.index : CAPS.default;
     if (c.lineCount > cap) v(c.file, 'structure', `${c.lineCount} lines exceeds the ${cap}-line cap`);
+    if (c.bytes > BYTE_CAP) v(c.file, 'structure', `${(c.bytes / 1024).toFixed(1)} KB exceeds the ${BYTE_CAP / 1024} KB cap`);
     for (const key of ['title', 'type', 'kind', 'status']) if (!(key in c.fm)) v(c.file, 'structure', `frontmatter missing \`${key}\``);
     if (kind === 'module' && !(c.fm.sources || []).length) v(c.file, 'structure', 'module card has no `sources`');
     if (kind === 'module') {
@@ -242,6 +252,8 @@ function main() {
       sliceOwners.set(sl, [...(sliceOwners.get(sl) || []), c.file]);
     }
   }
+  const overTarget = cards.filter((c) => (c.fm.kind || 'module') !== 'index' && c.bytes > BYTE_TARGET).sort((a, b) => b.bytes - a.bytes);
+  if (overTarget.length) warnings.push(`${overTarget.length} of ${cards.length} cards over the ${BYTE_TARGET / 1024} KB target (largest: ${overTarget.slice(0, 3).map((c) => `${path.basename(c.file)} ${Math.round(c.bytes / 1024)} KB`).join(', ')})`);
   for (const [sl, owners] of sliceOwners) if (owners.length > 1) v('brain/', 'truth', `slice \`${sl}\` owned by ${owners.length} cards: ${owners.join(', ')}`);
   const orphans = truth.slices.filter((sl) => !sliceOwners.has(sl));
   if (orphans.length) v('brain/', 'truth', `INITIAL_STATE keys owned by no card: ${orphans.join(', ')}`);

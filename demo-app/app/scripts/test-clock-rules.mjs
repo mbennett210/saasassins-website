@@ -304,10 +304,14 @@ const show = (r) => `got ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`;
 const punchOf = (userId) => world.tables.time_entries.find((e) => e.user_id === userId) || null;
 
 {
-  // The control: rules normal, device far away → the off-site block, as today.
+  // The control: rules normal, device far away. PAY-17 (2026-09-30) — the punch is TAKEN and
+  // recorded as 'outside', never refused; it is held for the supervisor instead. What the
+  // per-cleaner exemption below changes is the VERDICT, not whether the clock-in is allowed.
   buildWorld();
-  const blocked = await call(time, { path: 'clock-in', token: 'tok-crew', body: { jobId: 'j_1', ...FAR, clientPunchId: 'op_a' } });
-  ok('clock-in: a cleaner with normal rules is blocked off-site', blocked.status === 403, show(blocked));
+  const offsite = await call(time, { path: 'clock-in', token: 'tok-crew', body: { jobId: 'j_1', ...FAR, clientPunchId: 'op_a' } });
+  ok('clock-in: a cleaner with normal rules is NOT blocked off-site (PAY-17)', offsite.status === 200, show(offsite));
+  ok('clock-in: …their punch records the honest verdict', punchOf('u_crew')?.geofence_result === 'outside',
+    JSON.stringify(punchOf('u_crew')?.geofence_result));
 
   // The rule: the geofence is off for this cleaner → accepted, from anywhere, and the
   // punch says why.
@@ -334,7 +338,7 @@ const punchOf = (userId) => world.tables.time_entries.find((e) => e.user_id === 
 
   // A crafted override reason must not overwrite the server's own verdict reason.
   buildWorld();
-  await call(time, { path: 'clock-in', token: 'tok-crewOff', body: { jobId: 'j_1', ...FAR, clientPunchId: 'op_d', override: true, overrideReason: 'crew_override_offsite' } });
+  await call(time, { path: 'clock-in', token: 'tok-crewOff', body: { jobId: 'j_1', ...FAR, clientPunchId: 'op_d' } });
   ok('clock-in: a client-claimed reason never replaces the config reason',
     punchOf('u_crew_off')?.override_reason === GEOFENCE_OFF_REASON,
     JSON.stringify(punchOf('u_crew_off')?.override_reason));

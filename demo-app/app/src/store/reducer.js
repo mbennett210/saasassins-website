@@ -2,19 +2,27 @@
 // Prefer small, named actions over a generic "update entity" action — easier to trace.
 
 import { newId } from '../lib/ids';
-import { nowIso, splitIso, composeIso, composeEndIso, dayOfWeekIso, addDaysKey, dayKey, diffDaysKey, money } from '../lib/dates';
+import { nowIso, splitIso, composeIso, composeEndIso, dayOfWeekIso, addDaysKey, dayKey, diffDaysKey } from '../lib/dates';
 import { expandRecurrence, crewForOccurrence, dayPatternOf, HORIZON_DAYS } from '../lib/recurrence';
 import { classifyReply, OPT_OUT_RE } from '../lib/replyTriage';
-import { stageExistsOnPipeline } from '../lib/pipelines';
+import { stageExistsOnPipeline, statusForStage } from '../lib/pipelines';
 import { isDoNotContact, buildSuppressedEmailSet } from '../lib/contactConsent';
 import { INITIAL_STATE, DEFAULT_NOTIFICATION_PREFS } from '../data/seed';
 import { deriveInvoiceStatus } from './selectors';
 import { tableOwnedSliceKeys } from './tableSlices';
 import { applyJobPatch } from './jobsMerge';
-import { applyTimeOffToOccurrence, normalizeTimeOffKind, normalizeJobIds } from './timeOffRules';
-import { resolveJobCrewIds, isUserJobCrew } from '../lib/crewResolve';
+import {
+  applyTimeOffToOccurrence, normalizeTimeOffKind, normalizeJobIds, normalizeCalloutReason, jobsRemovedByTimeOff,
+} from './timeOffRules';
+import { resolveJobCrewIds } from '../lib/crewResolve';
 import { buildClientLocation, clientGetsLocation, CLIENT_BILLING_DEFAULTS } from '../lib/location';
-import { isLastOwner, applyMandatoryNotificationPolicy } from '../lib/roles';
+import { resolveInvoiceNumber } from '../lib/money';
+import { resolveCustomerNumber, normalizeCustomerNumber } from '../lib/customerNumber';
+import { importStepAction, locateStepAction } from '../lib/customerImport';
+import { teamImportStepAction } from '../lib/teamImport';
+import { cleanWorksAt } from '../lib/worksAt';
+import { markInvoicesOverdue } from '../lib/invoiceSweep';
+import { isLastOwner, applyMandatoryNotificationPolicy, areNotificationsMandatory } from '../lib/roles';
 import { REVIEW_KINDS, emptyReview, mergeReview, SIGNOFF_FIELDS, isSignedOff, sameSitting, reviewFieldEq } from '../lib/clientReview';
 import jobTombstones from './jobTombstones';
 import {
@@ -23,22 +31,32 @@ import {
   fanOutMessageNotifications,
   fanOutOpsNotification,
   opsPatchTouchesCrew,
+  opsPatchAudience,
   fanOutJobNotification,
   fanOutInvoiceNotification,
   fanOutKeyNotification,
-  fanOutManagerAlert,
-  fanOutToUserIds,
+  fanOutKeyStatusAlert,
   capInsert,
 } from '../lib/notifications';
 import { capTail, capTailProtected } from '../lib/retention';
-import { supplyRequestTotal, supplyRequestItemCount, pruneSupplyRequests } from '../lib/supplies';
 import {
-  sweepClientOrphans, scrubTagFromSequences, oauthWorkspaceInUse, sweepUserOrphans, hasUnsettledPay,
-  reimbursementForLine, removeReimbursement,
+  scrubTagFromSequences, oauthWorkspaceInUse, hasUnsettledPay,
+  reimbursementForLine, removeReimbursement, removeUserFromRecord,
 } from '../lib/deleteCascade';
+import { teamCascade, validOpsPointer } from '../lib/teamScope';
 import { removeTemplateFromClients } from '../lib/crewChecklist';
 import { normalizeCoverFor, settleCoverFor, coverForNamesUser, removeUserFromCoverFor } from '../lib/jobCover';
 import { applyOpsAlert } from '../lib/opsAlertApply';
+import { withServiceSaved, withServiceRemoved, withServiceDone, withNoSpecialServices } from '../lib/specialServices.js';
+import { stampVisitChanges } from '../lib/visitChanges.js';
+import { stampWalkthrough } from '../lib/walkthrough.js';
+import {
+  isArchivedCustomer, archiveCustomerPatch, restoreCustomerPatch, archiveSchedulePlan, withoutArchiveChange,
+} from '../lib/customerStatus.js';
+import { isLanguageChoice, LANGUAGES } from '../i18n/languages.js';
+import { msg } from '../i18n/core.js';
+import { isUserPhoto } from '../lib/userPhoto.js';
+import { alreadyIngested } from '../lib/inboundCursor.js';
 
 export const ACTIONS = {
   RESET: 'RESET',
@@ -62,8 +80,14 @@ export const ACTIONS = {
   ADD_USER: 'ADD_USER',
   UPDATE_USER: 'UPDATE_USER',
   DELETE_USER: 'DELETE_USER',
+  // Settings → Team → Import team: one run of people as ONE action (lib/teamImport.js).
+  IMPORT_TEAM: 'IMPORT_TEAM',
   UPDATE_NOTIFICATION_PREFS: 'UPDATE_NOTIFICATION_PREFS',
   UPDATE_SIGNATURE_PREFS: 'UPDATE_SIGNATURE_PREFS',
+  // The person's language (CS-193): their saved choice and/or what their phone says.
+  SET_USER_LANGUAGE: 'SET_USER_LANGUAGE',
+  // A member's profile photo (UI_RULES §141): `{ v }` after /api/avatars/upload, or null.
+  SET_USER_PHOTO: 'SET_USER_PHOTO',
 
   // Account operations (Swept replacement — v49 ops)
   UPDATE_CLIENT_OPS: 'UPDATE_CLIENT_OPS',
@@ -95,16 +119,26 @@ export const ACTIONS = {
   MARK_ALL_NOTIFICATIONS_READ: 'MARK_ALL_NOTIFICATIONS_READ',
   CLEAR_NOTIFICATIONS: 'CLEAR_NOTIFICATIONS',
 
-  // Clients
+  // Clients — archived, never deleted (CS-663 / CS-027: Matt's "Never delete customers")
   ADD_CLIENT: 'ADD_CLIENT',
   UPDATE_CLIENT: 'UPDATE_CLIENT',
-  DELETE_CLIENT: 'DELETE_CLIENT',
+  ARCHIVE_CLIENT: 'ARCHIVE_CLIENT',
+  RESTORE_CLIENT: 'RESTORE_CLIENT',
+  // Task #507: a building's special services (lib/specialServices), one service a step
+  SAVE_SPECIAL_SERVICE: 'SAVE_SPECIAL_SERVICE',
+  REMOVE_SPECIAL_SERVICE: 'REMOVE_SPECIAL_SERVICE',
+  MARK_SPECIAL_SERVICE_DONE: 'MARK_SPECIAL_SERVICE_DONE',
+  SET_NO_SPECIAL_SERVICES: 'SET_NO_SPECIAL_SERVICES',
   TAG_CLIENT: 'TAG_CLIENT',
   UNTAG_CLIENT: 'UNTAG_CLIENT',
   APPEND_CLIENT_NOTE: 'APPEND_CLIENT_NOTE',
   ADD_CLIENT_ACTIVITY: 'ADD_CLIENT_ACTIVITY',
   UPDATE_CLIENT_ACTIVITY: 'UPDATE_CLIENT_ACTIVITY',
   DELETE_CLIENT_ACTIVITY: 'DELETE_CLIENT_ACTIVITY',
+  // Customers → Import customers: a whole file as ONE action (lib/customerImport.js).
+  IMPORT_CUSTOMERS: 'IMPORT_CUSTOMERS',
+  // …and each run that then locates its buildings on the map, as ONE action too.
+  LOCATE_BUILDINGS: 'LOCATE_BUILDINGS',
 
   // Contacts (CRM)
   ADD_CONTACT: 'ADD_CONTACT',
@@ -152,11 +186,11 @@ export const ACTIONS = {
   DELETE_JOB_SERIES: 'DELETE_JOB_SERIES',
 
   // Time off (Sept 1: availability finally has a machine-readable model —
-  // see store/timeOffRules.js). APPLY_TIME_OFF_EXCLUSIONS is the bulk "take
-  // this person off their already-materialized cleans in the range" companion.
+  // see store/timeOffRules.js). ADD_TIME_OFF { removeFromCleans } also takes the
+  // person off their already-materialized cleans in the range (CS-054: one action,
+  // built by timeOffRules.timeOffBooking for both booking screens).
   ADD_TIME_OFF: 'ADD_TIME_OFF',
   DELETE_TIME_OFF: 'DELETE_TIME_OFF',
-  APPLY_TIME_OFF_EXCLUSIONS: 'APPLY_TIME_OFF_EXCLUSIONS',
 
   // Invoices
   ADD_INVOICE: 'ADD_INVOICE',
@@ -184,15 +218,6 @@ export const ACTIONS = {
   MARK_KEY_UNKNOWN: 'MARK_KEY_UNKNOWN',
   MARK_KEY_LOST: 'MARK_KEY_LOST',
   SET_INSPECTION_FOLLOWUP: 'SET_INSPECTION_FOLLOWUP',
-  // ---------- Supplies (S58) ----------
-  ADD_SUPPLY_ITEM: 'ADD_SUPPLY_ITEM',
-  UPDATE_SUPPLY_ITEM: 'UPDATE_SUPPLY_ITEM',
-  DELETE_SUPPLY_ITEM: 'DELETE_SUPPLY_ITEM',
-  ADD_SUPPLY_REQUEST: 'ADD_SUPPLY_REQUEST',
-  COMPLETE_SUPPLY_REQUEST: 'COMPLETE_SUPPLY_REQUEST',
-  REOPEN_SUPPLY_REQUEST: 'REOPEN_SUPPLY_REQUEST',
-  DELETE_SUPPLY_REQUEST: 'DELETE_SUPPLY_REQUEST',
-  SET_REVIEWS: 'SET_REVIEWS',
   // Operational alerts (late/missed shift; checklist/inspection reminders later).
   // Raised by the client tick (components/OpsAlertScheduler) + the go-live cron.
   RAISE_OPS_ALERT: 'RAISE_OPS_ALERT',
@@ -223,10 +248,6 @@ export const ACTIONS = {
 
   // Reminders
   UPDATE_REMINDER_TEMPLATE: 'UPDATE_REMINDER_TEMPLATE',
-  ADD_REMINDER_EVENT: 'ADD_REMINDER_EVENT',
-  UPDATE_REMINDER_EVENT: 'UPDATE_REMINDER_EVENT',
-  MARK_REMINDER_EVENT_READ: 'MARK_REMINDER_EVENT_READ',
-  MARK_REMINDER_EVENT_UNREAD: 'MARK_REMINDER_EVENT_UNREAD',
 
   // Client review (shared: section approvals + draft reviews + layout picks + notes)
   UPDATE_CLIENT_REVIEW: 'UPDATE_CLIENT_REVIEW',
@@ -260,13 +281,13 @@ export const ACTIONS = {
   SUBMIT_A2P: 'SUBMIT_A2P',
   UPDATE_A2P_STATUS: 'UPDATE_A2P_STATUS',
   RESET_A2P: 'RESET_A2P',
-  // Integrations / Email Provider — Resend (v27). System transactional sends only.
-  // Per-user conversational email lives in connectedInboxes (Phase 3).
-  CONNECT_EMAIL_PROVIDER: 'CONNECT_EMAIL_PROVIDER',
-  DISCONNECT_EMAIL_PROVIDER: 'DISCONNECT_EMAIL_PROVIDER',
-  UPDATE_EMAIL_DOMAIN_STATUS: 'UPDATE_EMAIL_DOMAIN_STATUS',
-  UPDATE_EMAIL_DEFAULT_FROM: 'UPDATE_EMAIL_DEFAULT_FROM',
-  UPDATE_EMAIL_ERROR: 'UPDATE_EMAIL_ERROR',
+  // 🔴 NO EMAIL-PROVIDER ACTIONS (CS-012, CS-039, 2026-09-29). Five of them wrote a
+  // Resend connection into company.integrations.email — a pasted key's last 4, a
+  // "verified" domain, a DKIM record set. The app sends through Google now, as the
+  // mailbox marked SYSTEM SENDER on the server, chosen through
+  // POST /api/email/system-sender (owner only) — a server route, not a blob write, so
+  // there is nothing here to dispatch. Per-user Messaging mailboxes are the
+  // ADD/UPDATE/REMOVE_CONNECTED_INBOX actions below, a different layer.
   // Connected Inboxes (per-user mailbox connections for Messaging email).
   // Tokens + SMTP passwords live encrypted on the backend; these actions
   // only manipulate the metadata + status surface visible to the frontend.
@@ -315,7 +336,7 @@ export const ACTIONS = {
   ENROLL_CONTACTS: 'ENROLL_CONTACTS',
   UNENROLL_CONTACT: 'UNENROLL_CONTACT',
   ADVANCE_ENROLLMENT_STEP: 'ADVANCE_ENROLLMENT_STEP',
-  // Send events log — mirrors reminderEvents.
+  // Send events log.
   RECORD_MARKETING_SEND: 'RECORD_MARKETING_SEND',
   UPDATE_MARKETING_SEND: 'UPDATE_MARKETING_SEND',
   // Diagnostics "Retry": drop a failed send row so the scheduler re-attempts
@@ -338,6 +359,15 @@ export const ACTIONS = {
 
 function replaceById(list, id, patch) {
   return list.map((x) => (x.id === id ? { ...x, ...patch } : x));
+}
+
+// A member row with its customer link kept to customers on file (lib/worksAt cleanWorksAt), the
+// field dropped when none is left: sparse, so a member with no link carries nothing.
+function withWorksAt(user, clients) {
+  if (!user || !('worksAt' in user)) return user;
+  const { worksAt, ...rest } = user;
+  const kept = cleanWorksAt(worksAt, clients);
+  return kept.length ? { ...rest, worksAt: kept } : rest;
 }
 
 function removeById(list, id) {
@@ -472,11 +502,6 @@ function settleCoverPatch(state, prior, patch) {
 const SITE_OPS_FIELDS = ['security', 'accessNotes', 'cleaningAreas'];
 const CLIENT_OPS_FIELDS = ['security', 'opsNotes'];
 
-// Cap on the shared reminderEvents log so it can't grow the org_state blob
-// unbounded (mirrors NOTIFICATION_LIMIT_PER_USER for bell rows). Oldest-by-
-// position dropped.
-const REMINDER_EVENT_LIMIT = 500;
-
 // Internal-thread title cap — matches the maxLength on the create modal's Title
 // field (NewInternalThreadModal), so a rename can never produce a name the
 // create flow would have rejected.
@@ -491,13 +516,6 @@ const ACTIVITY_LOG_CEIL = 5000;    // contactActivities / clientActivities (each
 const MARKETING_REPLY_CEIL = 2000; // marketingReplies
 const MARKETING_SEND_CEIL = 5000;  // marketingSends — enrollment-aware (never drops a live send)
 const KEY_EVENT_CEIL = 25000;      // keyEvents — legal custody trail: ceiling only, NEVER a TTL
-// Reminder-failure reasons we do NOT alert the office about — systemic setup or
-// per-ACCOUNT data-gap conditions, not genuine per-send delivery failures. These
-// fire on EVERY reminder to an affected account, so alerting would flood the bell
-// (e.g. an account with no email on file → every booking/post-service email
-// reminder "fails", or SMS before the Twilio number is provisioned). Only a real
-// send error (the adapter actually attempted and was rejected) raises reminderFailed.
-const NON_ACTIONABLE_REMINDER_FAIL_RE = /twilio not connected|no twilio number|a2p|not provisioned|no email address|no phone number/i;
 
 function opsFieldsChanged(fields, prev, patch) {
   if (!prev || !patch) return false;
@@ -538,9 +556,16 @@ function applyLogCaps(prev, next) {
 // identity is preserved exactly as before — load-bearing for the sync content-guard
 // and React render bail-outs.
 export function reducer(state, action) {
-  const next = baseReducer(state, action);
+  let next = baseReducer(state, action);
+  // A customer's clean moved or was cancelled: stamp it on the row, where the reschedule and
+  // cancellation notices look for it (lib/visitChanges). Every schedule edit takes one of these.
+  if (next !== state && next.jobs !== state.jobs && VISIT_CHANGE_ACTIONS.has(action.type)) {
+    const jobs = stampVisitChanges(state.jobs, next.jobs, nowIso());
+    if (jobs !== next.jobs) next = { ...next, jobs };
+  }
   return next === state ? next : applyLogCaps(state, next);
 }
+const VISIT_CHANGE_ACTIONS = new Set([ACTIONS.UPDATE_JOB, ACTIONS.UPDATE_JOB_SERIES, ACTIONS.SET_JOB_STATUS]);
 
 function baseReducer(state, action) {
   switch (action.type) {
@@ -697,7 +722,8 @@ function baseReducer(state, action) {
       // moment they go active — without it, the fan-out gates (and the Account
       // toggles) would treat every event as un-set. Default-on, opt-out.
       const base = { id: newId('u'), status: 'invited', role: 'crew', createdAt: nowIso(), avatar: ((state.users.length % 5) + 1), initials: '', notificationPrefs: { ...DEFAULT_NOTIFICATION_PREFS } };
-      const row = { ...base, ...action.user };
+      const incoming = withWorksAt(action.user, state.clients);
+      const row = { ...base, ...incoming };
       // UPSERT BY ID, don't blind-append (crew audit F3). A re-invite from the
       // Settings → Team reconciliation banner, or a replayed dispatch, carries an id
       // that may already be present — appending would mint a SECOND roster row with the
@@ -708,7 +734,7 @@ function baseReducer(state, action) {
       const idx = state.users.findIndex((u) => u.id === row.id);
       if (idx === -1) return { ...state, users: [...state.users, row] };
       const users = state.users.slice();
-      users[idx] = { ...users[idx], ...action.user };
+      users[idx] = withWorksAt({ ...users[idx], ...incoming }, state.clients);
       return { ...state, users };
     }
     case ACTIONS.UPDATE_USER: {
@@ -722,7 +748,24 @@ function baseReducer(state, action) {
         if (patch.status === 'disabled') patch = { ...patch, disabledAt: nowIso() };
         else if (prev.status === 'disabled') patch = { ...patch, disabledAt: null };
       }
-      return { ...state, users: replaceById(state.users, action.id, patch) };
+      // THE OPERATIONS MANAGER'S TEAM (S131, lib/teamScope.js). The write point checks a pointer
+      // (`opsManagerId`): only on an account manager, at an ACTIVE operations manager, never
+      // themselves — anything else is ignored, never repaired (orgStateGuard refuses it on save
+      // for every caller). Then the cascade the change carries: an OM who stops being one (the
+      // level, or the role) takes their account managers' pointers with them, and a row that is no
+      // longer an account manager drops its own (and, off the Manager role, its level).
+      if (prev && patch && 'opsManagerId' in patch) {
+        const draft = { ...prev, ...patch };
+        if (!validOpsPointer(state.users, draft, patch.opsManagerId)) {
+          const { opsManagerId: _bad, ...rest } = patch;
+          patch = rest;
+        }
+      }
+      // The customers a cleaner works at (lib/worksAt): customers on file only, and none = no field.
+      const users = replaceById(state.users, action.id, patch)
+        .map((u) => (u.id === action.id && patch && 'worksAt' in patch ? withWorksAt(u, state.clients) : u));
+      const after = users.find((u) => u.id === action.id);
+      return { ...state, users: prev && after ? teamCascade(users, prev, after) : users };
     }
     case ACTIONS.UPDATE_NOTIFICATION_PREFS: {
       const { userId, patch } = action;
@@ -752,6 +795,55 @@ function baseReducer(state, action) {
             : u
         ),
       };
+    }
+    case ACTIONS.SET_USER_LANGUAGE: {
+      // CS-193 (Matt's LANG-3 / LANG-11). Two fields on the person's OWN row, both optional:
+      //   `language`      — what they chose in Settings → Account: 'auto' (follow my phone),
+      //                     'en', 'es' or 'ht'. Absent reads as 'auto' (additive, default-safe).
+      //   `phoneLanguage` — what their phone says, recorded by components/LanguageSync so the
+      //                     SERVER can write their alerts in it (it cannot ask the phone).
+      // The VALUE is checked HERE, the write point, because org_state is browser-writable and
+      // every reader (the server's alert rendering above all) trusts what it finds: anything
+      // that is not exactly one of the allowed values is ignored, never repaired. The server
+      // runs the same check on a crew save (api/_lib/crewMerge.js §a).
+      const { userId } = action;
+      const patch = {};
+      if (action.language !== undefined && isLanguageChoice(action.language)) patch.language = action.language;
+      if (action.phoneLanguage !== undefined && (action.phoneLanguage === null || LANGUAGES.includes(action.phoneLanguage))) {
+        patch.phoneLanguage = action.phoneLanguage;
+      }
+      const target = state.users.find((u) => u.id === userId);
+      if (!target || !Object.keys(patch).length) return state;
+      if (Object.entries(patch).every(([k, v]) => (target[k] ?? null) === v)) return state;
+      return { ...state, users: state.users.map((u) => (u.id === userId ? { ...u, ...patch } : u)) };
+    }
+    case ACTIONS.SET_USER_PHOTO: {
+      // UI_RULES §141. A member's profile photo: `users[].photo = { v }`, the version id the
+      // SERVER minted when /api/avatars/upload stored the bytes (the bytes never ride here), or
+      // null to go back to initials — the field is then REMOVED, so absent and null read alike.
+      // NOT `users[].avatar`, which is the colour number the initials sit on.
+      // The VALUE is checked HERE, the write point: org_state is browser-writable and the link
+      // route signs whatever `v` it finds, so anything that is not exactly `{ v: <minted id> }`
+      // is ignored, never repaired (src/lib/userPhoto.js isUserPhoto; the crew merge runs the
+      // same check, api/_lib/crewMerge.js §a). WHO may change whose photo is the upload route's
+      // decision; a photo grants no authority, so it rides outside orgStateGuard's fingerprint.
+      const { userId, photo } = action;
+      if (photo !== null && !isUserPhoto(photo)) return state;
+      const target = state.users.find((u) => u.id === userId);
+      if (!target) return state;
+      if (photo === null) {
+        if (!('photo' in target)) return state;
+        return {
+          ...state,
+          users: state.users.map((u) => {
+            if (u.id !== userId) return u;
+            const { photo: _gone, ...rest } = u;
+            return rest;
+          }),
+        };
+      }
+      if (isUserPhoto(target.photo) && target.photo.v === photo.v) return state;
+      return { ...state, users: state.users.map((u) => (u.id === userId ? { ...u, photo: { v: photo.v } } : u)) };
     }
 
     // ---------- Notifications inbox ----------
@@ -802,12 +894,15 @@ function baseReducer(state, action) {
       // would silently vanish (audit DR-18/19; owner: block-delete). Settled history
       // never blocks. The Team page checks the same rule before deleting the login.
       if (hasUnsettledPay(state, id)) return state;
-      const gone = state.users.find((u) => u.id === id) || null;
       const rosterAfter = { ...state, users: removeById(state.users, id) };
       return {
-        ...state,
-        users: removeById(state.users, id),
-        userPermissionOverrides: (state.userPermissionOverrides || []).filter((o) => o.userId !== id),
+        // Every slice but the cleans: the roster (and an Operations Manager's account managers'
+        // pointers), overrides, keys and key events, thread and message names, bell rows and the
+        // ~14 slices sweepUserOrphans covers. One function (lib/deleteCascade
+        // removeUserFromRecord) because the Team Remove route runs it on the shared record too, in
+        // the request that deletes the login (CS-969); replayed here on that newer record, it
+        // changes nothing.
+        ...removeUserFromRecord(state, id),
         jobs: state.jobs.map((j) => {
           let nj = j;
           if ((j.crewIds || []).includes(id)) {
@@ -841,74 +936,24 @@ function baseReducer(state, action) {
           }
           return nj;
         }),
-        // A key in the departed user's hands stays 'out' but keeps WHO has it:
-        // demote the link to the denormalized name (holder display falls back to
-        // heldByName), instead of a dangling id that renders "Unknown user" at
-        // exactly the moment an admin is chasing the physical key.
-        keys: (state.keys || []).map((k) => (
-          k.heldByUserId === id ? { ...k, heldByUserId: null, heldByName: k.heldByName || gone?.name || null } : k
-        )),
-        // A thread ALWAYS outlives its creator — nothing here deletes a conversation.
-        // The creator link is demoted to a denormalized name (same move as the keys
-        // block above): without it the thread reads as authored by nobody, and a
-        // Super Admin cleaning up orphans in OrphanedThreadsModal has no way to tell
-        // whose thread they're about to destroy.
-        conversations: state.conversations.map((cv) => {
-          const next = { ...cv };
-          if (next.createdByUserId === id) {
-            next.createdByUserId = null;
-            next.createdByName = next.createdByName || gone?.name || null;
-          }
-          if ((next.mutedByUserIds || []).includes(id)) next.mutedByUserIds = next.mutedByUserIds.filter((u) => u !== id);
-          if ((next.participantUserIds || []).includes(id)) next.participantUserIds = next.participantUserIds.filter((u) => u !== id);
-          // Read-receipt + star lists are membership sets too — scrub the departed user
-          // so they don't ride as dangling ids (DR-01 readByUserIds / DR-02 starred).
-          if ((next.starredByUserIds || []).includes(id)) next.starredByUserIds = next.starredByUserIds.filter((u) => u !== id);
-          return next;
-        }),
-        // Same demotion for message authorship, so a departed teammate's messages
-        // keep their byline instead of rendering as anonymous text in the thread; and
-        // scrub the id from every message's read-receipt list (DR-01).
-        messages: state.messages.map((m) => {
-          let nm = m;
-          if (nm.authorUserId === id) nm = { ...nm, authorUserId: null, authorName: nm.authorName || gone?.name || null };
-          if ((nm.readByUserIds || []).includes(id)) nm = { ...nm, readByUserIds: nm.readByUserIds.filter((u) => u !== id) };
-          return nm;
-        }),
-        contactActivities: (state.contactActivities || []).map((a) => (a.authorUserId === id ? { ...a, authorUserId: null, authorName: a.authorName || gone?.name || null } : a)),
-        // Key custody events are a legal trail — demote the actor + holder links to their
-        // denormalized name (like the keys block above) so the trail survives the delete
-        // instead of rendering blank (audit DR-25/26; owner: preserve the name).
-        keyEvents: (state.keyEvents || []).map((e) => {
-          let ne = e;
-          if (ne.byUserId === id) ne = { ...ne, byUserId: null, byName: ne.byName || gone?.name || null };
-          if (ne.holderUserId === id) ne = { ...ne, holderUserId: null, holderName: ne.holderName || gone?.name || null };
-          return ne;
-        }),
-        // Drop the departed user's bell rows — they're unreachable once the user
-        // is gone (CLEAR is self-scoped from the bell) and would otherwise ride
-        // in the shared blob forever as dead weight on every load/save/sync.
-        notifications: (state.notifications || []).filter((n) => n.userId !== id),
-        // The ~14 other user-referencing slices the store grew after this handler was
-        // written (clients supervisor/crewChecklists, marketing/supply authorship, HR,
-        // invitations, activities) — swept here so a delete leaves zero orphans (audit
-        // DR-03/04/06/07/08/09/10/12/13/14/15/16/17/20). Decision-gated slices excluded.
-        // The name rides along so every record that outlives the person keeps it.
-        ...sweepUserOrphans(state, id, gone?.name || null),
       };
     }
 
     // ---------- Clients ----------
     case ACTIONS.ADD_CLIENT: {
-      // Contact # (friendly sequential id): next after the current max, or 1001
-      // on a fresh book. Honored if the caller supplied one (spread below).
-      const nums = (state.clients || []).map((c) => Number(c.contactNumber)).filter(Number.isFinite);
+      // Customer number (GO-2, CS-068: "0001 Ball Harbor Village"): stored only when valid and
+      // FREE across the book, inactive customers included — the one rule, resolveCustomerNumber
+      // (lib/customerNumber.js). A typed or QuickBooks number that is taken is NOT stored (it is
+      // somebody's real ID; the screen refused it in words before dispatching, so this only bites
+      // a sync race). The auto-OFFERED number (`action.customerNumberAuto`) is the exception: two
+      // offices both offered the same next number (CS-098's race) — it moves on to the next free
+      // one. A vendor has none. (This replaced the app's own sequential "Contact #".)
       const base = {
         id: newId('cl'),
         // Type is the one manual flag: Customer (default) or Vendor. Status
         // (Lead/Active) is derived, never stored (see selectClientStatus).
         type: 'customer',
-        contactNumber: (nums.length ? Math.max(...nums) : 1000) + 1,
+        customerNumber: null, // resolved below, once the caller's value is known
         // Default service so a new account (and its jobs) always resolves a catalog
         // service, keeping the variance expected-time fallback airtight (see
         // selectEffectiveExpectedCleanMins). Editable on the account page; a
@@ -921,7 +966,13 @@ function baseReducer(state, action) {
         ...CLIENT_BILLING_DEFAULTS,
         createdAt: nowIso(), updatedAt: nowIso(), lastServiceAt: null, primaryContactId: null,
       };
-      const client = { ...base, ...action.client };
+      const merged = { ...base, ...action.client };
+      const client = {
+        ...merged,
+        customerNumber: merged.type === 'vendor'
+          ? null
+          : resolveCustomerNumber(state.clients, merged.customerNumber, { bump: action.customerNumberAuto === true }),
+      };
       // Adopt orphan keys: unlinked keys (clientId null — free-typed or imported)
       // whose company label matches the new account's name become linked, so a
       // late-created account picks up its keys without a manual backfill.
@@ -942,7 +993,23 @@ function baseReducer(state, action) {
     }
     case ACTIONS.UPDATE_CLIENT: {
       const prevClient = state.clients.find((c) => c.id === action.id);
-      const next = { ...state, clients: replaceById(state.clients, action.id, action.patch) };
+      // A customer number in the patch goes through the one rule (GO-2, CS-068): empty clears it,
+      // a valid free one is stored in its four-digit form, and an invalid or TAKEN one is dropped
+      // from the patch — the customer keeps its number and the rest of the edit still lands.
+      // CS-663: an ordinary edit never moves a customer into or out of the archive (only
+      // ARCHIVE_CLIENT, which also ends its schedule, and RESTORE_CLIENT) — lib/customerStatus.
+      let patch = withoutArchiveChange(prevClient, action.patch);
+      if (patch && Object.prototype.hasOwnProperty.call(patch, 'customerNumber')) {
+        const asked = normalizeCustomerNumber(patch.customerNumber);
+        const resolved = asked === null ? null : resolveCustomerNumber(state.clients, asked, { selfId: action.id });
+        if (asked !== null && resolved === null) {
+          const { customerNumber: _refused, ...rest } = patch;
+          patch = rest;
+        } else {
+          patch = { ...patch, customerNumber: resolved };
+        }
+      }
+      const next = { ...state, clients: replaceById(state.clients, action.id, patch) };
       // Rename cascade: keys carry a denormalized clientName (the Keys page groups
       // by it, and crew name-fallback matches on it) — keep it in sync so a renamed
       // account's keys don't file under the stale old header.
@@ -961,66 +1028,80 @@ function baseReducer(state, action) {
         next.notifications = fanOutOpsNotification(next, {
           clientId: action.id,
           actorName: actor?.name,
-          summary: 'Account operations were updated.',
+          // A message, rendered in each cleaner's own language by the fan-out (CS-193).
+          summary: msg('alerts.ops.accountUpdated'),
         });
       }
       return next;
     }
-    case ACTIONS.DELETE_CLIENT: {
-      // Cascade-delete: a client takes its contacts, sites, jobs, invoices, and activities with it.
-      // Conversations attached to deleted contacts have their contactId/clientId nulled (the message
-      // history is preserved as "Unlinked" — only the entity rows are gone).
-      const id = action.id;
-      const contactsToDelete = new Set(
-        (state.contacts || []).filter((c) => c.companyId === id).map((c) => c.id)
-      );
-      // Cascade marketing rows for the deleted contacts (SYNC-02): drop their
-      // enrollments, sends, and replies so nothing orphans (and no deleted-contact
-      // email/body lingers in marketingReplies).
-      const delClientEnrollmentIds = new Set(
-        (state.marketingEnrollments || []).filter((e) => contactsToDelete.has(e.contactId)).map((e) => e.id)
-      );
-      // This handler filters the client's jobs out DIRECTLY (not via DELETE_JOB), so it
-      // must apply the same store scrubs DELETE_JOB does — otherwise dead /schedule/{id}
-      // bell links and reminderEvents survive for jobs that no longer exist.
-      const delClientJobIds = new Set((state.jobs || []).filter((j) => j.clientId === id).map((j) => j.id));
-      const delClientJobUrls = new Set([...delClientJobIds].map((jid) => `/schedule/${jid}`));
-      // The account's own deep-link (DR-24): the job urls above miss /clients/{id}, so a
-      // bell row pointing at the deleted account survived its own cascade.
-      const delClientUrl = `/clients/${id}`;
-      return {
+    // ── CUSTOMERS ARE ARCHIVED, NEVER DELETED (CS-663 / CS-027) ──────────────
+    // Matt, kickoff 2026-09-10: "Never delete customers — reactivating a former customer keeps the
+    // same ID." The customer DELETE (a cascade that removed the customer with its contacts,
+    // location, invoices, activities and every loaded clean) is GONE; this REPLACES it. The customer keeps
+    // its record, number, contacts, location, invoices, notes and history; `statusOverride` turns
+    // 'archived' with its stamps (lib/customerStatus archiveCustomerPatch). Its cleans not started
+    // yet come off the schedule and its never-ending series stop at the archive (archiveSchedulePlan
+    // — the same scrubs DELETE_JOB_SERIES applies, and the crew are told once per series): an
+    // archived building is cleaned no more. Everything that reads "is this a customer we serve"
+    // (selectActiveClients, isActiveBuilding, the server's walkers, the hub's scope) leaves it out.
+    // The server holds archiving to `clients.delete` and refuses a customer removal outright.
+    // Task #507 (UI_RULES §192): a building's special services, ONE service per action, so two
+    // people editing one building both land when the sync replays their actions on the newer copy,
+    // and Mark done moves a date on once however often it is pressed (it applies only while the
+    // service is still at the date the person saw). The rule is lib/specialServices; a no-op returns
+    // the same state.
+    case ACTIONS.SAVE_SPECIAL_SERVICE:
+    case ACTIONS.REMOVE_SPECIAL_SERVICE:
+    case ACTIONS.MARK_SPECIAL_SERVICE_DONE:
+    case ACTIONS.SET_NO_SPECIAL_SERVICES: {
+      const client = (state.clients || []).find((c) => c.id === action.clientId);
+      if (!client) return state;
+      let next = null;
+      if (action.type === ACTIONS.SAVE_SPECIAL_SERVICE) next = withServiceSaved(client, action.service);
+      else if (action.type === ACTIONS.REMOVE_SPECIAL_SERVICE) next = withServiceRemoved(client, action.serviceId);
+      else if (action.type === ACTIONS.MARK_SPECIAL_SERVICE_DONE) next = withServiceDone(client, action.serviceId, { fromDate: action.fromDate, doneOn: action.doneOn, by: action.by });
+      else next = withNoSpecialServices(client, !!action.none, { at: action.at, by: action.by });
+      if (!next) return state;
+      return { ...state, clients: state.clients.map((c) => (c === client ? next : c)) };
+    }
+
+    case ACTIONS.ARCHIVE_CLIENT: {
+      const client = (state.clients || []).find((c) => c.id === action.id);
+      if (!client || isArchivedCustomer(client)) return state;
+      const at = action.at || nowIso();
+      const plan = archiveSchedulePlan(state.jobs || [], client.id, Date.parse(at));
+      const removed = new Set(plan.removeIds);
+      const capped = new Set(plan.capMasterIds);
+      const deadUrls = new Set([...removed].map((jid) => `/schedule/${jid}`));
+      const removedJobs = (state.jobs || []).filter((j) => removed.has(j.id));
+      let next = {
         ...state,
-        clients: (state.clients || []).filter((c) => c.id !== id),
-        contacts: (state.contacts || []).filter((c) => !contactsToDelete.has(c.id)),
-        sites: (state.sites || []).filter((s) => s.clientId !== id),
-        jobs: (state.jobs || []).filter((j) => j.clientId !== id),
-        reminderEvents: (state.reminderEvents || []).filter((e) => !delClientJobIds.has(e.jobId)),
-        notifications: (state.notifications || []).filter((n) => !delClientJobUrls.has(n.url) && n.url !== delClientUrl),
-        invoices: (state.invoices || []).filter((inv) => inv.clientId !== id),
-        opportunities: (state.opportunities || []).filter((o) => o.clientId !== id),
-        clientActivities: (state.clientActivities || []).filter((a) => a.clientId !== id),
-        contactActivities: (state.contactActivities || []).filter((a) => !contactsToDelete.has(a.contactId)),
-        marketingEnrollments: (state.marketingEnrollments || []).filter((e) => !contactsToDelete.has(e.contactId)),
-        marketingSends: (state.marketingSends || []).filter((sd) => !delClientEnrollmentIds.has(sd.enrollmentId) && !contactsToDelete.has(sd.contactId)),
-        marketingReplies: (state.marketingReplies || []).filter((r) => !contactsToDelete.has(r.contactId) && !delClientEnrollmentIds.has(r.enrollmentId)),
-        conversations: (state.conversations || []).map((cv) => {
-          const next = { ...cv };
-          if (contactsToDelete.has(cv.contactId)) next.contactId = null;
-          if (cv.clientId === id) next.clientId = null;
-          return next;
+        clients: replaceById(state.clients, client.id, archiveCustomerPatch(client, { at, by: action.by ?? state.currentUserId ?? null })),
+        jobs: (state.jobs || [])
+          .filter((j) => !removed.has(j.id))
+          .map((j) => (capped.has(j.id) ? { ...j, recurrence: { ...j.recurrence, endType: 'date', endDate: at } } : j)),
+        invoices: (state.invoices || []).map((inv) => {
+          const ids = (inv.jobIds || []).filter((jid) => !removed.has(jid));
+          return ids.length === (inv.jobIds || []).length ? inv : { ...inv, jobIds: ids };
         }),
-        // Keys survive account deletion (physical objects), but the link must be
-        // NULLED, not left dangling: a dead clientId short-circuits the crew scope
-        // check (keyInScope skips the name fallback when clientId is set), making
-        // the key invisible to every crew member forever. Keeping clientName
-        // preserves the Keys-page grouping + name-fallback matching.
-        keys: (state.keys || []).map((k) => (k.clientId === id ? { ...k, clientId: null, siteId: null } : k)),
-        // Sweep the client-scoped slices that carry clientId but are NOT entity rows the
-        // block above removes: supply items/requests (Supplies, S58) + ops-alert events.
-        // They were never cascaded, so a deleted account left them orphaned on the blob
-        // keyed to a clientId nothing resolves (LW-01, live wiring audit 2026-09-20).
-        ...sweepClientOrphans(state, id, delClientJobIds),
+        notifications: (state.notifications || []).filter((n) => !deadUrls.has(n.url)),
       };
+      // Tell each removed clean's crew, once per series (a one-off clean is its own), as ending a
+      // series does — the job's detail route no longer exists, so the link is the schedule.
+      const firstOf = new Map();
+      for (const j of removedJobs) { const k = j.seriesId || j.id; if (!firstOf.has(k)) firstOf.set(k, j); }
+      for (const j of firstOf.values()) {
+        next = { ...next, notifications: fanOutJobNotification(next, { job: j, eventKey: 'jobCancelled', url: '/schedule' }) };
+      }
+      return next;
+    }
+    // Restore: the status it had comes back (none = derived again), its stamps clear, and it is a
+    // customer we serve again. The cleans the archive took off are NOT put back — a returning
+    // customer's schedule is set up anew on the Schedule.
+    case ACTIONS.RESTORE_CLIENT: {
+      const client = (state.clients || []).find((c) => c.id === action.id);
+      if (!client || !isArchivedCustomer(client)) return state;
+      return { ...state, clients: replaceById(state.clients, client.id, restoreCustomerPatch(client)) };
     }
     case ACTIONS.APPEND_CLIENT_NOTE: {
       const now = nowIso();
@@ -1065,6 +1146,41 @@ function baseReducer(state, action) {
         ...state,
         clientActivities: (state.clientActivities || []).filter((a) => a.id !== action.id),
       };
+    }
+    // The whole file as ONE action: one pending entry and one save, and if the server refuses
+    // it, ONE named change (CS-008) — never a walk of a thousand saves, never half an import.
+    // Each op becomes the per-record action that applies it (importStepAction, in the engine
+    // that writes the ops), run through this same switch, so each record keeps its one rule.
+    case ACTIONS.IMPORT_CUSTOMERS: {
+      let s = state;
+      for (const op of Array.isArray(action.ops) ? action.ops : []) {
+        const step = importStepAction(s, op, ACTIONS);
+        if (step) s = baseReducer(s, step);
+      }
+      return s;
+    }
+    // A run of the Team import (up to 25 people, lib/teamImport.js) as ONE action, for the same
+    // reason. Each op becomes ADD_USER / UPDATE_USER (teamImportStepAction): an add whose id or
+    // email is already on the team is skipped, so a replayed save adds nobody twice, and a fill
+    // re-checks that each field is still blank.
+    case ACTIONS.IMPORT_TEAM: {
+      let s = state;
+      for (const op of Array.isArray(action.ops) ? action.ops : []) {
+        const step = teamImportStepAction(s, op, ACTIONS);
+        if (step) s = baseReducer(s, step);
+      }
+      return s;
+    }
+    // A locate run (up to 100 buildings) as ONE action, for the same reason: a refused save is
+    // replayed one action at a time, each a save of the whole record. Each answer applies only
+    // while the building still has the address it was looked up for (locateStepAction).
+    case ACTIONS.LOCATE_BUILDINGS: {
+      let s = state;
+      for (const result of Array.isArray(action.results) ? action.results : []) {
+        const step = locateStepAction(s, result, ACTIONS);
+        if (step) s = baseReducer(s, step);
+      }
+      return s;
     }
 
     // ---------- Contacts ----------
@@ -1205,9 +1321,12 @@ function baseReducer(state, action) {
         value: null, expectedCloseDate: null,
         pipelineId: state.activePipelineId, stage: null,
         status: 'open', ownerUserId: null, notes: '',
+        // The walkthrough (lib/walkthrough): when, where to meet, and when it was set — the stamp
+        // the walkthrough confirmation fires on, written here, never by the caller.
+        walkthroughAt: null, walkthroughWhere: null, walkthroughSetAt: null,
         stageChangedAt: now, createdAt: now, updatedAt: now,
       };
-      const opp = { ...base, ...action.opportunity };
+      const opp = stampWalkthrough(base, { ...base, ...action.opportunity }, now);
       // Default the primary contact from the owning company when not supplied.
       if (!opp.primaryContactId && opp.clientId) {
         const cl = (state.clients || []).find((c) => c.id === opp.clientId);
@@ -1216,8 +1335,14 @@ function baseReducer(state, action) {
       return { ...state, opportunities: [...(state.opportunities || []), opp] };
     }
     case ACTIONS.UPDATE_OPPORTUNITY: {
-      const patch = { ...action.patch, updatedAt: nowIso() };
-      return { ...state, opportunities: replaceById(state.opportunities || [], action.id, patch) };
+      // A walkthrough date or time set, changed or cleared is stamped on the deal at this write
+      // (lib/walkthrough stampWalkthrough): the stamp is what the walkthrough confirmation fires on.
+      const now = nowIso();
+      const patch = { ...action.patch, updatedAt: now };
+      return {
+        ...state,
+        opportunities: (state.opportunities || []).map((o) => (o.id === action.id ? stampWalkthrough(o, { ...o, ...patch }, now) : o)),
+      };
     }
     case ACTIONS.DELETE_OPPORTUNITY:
       return { ...state, opportunities: (state.opportunities || []).filter((o) => o.id !== action.id) };
@@ -1236,10 +1361,10 @@ function baseReducer(state, action) {
       // from the stage key): 'won' makes the owning company Active (see
       // selectClientStatus), 'lost' closes it out, anything else is 'open'. A pure
       // same-stage reorder keeps the status.
-      const status = !stageChanged ? prev.status
-        : action.stage === 'won' ? 'won'
-          : action.stage === 'lost' ? 'lost'
-            : 'open';
+      // Since MISC-1 (CS-141) that status is also what takes the card OFF the board,
+      // so the stage-to-status rule has ONE definition: `statusForStage` in
+      // lib/pipelines, beside the board rule that reads it.
+      const status = stageChanged ? statusForStage(action.stage) : prev.status;
       const patched = {
         ...prev,
         stage: action.stage,
@@ -1384,7 +1509,7 @@ function baseReducer(state, action) {
         next.notifications = fanOutOpsNotification(next, {
           clientId: cid,
           actorName: actor?.name,
-          summary: `${prevSite?.name ? `${prevSite.name}. ` : ''}site details were updated.`,
+          summary: prevSite?.name ? msg('alerts.ops.siteUpdatedNamed', { site: prevSite.name }) : msg('alerts.ops.siteUpdated'),
         });
       }
       return next;
@@ -1399,11 +1524,20 @@ function baseReducer(state, action) {
       // A supervisor (SPOC) reassignment is internal, not a crew-facing ops change, so it
       // must not ping the account's crew (NOTIF-05). opsPatchTouchesCrew value-diffs the
       // non-supervisor fields (ServiceSetupCard resends the whole form).
+      //
+      // And a CHECKLIST-ASSIGNMENT-only change reaches only the cleaners whose own pick
+      // moved (opsPatchAudience — step 6's Assignments screen commits on every click, so
+      // the whole-crew fan-out meant five reassignments = five bell rows for everyone
+      // there, about checklists that were never theirs). Every other ops field — a door
+      // code, an access note, the reference link — keeps the whole-crew fan-out, because
+      // it IS everyone's.
       if (opsPatchTouchesCrew(prevClient, action.patch)) {
+        const onlyUserIds = opsPatchAudience(prevClient, action.patch);
         next.notifications = fanOutOpsNotification(next, {
           clientId: action.id,
           actorName: action.actorName,
           summary: action.summary,
+          onlyUserIds,
         });
       }
       return next;
@@ -1440,23 +1574,49 @@ function baseReducer(state, action) {
     // ── Time off ────────────────────────────────────────────────────────────
     case ACTIONS.ADD_TIME_OFF: {
       // Replay-idempotent by id (same law as ADD_JOB): the id arrives on the
-      // action, so a conflict-replay of the same entry is a no-op.
+      // action, so a conflict-replay of the same entry records nothing twice.
       const entry = action.entry || {};
       if (!entry.id || !entry.userId || !entry.startDate || !entry.endDate) return state;
-      if ((state.timeOff || []).some((t) => t.id === entry.id)) return state;
-      // kind (call-out vs planned) + scheduledJobIds (the cleans the booking covered) are
-      // sanitized at the write point; see store/timeOffRules.js.
-      const { kind, scheduledJobIds, ...rest } = entry;
-      const cleanKind = normalizeTimeOffKind(kind);
-      const cleanJobs = normalizeJobIds(scheduledJobIds);
+      let next = state;
+      if (!(state.timeOff || []).some((t) => t.id === entry.id)) {
+        // kind (call-out vs planned) + scheduledJobIds (the cleans the booking covered) are
+        // sanitized at the write point; see store/timeOffRules.js.
+        const { kind, scheduledJobIds, calloutReason, ...rest } = entry;
+        const cleanKind = normalizeTimeOffKind(kind);
+        const cleanJobs = normalizeJobIds(scheduledJobIds);
+        // ALR-7: the call-out reason is one of a fixed list; an unknown code is dropped, and a
+        // code on PLANNED time off is dropped too (the list is the call-out question).
+        const cleanReasonCode = normalizeCalloutReason(calloutReason, cleanKind);
+        next = {
+          ...state,
+          timeOff: [...(state.timeOff || []), {
+            reason: '', ...rest,
+            ...(cleanKind ? { kind: cleanKind } : {}),
+            ...(cleanReasonCode ? { calloutReason: cleanReasonCode } : {}),
+            ...(cleanJobs ? { scheduledJobIds: cleanJobs } : {}),
+            createdAt: entry.createdAt || nowIso(),
+          }],
+        };
+      }
+      // 🔴 CS-054 — the booking's other half, in the SAME action. HR › PTO used to write the
+      // record alone while Team › Time off also dispatched a second action
+      // (APPLY_TIME_OFF_EXCLUSIONS, deleted) to take the person off the cleans already on the
+      // calendar, so time off entered by HR left them on those cleans. Now both screens
+      // dispatch this one action (built by timeOffRules.timeOffBooking), and `removeFromCleans`
+      // takes the person off exactly the cleans timeOffRules.jobsRemovedByTimeOff names — still
+      // ahead of now, in the days booked, not done or cancelled, never a series' template row
+      // (the rule the screens count with). Set semantics: a replay removes nothing twice, and it
+      // runs even when the entry already exists, as the second action's replay used to.
+      if (!action.removeFromCleans) return next;
+      const removed = new Set(jobsRemovedByTimeOff(next.jobs, {
+        userId: entry.userId, startDate: entry.startDate, endDate: entry.endDate,
+      }).map((j) => j.id));
+      if (!removed.size) return next;
       return {
-        ...state,
-        timeOff: [...(state.timeOff || []), {
-          reason: '', ...rest,
-          ...(cleanKind ? { kind: cleanKind } : {}),
-          ...(cleanJobs ? { scheduledJobIds: cleanJobs } : {}),
-          createdAt: entry.createdAt || nowIso(),
-        }],
+        ...next,
+        jobs: next.jobs.map((j) => (removed.has(j.id)
+          ? settleCrewMark(next, { ...j, crewIds: j.crewIds.filter((id) => id !== entry.userId) })
+          : j)),
       };
     }
     case ACTIONS.DELETE_TIME_OFF: {
@@ -1464,29 +1624,6 @@ function baseReducer(state, action) {
       const next = list.filter((t) => t.id !== action.id);
       return next.length === list.length ? state : { ...state, timeOff: next };
     }
-    case ACTIONS.APPLY_TIME_OFF_EXCLUSIONS: {
-      // Bulk companion to ADD_TIME_OFF: take the person off every already-
-      // materialized FUTURE clean in the range by removing them from crewIds. Set-
-      // semantics make a replay a no-op, and past/done cleans are never touched.
-      const { userId, startDate, endDate } = action;
-      if (!userId || !startDate || !endDate) return state;
-      const nowMs = Date.now();
-      let changed = false;
-      const jobs = (state.jobs || []).map((j) => {
-        // Recurrence-bearing rows are the SERIES TEMPLATE — touching their crew
-        // silently rewrites every future mint (see applyTimeOffToOccurrence).
-        if (j.recurrence) return j;
-        if (!j.startAt || new Date(j.startAt).getTime() <= nowMs) return j;
-        if (j.status === 'done' || j.status === 'cancelled') return j;
-        const d = dayKey(j.startAt);
-        if (!d || d < startDate || d > endDate) return j;
-        if (!isUserJobCrew(j, userId)) return j;
-        changed = true;
-        return settleCrewMark(state, { ...j, crewIds: j.crewIds.filter((id) => id !== userId) });
-      });
-      return changed ? { ...state, jobs } : state;
-    }
-
     case ACTIONS.ADD_JOB_SERIES: {
       // Same replay-idempotence law as ADD_JOB: the seriesId arrives on the
       // action; a series that already exists means this is a replay — no-op.
@@ -1543,7 +1680,10 @@ function baseReducer(state, action) {
       // when the calendar cursor moves past what's materialized — expandRecurrence's
       // `until` can only WIDEN the window, never narrow it.
       const untilMs = Number(action.untilMs) || null;
-      const masters = (state.jobs || []).filter((j) => j.seriesId && j.recurrence && j.recurrence.endType === 'never');
+      // CS-663: an ARCHIVED customer's series is never extended — the archive caps them, and this
+      // holds even for one a stale tab left uncapped (an archived building is cleaned no more).
+      const archivedIds = new Set((state.clients || []).filter(isArchivedCustomer).map((c) => c.id));
+      const masters = (state.jobs || []).filter((j) => j.seriesId && j.recurrence && j.recurrence.endType === 'never' && !archivedIds.has(j.clientId));
       if (masters.length === 0) return state;
       const ts = nowIso();
       const additions = [];
@@ -2108,7 +2248,6 @@ function baseReducer(state, action) {
         invoices: state.invoices.map((inv) => (
           (inv.jobIds || []).includes(id) ? { ...inv, jobIds: inv.jobIds.filter((j) => j !== id) } : inv
         )),
-        reminderEvents: (state.reminderEvents || []).filter((e) => e.jobId !== id),
         // Drop this job's own now-dead notification links (url → /schedule/{id}); the
         // fresh cancellation notice below points at the schedule list instead. (Server-
         // side, deleting the public.jobs row DETACHES its labor/QC records — job_id set
@@ -2150,7 +2289,6 @@ function baseReducer(state, action) {
           const ids = (inv.jobIds || []).filter((id) => !removedIds.has(id));
           return ids.length === (inv.jobIds || []).length ? inv : { ...inv, jobIds: ids };
         }),
-        reminderEvents: (state.reminderEvents || []).filter((e) => !removedIds.has(e.jobId)),
         // Drop the removed occurrences' now-dead notification links (see DELETE_JOB).
         notifications: (state.notifications || []).filter((n) => !deadUrls.has(n.url)),
       };
@@ -2167,8 +2305,28 @@ function baseReducer(state, action) {
       // status='pending' by default. The 'draft' status was removed when the
       // section was rescoped to manual tracking — there is no authoring/sending
       // workflow that would justify a draft state anymore.
+      const incoming = action.invoice || {};
+      const prefix = state.company.invoicePrefix || 'INV';
+      // 🔴 IDEMPOTENT ON REPLAY, COLLISION-SAFE ON THE NUMBER (CS-098).
+      //
+      // Invoice numbers are `<prefix>-<max+1>` over the invoices this device can SEE,
+      // so a double-click, a lost-response replay, or two offices creating at once all
+      // computed the SAME number — and this case appended it a second time.
+      //
+      // The two failures need different answers, which is why the create carries a
+      // `dedupeKey` of its own alongside its number:
+      //   · the SAME create replayed (sync.js replays the queue onto an adopted remote
+      //     document) is found by its key and dropped — recording it twice would invent
+      //     an invoice and double-count the money on it;
+      //   · a DIFFERENT create whose number was taken while it sat in the queue is
+      //     RENUMBERED, because refusing it would silently lose real work.
+      // Keying both on the number cannot tell the two apart. Callers mint the key
+      // (lib/ids newId) — a reducer-generated one differs per replay and dedupes nothing
+      // (playbook II.7; the same contract, and the same inline membership shape, as
+      // ADD_INVOICE_PAYMENT below).
+      if (incoming.dedupeKey && (state.invoices || []).some((inv) => inv && inv.dedupeKey === incoming.dedupeKey)) return state;
+      const invoiceId = resolveInvoiceNumber(state.invoices, incoming.id, prefix);
       const base = {
-        id: action.invoice?.id || nextInvoiceId(state),
         jobIds: [], lineItems: [], payments: [],
         taxRate: state.company.taxRate || 0,
         status: 'pending',
@@ -2176,10 +2334,14 @@ function baseReducer(state, action) {
         billingContactId: null,
         attachment: null,
         notes: '',
+        // Billing terms the invoice was RAISED under, copied from the customer at
+        // creation (CS-044) so a later settings change never rewrites history.
+        paymentTerms: null,
+        poNumber: '',
+        taxExempt: false,
       };
-      const incoming = action.invoice || {};
       const status = incoming.status === 'draft' ? 'pending' : (incoming.status || base.status);
-      return { ...state, invoices: [...state.invoices, { ...base, ...incoming, id: base.id, status }] };
+      return { ...state, invoices: [...state.invoices, { ...base, ...incoming, id: invoiceId, status }] };
     }
     case ACTIONS.UPDATE_INVOICE: {
       const prior = state.invoices.find((i) => i.id === action.id);
@@ -2187,7 +2349,7 @@ function baseReducer(state, action) {
       const ns = action.patch?.status;
       if (prior && ns && ns !== prior.status && (ns === 'paid' || ns === 'overdue')) {
         const inv = next.invoices.find((i) => i.id === action.id);
-        next.notifications = fanOutInvoiceNotification(next, { invoice: inv, eventKey: ns === 'paid' ? 'invoicePaid' : 'invoiceOverdue' });
+        next.notifications = fanOutInvoiceNotification(next, { invoice: inv, eventKey: ns === 'paid' ? 'invoicePaid' : 'invoiceOverdue', actorUserId: state.currentUserId });
       }
       return next;
     }
@@ -2218,7 +2380,7 @@ function baseReducer(state, action) {
       if (prior) {
         const updated = next.invoices.find((inv) => inv.id === action.id);
         if (deriveInvoiceStatus(prior) !== 'paid' && deriveInvoiceStatus(updated) === 'paid') {
-          next.notifications = fanOutInvoiceNotification(next, { invoice: updated, eventKey: 'invoicePaid' });
+          next.notifications = fanOutInvoiceNotification(next, { invoice: updated, eventKey: 'invoicePaid', actorUserId: state.currentUserId });
         }
       }
       return next;
@@ -2240,7 +2402,7 @@ function baseReducer(state, action) {
       if (prior) {
         const updated = next.invoices.find((inv) => inv.id === action.id);
         if (deriveInvoiceStatus(prior) !== 'paid' && deriveInvoiceStatus(updated) === 'paid') {
-          next.notifications = fanOutInvoiceNotification(next, { invoice: updated, eventKey: 'invoicePaid' });
+          next.notifications = fanOutInvoiceNotification(next, { invoice: updated, eventKey: 'invoicePaid', actorUserId: state.currentUserId });
         }
       }
       return next;
@@ -2259,33 +2421,24 @@ function baseReducer(state, action) {
       const next = { ...state, invoices: replaceById(state.invoices, action.id, { status: action.status }) };
       if (prior && action.status !== prior.status && (action.status === 'paid' || action.status === 'overdue')) {
         const inv = next.invoices.find((i) => i.id === action.id);
-        next.notifications = fanOutInvoiceNotification(next, { invoice: inv, eventKey: action.status === 'paid' ? 'invoicePaid' : 'invoiceOverdue' });
+        next.notifications = fanOutInvoiceNotification(next, { invoice: inv, eventKey: action.status === 'paid' ? 'invoicePaid' : 'invoiceOverdue', actorUserId: state.currentUserId });
       }
       return next;
     }
     case ACTIONS.MARK_INVOICES_OVERDUE: {
-      // Time-driven sweep (dispatched on mount, like TOP_UP_RECURRING_SERIES):
-      // 'overdue' is a derived status that no user action ever persists, so we
-      // detect newly-overdue invoices here, stamp a one-shot `overdueNotifiedAt`
-      // marker, and fan out invoiceOverdue once. Idempotent — returns the same
-      // state when nothing is newly overdue, so it's safe to run on every mount.
-      const now = new Date();
-      const newlyOverdue = (state.invoices || []).filter(
-        (inv) => !inv.overdueNotifiedAt && deriveInvoiceStatus(inv, now) === 'overdue',
-      );
-      if (newlyOverdue.length === 0) return state;
-      const stamp = nowIso();
-      const ids = new Set(newlyOverdue.map((inv) => inv.id));
-      const next = {
-        ...state,
-        invoices: state.invoices.map((inv) => (ids.has(inv.id) ? { ...inv, overdueNotifiedAt: stamp } : inv)),
-      };
-      let notifs = next.notifications;
-      for (const inv of newlyOverdue) {
-        notifs = fanOutInvoiceNotification({ ...next, notifications: notifs }, { invoice: inv, eventKey: 'invoiceOverdue' });
-      }
-      next.notifications = notifs;
-      return next;
+      // 'overdue' is a DERIVED status that no user action persists, so nothing here
+      // stores it. What is written is the one-shot EVENT marker (`overdueNotifiedAt`)
+      // plus the bell rows, and that logic now lives in ONE pure place —
+      // lib/invoiceSweep.markInvoicesOverdue — shared with the server sweep on
+      // /api/cron/ops-alerts (CS-288). Before the split the sweep ran only on mount of
+      // a page, so an owner living on the home dashboard was never told.
+      //
+      // This case stays as the fast path while a tab is open. Idempotent: an invoice
+      // already stamped is never in the due set, so the client tick and the cron are
+      // safe together and across CAS retries.
+      const swept = markInvoicesOverdue(state, { now: Date.now() });
+      if (!swept) return state;
+      return { ...state, invoices: swept.invoices, notifications: swept.notifications };
     }
     case ACTIONS.DELETE_INVOICE:
       return { ...state, invoices: removeById(state.invoices, action.id) };
@@ -2360,107 +2513,14 @@ function baseReducer(state, action) {
     // Complaints were folded into Work Orders (Quality hub): a customer complaint is now a
     // Work Order of type:complaint, a relational problem_reports row created through qcApi
     // (createProblem) — NOT a blob action. The manager alert rides the work-order notify
-    // (notifyManagersOfProblem, server-side) instead of the old ADD_COMPLAINT fan-out.
-    // ---------- Supplies (S58) ----------
-    case ACTIONS.ADD_SUPPLY_ITEM: {
-      const item = action.item || {};
-      // Caller-minted id + dedupe guard (lint:queue replay-idempotency): a replayed
-      // ADD with the same id is a no-op, not a duplicate row.
-      const id = item.id || newId('si');
-      if ((state.supplyItems || []).some((s) => s.id === id)) return state;
-      return {
-        ...state,
-        supplyItems: [...(state.supplyItems || []), {
-          clientId: null, name: '', unit: '', ...item,
-          id, unitPrice: Math.round((Number(item.unitPrice) || 0) * 100) / 100, createdAt: item.createdAt || nowIso(),
-        }],
-      };
-    }
-    case ACTIONS.UPDATE_SUPPLY_ITEM:
-      return {
-        ...state,
-        supplyItems: (state.supplyItems || []).map((s) => (s.id === action.id
-          ? {
-            ...s, ...action.patch,
-            ...(action.patch && action.patch.unitPrice != null
-              ? { unitPrice: Math.round((Number(action.patch.unitPrice) || 0) * 100) / 100 } : {}),
-          }
-          : s)),
-      };
-    case ACTIONS.DELETE_SUPPLY_ITEM:
-      // Hard delete (replace-means-delete; no soft-active flag). Submitted request
-      // lines snapshot name + price, so removing a catalog item never rewrites history.
-      return { ...state, supplyItems: (state.supplyItems || []).filter((s) => s.id !== action.id) };
-    case ACTIONS.ADD_SUPPLY_REQUEST: {
-      const req = action.request || {};
-      const id = req.id || newId('sr');
-      if ((state.supplyRequests || []).some((r) => r.id === id)) return state; // dedupe guard
-      const now = nowIso();
-      const request = {
-        id,
-        clientId: req.clientId || null,
-        requestedByUserId: req.requestedByUserId || state.currentUserId,
-        status: 'open',
-        note: (req.note || '').trim(),
-        lines: (req.lines || []).map((l) => ({
-          itemId: l.itemId || null, name: l.name || '',
-          qty: Number(l.qty) || 0, unitPrice: Math.round((Number(l.unitPrice) || 0) * 100) / 100,
-        })),
-        createdAt: now, completedAt: null, completedByUserId: null,
-      };
-      let next = { ...state, supplyRequests: [...(state.supplyRequests || []), request] };
-      // Ping the office — whoever can fulfill (supplyRequestSubmitted requiresPermission
-      // supplies.manage, enforced in isNotificationVisibleForUser). Skip the requester.
-      const client = (state.clients || []).find((c) => c.id === request.clientId) || null;
-      const requester = (state.users || []).find((u) => u.id === request.requestedByUserId) || null;
-      const count = supplyRequestItemCount(request);
-      next.notifications = fanOutManagerAlert(next, {
-        eventKey: 'supplyRequestSubmitted',
-        title: `Supply request: ${client ? client.name : 'a location'}`,
-        body: `${count} item${count === 1 ? '' : 's'} · ${money(supplyRequestTotal(request))}${requester ? ` · by ${requester.name}` : ''}`,
-        url: '/supplies',
-        actorUserId: state.currentUserId,
-      });
-      return next;
-    }
-    case ACTIONS.COMPLETE_SUPPLY_REQUEST: {
-      const req = (state.supplyRequests || []).find((r) => r.id === action.id);
-      if (!req || req.status === 'completed') return state; // idempotent — already done
-      const now = nowIso();
-      const byUserId = action.byUserId || state.currentUserId;
-      const completed = { ...req, status: 'completed', completedAt: now, completedByUserId: byUserId };
-      let next = {
-        ...state,
-        supplyRequests: (state.supplyRequests || []).map((r) => (r.id === action.id ? completed : r)),
-      };
-      // Notify the requester (skip when they completed their own — they know).
-      const client = (state.clients || []).find((c) => c.id === completed.clientId) || null;
-      const count = supplyRequestItemCount(completed);
-      next.notifications = fanOutToUserIds(next, {
-        userIds: [completed.requestedByUserId],
-        eventKey: 'supplyRequestCompleted',
-        title: 'Your supply request was completed',
-        body: `${client ? client.name : 'a location'} · ${count} item${count === 1 ? '' : 's'}`,
-        url: '/supplies',
-        actorUserId: byUserId,
-      });
-      // Retention at the write point (BUILD_INTEGRITY §5): trim the completed tail.
-      next.supplyRequests = pruneSupplyRequests(next.supplyRequests, Date.parse(now));
-      return next;
-    }
-    case ACTIONS.REOPEN_SUPPLY_REQUEST:
-      // completedByName is the kept name of a completer who was since deleted; reopening
-      // clears it with the id, so a later completion is never credited to them.
-      return {
-        ...state,
-        supplyRequests: (state.supplyRequests || []).map((r) => (r.id === action.id
-          ? { ...r, status: 'open', completedAt: null, completedByUserId: null, completedByName: null } : r)),
-      };
-    case ACTIONS.DELETE_SUPPLY_REQUEST:
-      return { ...state, supplyRequests: (state.supplyRequests || []).filter((r) => r.id !== action.id) };
+    // (notifyTicketRaised, server-side) instead of the old ADD_COMPLAINT fan-out.
+    // ---------- Supplies ----------
+    // No cases: since SUP-13 (2026-10-05) the approved lists and the request queue live in their
+    // own tables behind /api/supplies (lib/suppliesApi), never in this store. The ADD / UPDATE /
+    // DELETE_SUPPLY_ITEM, ADD_SUPPLY_REQUEST, SUPPLY_REQUEST_DECISION and DELETE_SUPPLY_REQUEST
+    // actions went with them (II.5). An old installed bundle that still sends the two keys back
+    // is put right by the org-state route (api/_lib/orgStateGuard.js restoreRetiredSlices).
 
-    case ACTIONS.SET_REVIEWS:
-      return { ...state, reviews: { ...(state.reviews || {}), ...action.patch } };
     case ACTIONS.RAISE_OPS_ALERT: {
       // Raise one operational alert via the shared pure applier (lib/opsAlertApply,
       // also used by the go-live server cron app/api/cron/ops-alerts.js), so the client
@@ -2525,17 +2585,10 @@ function baseReducer(state, action) {
         keyEvents: [...(state.keyEvents || []), evt],
       };
       // A key going to an unknown state is a security/ops signal the office
-      // needs — keyCustody only covers checkout-TO-you, so this was silent.
+      // needs — keyCustody only covers checkout-TO-you, so this was silent. The one
+      // builder the server's crew merge uses too (CS-710: a cleaner's report).
       const keyRec = next.keys.find((k) => k.id === action.keyId) || null;
-      if (keyRec) {
-        next.notifications = fanOutManagerAlert(next, {
-          eventKey: 'keyLost',
-          title: `Key ${keyRec.label || ''} marked unknown`.replace(/\s+/g, ' ').trim(),
-          body: keyRec.clientName || '',
-          url: '/keys',
-          actorUserId: state.currentUserId,
-        });
-      }
+      next.notifications = fanOutKeyStatusAlert(next, { key: keyRec, status: 'unknown', actorUserId: state.currentUserId });
       return next;
     }
     // Confirmed lost — the stronger sibling of MARK_KEY_UNKNOWN. Same shape
@@ -2558,15 +2611,7 @@ function baseReducer(state, action) {
         keyEvents: [...(state.keyEvents || []), evt],
       };
       const keyRec = next.keys.find((k) => k.id === action.keyId) || null;
-      if (keyRec) {
-        next.notifications = fanOutManagerAlert(next, {
-          eventKey: 'keyLost',
-          title: `Key ${keyRec.label || ''} reported LOST`.replace(/\s+/g, ' ').trim(),
-          body: keyRec.clientName || '',
-          url: '/keys',
-          actorUserId: state.currentUserId,
-        });
-      }
+      next.notifications = fanOutKeyStatusAlert(next, { key: keyRec, status: 'lost', actorUserId: state.currentUserId });
       return next;
     }
     // REMOVED 2026-07-22 — `SWEEP_OVERDUE_KEYS`. Keys have no return window and no
@@ -2894,9 +2939,20 @@ function baseReducer(state, action) {
       const existing = state.conversations.find((c) => c.id === action.id);
       if (!existing) return state;
       const current = existing.mutedByUserIds || [];
-      const next = current.includes(action.userId)
-        ? current.filter((uid) => uid !== action.userId)
-        : [...current, action.userId];
+      const muting = !current.includes(action.userId);
+      // CREW CANNOT SNOOZE A THREAD (NTF-3, Matt 2026-09-29: "No — cleaners can't mute";
+      // CS-291). lib/roles.js NOTIFICATIONS_MANDATORY_ROLES already made crew's EVENT
+      // notifications mandatory and said "the reducer refuses a mute at the write point" —
+      // UPDATE_NOTIFICATION_PREFS did, this did not, so a crew member silenced a thread
+      // (including office DMs) here instead, and lib/notifications.js skips muted recipients
+      // before the channel branches. UN-muting is always allowed: turning alerts back ON is
+      // never what the policy is protecting against, and a crew row that is already muted
+      // (the seed's demo user) must be able to clear it.
+      const target = state.users.find((u) => u.id === action.userId);
+      if (muting && areNotificationsMandatory(target)) return state;
+      const next = muting
+        ? [...current, action.userId]
+        : current.filter((uid) => uid !== action.userId);
       return { ...state, conversations: replaceById(state.conversations, action.id, { mutedByUserIds: next }) };
     }
 
@@ -2998,13 +3054,20 @@ function baseReducer(state, action) {
       const review = state.clientReview || emptyReview();
       const bucket = review[kind] || {};
       const cur = bucket[id] || {};
+      // A RECHECK (task #126): a fresh verdict on a draft whose words changed after its verdict
+      // (`action.recheck` = the change day, 'YYYY-MM-DD', from EMAIL_DRAFT_CHANGED). It counts as a
+      // sign-off change even when the status is the same (an Accept on a draft accepted before the
+      // update), so `at` is restamped and the old verdict goes to history. Drafts only, and only
+      // while the verdict predates the change, so a replay (now after it) is a no-op.
+      const recheck = kind === 'drafts' && typeof action.recheck === 'string' && isSignedOff(kind, cur)
+        && !(typeof cur.at === 'string' && cur.at >= action.recheck);
       // No-op when nothing actually changes (also silences a notes-only patch stripped to {}
       // and an idempotent re-write), so `at` isn't restamped and no needless sync fires.
-      const changed = Object.keys(patch).some((k) => !reviewFieldEq(patch[k], cur[k]));
+      const changed = recheck || Object.keys(patch).some((k) => !reviewFieldEq(patch[k], cur[k]));
       if (!changed) return state;
 
       const signoffFields = SIGNOFF_FIELDS[kind] || [];
-      const changesSignoff = signoffFields.some((f) => f in patch && !reviewFieldEq(patch[f], cur[f]));
+      const changesSignoff = recheck || signoffFields.some((f) => f in patch && !reviewFieldEq(patch[f], cur[f]));
       const locked = isSignedOff(kind, cur) && !sameSitting(cur.sitting, action.sitting);
       // A locked sign-off change is refused without an explicit confirm — no silent override.
       if (locked && changesSignoff && action.confirm !== true) return state;
@@ -3060,58 +3123,6 @@ function baseReducer(state, action) {
     // ---------- Reminders ----------
     case ACTIONS.UPDATE_REMINDER_TEMPLATE:
       return { ...state, reminderTemplates: replaceById(state.reminderTemplates, action.id, action.patch) };
-    case ACTIONS.ADD_REMINDER_EVENT: {
-      const base = { id: newId('re'), channel: 'sms', status: 'sent', attempts: 1, sentAt: nowIso(), readAt: null };
-      const evt = { ...base, ...action.event };
-      // Idempotent upsert by id: the scheduler uses a deterministic per-(job,
-      // template) id, so a retry re-uses the row (bumping attempts) and a second
-      // open tab computing the same id can't stack a duplicate event.
-      const exists = (state.reminderEvents || []).some((e) => e.id === evt.id);
-      let reminderEvents = exists
-        ? state.reminderEvents.map((e) => (e.id === evt.id ? { ...e, ...action.event } : e))
-        : [...(state.reminderEvents || []), evt];
-      if (reminderEvents.length > REMINDER_EVENT_LIMIT) {
-        reminderEvents = reminderEvents.slice(reminderEvents.length - REMINDER_EVENT_LIMIT);
-      }
-      return { ...state, reminderEvents };
-    }
-    case ACTIONS.UPDATE_REMINDER_EVENT: {
-      // Patches delivery status (pending → sent / failed) + failureReason /
-      // providerMessageId after the adapter resolves. On a genuine delivery
-      // failure it also alerts the office ONCE (failed reminders used to be
-      // fully silent — no bell/push/UI), skipping systemic setup + per-account
-      // data-gap reasons (no email/phone, Twilio not provisioned) that would
-      // otherwise flood, and de-duping via a failureAlerted flag so retries and
-      // multi-tab updates don't re-ping.
-      const prev = (state.reminderEvents || []).find((e) => e.id === action.id);
-      const patch = action.patch || {};
-      const merged = prev ? { ...prev, ...patch } : { ...patch };
-      const shouldAlert = patch.status === 'failed'
-        && !prev?.failureAlerted
-        && !NON_ACTIONABLE_REMINDER_FAIL_RE.test(merged.failureReason || '');
-      const finalPatch = shouldAlert ? { ...patch, failureAlerted: true } : patch;
-      let next = { ...state, reminderEvents: replaceById(state.reminderEvents, action.id, finalPatch) };
-      if (shouldAlert) {
-        const job = (state.jobs || []).find((j) => j.id === merged.jobId);
-        const client = (state.clients || []).find((c) => c.id === merged.clientId);
-        const chan = merged.channel === 'sms' ? 'text' : 'email';
-        next = {
-          ...next,
-          notifications: fanOutManagerAlert(next, {
-            eventKey: 'reminderFailed',
-            title: `Reminder ${chan} failed${client ? `. ${client.name}` : ''}`,
-            body: merged.failureReason || 'A customer reminder could not be delivered.',
-            url: job ? `/schedule/${job.id}` : '/schedule',
-            actorUserId: null,
-          }),
-        };
-      }
-      return next;
-    }
-    case ACTIONS.MARK_REMINDER_EVENT_READ:
-      return { ...state, reminderEvents: replaceById(state.reminderEvents, action.id, { readAt: nowIso() }) };
-    case ACTIONS.MARK_REMINDER_EVENT_UNREAD:
-      return { ...state, reminderEvents: replaceById(state.reminderEvents, action.id, { readAt: null }) };
 
     // ---------- Invitations ----------
     case ACTIONS.SEND_INVITATION: {
@@ -3429,125 +3440,6 @@ function baseReducer(state, action) {
       };
     }
 
-    // ---------- Integrations / Email Provider (Resend) ----------
-    // System transactional sender wired by an admin in Settings → Integrations.
-    // Per-user conversational email goes through Connected Inboxes (Phase 3),
-    // not through these actions.
-    case ACTIONS.CONNECT_EMAIL_PROVIDER: {
-      const em = state.company.integrations?.email || {};
-      const next = {
-        ...em,
-        connected: true,
-        provider: action.provider || 'resend',
-        apiKeyLast4: action.apiKeyLast4 || null,
-        verifiedDomain: action.verifiedDomain || null,
-        defaultFrom: action.defaultFrom || null,
-        defaultReplyTo: action.defaultReplyTo || null,
-        connectedAt: nowIso(),
-        lastError: null,
-        // Domain status starts as 'pending' on connect — DKIM records are
-        // generated by the provider and the user has to add them to DNS.
-        // The Settings card polls /email/health and dispatches
-        // UPDATE_EMAIL_DOMAIN_STATUS as the records propagate.
-        domain: {
-          status: action.domainStatus || 'pending',
-          dkimRecords: action.dkimRecords || [],
-          spfStatus: action.spfStatus || null,
-          dmarcStatus: action.dmarcStatus || null,
-          lastCheckedAt: nowIso(),
-          failureReason: null,
-        },
-      };
-      return {
-        ...state,
-        company: {
-          ...state.company,
-          integrations: { ...(state.company.integrations || {}), email: next },
-        },
-      };
-    }
-    case ACTIONS.DISCONNECT_EMAIL_PROVIDER: {
-      const em = state.company.integrations?.email || {};
-      const next = {
-        ...em,
-        connected: false,
-        provider: null,
-        apiKeyLast4: null,
-        verifiedDomain: null,
-        defaultFrom: null,
-        defaultReplyTo: null,
-        connectedAt: null,
-        lastVerifiedAt: null,
-        lastError: null,
-        domain: {
-          status: 'not_started',
-          dkimRecords: [],
-          spfStatus: null,
-          dmarcStatus: null,
-          lastCheckedAt: null,
-          failureReason: null,
-        },
-      };
-      return {
-        ...state,
-        company: {
-          ...state.company,
-          integrations: { ...(state.company.integrations || {}), email: next },
-        },
-      };
-    }
-    case ACTIONS.UPDATE_EMAIL_DOMAIN_STATUS: {
-      const em = state.company.integrations?.email || {};
-      const prevDomain = em.domain || {};
-      const patch = {
-        ...prevDomain,
-        ...(action.status !== undefined ? { status: action.status } : null),
-        ...(action.dkimRecords !== undefined ? { dkimRecords: action.dkimRecords } : null),
-        ...(action.spfStatus !== undefined ? { spfStatus: action.spfStatus } : null),
-        ...(action.dmarcStatus !== undefined ? { dmarcStatus: action.dmarcStatus } : null),
-        ...(action.failureReason !== undefined ? { failureReason: action.failureReason } : null),
-        lastCheckedAt: nowIso(),
-      };
-      const next = {
-        ...em,
-        domain: patch,
-        ...(action.status === 'verified' ? { lastVerifiedAt: nowIso(), lastError: null } : null),
-      };
-      return {
-        ...state,
-        company: {
-          ...state.company,
-          integrations: { ...(state.company.integrations || {}), email: next },
-        },
-      };
-    }
-    case ACTIONS.UPDATE_EMAIL_DEFAULT_FROM: {
-      const em = state.company.integrations?.email || {};
-      const next = {
-        ...em,
-        defaultFrom: action.defaultFrom ?? em.defaultFrom ?? null,
-        defaultReplyTo: action.defaultReplyTo !== undefined ? action.defaultReplyTo : em.defaultReplyTo,
-      };
-      return {
-        ...state,
-        company: {
-          ...state.company,
-          integrations: { ...(state.company.integrations || {}), email: next },
-        },
-      };
-    }
-    case ACTIONS.UPDATE_EMAIL_ERROR: {
-      const em = state.company.integrations?.email || {};
-      const next = { ...em, lastError: action.error || null };
-      return {
-        ...state,
-        company: {
-          ...state.company,
-          integrations: { ...(state.company.integrations || {}), email: next },
-        },
-      };
-    }
-
     // ---------- Connected Inboxes (per-user) ----------
     // Backend creates the inbox record on the OAuth callback or after a
     // successful SMTP handshake; the frontend dispatches ADD_CONNECTED_INBOX
@@ -3814,6 +3706,11 @@ function baseReducer(state, action) {
       const references = action.references || null;
       const toInboxEmail = action.toInboxEmail || null; // which connected-inbox received it
 
+      // Already threaded by the server (CS-968): a buffered reply at or below the ingest cron's
+      // cursor is in the record, or its thread was deleted since. Checked against the state the
+      // action is APPLIED to, so a tab that filed it on a stale copy drops it again when its save
+      // meets the newer record (adopt + replay). Rows with no seq (a simulation) are not skipped.
+      if (alreadyIngested(state, action.seq)) return state;
       // Idempotency — the same buffered reply can be re-polled (cursor reset, or
       // another device sharing org state). Skip if we've already stored it.
       if (messageId && (state.messages || []).some((m) => m.emailMessageId === messageId)) {
@@ -4010,8 +3907,8 @@ function baseReducer(state, action) {
         // user to ping when a contact replies to this sequence. null = no
         // notification. inApp toggle gates whether the picked user gets a
         // notification row + bell badge. Email arm intentionally not wired
-        // yet (Resend transactional path + DNS records still pending; see
-        // HANDOFF backlog item).
+        // yet — the channel toggle was never built (system email itself works,
+        // through Google; see HANDOFF backlog item).
         notifyOnReplyUserId:
           typeof incoming.notifyOnReplyUserId === 'string' && incoming.notifyOnReplyUserId
             ? incoming.notifyOnReplyUserId
@@ -4265,6 +4162,9 @@ function baseReducer(state, action) {
       const contacts = state.contacts || [];
       const replies = state.marketingReplies || [];
 
+      // Already threaded by the server's ingest (CS-968, as RECEIVE_EMAIL): the reply row may have
+      // been removed since, and recording it again halts, routes, tags and notifies a second time.
+      if (alreadyIngested(state, action.seq)) return state;
       // Idempotency — don't double-record if a provider id replays.
       if (action.id && replies.some((r) => r.id === action.id)) return state;
 
@@ -4500,14 +4400,6 @@ function baseReducer(state, action) {
   }
 }
 
-function nextInvoiceId(state) {
-  const prefix = state.company.invoicePrefix || 'INV';
-  const numbers = state.invoices
-    .map((inv) => {
-      const m = String(inv.id).match(new RegExp(`^${prefix}-(\\d+)$`));
-      return m ? Number(m[1]) : 0;
-    })
-    .filter(Boolean);
-  const next = (numbers.length ? Math.max(...numbers) : 1000) + 1;
-  return `${prefix}-${next}`;
-}
+// (The reducer's own copy of the invoice-numbering rule is gone: there is ONE rule, in
+// lib/money.js — nextInvoiceNumber / resolveInvoiceNumber — which ADD_INVOICE above and
+// the `nextInvoiceId` selector both call. Two copies of a money rule is how they drift.)

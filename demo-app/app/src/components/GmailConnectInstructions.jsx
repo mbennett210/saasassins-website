@@ -3,7 +3,7 @@
 // (components/ConnectMarketingInboxModal.jsx) connect flows. Single source of
 // truth so both surfaces stay in sync.
 //
-// MODEL: The Clean Space OAuth app is configured as "Internal" in Google Cloud —
+// MODEL: The app's OAuth app (the software's: IDENTITY.product, UI_RULES §129) is configured as "Internal" in Google Cloud —
 // a single Workspace organization owns it, and only users in that Workspace
 // can authorize. Connections are permanent (no 7-day expiry, no test-user
 // cap), and authentication / password management stays with that Workspace
@@ -120,10 +120,10 @@ export default function GmailConnectInstructions() {
             <strong>&quot;Error 403: org_internal&quot;</strong>
             <div style={{ marginTop: 2 }}>
               Your Google account isn&apos;t in the Workspace org that owns
-              {' '}{IDENTITY.name}&apos;s OAuth project. Either you&apos;re trying with a
+              {' '}{IDENTITY.product.name}&apos;s OAuth project. Either you&apos;re trying with a
               personal <code>@gmail.com</code> address (not supported. See
               callout below), or you&apos;re in a different Workspace from the
-              one {IDENTITY.name} is set up under. Talk to your admin.
+              one {IDENTITY.product.name} is set up under. Talk to your admin.
             </div>
           </li>
           <li style={{ marginTop: 6 }}>
@@ -146,7 +146,7 @@ export default function GmailConnectInstructions() {
           for the whole org, NOT per-user.
         </p>
         <p style={{ margin: '0 0 8px' }}>
-          <strong>Goal:</strong> mark {IDENTITY.name}&apos;s OAuth app as Trusted so
+          <strong>Goal:</strong> mark {IDENTITY.product.name}&apos;s OAuth app as Trusted so
           users in your Workspace can connect without seeing a security warning
           or being blocked.
         </p>
@@ -155,7 +155,7 @@ export default function GmailConnectInstructions() {
           <li>Open <strong>Menu (☰) → Security → Access and data control → API controls</strong>.</li>
           <li>Click <strong>Manage Third-Party App Access</strong>.</li>
           <li>Click <strong>Configure new app</strong>.</li>
-          <li>In the search box, paste the {IDENTITY.name} OAuth <strong>Client ID</strong>. Your developer has it in <code>GOOGLE_OAUTH_CLIENT_ID</code> in the deployment environment. It ends in <code>.apps.googleusercontent.com</code>.</li>
+          <li>In the search box, paste the {IDENTITY.product.name} OAuth <strong>Client ID</strong>. Your developer has it in <code>GOOGLE_OAUTH_CLIENT_ID</code> in the deployment environment. It ends in <code>.apps.googleusercontent.com</code>.</li>
           <li>Select the app from results → <strong>Select</strong>.</li>
           <li>Scope: <strong>Entire organization</strong>, or use <strong>Select org units</strong> to limit to specific OUs / groups.</li>
           <li>Access level: <strong>Trusted: Can access all Google services</strong>. (Other options like Limited, Specific Google data, or Blocked are not what you want here.)</li>
@@ -185,7 +185,7 @@ export default function GmailConnectInstructions() {
         </p>
         <ul style={{ margin: '0 0 8px', paddingLeft: 18 }}>
           <li>Personal <code>@gmail.com</code> addresses (no Workspace).</li>
-          <li>Users from a different Workspace org, even one you also own. Each additional Workspace org would need its own OAuth project + Client ID + a multi-tenant rewrite of {IDENTITY.name}&apos;s inbox auth, which is meaningful work and not in scope today.</li>
+          <li>Users from a different Workspace org, even one you also own. Each additional Workspace org would need its own OAuth project + Client ID + a multi-tenant rewrite of {IDENTITY.product.name}&apos;s inbox auth, which is meaningful work and not in scope today.</li>
         </ul>
         <p style={{
           margin: 0,

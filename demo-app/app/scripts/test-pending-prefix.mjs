@@ -58,15 +58,20 @@ const store = read('../src/store/index.jsx');
 // ── 🔴 both commit paths clear the PREFIX, not the queue ────────────────
 {
   const slices = (sync.match(/setPending\(getPending\(\)\.slice\(pendingCovered\)\)/g) || []).length;
-  // Four prefix-drop sites: content-guard, committed, the guard-REJECTED path (a
-  // refused protected-field change must drop its prefix or adoptRemote replays the
-  // refusal forever), and the TERMINAL-AUTH path (2026-09-23 — account-disabled /
-  // not-on-team: the covered actions can never be saved by this login, so drop them
-  // as we sign out rather than leave them to replay). All four drop the PREFIX only.
+  // Four prefix-drop sites: content-guard, committed, and the TERMINAL-AUTH path — both in
+  // flush() and in the refused-batch walk (2026-09-23 — account-disabled / not-on-team: the
+  // covered actions can never be saved by this login, so drop them as we sign out rather than
+  // leave them to replay). All four drop the PREFIX only.
   ok(`🔴 all save paths drop only the covered prefix (${slices}/4)`, slices === 4);
   ok('  ...the content-guard (blob unchanged) path', /sharedJson === lastSavedStateJson\)\s*\{[\s\S]{0,400}?setPending\(getPending\(\)\.slice\(pendingCovered\)\)/.test(sync));
   ok('  ...the committed path', /lastSavedStateJson = sharedJson;[\s\S]{0,400}?setPending\(getPending\(\)\.slice\(pendingCovered\)\)/.test(sync));
-  ok('  ...the guard-rejected path', /viaServer\.rejected\)[\s\S]{0,900}?setPending\(getPending\(\)\.slice\(pendingCovered\)\)/.test(sync));
+  // CS-008: the guard-REJECTED path used to drop the whole covered prefix — the refused
+  // action AND every unrelated edit saved beside it. It now ISOLATES the batch (each action
+  // saved on its own; only what the guard refuses is dropped, and reported), and whatever the
+  // walk could not decide stays pending ahead of what was dispatched since. Driven for real by
+  // test-sync-refused-change.mjs; these pins keep the shape.
+  ok('  ...the guard-rejected path isolates the batch instead of dropping it (CS-008)', /viaServer\.rejected\)[\s\S]{0,1400}?isolateRefusedBatch\(pendingCovered/.test(sync));
+  ok('  ...and the walk keeps every undecided action, then what was dispatched since', /setPending\(\[\.\.\.batch\.slice\(processed\), \.\.\.getPending\(\)\.slice\(pendingCovered\)\]\)/.test(sync));
   ok('  ...the terminal-auth (account-disabled / not-on-team) path', /viaServer\.terminal\)[\s\S]{0,900}?setPending\(getPending\(\)\.slice\(pendingCovered\)\)/.test(sync));
   ok('🔴 neither of them wipes the whole queue any more',
     !/lastSavedStateJson = sharedJson;[\s\S]{0,300}?clearPending\(\);/.test(sync));

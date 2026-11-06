@@ -2,17 +2,22 @@
 // CALL-OUT time-off entry covering that day (Team › Time off or HR › PTO, type
 // "Call-out" — planned time off is not listed), with the cleans they called out of,
 // including the ones the booking took them off, and which of those now have no crew.
-// Runs off state.timeOff + state.jobs via the pure lib/reports/calledOut engine.
+// Runs off state.timeOff + state.jobs via the pure lib/reports/calledOut engine, after the
+// day's cleans are loaded (CS-676).
 import { useCallback, useMemo, useState } from 'react';
 import Badge from '../../components/Badge';
 import { calledOutOn } from '../../lib/reports/calledOut';
+import { useGetState, useJobsLoader } from '../../store';
 import {
   useReportScope, DayField, ManagerFilter, CustomerFilter, FilterRow, RunActions,
   KpiRow, StatCard, RunSurface, ResultsTable, downloadReportCsv, NoRows, dayWindow,
+  reportErrorMessage, canRetryError, useRunGuard,
 } from './reportKit';
 
 const COLUMNS = [
   { key: 'cleaner', label: 'Cleaner', value: (r) => r.userName },
+  // ALR-7: the coded reason plus its note (lib/reports/calledOut reads the one shared
+  // formatter), so a CSV of call-outs can be counted by reason instead of by free text.
   { key: 'reason', label: 'Reason', value: (r) => r.reason || '—' },
   { key: 'cust', label: 'Called out of', value: (r) => r.customers.join(', ') || '—' },
   { key: 'cleans', label: 'Cleans', value: (r) => r.cleanCount },
@@ -23,23 +28,37 @@ const COLUMNS = [
 ];
 
 export default function CalledOutReport() {
-  const { state, currentUser, clients, managers, iSupervise, clientsById, sitesById } = useReportScope();
+  const { currentUser, clients, managers, iSupervise, clientsById, sitesById } = useReportScope();
   const [dayOffset, setDayOffset] = useState(0);
   const [managerScope, setManagerScope] = useState(() => (iSupervise ? currentUser?.id : ''));
   const [customerScope, setCustomerScope] = useState('');
   const [rows, setRows] = useState(null);
   const [running, setRunning] = useState(false);
-  const reset = () => setRows(null);
+  const [error, setError] = useState(null);
+  const guard = useRunGuard();
+  const reset = () => { guard.invalidate(); setRows(null); setError(null); setRunning(false); };
+  const jobsLoader = useJobsLoader();
+  const getState = useGetState();
 
-  const run = useCallback(() => {
-    setRunning(true);
-    const usersById = new Map((state.users || []).map((u) => [u.id, u]));
-    setRows(calledOutOn({
-      timeOff: state.timeOff || [], jobs: state.jobs || [], usersById, clientsById, sitesById,
-      dayKey: dayWindow(dayOffset).dayKey, managerId: managerScope || null, clientId: customerScope || null,
-    }));
-    setRunning(false);
-  }, [state.users, state.timeOff, state.jobs, clientsById, sitesById, dayOffset, managerScope, customerScope]);
+  // The day's cleans are loaded first (the app holds the jobs window, −45/+100 days, not the
+  // table — CS-676), then counted from the live store.
+  const run = useCallback(async () => {
+    const token = guard.begin();
+    setRunning(true); setError(null);
+    try {
+      const day = dayWindow(dayOffset);
+      await jobsLoader.ensureRange(day.fromMs - 86400000, day.toMs + 86400000);
+      const s = getState();
+      const usersById = new Map((s.users || []).map((u) => [u.id, u]));
+      const out = calledOutOn({
+        timeOff: s.timeOff || [], jobs: s.jobs || [], usersById, clientsById, sitesById,
+        dayKey: day.dayKey, managerId: managerScope || null, clientId: customerScope || null,
+      });
+      if (guard.isCurrent(token)) setRows(out);
+    } catch (e) {
+      if (guard.isCurrent(token)) { setRows(null); setError({ message: reportErrorMessage(e), canRetry: canRetryError(e) }); }
+    } finally { if (guard.isCurrent(token)) setRunning(false); }
+  }, [jobsLoader, getState, clientsById, sitesById, dayOffset, managerScope, customerScope, guard]);
 
   // Cleans are counted ONCE each — two cleaners calling out of the same clean is one
   // clean affected, not two.
@@ -66,7 +85,7 @@ export default function CalledOutReport() {
 
       <RunActions running={running} hasRows={rows && rows.length > 0} onRun={run} onExport={() => downloadReportCsv(`called-out-${dayWindow(dayOffset).dayKey}.csv`, COLUMNS, rows)} />
 
-      <RunSurface rows={rows} running={running} empty={<NoRows title="No call-outs" message="No cleaners called out for the selected day. A call-out is time off booked as a Call-out (Team › Time off, or HR › PTO); planned time off isn't listed here." />}>
+      <RunSurface rows={rows} running={running} error={error?.message} onRetry={error?.canRetry ? run : undefined} empty={<NoRows title="No call-outs" message="No cleaners called out for the selected day. A call-out is time off booked as a Call-out (Team › Time off, or HR › PTO); planned time off isn't listed here." />}>
         <KpiRow>
           <StatCard label="Called out" value={kpis.count} tone={kpis.count > 0 ? 'danger' : null} />
           <StatCard label="Cleans affected" value={kpis.cleans} tone={kpis.cleans > 0 ? 'warn' : null} />

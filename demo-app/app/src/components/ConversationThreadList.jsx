@@ -6,11 +6,13 @@ import Icon from './Icon';
 import BulkActionBar from './BulkActionBar';
 import { useStore } from '../store';
 import { useAuth } from '../hooks/useAuth';
+import { useEscapeLayer } from '../hooks/useEscapeLayer';
 import {
   selectContactById, selectMessagesForConversation, selectUnreadForConversation,
   selectOtherParticipant,
 } from '../store/selectors';
-import { fmtRelative } from '../lib/dates';
+import { useT } from '../i18n/react';
+import { timeShort } from '../i18n/relative';
 
 function previewText(msg) {
   if (!msg) return '';
@@ -33,11 +35,15 @@ function initialsFromContact(contact) {
 // Rendering at body level keeps it viewport-anchored. Closes on outside-click,
 // Escape, scroll, or resize.
 function ThreadRowMenu({ label, unread, canDelete, onStartSelect, onMarkRead, onMarkUnread, onDelete }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const wrapRef = useRef(null);
   const btnRef = useRef(null);
   const popRef = useRef(null);
+
+  // Esc closes the menu through the one Escape stack (UI_RULES §181).
+  useEscapeLayer(open, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return;
@@ -57,14 +63,11 @@ function ThreadRowMenu({ label, unread, canDelete, onStartSelect, onMarkRead, on
       if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
       setOpen(false);
     };
-    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
     document.addEventListener('click', onOutsideClick, true);
-    window.addEventListener('keydown', onKey);
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => {
       document.removeEventListener('click', onOutsideClick, true);
-      window.removeEventListener('keydown', onKey);
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
     };
@@ -95,10 +98,10 @@ function ThreadRowMenu({ label, unread, canDelete, onStartSelect, onMarkRead, on
         ref={btnRef}
         type="button"
         className="btn-icon btn-icon-ghost"
-        aria-label={`Actions for ${label}`}
+        aria-label={t('messages.rowActions', { name: label })}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Actions"
+        title={t('messages.actions')}
         onClick={(e) => { e.stopPropagation(); toggle(); }}
       >
         <Icon name="dots" size={16} />
@@ -117,7 +120,7 @@ function ThreadRowMenu({ label, unread, canDelete, onStartSelect, onMarkRead, on
             className="menu-option"
             onClick={choose(onStartSelect)}
           >
-            Select
+            {t('messages.select')}
           </button>
           <div className="thread-row-menu-sep" role="separator" />
           <button
@@ -127,7 +130,7 @@ function ThreadRowMenu({ label, unread, canDelete, onStartSelect, onMarkRead, on
             onClick={choose(onMarkRead)}
             disabled={unread === 0}
           >
-            Mark as read
+            {t('messages.markRead')}
           </button>
           <button
             type="button"
@@ -136,7 +139,7 @@ function ThreadRowMenu({ label, unread, canDelete, onStartSelect, onMarkRead, on
             onClick={choose(onMarkUnread)}
             disabled={unread > 0}
           >
-            Mark as unread
+            {t('messages.markUnread')}
           </button>
           <div className="thread-row-menu-sep" role="separator" />
           <button
@@ -145,9 +148,9 @@ function ThreadRowMenu({ label, unread, canDelete, onStartSelect, onMarkRead, on
             className="menu-option menu-option-danger"
             onClick={choose(onDelete)}
             disabled={!canDelete}
-            title={canDelete ? undefined : "Only the thread's creator or a Super Admin can delete it"}
+            title={canDelete ? undefined : t('messages.deleteOnlyCreator')}
           >
-            Delete
+            {t('messages.delete')}
           </button>
         </div>,
         document.body
@@ -161,6 +164,7 @@ function ThreadRow({
   hideCheckbox = false, isOwnedByMe = false, bulkMode = false,
   onStartSelect, onRowMarkRead, onRowMarkUnread, onRowDelete,
 }) {
+  const t = useT();
   const state = useStore();
   const { currentUser } = useAuth();
   const contact = conversation.contactId ? selectContactById(state, conversation.contactId) : null;
@@ -189,15 +193,15 @@ function ThreadRow({
   let initials;
   let avatarVariant;
   if (isDm) {
-    displayName = dmOther ? dmOther.name : 'Unknown user';
+    displayName = dmOther ? dmOther.name : t('messages.unknownUser');
     initials = dmOther?.initials || '?';
     avatarVariant = dmOther?.avatar || 1;
   } else if (isInternal) {
-    displayName = conversation.title || 'Team discussion';
+    displayName = conversation.title || t('messages.teamDiscussion');
     initials = 'T';
     avatarVariant = 3;
   } else {
-    displayName = contact ? `${contact.firstName} ${contact.lastName}` : 'Unlinked';
+    displayName = contact ? `${contact.firstName} ${contact.lastName}` : t('messages.unlinked');
     initials = initialsFromContact(contact);
     avatarVariant = ((contact?.id?.length || 0) % 5) + 1;
   }
@@ -217,7 +221,7 @@ function ThreadRow({
               type="checkbox"
               checked={selected}
               onChange={() => onToggleSelect(conversation.id)}
-              aria-label={`Select ${displayName}`}
+              aria-label={t('messages.selectRow', { name: displayName })}
             />
           </label>
         ) : (
@@ -232,15 +236,15 @@ function ThreadRow({
           />
         )
       )}
-      <Avatar initials={initials} variant={avatarVariant} size="sm" />
+      <Avatar user={dmOther} initials={initials} variant={avatarVariant} size="sm" />
       <div className="thread-row-body">
         <div className="thread-row-name">
           {displayName}
           {isOwnedByMe && (
             <span
               className="thread-row-owner-mark"
-              title="You created this thread"
-              aria-label="You created this thread"
+              title={t('messages.youCreated')}
+              aria-label={t('messages.youCreated')}
             >
               <Icon name="star" size={12} />
             </span>
@@ -248,32 +252,32 @@ function ThreadRow({
           {isMuted && (
             <span
               className="thread-row-mute-mark"
-              title="You silenced notifications for this thread"
-              aria-label="Notifications silenced"
+              title={t('messages.youMuted')}
+              aria-label={t('messages.muted')}
             >
               <Icon name="bellOff" size={12} />
             </span>
           )}
         </div>
-        <div className="thread-row-preview">{previewText(last) || 'No messages yet'}</div>
+        <div className="thread-row-preview">{previewText(last) || t('messages.noMessagesYet')}</div>
       </div>
       <div className="thread-row-right">
         <div className="thread-row-top">
-          {unread > 0 && <span className="thread-unread" aria-label={`${unread} unread`}>{unread}</span>}
+          {unread > 0 && <span className="thread-unread" aria-label={t('messages.unreadCount', { count: unread })}>{unread}</span>}
           {/* Pin/star omitted for a crew (non-office) viewer — the crew write merge drops it (CS-002). */}
           {onToggleStar && (
             <button
               type="button"
               className={`btn-icon btn-icon-ghost ${isStarred ? 'starred' : ''}`}
               onClick={(e) => { e.stopPropagation(); onToggleStar(conversation.id); }}
-              aria-label={isStarred ? 'Unpin' : 'Pin'}
-              title={isStarred ? 'Unpin' : 'Pin'}
+              aria-label={isStarred ? t('messages.unpin') : t('messages.pin')}
+              title={isStarred ? t('messages.unpin') : t('messages.pin')}
             >
               <Icon name="star" size={14} />
             </button>
           )}
         </div>
-        <span className="thread-row-time">{last ? fmtRelative(last.sentAt) : fmtRelative(conversation.createdAt)}</span>
+        <span className="thread-row-time">{timeShort(t, last ? last.sentAt : conversation.createdAt)}</span>
       </div>
     </div>
   );
@@ -303,6 +307,7 @@ export default function ConversationThreadList({
   onRowMarkUnread,
   onRowDelete,
 }) {
+  const t = useT();
   const { currentUser } = useAuth();
   const isDmInbox = selectedInbox === 'dm';
   const isInternalInbox = selectedInbox === 'internal';
@@ -318,8 +323,8 @@ export default function ConversationThreadList({
     && selectableConversations.every((c) => selectedIds.has(c.id));
 
   const countText = conversations.length === totalBeforeFilter
-    ? `${conversations.length} thread${conversations.length === 1 ? '' : 's'}`
-    : `${conversations.length} of ${totalBeforeFilter}`;
+    ? t('messages.threadCount', { count: conversations.length })
+    : t('messages.threadCountFiltered', { shown: conversations.length, total: totalBeforeFilter });
 
   // Select-all / deselect-all for the bulk toolbar. Entering bulk mode now happens
   // from a row's ⋯ menu ("Select"), so this no longer double-duties as an enter toggle.
@@ -335,7 +340,7 @@ export default function ConversationThreadList({
           <Icon name="search" size={14} />
           <input
             className="thread-list-input"
-            placeholder="Search by name or message…"
+            placeholder={t('messages.search')}
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
           />
@@ -344,7 +349,7 @@ export default function ConversationThreadList({
           <span className="text-xs text-muted">{countText}</span>
           {!isDmInbox && bulkMode && (
             <button type="button" className="linklike text-xs thread-bulk-done" onClick={onExitBulk}>
-              Done
+              {t('messages.done')}
             </button>
           )}
         </div>
@@ -364,8 +369,8 @@ export default function ConversationThreadList({
         {conversations.length === 0 ? (
           <EmptyState
             icon={<Icon name="messaging" size={24} />}
-            title="No conversations"
-            message="Try a different inbox or clear your filters."
+            title={t('messages.noConversations')}
+            message={t('messages.noConversationsHint')}
           />
         ) : (() => {
           const renderRow = (c) => (
@@ -405,7 +410,7 @@ export default function ConversationThreadList({
                   <>
                     <div className="thread-section-header">
                       <Icon name="star" size={12} />
-                      <span>Your channels</span>
+                      <span>{t('messages.yourChannels')}</span>
                       <span className="thread-section-count">{owned.length}</span>
                     </div>
                     {ownedSplit.pinned.map(renderRow)}
@@ -415,7 +420,7 @@ export default function ConversationThreadList({
                 {others.length > 0 && (
                   <>
                     <div className="thread-section-header thread-section-header-muted">
-                      <span>Team channels</span>
+                      <span>{t('messages.teamChannels')}</span>
                       <span className="thread-section-count">{others.length}</span>
                     </div>
                     {othersSplit.pinned.map(renderRow)}
@@ -435,14 +440,14 @@ export default function ConversationThreadList({
             <>
               <div className="thread-section-header">
                 <Icon name="star" size={12} />
-                <span>Pinned</span>
+                <span>{t('messages.pinned')}</span>
                 <span className="thread-section-count">{pinned.length}</span>
               </div>
               {pinned.map(renderRow)}
               {others.length > 0 && (
                 <>
                   <div className="thread-section-header thread-section-header-muted">
-                    <span>All conversations</span>
+                    <span>{t('messages.allConversations')}</span>
                     <span className="thread-section-count">{others.length}</span>
                   </div>
                   {others.map(renderRow)}

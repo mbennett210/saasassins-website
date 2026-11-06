@@ -10,11 +10,12 @@ import Icon from '../../components/Icon';
 import EmptyState from '../../components/EmptyState';
 import { fmtTime } from '../../lib/dates';
 import * as timeApi from '../../lib/timeApi';
+import { useGetState, useJobsLoader } from '../../store';
 import {
   computeAttendanceReport, ATT_COMPLETE, ATT_MISSING_OUT, ATT_NO_PUNCH, ATT_ON_CLOCK, ATT_UPCOMING, ATT_OFF,
   ATT_INCOMPLETE,
 } from '../../lib/attendanceReport';
-import { OPS_ALERT_DEFAULTS } from '../../lib/opsAlerts';
+import { missedAfterStartMins } from '../../lib/opsAlerts';
 import {
   useReportScope, DayField, ManagerFilter, CustomerFilter, FilterRow, RunActions,
   KpiRow, StatCard, RunSurface, ResultsTable, downloadReportCsv, dayWindow, reportErrorMessage,
@@ -73,30 +74,40 @@ export default function AttendanceReport() {
   const [showAll, setShowAll] = useState(false);
   const guard = useRunGuard();
   const reset = () => { guard.invalidate(); setRows(null); setError(null); setRunning(false); };
-  const grace = state.opsSettings?.lateAlertGraceMins ?? OPS_ALERT_DEFAULTS.lateAlertGraceMins;
+  // ALR-11: the ONE missed-shift mark, read through its own clamped reader so the
+  // report's "No punch" and the supervisor's alert fire at the same minute.
+  const grace = missedAfterStartMins(state.opsSettings || {});
+  const jobsLoader = useJobsLoader();
+  const getState = useGetState();
 
+  // The day's cleans are loaded alongside its punches (the app holds the jobs window, −45/+100
+  // days, not the table — CS-676), then judged from the live store.
   const run = useCallback(async () => {
     const token = guard.begin();
     setRunning(true); setError(null);
     try {
       const day = dayWindow(dayOffset);
-      const punches = await timeApi.entriesAll({
-        fromIso: new Date(day.fromMs - PAD_BEFORE_MS).toISOString(),
-        toIso: new Date(day.toMs + PAD_AFTER_MS).toISOString(),
-        lite: true,
-      });
-      const usersById = new Map((state.users || []).map((u) => [u.id, u]));
+      const [punches] = await Promise.all([
+        timeApi.entriesAll({
+          fromIso: new Date(day.fromMs - PAD_BEFORE_MS).toISOString(),
+          toIso: new Date(day.toMs + PAD_AFTER_MS).toISOString(),
+          lite: true,
+        }),
+        jobsLoader.ensureRange(day.fromMs - PAD_BEFORE_MS, day.toMs + PAD_AFTER_MS),
+      ]);
+      const s = getState();
+      const usersById = new Map((s.users || []).map((u) => [u.id, u]));
       let out = computeAttendanceReport({
-        jobs: state.jobs || [], timeEntries: punches, usersById, clientsById, sitesById,
+        jobs: s.jobs || [], timeEntries: punches, usersById, clientsById, sitesById,
         fromMs: day.fromMs, toMs: day.toMs, managerId: managerScope || null,
-        now: Date.now(), graceMins: grace, timeOff: state.timeOff || [],
+        now: Date.now(), graceMins: grace, timeOff: s.timeOff || [],
       });
       if (customerScope) out = out.filter((row) => row.clientId === customerScope);
       if (guard.isCurrent(token)) setRows(out);
     } catch (e) {
       if (guard.isCurrent(token)) { setRows(null); setError({ message: reportErrorMessage(e), canRetry: canRetryError(e) }); }
     } finally { if (guard.isCurrent(token)) setRunning(false); }
-  }, [dayOffset, managerScope, customerScope, state.users, state.jobs, state.timeOff, clientsById, sitesById, grace, guard]);
+  }, [dayOffset, managerScope, customerScope, jobsLoader, getState, clientsById, sitesById, grace, guard]);
 
   const counts = useMemo(() => {
     const r = rows || [];

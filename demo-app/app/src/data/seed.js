@@ -1,3 +1,4 @@
+import { assetUrl } from '../lib/assetUrl.js'; // polishpoint-demo
 // Clean Space — seed data.
 // Per-client clone of the shell. Demo clients/contacts/jobs/invoices/messages
 // are kept rich (rebranded to FL janitorial) so the app looks alive at handoff.
@@ -5,11 +6,14 @@
 // land. Source of truth for what's seeded vs. add-on: ../../the approved build plan.
 
 import { seedId } from '../lib/ids';
+import { DEFAULT_REMINDER_TEMPLATES } from '../lib/customerMessages.js';
 import { seedPermissions } from '../lib/roles';
 import { DEFAULT_GEOFENCE_RADIUS_M } from '../lib/geo';
 import { DEFAULT_DRIVE_MAX_GAP_MINS, DEFAULT_DRIVE_FLAG_PCT, DEFAULT_DRIVE_GRACE_MINS } from '../lib/driveTime';
 import { buildClientLocation, clientGetsLocation, CLIENT_BILLING_DEFAULTS } from '../lib/location';
 import { IDENTITY } from '../brand/identity.generated.js';
+import { DEFAULT_ORG_TIMEZONE, composeIso, addDaysKey, dayKey } from '../lib/dates';
+import { MD_TEMPLATE_OFFICE, MD_TEMPLATE_MEDICAL } from './demoManagerDay';
 
 // The org's starting identity and copy name the brand from its brand file (brands/<id>/brand.json,
 // UI_RULES §129), so a re-skinned build seeds the new client's name, domain and phone, and its owner
@@ -23,40 +27,33 @@ const OWNER_INITIALS = OWNER.initials; // derived from the name by brand.mjs, as
 const OWNER_FIRST = OWNER.name.split(/\s+/)[0]; // how the seeded messages address the owner
 
 // ---------- helpers ----------
-const atTime = (daysFromToday, hours, minutes = 0) => {
-  const d = new Date();
-  d.setDate(d.getDate() + daysFromToday);
-  d.setHours(hours, minutes, 0, 0);
-  return d.toISOString();
-};
+// Seed times are composed on the ORG wall clock (Eastern — see company.timezone below,
+// which equals DEFAULT_ORG_TIMEZONE), NOT the machine's, so the demo reads the same on a
+// Pacific or an Eastern laptop and the variance "last night" window groups the same cleans
+// everywhere. (Before this, `new Date().setHours(...)` baked in the laptop zone, so an
+// Eastern org zone on a Pacific machine mis-grouped the story; test-demo-ledger-tz.mjs
+// pins it.) All wall-clock composition goes through the lib/dates org-zone helpers — no
+// hand-rolled calendar math.
+const ORG_TZ = DEFAULT_ORG_TIMEZONE;
+const hm = (h, m = 0) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+const orgToday = () => dayKey(new Date(), ORG_TZ); // the org-zone calendar day at seed-build time
 
-// Local day-key ('YYYY-MM-DD') `offset` days from today — for time-off (Called-out
-// report) dates, which the schedule buckets on the local day the same way.
-const todayKey = (offset = 0) => {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+// ISO for `daysFromToday` days from today at `hours:minutes` on the ORG wall clock.
+const atTime = (daysFromToday, hours, minutes = 0) =>
+  composeIso(addDaysKey(orgToday(), daysFromToday), hm(hours, minutes), ORG_TZ);
 
-const daysAgo = (n) => {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  d.setHours(9, 0, 0, 0);
-  return d.toISOString();
-};
+// Org-zone day-key ('YYYY-MM-DD') `offset` days from today — for time-off (Called-out
+// report) dates, which the schedule buckets on the org day the same way.
+const todayKey = (offset = 0) => addDaysKey(orgToday(), offset);
 
-const daysFromNow = (n) => {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  d.setHours(12, 0, 0, 0);
-  return d.toISOString();
-};
+// n days ago at 09:00 on the ORG wall clock (createdAt / lastServiceAt timestamps).
+const daysAgo = (n) => composeIso(addDaysKey(orgToday(), -n), '09:00', ORG_TZ);
 
-const hoursAgo = (n) => {
-  const d = new Date();
-  d.setHours(d.getHours() - n);
-  return d.toISOString();
-};
+// n days ahead at 12:00 on the ORG wall clock (expectedCloseDate).
+const daysFromNow = (n) => composeIso(addDaysKey(orgToday(), n), '12:00', ORG_TZ);
+
+// n hours before now — a pure instant offset, already machine-independent.
+const hoursAgo = (n) => new Date(Date.now() - n * 3600000).toISOString();
 
 // ---------- core ----------
 const company = {
@@ -68,8 +65,8 @@ const company = {
   // (gen-brand-images.mjs, from the brand pack's logos.lockup in brands/<id>/; the file
   // name is a kept identifier). Setting logoUrl makes the sidebar render JUST this image
   // — no gold tile, no "Clean Space / Platform" text (see Sidebar.jsx + .sidebar-brand-image).
-  logoUrl: '/cleanspace-logo.png',
-  logoMark: '/cleanspace-glyph-ink.png', // fallback only (unused while logoUrl is set)
+  logoUrl: assetUrl('/cleanspace-logo.png'),
+  logoMark: assetUrl('/cleanspace-glyph-ink.png'), // fallback only (unused while logoUrl is set)
 
   invoicePrefix: INVOICE_PREFIX,
   address: IDENTITY.company.address,
@@ -77,14 +74,15 @@ const company = {
   email: IDENTITY.company.email,
   businessHours: 'Mon–Fri 7:00 AM – 6:00 PM · 24/7 on request',
   taxRate: 0,
-  // Org timezone — anchors the variance report's "last night" / WTD..YTD windows.
-  // DEMO NOTE: intentionally Pacific to MATCH this demo laptop's local zone. Seed +
-  // ledger times are composed with new Date().setHours(...) in machine-local time
-  // (atTime/at helpers), so the org zone MUST equal the laptop zone or the "last
-  // night" window mis-groups (verified: America/New_York on this Pacific machine
-  // collapses "last night" from 6 cleans/2 flagged → 1/0). GO-LIVE: a real FL clone
-  // sets 'America/New_York' AND recomposes seed/ledger times in Eastern together.
-  timezone: 'America/Los_Angeles',
+  // Org timezone — anchors the variance report's "last night" / WTD..YTD windows and
+  // every org-zone date read. Eastern: Clean Space is an East-coast business (Daniel's
+  // call, CS-029), matching DEFAULT_ORG_TIMEZONE (lib/dates.js). The seed + demo ledger
+  // below compose their times in THIS zone via the lib/dates org-zone helpers (never the
+  // machine's), so "last night" groups the same 6 cleans / 2 flagged on a Pacific or an
+  // Eastern laptop — the old new Date().setHours(...) coupling collapsed it to 1/0 when
+  // the org zone and the laptop zone differed. Production keeps its own explicit live
+  // zone; a Super Admin sets Eastern in Settings → Company.
+  timezone: 'America/New_York',
   integrations: {
     twilio: {
       connected: false,
@@ -107,33 +105,14 @@ const company = {
         notes: '',
       },
     },
-    // System transactional email provider (Resend). Powers invitations,
-    // reminder emails, and billing. One provider per deployment, sender locked
-    // to a verified subdomain (e.g. mail.cleanspaceonline.com). Per-user emails
-    // inside Messaging come from `connectedInboxes` instead — different layer.
-    email: {
-      connected: false,
-      provider: null,             // 'resend' (room for future swaps)
-      apiKeyLast4: null,
-      verifiedDomain: null,       // e.g. 'mail.cleanspaceonline.com'
-      defaultFrom: null,          // 'Clean Space <hello@mail.cleanspaceonline.com>'
-      defaultReplyTo: null,
-      connectedAt: null,
-      lastVerifiedAt: null,
-      lastError: null,
-      // Domain verification block — analogous to twilio.a2p. DKIM records are
-      // generated by the provider on connect; the user copies them into DNS,
-      // then the Settings card polls /email/health until status flips to
-      // 'verified'.
-      domain: {
-        status: 'not_started',    // 'not_started' | 'pending' | 'verified' | 'failed'
-        dkimRecords: [],          // [{ host, type, value, status }]
-        spfStatus: null,          // 'configured' | 'missing' | 'misconfigured'
-        dmarcStatus: null,        // 'configured' | 'missing' | 'misconfigured'
-        lastCheckedAt: null,
-        failureReason: null,
-      },
-    },
+    // 🔴 NO SYSTEM EMAIL PROVIDER SLICE (CS-012, CS-039, 2026-09-29). This held a
+    // provider connection — an api key's last 4, a "verified" sending subdomain and a DKIM
+    // record set — none of which the app reads any more: email goes through Google,
+    // as the connected mailbox marked SYSTEM SENDER on the server
+    // (app/api/_lib/systemSender.js), and Settings → Integrations reads that from
+    // /api/email/health. Per-user mailboxes inside Messaging are `connectedInboxes`,
+    // a different layer. (An older blob may still carry `integrations.email` from
+    // migration v27 — vestigial, read by nothing.)
   },
 };
 
@@ -160,7 +139,10 @@ export const DEFAULT_NOTIFICATION_PREFS = {
   newLead: false, // opt-in (defaultOff in the catalog) — off until a manager enables it
   quoteSigned: true,
   supplyRequestSubmitted: true,
-  supplyRequestCompleted: true,
+  supplyRequestApproved: true,
+  supplyOrderDue: true,
+  supplyOrderOverdue: true,
+  supplyBudgetExceeded: true,
   mobilePushEnabled: true,
 };
 
@@ -200,9 +182,17 @@ const users = [
   // Manager demo persona (S35) — the new 4th tier. Defaults to full access (same as Super
   // Admin) and is pared back in Settings → Roles; seeded so the client can switch into a
   // Manager and see the tier gate the app in real time. Salaried (OT-exempt) on payroll.
-  { id: seedId('u', 'mgr1'),    name: 'Renata Cruz',     email: `renata@${BRAND_DOMAIN}`,   phone: '1-754-555-0105', role: 'manager', status: 'active', avatar: 2, initials: 'RC', createdAt: daysAgo(360), pay: { type: 'salary', salaryPerPeriod: 2800, otExempt: true }, hr: { employeeId: 'EMP-0005', hireDate: '2025-09-19', employmentType: 'full_time', ptoAllowanceDays: 18 } },
+  // S131 (plan 2026-10-14 §0): the Manager role's two LEVELS and the supply manager. Gabriel Ortiz
+  // is an Operations Manager (`managerLevel: 'operations'`); Renata and Nadia Brooks are account
+  // managers on his team (`opsManagerId`), splitting the seven active buildings (four and three);
+  // Wes Carter is the supply manager (the 5th role, supplies only). Fictional, like the rest.
+  { id: seedId('u', 'ops1'),    name: 'Gabriel Ortiz',   email: `gabriel@${BRAND_DOMAIN}`,  phone: '1-754-555-0106', role: 'manager', managerLevel: 'operations', status: 'active', avatar: 3, initials: 'GO', createdAt: daysAgo(400), pay: { type: 'salary', salaryPerPeriod: 3200, otExempt: true }, hr: { employeeId: 'EMP-0011', hireDate: '2025-08-11', employmentType: 'full_time', ptoAllowanceDays: 20 } },
+  { id: seedId('u', 'mgr1'),    name: 'Renata Cruz',     email: `renata@${BRAND_DOMAIN}`,   phone: '1-754-555-0105', role: 'manager', opsManagerId: seedId('u', 'ops1'), status: 'active', avatar: 2, initials: 'RC', createdAt: daysAgo(360), pay: { type: 'salary', salaryPerPeriod: 2800, otExempt: true }, hr: { employeeId: 'EMP-0005', hireDate: '2025-09-19', employmentType: 'full_time', ptoAllowanceDays: 18 } },
+  { id: seedId('u', 'mgr2'),    name: 'Nadia Brooks',    email: `nadia@${BRAND_DOMAIN}`,    phone: '1-754-555-0107', role: 'manager', opsManagerId: seedId('u', 'ops1'), status: 'active', avatar: 5, initials: 'NB', createdAt: daysAgo(240), pay: { type: 'salary', salaryPerPeriod: 2700, otExempt: true }, hr: { employeeId: 'EMP-0012', hireDate: '2026-01-12', employmentType: 'full_time', ptoAllowanceDays: 18 } },
+  { id: seedId('u', 'supply1'), name: 'Wes Carter',      email: `wes@${BRAND_DOMAIN}`,      phone: '1-754-555-0108', role: 'supply_manager', status: 'active', avatar: 4, initials: 'WC', createdAt: daysAgo(200), pay: { type: 'salary', salaryPerPeriod: 2300, otExempt: true }, hr: { employeeId: 'EMP-0013', hireDate: '2026-02-23', employmentType: 'full_time', ptoAllowanceDays: 15 } },
   { id: seedId('u', 'crew1'),   name: 'Andre Baptiste',  email: `andre@${BRAND_DOMAIN}`,    phone: '1-754-555-0121', role: 'crew',  status: 'active', avatar: 5, initials: 'AB', createdAt: daysAgo(300), pay: { type: 'hourly', hourlyRate: 22 }, hr: { employeeId: 'EMP-0006', hireDate: '2025-11-18', employmentType: 'full_time', ptoAllowanceDays: 15 } },
-  { id: seedId('u', 'crew2'),   name: 'Tomas Rivera',    email: `tomas@${BRAND_DOMAIN}`,    phone: '1-754-555-0122', role: 'crew',  status: 'active', avatar: 1, initials: 'TR', createdAt: daysAgo(220), pay: { type: 'hourly', hourlyRate: 20 }, hr: { employeeId: 'EMP-0007', hireDate: '2026-02-06', employmentType: 'full_time', ptoAllowanceDays: 15 } },
+  // CS-193 demo: Tomas reads the app in Spanish (users[].language — absent means 'follow the phone').
+  { id: seedId('u', 'crew2'),   name: 'Tomas Rivera',    email: `tomas@${BRAND_DOMAIN}`,    phone: '1-754-555-0122', role: 'crew',  status: 'active', avatar: 1, initials: 'TR', createdAt: daysAgo(220), pay: { type: 'hourly', hourlyRate: 20 }, hr: { employeeId: 'EMP-0007', hireDate: '2026-02-06', employmentType: 'full_time', ptoAllowanceDays: 15 }, language: 'es' },
   { id: seedId('u', 'crew3'),   name: 'Keisha Bryant',   email: `keisha@${BRAND_DOMAIN}`,   phone: '1-754-555-0123', role: 'crew',  status: 'active', avatar: 2, initials: 'KB', createdAt: daysAgo(180), pay: { type: 'hourly', hourlyRate: 21 }, hr: { employeeId: 'EMP-0008', hireDate: '2026-03-18', employmentType: 'full_time', ptoAllowanceDays: 15 } },
   { id: seedId('u', 'crew4'),   name: 'Luis Ferrer',     email: `luis@${BRAND_DOMAIN}`,     phone: '1-754-555-0124', role: 'crew',  status: 'active', avatar: 3, initials: 'LF', createdAt: daysAgo(120), pay: { type: 'per_visit', perVisitRate: 45 }, hr: { employeeId: 'EMP-0009', hireDate: '2026-05-17', employmentType: 'contractor', ptoAllowanceDays: 0 } },
   // Demo Crew — a permanent read-the-crew-view login the client can always sign
@@ -328,8 +318,11 @@ const pipelines = [
 // value replaces the old per-person dealValue; status is 'open' | 'won' | 'lost'.
 // Seeded onto the prospect companies so the board isn't empty. Active customers
 // (Las Olas, Palmetto) are already won business and are NOT put back on the board.
+// The deal in "Walkthrough Scheduled" carries its walkthrough (lib/walkthrough) but no
+// `walkthroughSetAt` stamp, like a deal from before the walkthrough confirmation: a sample is
+// never confirmed (and the send step refuses every seed record anyway).
 const opportunities = [
-  { id: seedId('opp', 'aventura'),  clientId: seedId('cl', 'aventura'),   primaryContactId: seedId('ct', 'jamiep'),  title: 'Aventura Dental. Janitorial contract',  value: 2400, pipelineId: seedId('pl', 'master'), stage: 'walkthrough', status: 'open', expectedCloseDate: daysFromNow(30), stageChangedAt: daysAgo(2),  createdAt: daysAgo(2) },
+  { id: seedId('opp', 'aventura'),  clientId: seedId('cl', 'aventura'),   primaryContactId: seedId('ct', 'jamiep'),  title: 'Aventura Dental. Janitorial contract',  value: 2400, pipelineId: seedId('pl', 'master'), stage: 'walkthrough', status: 'open', expectedCloseDate: daysFromNow(30), walkthroughAt: atTime(2, 10), walkthroughWhere: 'Front desk, 2nd floor', walkthroughSetAt: null, stageChangedAt: daysAgo(2),  createdAt: daysAgo(2) },
   { id: seedId('opp', 'northside'), clientId: seedId('cl', 'northside'),  primaryContactId: seedId('ct', 'morganns'),title: 'Northside Auto. 3-location janitorial',  value: 4500, pipelineId: seedId('pl', 'master'), stage: 'proposal',    status: 'open', expectedCloseDate: daysFromNow(10), stageChangedAt: daysAgo(1),  createdAt: daysAgo(14) },
   { id: seedId('opp', 'coralgab'),  clientId: seedId('cl', 'coralgables'),primaryContactId: seedId('ct', 'taylor'),  title: 'Coral Gables Architects. Post-construction + recurring', value: 3200, pipelineId: seedId('pl', 'master'), stage: 'negotiation', status: 'open', expectedCloseDate: daysFromNow(14), stageChangedAt: daysAgo(3),  createdAt: daysAgo(12) },
   { id: seedId('opp', 'biscayne'),  clientId: seedId('cl', 'biscayne'),   primaryContactId: seedId('ct', 'robin'),   title: 'Biscayne Harbor. Common-area cleaning',  value: 1800, pipelineId: seedId('pl', 'master'), stage: 'contacted',   status: 'open', expectedCloseDate: daysFromNow(21), stageChangedAt: daysAgo(5),  createdAt: daysAgo(8) },
@@ -353,14 +346,21 @@ const opportunities = [
 // book of business lands via CSV import ($200 add-on); this populates the UI for
 // training/handoff and exercises every entity surface.
 // primaryContactId is wired below after contacts are defined.
+// The seven active buildings are the TEAM of Gabriel Ortiz (the Operations Manager, S131): Renata
+// Cruz (u_seed_mgr1) supervises four — Las Olas, Lakeside, Coral Bay, Palmetto Ridge — and Nadia
+// Brooks (u_seed_mgr2) three — Gulfstream, Bayshore, Flagler. The manager's day
+// (data/demoManagerDay.js) runs across the team. Two buildings assign their own nine-item
+// checklists per cleaner (Palmetto Ridge's Office Nightly Clean to Keisha and Demo Crew, Las Olas's
+// Medical Office Clean to Luis and Demo Crew). v58 (store/persist migrateV57toV58) gave Renata the
+// seven in a browser seeded before; v59 (migrateV58toV59) makes the S131 split there.
 const clients = [
-  { id: seedId('cl', 'evergreen'), name: 'Las Olas Medical Group', primaryContact: 'Pat Ramirez',  primaryContactId: null, supervisorId: seedId('u', 'mgr1'), email: 'pat@lasolasmed.com',     phone: '(754) 555-0201', serviceId: svc('jan'), frequencyId: frequencies[0].id, revenue: 5400, tagIds: [tagId('vip'), tagId('commercial'), tagId('referral')], notes: '',          lastServiceAt: daysAgo(1),  createdAt: daysAgo(420) },
-  { id: seedId('cl', 'lakeside'),  name: 'Lakeside Office Park',    primaryContact: 'Morgan Choi',  primaryContactId: null, email: 'morgan@lakesideop.com',    phone: '(754) 555-0202', serviceId: svc('flr'), frequencyId: frequencies[2].id, revenue: 2200, tagIds: [tagId('net30'), tagId('commercial'), tagId('callin')], notes: '',                                                lastServiceAt: daysAgo(5),  createdAt: daysAgo(380) },
-  { id: seedId('cl', 'cascade'),   name: 'Gulfstream Logistics',       primaryContact: 'Dana Park',    primaryContactId: null, email: 'dana@gulfstreamlog.com',      phone: '(754) 555-0203', serviceId: svc('pw'), frequencyId: frequencies[3].id, revenue: 1800, tagIds: [tagId('commercial'), tagId('webform')], notes: 'Bay 3 only; gate code #4421.',                    lastServiceAt: daysAgo(18), createdAt: daysAgo(340) },
+  { id: seedId('cl', 'evergreen'), name: 'Las Olas Medical Group', primaryContact: 'Pat Ramirez',  primaryContactId: null, supervisorId: seedId('u', 'mgr1'), crewChecklists: { [seedId('u', 'crew4')]: MD_TEMPLATE_MEDICAL, [seedId('u', 'crewdemo')]: MD_TEMPLATE_MEDICAL }, email: 'pat@lasolasmed.com',     phone: '(754) 555-0201', serviceId: svc('jan'), frequencyId: frequencies[0].id, revenue: 5400, tagIds: [tagId('vip'), tagId('commercial'), tagId('referral')], notes: '',          lastServiceAt: daysAgo(1),  createdAt: daysAgo(420) },
+  { id: seedId('cl', 'lakeside'),  name: 'Lakeside Office Park',    primaryContact: 'Morgan Choi',  primaryContactId: null, supervisorId: seedId('u', 'mgr1'), email: 'morgan@lakesideop.com',    phone: '(754) 555-0202', serviceId: svc('flr'), frequencyId: frequencies[2].id, revenue: 2200, tagIds: [tagId('net30'), tagId('commercial'), tagId('callin')], notes: '',                                                lastServiceAt: daysAgo(5),  createdAt: daysAgo(380) },
+  { id: seedId('cl', 'cascade'),   name: 'Gulfstream Logistics',       primaryContact: 'Dana Park',    primaryContactId: null, supervisorId: seedId('u', 'mgr2'), email: 'dana@gulfstreamlog.com',      phone: '(754) 555-0203', serviceId: svc('pw'), frequencyId: frequencies[3].id, revenue: 1800, tagIds: [tagId('commercial'), tagId('webform')], notes: 'Bay 3 only; gate code #4421.',                    lastServiceAt: daysAgo(18), createdAt: daysAgo(340) },
   { id: seedId('cl', 'mtbaker'),   name: 'Coral Bay HOA',           primaryContact: 'Sasha Lin',    primaryContactId: null, supervisorId: seedId('u', 'mgr1'), crewChecklists: { [seedId('u', 'crew1')]: 'it_floorcare', [seedId('u', 'crew2')]: 'it_fullclean' }, email: 'sasha@coralbayhoa.org',     phone: '(754) 555-0204', serviceId: svc('win'), frequencyId: frequencies[2].id, revenue: 1100, tagIds: [tagId('referral')], notes: '',                                                lastServiceAt: daysAgo(10), createdAt: daysAgo(210) },
-  { id: seedId('cl', 'pacridge'),  name: 'Palmetto Ridge Corp',      primaryContact: 'Kim Nelson',   primaryContactId: null, supervisorId: seedId('u', 'heather'), email: 'kim@palmettoridge.com',         phone: '(754) 555-0205', serviceId: svc('jan'), frequencyId: frequencies[1].id, revenue: 3400, tagIds: [tagId('commercial'), tagId('vip'), tagId('callin')], notes: 'Security badge required; pick up at front desk.', lastServiceAt: daysAgo(3),  createdAt: daysAgo(500) },
-  { id: seedId('cl', 'olympic'),   name: 'Bayshore Senior Living',   primaryContact: 'Lee Thompson', primaryContactId: null, supervisorId: seedId('u', 'lauren'), email: 'lee@bayshoresl.com',        phone: '(754) 555-0206', serviceId: svc('rst'), frequencyId: frequencies[0].id, revenue: 2800, tagIds: [], notes: '',                                                lastServiceAt: daysAgo(0),  createdAt: daysAgo(150) },
-  { id: seedId('cl', 'salishan'),  name: 'Flagler Townhomes',      primaryContact: 'Quinn Reyes',  primaryContactId: null, email: 'quinn@flaglertownhomes.com',       phone: '(754) 555-0207', serviceId: svc('jan'), frequencyId: frequencies[1].id, revenue: 950,  tagIds: [tagId('needsquote')], notes: 'On hold. Renovation through Q2.',                lastServiceAt: daysAgo(28), createdAt: daysAgo(90) },
+  { id: seedId('cl', 'pacridge'),  name: 'Palmetto Ridge Corp',      primaryContact: 'Kim Nelson',   primaryContactId: null, supervisorId: seedId('u', 'mgr1'), crewChecklists: { [seedId('u', 'crew3')]: MD_TEMPLATE_OFFICE, [seedId('u', 'crewdemo')]: MD_TEMPLATE_OFFICE }, email: 'kim@palmettoridge.com',         phone: '(754) 555-0205', serviceId: svc('jan'), frequencyId: frequencies[1].id, revenue: 3400, tagIds: [tagId('commercial'), tagId('vip'), tagId('callin')], notes: 'Security badge required; pick up at front desk.', lastServiceAt: daysAgo(3),  createdAt: daysAgo(500) },
+  { id: seedId('cl', 'olympic'),   name: 'Bayshore Senior Living',   primaryContact: 'Lee Thompson', primaryContactId: null, supervisorId: seedId('u', 'mgr2'), email: 'lee@bayshoresl.com',        phone: '(754) 555-0206', serviceId: svc('rst'), frequencyId: frequencies[0].id, revenue: 2800, tagIds: [], notes: '',                                                lastServiceAt: daysAgo(0),  createdAt: daysAgo(150) },
+  { id: seedId('cl', 'salishan'),  name: 'Flagler Townhomes',      primaryContact: 'Quinn Reyes',  primaryContactId: null, supervisorId: seedId('u', 'mgr2'), email: 'quinn@flaglertownhomes.com',       phone: '(754) 555-0207', serviceId: svc('jan'), frequencyId: frequencies[1].id, revenue: 950,  tagIds: [tagId('needsquote')], notes: 'On hold. Renovation through Q2.',                lastServiceAt: daysAgo(28), createdAt: daysAgo(90) },
   // Prospective customers (Client-primary reshape): the former floating leads are now
   // real accounts, so every person belongs to exactly one customer. Status 'prospect'.
   { id: seedId('cl', 'aventura'),   name: 'Aventura Dental Group',      primaryContact: 'Jamie Park',   primaryContactId: seedId('ct', 'jamiep'),  email: 'jamie@aventuradental.com',   phone: '(754) 555-0301', serviceId: svc('jan'), frequencyId: frequencies[0].id, revenue: 0, tagIds: [tagId('hotlead'), tagId('needsquote'), tagId('webform')], notes: 'Inbound via website form. 4 operatories.',                 lastServiceAt: null, createdAt: daysAgo(2) },
@@ -419,10 +419,12 @@ clients.forEach((c) => {
   c.billingContactId = c.primaryContactId;
 });
 
-// Contact # (friendly sequential id), Type (Customer/Vendor), and structured
-// account address for each company. Clean Space cleans commercial accounts only,
-// so every row is a business; Sunshine Supply Co is the one Vendor (a supplier we
-// buy from, kept out of every sales view). Status (Lead/Active) stays derived.
+// Customer number (GO-2: four digits, "0001 Las Olas Medical Group"), Type
+// (Customer/Vendor), and structured account address for each company. Clean Space
+// cleans commercial accounts only, so every row is a business; Sunshine Supply Co is
+// the one Vendor (a supplier we buy from, kept out of every sales view). The seven
+// accounts under contract carry numbers, as they would from QuickBooks; the prospects
+// get theirs when they sign (the office is offered the next). Status stays derived.
 const CLIENT_ADDRESSES = [
   ['500 SE 3rd Ave',      'Fort Lauderdale', 'FL', '33301'], // Las Olas Medical Group
   ['200 E Las Olas Blvd', 'Fort Lauderdale', 'FL', '33301'], // Lakeside Office Park
@@ -439,7 +441,7 @@ const CLIENT_ADDRESSES = [
   ['300 SW 2nd St',       'Fort Lauderdale', 'FL', '33312'], // Riverwalk Brewing Co
 ];
 clients.forEach((cl, i) => {
-  cl.contactNumber = 1001 + i;
+  if (i < 7) cl.customerNumber = String(i + 1).padStart(4, '0'); // the seven active accounts: 0001…0007
   cl.type = cl.id === seedId('cl', 'sunshine') ? 'vendor' : 'customer';
   const [street, city, st, zip] = CLIENT_ADDRESSES[i] || ['', '', '', ''];
   cl.street = street; cl.city = city; cl.state = st; cl.zip = zip;
@@ -464,7 +466,16 @@ const sites = [
   { id: seedId('st', 'evgrn-main'),  clientId: clients[0].id, siteContactId: contacts[0].id, name: 'Main Hospital',    address: '500 SE 3rd Ave, Fort Lauderdale, FL 33301',    geocodedAddress: '500 SE 3rd Ave, Fort Lauderdale, FL 33301', accessNotes: 'Loading dock B after 7 PM',  lat: 26.1180, lng: -80.1373, geofenceEnabled: true,  expectedCleanMins: 120, createdAt: daysAgo(420) },
   { id: seedId('st', 'lake-main'),   clientId: clients[1].id, siteContactId: contacts[1].id, name: 'Main Campus',      address: '200 E Las Olas Blvd, Fort Lauderdale, FL 33301', accessNotes: '',                          lat: 26.1196, lng: -80.1400, geofenceEnabled: true, expectedCleanMins: 120, createdAt: daysAgo(380) },
   { id: seedId('st', 'csc-main'),    clientId: clients[2].id, siteContactId: contacts[2].id, name: 'Warehouse 1',      address: '1800 NW 22nd St, Miami, FL 33142',            accessNotes: 'Loading bay only',            lat: 25.8012, lng: -80.2345, geofenceEnabled: true, expectedCleanMins: 150, createdAt: daysAgo(340) },
-  { id: seedId('st', 'mtb-clbhs'),   clientId: clients[3].id, siteContactId: contacts[3].id, name: 'Clubhouse',        address: '120 Royal Palm Way, Boca Raton, FL 33432',    accessNotes: '',                            lat: 26.3478, lng: -80.0831, geofenceEnabled: true, expectedCleanMins: 90,  createdAt: daysAgo(210) },
+  // QR-1: the one seeded building with its areas broken out, so the "Last cleaned" line
+  // on each area (and, in Round 2, the QR code stuck to its wall) has something real to
+  // show. The ids are stable literals, not newId(), because the demo's Floor Care
+  // checklist links its section to `area_floors` — additive + default-safe, no bump.
+  { id: seedId('st', 'mtb-clbhs'),   clientId: clients[3].id, siteContactId: contacts[3].id, name: 'Clubhouse',        address: '120 Royal Palm Way, Boca Raton, FL 33432',    accessNotes: '',                            lat: 26.3478, lng: -80.0831, geofenceEnabled: true, expectedCleanMins: 90,  createdAt: daysAgo(210),
+    cleaningAreas: [
+      { id: 'area_lobby',  label: 'Lobby & entrance', instructions: 'Glass, mats, floor. Wipe the reception counter.', mediaRefs: [] },
+      { id: 'area_rest',   label: 'Restrooms',        instructions: 'Sanitize, restock, mop. Check the baby-change table.', mediaRefs: [] },
+      { id: 'area_floors', label: 'Hall & stair floors', instructions: 'Sweep, mop, detail the edges and baseboards.', mediaRefs: [] },
+    ] },
   { id: seedId('st', 'pac-tower'),   clientId: clients[4].id, siteContactId: contacts[4].id, name: 'Tower A',          address: '88 SE 6th St, Miami, FL 33131',               geocodedAddress: '88 SE 6th St, Miami, FL 33131', accessNotes: 'Front desk badge',            lat: 25.7690, lng: -80.1905, geofenceEnabled: true,  expectedCleanMins: 120, createdAt: daysAgo(500) },
   { id: seedId('st', 'oly-main'),    clientId: clients[5].id, siteContactId: contacts[5].id, name: 'Main Residence',   address: '1515 S Flagler Dr, West Palm Beach, FL 33401', accessNotes: 'Service entrance',           expectedCleanMins: 90,  createdAt: daysAgo(150) },
   { id: seedId('st', 'sal-main'),    clientId: clients[6].id, siteContactId: contacts[6].id, name: 'Common Area',      address: '900 S Congress Ave, Delray Beach, FL 33445',  accessNotes: 'On hold until Q2',            expectedCleanMins: 90,  createdAt: daysAgo(90) },
@@ -524,14 +535,12 @@ const SERIES_EVRGN = seedId('ser', 'evergreen-weekly');
 const SERIES_OLY   = seedId('ser', 'olympic-weekly');
 const SERIES_CORAL = seedId('ser', 'coralbay-weekly');
 
+// TODAY's visits are not here: they are the manager's day (data/demoManagerDay.js), placed around
+// the moment the demo is opened by lib/demoBootstrap (today-2, today-3, ck-demo, cs-today-1/2 and
+// this week's Coral Bay cover, cbay-w1, among them). What stays is fixed on the seed day: the
+// series, and the one-offs of other days.
 const jobs = [
   // One-off jobs
-  { id: seedId('j', 'today-2'), clientId: clients[1].id, siteId: siteFor('lake-main').id,  serviceId: svc('flr'), crewIds: [users[5].id],            startAt: atTime(0, 10, 0),  endAt: atTime(0, 12, 0),  status: 'in_progress', notes: '',                              seriesId: null, recurrence: null, createdAt: daysAgo(5) },
-  { id: seedId('j', 'today-3'), clientId: clients[4].id, siteId: siteFor('pac-tower').id,  serviceId: svc('jan'), crewIds: [users[6].id],            startAt: atTime(0, 13, 0),  endAt: atTime(0, 15, 0),  status: 'upcoming',    notes: '',                              seriesId: null, recurrence: null, createdAt: daysAgo(3) },
-  // Demo (#3): a finished morning clean on a checklist-bound account (Coral Bay HOA)
-  // with no checklist logged, so the checklist reminder shows on load. Ended hours ago
-  // → escalates to the account supervisor (the crew-nudge tier is unit-tested).
-  { id: seedId('j', 'ck-demo'),  clientId: clients[3].id, siteId: siteFor('mtb-clbhs').id,  serviceId: svc('jan'), crewIds: [users[7].id],            startAt: atTime(0, 8, 0),   endAt: atTime(0, 9, 30),  status: 'done',        notes: '',                              seriesId: null, recurrence: null, createdAt: daysAgo(2) },
   { id: seedId('j', 'tom-2'),   clientId: clients[3].id, siteId: siteFor('mtb-clbhs').id,  serviceId: svc('win'), crewIds: [users[5].id, users[6].id], startAt: atTime(1, 10, 30), endAt: atTime(1, 12, 0),  status: 'upcoming',    notes: 'Two cleaners — each has their own checklist.', seriesId: null, recurrence: null, createdAt: daysAgo(1) },
   { id: seedId('j', 'week-1'),  clientId: clients[4].id, siteId: siteFor('pac-tower').id,  serviceId: svc('jan'), crewIds: [users[4].id],            startAt: atTime(3, 9, 0),   endAt: atTime(3, 11, 0),  status: 'upcoming',    notes: '',                              seriesId: null, recurrence: null, createdAt: daysAgo(1) },
   { id: seedId('j', 'week-2'),  clientId: clients[2].id, siteId: siteFor('csc-main').id,   serviceId: svc('pw'), crewIds: [users[5].id],            startAt: atTime(4, 13, 0),  endAt: atTime(4, 15, 0),  status: 'upcoming',    notes: 'Loading bay pressure wash.',    seriesId: null, recurrence: null, createdAt: daysAgo(1) },
@@ -557,11 +566,6 @@ const jobs = [
   // Real missed cleans get marked via Job detail → "Mark as missed" in production.
   { id: seedId('j', 'miss-1'), clientId: clients[3].id, siteId: siteFor('mtb-clbhs').id, serviceId: svc('rst'), crewIds: [users[6].id], startAt: atTime(-4, 11, 0), endAt: atTime(-4, 12, 0), status: 'missed', notes: 'Crew was rerouted to emergency at Palmetto Ridge; rescheduled for next Tuesday.', seriesId: null, recurrence: null, createdAt: daysAgo(5) },
 
-  // TODAY — crew1 (Andre Baptiste) at the two geofence-armed sites. This is the
-  // LIVE clock-in demo path: UserSwitcher → Andre → My Day → clock in (spoof the
-  // location per DEMO_RUNBOOK to show the fence block, then override, then inside).
-  { id: seedId('j', 'cs-today-1'), clientId: clients[0].id, siteId: siteFor('evgrn-main').id, serviceId: svc('jan'), crewIds: [users[4].id], startAt: atTime(0, 10, 0),  endAt: atTime(0, 12, 0),  status: 'upcoming', notes: 'Main Hospital. Daily janitorial.', seriesId: null, recurrence: null, createdAt: daysAgo(1) },
-  { id: seedId('j', 'cs-today-2'), clientId: clients[4].id, siteId: siteFor('pac-tower').id,  serviceId: svc('jan'), crewIds: [users[4].id], startAt: atTime(0, 18, 30), endAt: atTime(0, 20, 30), status: 'upcoming', notes: 'Tower A. Evening service.',       seriesId: null, recurrence: null, createdAt: daysAgo(1) },
 
   // Edge case: a cancelled clean (client called it off). Keeps the history and the
   // 'cancelled' status without counting against variance or the missed-clean KPI.
@@ -570,15 +574,13 @@ const jobs = [
   // ── Coral Bay HOA weekly clubhouse series — the COVER demo (R8) ──────────────────
   // Coral Bay is the per-cleaner-checklist account: Andre (crew1) holds it_floorcare, Tomas
   // (crew2) holds it_fullclean (the long 10-section one). Andre is this series' REGULAR
-  // cleaner and is already called out TODAY (the same-day call-outs further down), so Tomas
-  // covers tonight: `coverFor` says who, and `checklistFor` therefore hands Tomas ANDRE's
-  // it_floorcare on this clean only, not his own it_fullclean. Next week's visit is Andre's
-  // again, untouched — the other half of the demo. `oneOff: { crew: true }` is what a
-  // single-visit crew edit leaves, so a later "this & all future" crew change skips this
-  // visit. Cleaners are named the way the Coral Bay account row above names them (seedId,
-  // not a roster index). Times avoid every other seed clean for both, so no double-book.
+  // cleaner. THIS week's visit (cbay-w1) is the manager's day's on-site visit
+  // (data/demoManagerDay.js): Andre called out today, so Tomas covers it — `coverFor` says
+  // who, and `checklistFor` hands Tomas ANDRE's it_floorcare on that clean only — and it is
+  // under way when the demo is opened. Next week's visit is Andre's again, untouched — the
+  // other half of the demo. Cleaners are named the way the Coral Bay account row above names
+  // them (seedId, not a roster index).
   { id: seedId('j', 'cbay-w0'), clientId: clients[3].id, siteId: siteFor('mtb-clbhs').id, serviceId: svc('jan'), crewIds: [seedId('u', 'crew1')], startAt: atTime(-7, 18, 0), endAt: atTime(-7, 19, 30), status: 'done',     notes: '', seriesId: SERIES_CORAL, recurrence: { frequency: 'weekly', daysOfWeek: null, endType: 'count', endCount: 8, endDate: null }, createdAt: daysAgo(40) },
-  { id: seedId('j', 'cbay-w1'), clientId: clients[3].id, siteId: siteFor('mtb-clbhs').id, serviceId: svc('jan'), crewIds: [seedId('u', 'crew2')], startAt: atTime(0, 18, 0),  endAt: atTime(0, 19, 30),  status: 'upcoming', notes: 'Tomas covering for Andre (called out).', seriesId: SERIES_CORAL, recurrence: null, oneOff: { crew: true }, coverFor: { [seedId('u', 'crew2')]: seedId('u', 'crew1') }, createdAt: daysAgo(40) },
   { id: seedId('j', 'cbay-w2'), clientId: clients[3].id, siteId: siteFor('mtb-clbhs').id, serviceId: svc('jan'), crewIds: [seedId('u', 'crew1')], startAt: atTime(7, 18, 0),  endAt: atTime(7, 19, 30),  status: 'upcoming', notes: '', seriesId: SERIES_CORAL, recurrence: null, createdAt: daysAgo(40) },
 ];
 
@@ -742,41 +744,13 @@ const messages = [
 ];
 
 // ---------- Reminder templates ----------
-// Automated customer reminders are DISABLED (Daniel, 2026-07-02) — never a
-// planned feature. The scheduler component is unmounted (see App.jsx) AND every
-// template is seeded `enabled: false`, so nothing fires even if the component is
-// ever re-mounted. Kept as scaffolding for a future deliberate rebuild if a
-// client requests it. lib/reminderScheduler.js consumes these `key` values.
-const reminderTemplates = [
-  // welcome_email has no fire trigger in the scheduler (shouldFire only handles the
-  // job-lifecycle keys), so it's seeded DISABLED — flip on only once a trigger is
-  // wired (e.g. on client creation), otherwise it's a phantom that never sends.
-  { id: seedId('rt', 'we'),  key: 'welcome_email',         channel: 'email', subject: `Welcome to ${BRAND_NAME}`,   body: `Hi {client_contact},\n\nWelcome aboard. We're glad to have you as a client. You'll receive a confirmation the day before each cleaning, and we'll check in after your first visit.\n\nQuestions? Reply to this email or call us at ${BRAND_PHONE}.\n\nThe ${BRAND_NAME} team`, enabled: false  },
-  { id: seedId('rt', 'bc'),  key: 'booking_confirmation',  channel: 'email', subject: 'Your cleaning is booked',                  body: "Hi {client_contact}, your {service} at {site_name} is booked for {date} at {time}.\n\n{company}",                                                                                                                                                                                                                                                  enabled: false  },
-  { id: seedId('rt', 'r24'), key: 'reminder_24h',          channel: 'sms',   subject: '',                                         body: "Reminder: {company} will be at {site_name} tomorrow at {time} for {service}.",                                                                                                                                                                                                                                                                  enabled: false  },
-  { id: seedId('rt', 'doe'), key: 'day_of_eta',            channel: 'sms',   subject: '',                                         body: "Reminder: {company} is scheduled at {site_name} today at {time} for your {service}.",                                                                                                                                                                                                                                                             enabled: false  },
-  { id: seedId('rt', 'fcr'), key: 'post_service',          channel: 'email', subject: 'How did your first clean go?',             body: `Hi {client_contact},\n\nThanks for letting {company} handle {site_name} today. We hope it went well! We always like to check in after a first visit. Reply with anything we should adjust for the next time, and we'll make sure your crew sees it.\n\nThe ${BRAND_NAME} team`,                                                                       enabled: false  },
-];
-
-// Past reminder events for triage realism.
-const reminderEvents = (() => {
-  const evts = [];
-  const tplKeys = reminderTemplates.map((t) => t.key);
-  for (let i = 0; i < 28; i += 1) {
-    const ageDays = 30 - i;
-    evts.push({
-      id: seedId('re', `e${i}`),
-      templateKey: tplKeys[i % tplKeys.length],
-      jobId: jobs[i % jobs.length].id,
-      clientId: jobs[i % jobs.length].clientId,
-      channel: i % 2 === 0 ? 'sms' : 'email',
-      status: i % 13 === 0 ? 'failed' : 'sent',
-      sentAt: daysAgo(ageDays),
-      readAt: ageDays > 7 ? daysAgo(ageDays - 1) : null,
-    });
-  }
-  return evts;
-})();
+// Every customer message's template, from THE catalog (lib/customerMessages.js): Matt's approved
+// wording as the default text, switched ON (approved = on, Daniel 2026-10-19) — except the welcome
+// email, whose wording Matt left notes on and which has no send trigger. Nothing here sends: the
+// demo has no mailbox and no Twilio, and the reminders cron refuses every seed record anyway
+// (api/_lib/customerMessages/send.js). Production gets these through the release data-op
+// (app/scripts/dataop-approved-messages.mjs), never from this file.
+const reminderTemplates = DEFAULT_REMINDER_TEMPLATES.map((t) => ({ ...t }));
 
 const contactActivities = [];
 const userPermissionOverrides = [];
@@ -953,106 +927,50 @@ const oauthWorkspaces = [
   },
 ];
 
-// Sample per-user mailboxes attributed to the primary Workspace so the
-// super-admin org-wide roll-up + each user's Connected Inboxes page render
-// populated in the demo. Real deployments start empty (see BLANK_BUSINESS_DATA).
-const seedInboxUser = (re, fallbackIdx) =>
-  (users.find((u) => re.test(u.name) || re.test(u.email)) || users[fallbackIdx] || users[0]);
-const _kyle = users[0];
-const _heather = seedInboxUser(/heather/i, 1);
-const _lauren = seedInboxUser(/lauren/i, 2);
-const connectedInboxes = [
-  {
-    id: 'ci_seed_kyle', userId: _kyle.id, provider: 'google',
-    email: _kyle.email, displayName: _kyle.name, status: 'active',
-    workspaceId: 'ws_seed_primary', connectedAt: daysAgo(110),
-    lastSyncAt: null, lastError: null, isDefault: true,
-    smtpHost: null, smtpPort: null, smtpSecurity: null,
-    imapHost: null, imapPort: null, imapSecurity: null,
-    inboundCapability: 'gmail_poll', inboundEnabled: true,
-  },
-  {
-    id: 'ci_seed_heather', userId: _heather.id, provider: 'google',
-    email: _heather.email, displayName: _heather.name, status: 'active',
-    workspaceId: 'ws_seed_primary', connectedAt: daysAgo(64),
-    lastSyncAt: null, lastError: null, isDefault: true,
-    smtpHost: null, smtpPort: null, smtpSecurity: null,
-    imapHost: null, imapPort: null, imapSecurity: null,
-    inboundCapability: 'gmail_poll', inboundEnabled: true,
-  },
-  {
-    id: 'ci_seed_lauren', userId: _lauren.id, provider: 'google',
-    email: _lauren.email, displayName: _lauren.name, status: 'active',
-    workspaceId: 'ws_seed_primary', connectedAt: daysAgo(40),
-    lastSyncAt: null, lastError: null, isDefault: true,
-    smtpHost: null, smtpPort: null, smtpSecurity: null,
-    imapHost: null, imapPort: null, imapSecurity: null,
-    inboundCapability: 'gmail_poll', inboundEnabled: true,
-  },
-];
+// 🔴 NO SEEDED MAILBOXES (CS-116, 2026-09-29). This used to seed three
+// `ci_seed_*` rows so the Connected Inboxes page and the super-admin roll-up
+// rendered populated. They were PHANTOMS: no `inbox_accounts` row exists behind
+// them, so every send through one failed and the Messaging email channel looked
+// connected while it could not send. A mailbox is real only once the Google OAuth
+// flow has stored a refresh token server-side, so the only honest seed is none —
+// the screens show their empty state and a Connect button.
+const connectedInboxes = [];
 
-// ---------- Supplies (S58) ----------
-// Per-LOCATION approved-supply catalog (supplyItems) + the request queue
-// (supplyRequests). "Location" is the customer (one location per customer). A
-// supervisor requests approved items by qty; the office marks the batch complete.
-// Request LINES snapshot name + unitPrice at submit, so a later catalog edit never
-// rewrites a submitted request (money-per-record law). unitPrice is DOLLARS
-// (round2); `unit` is a free label ('' reads as "each"). Additive, default-safe
-// slices ([] when absent) — NO store-version bump. Seeded for two accounts whose
-// supervisors are on the roster (Las Olas → Renata; Palmetto Ridge → Yolanda) so
-// the queue + Approved-items tab render populated on a fresh load / ?demo=reset.
-const supplyItems = [
-  // Las Olas Medical Group (supervisor: Renata Cruz)
-  { id: seedId('si', 'lomg-glass'),  clientId: seedId('cl', 'evergreen'), name: 'Glass cleaner 32 oz',        unit: 'each',         unitPrice: 6.80,  createdAt: daysAgo(200) },
-  { id: seedId('si', 'lomg-disin'),  clientId: seedId('cl', 'evergreen'), name: 'Disinfectant concentrate',   unit: 'gallon',       unitPrice: 24.50, createdAt: daysAgo(200) },
-  { id: seedId('si', 'lomg-liner'),  clientId: seedId('cl', 'evergreen'), name: 'Trash liners 33 gal',        unit: 'case of 250',  unitPrice: 32.90, createdAt: daysAgo(200) },
-  { id: seedId('si', 'lomg-towel'),  clientId: seedId('cl', 'evergreen'), name: 'Paper towels',               unit: 'case of 12',   unitPrice: 28.40, createdAt: daysAgo(200) },
-  { id: seedId('si', 'lomg-tp'),     clientId: seedId('cl', 'evergreen'), name: 'Toilet paper',               unit: 'case of 36',   unitPrice: 41.20, createdAt: daysAgo(200) },
-  { id: seedId('si', 'lomg-glove'),  clientId: seedId('cl', 'evergreen'), name: 'Nitrile gloves (L)',         unit: 'box of 100',   unitPrice: 11.90, createdAt: daysAgo(200) },
-  { id: seedId('si', 'lomg-cloth'),  clientId: seedId('cl', 'evergreen'), name: 'Microfiber cloths',          unit: 'pack of 24',   unitPrice: 14.60, createdAt: daysAgo(200) },
-  { id: seedId('si', 'lomg-floor'),  clientId: seedId('cl', 'evergreen'), name: 'Neutral floor cleaner',      unit: 'gallon',       unitPrice: 19.80, createdAt: daysAgo(200) },
-  { id: seedId('si', 'lomg-soap'),   clientId: seedId('cl', 'evergreen'), name: 'Hand soap refill',           unit: 'each',         unitPrice: 9.40,  createdAt: daysAgo(200) },
-  // Palmetto Ridge Corp (supervisor: Yolanda Reyes)
-  { id: seedId('si', 'prc-glass'),   clientId: seedId('cl', 'pacridge'),  name: 'Glass cleaner 32 oz',        unit: 'each',         unitPrice: 6.80,  createdAt: daysAgo(160) },
-  { id: seedId('si', 'prc-liner'),   clientId: seedId('cl', 'pacridge'),  name: 'Trash liners 33 gal',        unit: 'case of 250',  unitPrice: 32.90, createdAt: daysAgo(160) },
-  { id: seedId('si', 'prc-towel'),   clientId: seedId('cl', 'pacridge'),  name: 'Paper towels',               unit: 'case of 12',   unitPrice: 28.40, createdAt: daysAgo(160) },
-  { id: seedId('si', 'prc-glove'),   clientId: seedId('cl', 'pacridge'),  name: 'Nitrile gloves (L)',         unit: 'box of 100',   unitPrice: 11.90, createdAt: daysAgo(160) },
-  { id: seedId('si', 'prc-urinal'),  clientId: seedId('cl', 'pacridge'),  name: 'Urinal screens',             unit: 'pack of 10',   unitPrice: 18.30, createdAt: daysAgo(160) },
-  { id: seedId('si', 'prc-floor'),   clientId: seedId('cl', 'pacridge'),  name: 'Neutral floor cleaner',      unit: 'gallon',       unitPrice: 19.80, createdAt: daysAgo(160) },
-  { id: seedId('si', 'prc-soap'),    clientId: seedId('cl', 'pacridge'),  name: 'Hand soap refill',           unit: 'each',         unitPrice: 9.40,  createdAt: daysAgo(160) },
+
+// SUP-7 (b) / SUP-10 ★a (Matt, 2026-09-29): "a field where we can enter the estimated budget
+// for the building. As we order the items which have prices, it goes against the budget... the
+// account is flagged as over budget for supplies." Stamped here rather than inline in the
+// 40-row customer table (one very long line per customer), and only on the two accounts that
+// have supply lists at all. Palmetto Ridge's budget sits BELOW what it takes delivery of in a
+// month (the manager's day keeps one delivery inside the current month, data/demoStubs.js
+// buildManagerDayStubs), so the over-budget flag is visible whatever the date; Las Olas is
+// comfortably under. Additive + default-safe (lib/supplies supplyBudgetFor reads a missing field as "no
+// budget"), so NO store-version bump.
+const SEEDED_SUPPLY_BUDGETS = [
+  { clientId: seedId('cl', 'evergreen'), supplyBudgetMonthly: 400, supplyOrderDayOfMonth: 1 },
+  { clientId: seedId('cl', 'pacridge'),  supplyBudgetMonthly: 90,  supplyOrderDayOfMonth: 20 },
 ];
-const supplyRequests = [
-  {
-    id: seedId('sr', 'lomg-open'), clientId: seedId('cl', 'evergreen'),
-    requestedByUserId: seedId('u', 'mgr1'), status: 'open',
-    note: 'Out of glass cleaner by Friday.',
-    lines: [
-      { itemId: seedId('si', 'lomg-glass'), name: 'Glass cleaner 32 oz', qty: 4, unitPrice: 6.80 },
-      { itemId: seedId('si', 'lomg-liner'), name: 'Trash liners 33 gal', qty: 2, unitPrice: 32.90 },
-      { itemId: seedId('si', 'lomg-towel'), name: 'Paper towels',        qty: 1, unitPrice: 28.40 },
-    ],
-    createdAt: daysAgo(1), completedAt: null, completedByUserId: null,
-  },
-  {
-    id: seedId('sr', 'prc-done'), clientId: seedId('cl', 'pacridge'),
-    requestedByUserId: seedId('u', 'heather'), status: 'completed',
-    note: '',
-    lines: [
-      { itemId: seedId('si', 'prc-floor'), name: 'Neutral floor cleaner', qty: 2, unitPrice: 19.80 },
-      { itemId: seedId('si', 'prc-towel'), name: 'Paper towels',          qty: 2, unitPrice: 28.40 },
-    ],
-    createdAt: daysAgo(6), completedAt: daysAgo(5), completedByUserId: seedId('u', 'kyler'),
-  },
-];
+for (const row of SEEDED_SUPPLY_BUDGETS) {
+  const c = clients.find((x) => x.id === row.clientId);
+  if (c) { c.supplyBudgetMonthly = row.supplyBudgetMonthly; c.supplyOrderDayOfMonth = row.supplyOrderDayOfMonth; }
+}
 
 // Default current user is Matt (super admin). Switcher in UI changes this.
 const currentUserId = users[0].id;
 
 export const INITIAL_STATE = {
+  // v60 (CS-858): the Operations Manager's own permission column — a saved matrix row naming the
+  // manager names it too (lib/roles withOpsManagerColumn). Lockstep with persist.js STORAGE_KEY
+  // (pp.store.v60) + migrateV59toV60.
+  // v59 (S131): the Operations Manager's team — Gabriel Ortiz leads Renata Cruz and Nadia Brooks,
+  // who split the seven active buildings, and Wes Carter is the supply manager. Lockstep with
+  // persist.js STORAGE_KEY (pp.store.v59) + migrateV58toV59.
+  // v58: the manager's book — Renata supervises the seven active buildings, and Palmetto Ridge
+  // and Las Olas assign their own checklists per cleaner (the manager's day, 2026-10-09).
+  // Lockstep with persist.js STORAGE_KEY (pp.store.v58) + migrateV57toV58.
   // v57: the location-wide default checklist is retired (R3) — the customer field that
   // held it is gone, and a checklist reaches a cleaner only through crewChecklists.
-  // Lockstep with persist.js STORAGE_KEY (pp.store.v57) + migrateV56toV57.
-  version: 57,
+  version: 60,
   company,
   currentUserId,
   users,
@@ -1072,7 +990,6 @@ export const INITIAL_STATE = {
   conversations,
   messages,
   reminderTemplates,
-  reminderEvents,
   // Client review layer (shared): the client's sign-offs on the build — per-nav
   // "in review / approved" markers, per-draft accept/changes/note, and design-decision
   // "picks" (Dashboard + Payroll layout choices) with notes. Lives in org_state so
@@ -1091,12 +1008,12 @@ export const INITIAL_STATE = {
   activePipelineId: pipelines[0].id,
   opportunities,
   invitations: [],
-  // Two same-day call-outs against today's scheduled cleans (Andre users[5] + Keisha
-  // users[7] are on today's board) so Reports › Called out has real data. A call-out
-  // is a time-off entry booked for today (HR › PTO / a team member's Time-off card).
+  // Call-outs, so Reports › Called out has real data. A call-out is a time-off entry booked
+  // for the day (HR › PTO / a team member's Time-off card). TODAY's — Andre, sick, off his
+  // Gulfstream deep clean — is the manager's day's (data/demoManagerDay.js, placed with today's
+  // visits); Keisha's family emergency was two days ago (she is on today's board).
   timeOff: [
-    { id: seedId('to', 'andre-out'), userId: users[5].id, startDate: todayKey(), endDate: todayKey(), reason: 'Called out sick', kind: 'callout', createdBy: users[0].id, createdAt: atTime(0, 7, 10) },
-    { id: seedId('to', 'keisha-out'), userId: users[7].id, startDate: todayKey(), endDate: todayKey(), reason: 'Family emergency', kind: 'callout', createdBy: users[0].id, createdAt: atTime(0, 6, 45) },
+    { id: seedId('to', 'keisha-out'), userId: users[7].id, startDate: todayKey(-2), endDate: todayKey(-2), reason: 'Family emergency', kind: 'callout', createdBy: users[0].id, createdAt: atTime(-2, 6, 45) },
   ],
   // Per-user mailbox connections for the email channel inside Messaging
   // (Phase 3 of the email build). Each row pairs a userId with a provider
@@ -1121,7 +1038,6 @@ export const INITIAL_STATE = {
   // ---------- Keys (check-in / check-out) ----------
   keys,
   keyEvents,
-  reviews: { indeedActual: 0 },
   // ---------- Operations / Swept replacement (v49 ops) ----------
   // Per-account ops config (security, cleaning instructions, expected time,
   // standing crew, geofence, day/night shifts) rides on the client/site objects
@@ -1150,17 +1066,43 @@ export const INITIAL_STATE = {
     // ---------- Payroll config (additive, default-safe; readers hard-default) ----------
     otMultiplier: 1.5,              // OT pay = OT hours × rate × this (US FLSA 1.5×)
     payPeriodCadence: 'semimonthly', // 'weekly' | 'biweekly' | 'semimonthly' (1st–15th, 16th–end-of-month) — Clean Space runs semi-monthly; weekly 40h OT is day-attributed across the split (lib/payroll payrollByUserClipped)
-    payWeekStartDay: 0,             // 0 = Sunday (matches the hours engine default)
+    payWeekStartDay: 0,             // 0 = Sunday — the 40h OT week AND where a weekly/biweekly period begins (PAY-19, Matt ★a); settable in Settings > Operations, frozen once a run closes
+    // PAY-2 (Matt, 2026-09-29): "semi monthly 1 to 15 on the 20th and 16 to 31 on the 5th of the
+    // new month." The PAYDAY, not the period — shown on the run, its close dialog and the
+    // exported file's name (lib/payroll payDateKeyFor). Additive + default-safe (PAY_DATE_DEFAULTS
+    // hard-defaults the same values), so NO store-version bump.
+    payDateSemiFirstHalfDay: 20,    // the 1st–15th pays on the 20th of the SAME month
+    payDateSemiSecondHalfDay: 5,    // the 16th–end pays on the 5th of the NEXT month
+    payDateDaysAfterPeriodEnd: 5,   // weekly / biweekly: days after the period ends
     payDriveTime: true,             // paid drive time between jobs counts toward paid hours
     // ---------- Operational alerts / reminders config (additive, default-safe) ----------
     // Tunable in Settings > Operations. Readers hard-default via lib/opsAlerts, so an
     // older blob without these keys still behaves; NO store-version bump.
-    lateAlertGraceMins: 10,         // #2: minutes past scheduled start with no clock-in → "late"
-    missedShiftGraceMins: 15,       // #2: minutes past scheduled end with no clock-in → "missed"
+    // 🔴 ALR-11 (Matt, 2026-09-30): "One alert 30 minutes after the start with no clock-in:
+    // that's a missed shift, and the supervisor gets a notification and a text." ONE mark,
+    // timed off the START — it replaced a "late" alert at start+10 and a "missed" one at
+    // END+15. Everything that counts a missed clean reads this: the alert walker, the
+    // Dashboard KPI (isMissedClean) and the attendance report's "No punch".
+    missedAfterStartMins: 30,
     shiftAlertLookbackHours: 24,    // #2: only shifts this recent can alert (back-blast guard)
-    checklistReminderGraceMins: 60, // #3: after start with no checklist logged → nudge the crew
+    // ALR-10 (Matt, 2026-09-29): the cleaner's checklist nudge goes out this many minutes
+    // BEFORE the scheduled end ("one hour before their shift ends… or they won't be able to
+    // clock out"). REPLACED `checklistReminderGraceMins` (after the START), II.5.
+    checklistReminderBeforeEndMins: 60,
     checklistEscalateGraceMins: 60, // #3: after end with still no checklist → escalate to supervisor
-    inspectionReminderDays: 14,     // #3: an account not inspected within this many days is due
+    inspectionReminderDays: 14,     // #3: the ORG default inspection interval; a customer may carry its own `inspectionIntervalDays` (ALR-9)
+    // WO-14 (Matt, 2026-09-29): an account is FLAGGED once its tickets in the last 30 days
+    // reach this many (his answer note said 10). The window is fixed at 30 days; only the
+    // count is tunable (lib/workOrders TICKET_FLAG_DAYS / ticketFlagThreshold).
+    ticketFlagCount30d: 10,
+    // SUP-8 (Matt, 2026-09-29): the day of the month a building should order supplies on —
+    // the ORG default; a building may carry its own `supplyOrderDayOfMonth`. Capped at 28 so
+    // every month has the day (lib/supplies MAX_SUPPLY_ORDER_DAY).
+    supplyOrderDayOfMonth: 1,
+    // SUP-9 ★a: who approves a supply request. null = the BUILDING'S SUPERVISOR (the default
+    // while Matt's follow-up is open); a user id names one person for the whole org instead,
+    // so his answer lands as a settings change.
+    supplyApproverUserId: null,
   },
   // One-off pay lines (bonus / reimbursement / tip / deduction), keyed per user +
   // pay-period start day. Additive, default-safe ([] when absent) — NO store-version
@@ -1184,11 +1126,6 @@ export const INITIAL_STATE = {
   // reminders land here too). Deterministic ids (lib/opsAlerts.opsAlertId) make each
   // fire at most once. Additive, default-safe ([] when absent) — NO store-version bump.
   opsAlertEvents: [],
-  // ---------- Supplies (S58) ----------
-  // Per-location approved catalog + the request queue. Additive, default-safe ([] when
-  // absent) — NO store-version bump. See lib/supplies.js + brain/modules/supplies.md.
-  supplyItems,
-  supplyRequests,
 };
 
 // Empty operational/business data — everything a brand-new live org should NOT
@@ -1222,12 +1159,7 @@ const BLANK_BUSINESS_DATA = {
   marketingSuppressions: [],
   keys: [],
   keyEvents: [],
-  reviews: { indeedActual: 0 },
   accountMedia: [],
-  // Supplies (S58): a real deployment starts with no approved lists or requests —
-  // the office builds each location's list in-app. Config lists nothing to keep.
-  supplyItems: [],
-  supplyRequests: [],
 };
 
 // First-login seed for a real (authed) deployment: KEEPS team + logins/roles,

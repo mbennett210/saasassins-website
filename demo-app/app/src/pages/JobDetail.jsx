@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useFromHere } from '../hooks/useFromHere';
-import { useDispatch, useStore, useJobsHydrated } from '../store';
+import { useDispatch, useStore, useJobsLoader, useSeriesJobs } from '../store';
 import { ACTIONS } from '../store/reducer';
 import {
   selectJobById, selectClientById, selectSiteById, selectServiceById, selectUsers, selectContactById,
@@ -29,6 +29,8 @@ import CleaningAreasEditor from '../components/CleaningAreasEditor';
 import MediaGallery from '../components/MediaGallery';
 import CrewJobVisit from '../components/CrewJobVisit';
 import ScheduleBlocksEditor from '../components/ScheduleBlocksEditor';
+import { linkedCleanerIds } from '../lib/worksAt';
+import CrewPicker from '../components/CrewPicker';
 import AccountNotesPanel from '../components/AccountNotesPanel';
 import CleanChecklist from '../components/CleanChecklist';
 import { fmtDate, fmtDateLong, fmtTimeRange, splitIso, composeIso, composeEndIso, dayOfWeekIso, normalizeHm, isStrictHm } from '../lib/dates';
@@ -39,8 +41,15 @@ import * as securityApi from '../lib/securityApi';
 import { jobGrantsSiteAccess, statusChangeKept, CODE_REVEAL_WINDOW } from '../lib/siteAccess';
 import * as timeApi from '../lib/timeApi';
 import { laborOnJob } from '../lib/timeCancel';
+import { useT } from '../i18n/react';
 
+// The status's English drives the badge colour (statusBadgeVariant); what shows is the
+// catalog line in the reader's language (CS-193 — the clean's page is a cleaner screen).
 const STATUS_LABEL = { upcoming: 'Upcoming', in_progress: 'In Progress', done: 'Done', cancelled: 'Cancelled', missed: 'Missed' };
+const STATUS_KEYS = {
+  upcoming: 'jobPage.status.upcoming', in_progress: 'jobPage.status.in_progress', done: 'jobPage.status.done',
+  cancelled: 'jobPage.status.cancelled', missed: 'jobPage.status.missed',
+};
 
 // Field actions on the Details card (mobile). `mapsDir` deep-links the site address
 // into turn-by-turn directions via Google Maps' universal cross-platform URL (opens
@@ -51,6 +60,11 @@ const telHref = (phone) => `tel:${String(phone).replace(/[^\d+]/g, '')}`;
 const smsHref = (phone) => `sms:${String(phone).replace(/[^\d+]/g, '')}`;
 
 export default function JobDetail() {
+  // LANGUAGES (CS-193): what a CLEANER reads here — the header, Details, Service
+  // instructions, the series list — is the catalog's, in their language. The office's edit
+  // form, the series editing notes and the delete / cancel prompts are not translated yet.
+  const t = useT();
+  const statusText = (s) => (STATUS_KEYS[s] ? t(STATUS_KEYS[s]) : s);
   const { jobId } = useParams();
   const state = useStore();
   const dispatch = useDispatch();
@@ -71,7 +85,7 @@ export default function JobDetail() {
   // Crew open a clean from My Day (they can't see the Schedule list), so their
   // back link returns there; managers go back to the Schedule.
   const backTo = canEdit ? '/schedule' : '/my-day';
-  const backLabel = canEdit ? 'Schedule' : 'My Day';
+  const backLabel = canEdit ? t('jobPage.backSchedule') : t('jobPage.backMyDay');
   const [showPhotos, setShowPhotos] = useState(false);
 
   const job = selectJobById(state, jobId);
@@ -87,11 +101,22 @@ export default function JobDetail() {
   const siteContact = site?.siteContactId ? selectContactById(state, site.siteContactId) : null;
   const users = selectUsers(state);
 
+  // A clean opened by a link may start outside the jobs window the app holds (CS-676): ask the
+  // table for it by id before saying it does not exist.
+  const jobsLoader = useJobsLoader();
+  const [lookedUp, setLookedUp] = useState(null); // the id the table was asked for and answered
+  useEffect(() => {
+    if (job || !jobId) return undefined;
+    let alive = true;
+    jobsLoader.ensureIds([jobId]).catch(() => {}).finally(() => { if (alive) setLookedUp(jobId); });
+    return () => { alive = false; };
+  }, [jobsLoader, jobId, job]);
   const seriesJobs = job?.seriesId ? selectSeriesJobs(state, job.seriesId) : [];
   const seriesMaster = job?.seriesId ? selectSeriesMaster(state, job.seriesId) : null;
-  // Whole-series operations need the FULL job set, not the boot window — see the note on
-  // SeriesScopeModal below. Same flag Schedule gates TOP_UP on, for the same reason.
-  const jobsHydrated = useJobsHydrated();
+  // Whole-series operations need EVERY occurrence of the series, not the jobs window — see
+  // the note on SeriesScopeModal below. Opening a series visit loads its series (by id, never
+  // the table); the "Visits in this series" list and the delete summary read it too.
+  const seriesLoad = useSeriesJobs(job?.seriesId || null);
   // The master is what resolves the DEFAULT block's days + times. Passing it is what
   // makes the summary name every block instead of only the days that carry an
   // override — see the asymmetry note on seriesBlocksOf.
@@ -173,13 +198,13 @@ export default function JobDetail() {
       if (securityApi.isSecurityStub()) {
         const cipher = which === 'alarm' ? siteSec.alarmCodeCipher : siteSec.doorCodeCipher;
         code = typeof cipher === 'string' ? cipher.replace(/^STUB:/, '') : null;
-        if (!code) { toast.error('No code set'); return; }
+        if (!code) { toast.error(t('jobPage.noCode')); return; }
       } else {
         code = await securityApi.revealCode({ siteId: site.id, which });
       }
       setRevealedCodes((r) => ({ ...r, [which]: code }));
       setTimeout(() => setRevealedCodes((r) => { const n = { ...r }; delete n[which]; return n; }), 20000);
-    } catch (e) { toast.error(e.message || 'Could not reveal the code'); }
+    } catch (e) { toast.error(t.lang === 'en' && e.message ? e.message : t('jobPage.revealFailed')); }
   };
   const tagOptions = (state.tags || []).filter((t) => t.scope === 'client' || t.scope === 'all');
   const fmtMins = (m) => { const h = Math.floor(m / 60), mm = m % 60; return h ? (mm ? `${h}h ${mm}m` : `${h}h`) : `${mm}m`; };
@@ -268,7 +293,7 @@ export default function JobDetail() {
   if (!job) {
     return (
       <div style={{ padding: 32 }}>
-        <DetailHeader backTo="/schedule" title="Job not found" />
+        <DetailHeader backTo="/schedule" title={lookedUp === jobId ? t('jobPage.notFound') : t('jobsLoad.job')} />
       </div>
     );
   }
@@ -282,17 +307,25 @@ export default function JobDetail() {
   if (!isMine) {
     return (
       <div style={{ padding: 32 }}>
-        <DetailHeader backTo={backTo} backLabel={backLabel} title="Not your clean" />
-        <p className="text-muted" style={{ padding: '4px 8px' }}>This clean isn’t assigned to you.</p>
+        <DetailHeader backTo={backTo} backLabel={backLabel} title={t('jobPage.notYours')} />
+        <p className="text-muted" style={{ padding: '4px 8px' }}>{t('jobPage.notYoursBody')}</p>
       </div>
     );
   }
   const currentForm = form || initial;
+  // Who can be put on a clean: every active team member (the edit form's CrewPicker and the
+  // series block editor).
+  const activeCrew = users.filter((u) => u.status === 'active');
+  // The cleaners who work at this clean's customer lead the crew pickers, after those picked (lib/worksAt).
+  const preferCrew = linkedCleanerIds(users, currentForm.clientId || job.clientId);
   // View mode shows the EFFECTIVE crew (explicit picks + standing coverage) so a
   // standing-crew-covered job never reads "—"; the edit picker stays explicit.
   const effectiveCrew = selectEffectiveCrewForJob(state, job);
   // Geofence clock context (site coords + radius + names) for the crew visit timeline.
   const clockCtx = isCrew ? selectClockContextForJob(state, job, currentUser?.id) : null;
+  // The conflict banner (CS-693): a cleaner reads their OWN conflicts, in the second person —
+  // "You're booked off this day…" — and not a coworker's time off; the office reads everyone's.
+  const shownConflicts = isCrew ? conflicts.filter((c) => c.userId === currentUser?.id) : conflicts;
   // True when this series runs genuinely different crews/times across its days, so
   // the per-day breakdown renders (below) — the ONE place the whole roster is shown.
   // The occurrence carries only its own day's crew (correct: a Mon cleaner doesn't
@@ -319,7 +352,7 @@ export default function JobDetail() {
   // cover and among whom (`lib/jobCover.coverCandidates`): a cover is anyone on the visit
   // who is not one of the day's REGULARS, and the options are the regulars who are not on
   // it — so it fires both when the edit swaps a cleaner out and when a regular was already
-  // taken off by a time-off booking (`APPLY_TIME_OFF_EXCLUSIONS` removes them from crewIds
+  // taken off by a time-off booking (`ADD_TIME_OFF { removeFromCleans }` removes them from crewIds
   // but they are still the day's regular).
   //
   // 🔴 `coverRegulars === null` is the windowed-boot guard. For a SERIES visit the day's
@@ -336,7 +369,7 @@ export default function JobDetail() {
   // (C4): its regulars are the crew it was SAVED with when this edit began, plus anyone a
   // time-off booking took off THIS clean — the booking records the job ids it covered
   // (`timeOff[].scheduledJobIds`), which is how the exclusion's victim is still known to
-  // have been a regular of it after `APPLY_TIME_OFF_EXCLUSIONS` removed them from crewIds.
+  // have been a regular of it after the booking's `removeFromCleans` took them off crewIds.
   const coverRegulars = (() => {
     if (job.seriesId) {
       return seriesMaster?.recurrence
@@ -351,7 +384,7 @@ export default function JobDetail() {
     return [...new Set([...base, ...bookedOff])];
   })();
   const coverKnown = coverRegulars !== null;
-  const crewName = (id) => users.find((u) => u.id === id)?.name || 'Unknown';
+  const crewName = (id) => users.find((u) => u.id === id)?.name || t('jobPage.someone');
   // The DRAFT may hold '' for "explicitly not covering", which is why the control reads it
   // before the pre-fill: on a 1-for-1 swap the pre-fill is the other cleaner, and deriving
   // the displayed value from the pre-fill alone made clearing the choice impossible.
@@ -360,7 +393,7 @@ export default function JobDetail() {
     regularCrewIds: coverRegulars || [],
     crewIds: currentForm.crewIds,
     coverFor: coverDraft,
-    activeIds: users.filter((u) => u.status === 'active').map((u) => u.id),
+    activeIds: activeCrew.map((u) => u.id),
   });
   const coverValueFor = (id) => ((id in coverDraft) ? (coverDraft[id] || '') : (cover.prefill[id] || ''));
   // Show the control whenever there is something to choose OR something already chosen —
@@ -385,8 +418,16 @@ export default function JobDetail() {
   // with stale values — and saving wrote them back over the newer ones.
   const beginEdit = () => { setForm(initial); setEditBaseline(initial); setEditing(true); };
 
+  // A series visit asks "just this one, or all future?" — also while its series is still
+  // loading (only the loaded visits are counted, so "one visit" isn't known yet); a failed
+  // load is asked again as the prompt opens.
+  const asksSeriesScope = () => {
+    if (!job.seriesId) return false;
+    if (seriesLoad.error) seriesLoad.retry();
+    return seriesJobs.length > 1 || !seriesLoad.ready;
+  };
   const handleEditClick = () => {
-    if (job.seriesId && seriesJobs.length > 1) {
+    if (asksSeriesScope()) {
       setShowSeriesChoice('edit');
     } else {
       setEditScope('single');
@@ -397,7 +438,7 @@ export default function JobDetail() {
   };
 
   const handleDeleteClick = () => {
-    if (job.seriesId && seriesJobs.length > 1) setShowSeriesChoice('delete');
+    if (asksSeriesScope()) setShowSeriesChoice('delete');
     else setConfirmDelete(true);
   };
 
@@ -608,9 +649,9 @@ export default function JobDetail() {
       <DetailHeader
         backTo={backTo}
         backLabel={backLabel}
-        title={`${service?.name || 'Job'}${client ? `. ${client.name}` : ''}`}
+        title={`${service?.name || t('jobPage.aJob')}${client ? `. ${client.name}` : ''}`}
         subtitle={`${fmtDateLong(job.startAt)} · ${fmtTimeRange(job.startAt, job.endAt)}`}
-        badge={<Badge variant={statusBadgeVariant(STATUS_LABEL[job.status])}>{STATUS_LABEL[job.status]}</Badge>}
+        badge={<Badge variant={statusBadgeVariant(STATUS_LABEL[job.status])}>{statusText(job.status)}</Badge>}
         actions={
           <div className="flex-row" style={{ gap: 8 }}>
             {/* "Start" is a manager status override only. Crew START by clocking in
@@ -702,7 +743,7 @@ export default function JobDetail() {
           whole story. */}
       {showSeriesBlocks && !editing && (
         <div className="series-blocks-summary">
-          <div className="series-blocks-summary-head">Crew across the whole series</div>
+          <div className="series-blocks-summary-head">{t('jobPage.seriesCrew')}</div>
           {seriesBlocks.map((b) => {
             const mine = b.days.includes(thisDow);
             return (
@@ -712,30 +753,37 @@ export default function JobDetail() {
                 <span>{blockTimeLabel(b)}</span>
                 <span className="series-block-sep">·</span>
                 <span className="text-muted">{blockCrewLabel(b.crewIds)}</span>
-                {mine && <span className="series-block-current">this clean</span>}
+                {mine && <span className="series-block-current">{t('jobPage.thisClean')}</span>}
               </div>
             );
           })}
         </div>
       )}
 
-      {conflicts.length > 0 && !editing && (
+      {shownConflicts.length > 0 && !editing && (
         <div className="conflict-warning" style={{ marginBottom: 12 }}>
           <Icon name="warning" size={14} />
           <div>
-            <strong>Scheduling conflict</strong>
-            {conflicts.map((c, i) => {
+            <strong>{t('jobPage.conflict.title')}</strong>
+            {shownConflicts.map((c, i) => {
+              const mine = c.userId === currentUser?.id;
               if (c.timeOff) {
+                // The reason is the office's own words (LANG-7): shown as written, never translated.
                 return (
                   <div key={i} className="text-xs">
-                    {c.userName} has time off this day{c.timeOff.reason ? ` (${c.timeOff.reason})` : ''} but is still on this clean
+                    {mine ? t('jobPage.conflict.youOff')
+                      : (c.timeOff.reason
+                        ? t('jobPage.conflict.theyOffReason', { name: c.userName, reason: c.timeOff.reason })
+                        : t('jobPage.conflict.theyOff', { name: c.userName }))}
                   </div>
                 );
               }
               const cl = selectClientById(state, c.job.clientId);
+              const place = cl?.name || t('jobPage.conflict.anotherClean');
+              const time = fmtTimeRange(c.job.startAt, c.job.endAt);
               return (
                 <div key={i} className="text-xs">
-                  {c.userName} overlaps with {cl?.name || 'another job'} {fmtTimeRange(c.job.startAt, c.job.endAt)}
+                  {mine ? t('jobPage.conflict.youOverlap', { place, time }) : t('jobPage.conflict.theyOverlap', { name: c.userName, place, time })}
                 </div>
               );
             })}
@@ -745,22 +793,22 @@ export default function JobDetail() {
 
       <div className="detail-grid">
         <div className="card detail-card">
-          <h3 className="dash-card-title">Details</h3>
+          <h3 className="dash-card-title">{t('jobPage.details')}</h3>
           {!editing ? (
             <dl className="detail-dl">
-              <div><dt>Company</dt><dd>{client ? <Link className="linklike" to={`/clients/${client.id}`} state={nav}>{client.name}</Link> : '—'}</dd></div>
-              <div><dt>Location</dt><dd>
+              <div><dt>{t('jobPage.company')}</dt><dd>{client ? <Link className="linklike" to={`/clients/${client.id}`} state={nav}>{client.name}</Link> : '—'}</dd></div>
+              <div><dt>{t('jobPage.location')}</dt><dd>
                 {site?.address || '—'}
                 {site?.address ? (
                   <div className="detail-actions">
                     <a className="btn btn-outline" href={mapsDir(site.address)} target="_blank" rel="noopener noreferrer">
-                      <Icon name="mapPin" size={14} />Directions
+                      <Icon name="mapPin" size={14} />{t('jobPage.directions')}
                     </a>
                   </div>
                 ) : null}
               </dd></div>
               <div>
-                <dt>Contact</dt>
+                <dt>{t('jobPage.contact')}</dt>
                 <dd>
                   {siteContact ? (
                     <>
@@ -770,26 +818,26 @@ export default function JobDetail() {
                       {siteContact.phone ? (
                         <div className="detail-actions">
                           <a className="btn btn-outline" href={telHref(siteContact.phone)}>
-                            <Icon name="phone" size={14} />Call
+                            <Icon name="phone" size={14} />{t('jobPage.call')}
                           </a>
                           <a className="btn btn-outline" href={smsHref(siteContact.phone)}>
-                            <Icon name="messaging" size={14} />Text
+                            <Icon name="messaging" size={14} />{t('jobPage.text')}
                           </a>
                         </div>
                       ) : null}
                     </>
                   ) : site ? (
-                    <span className="text-muted"><span className="text-xs">(set on the site record)</span></span>
+                    <span className="text-muted"><span className="text-xs">{t('jobPage.contactOnSite')}</span></span>
                   ) : '—'}
                 </dd>
               </div>
-              <div><dt>{showSeriesBlocks ? 'Crew (this clean)' : 'Crew'}</dt><dd>
+              <div><dt>{showSeriesBlocks ? t('jobPage.crewThisClean') : t('jobPage.crew')}</dt><dd>
                 {effectiveCrew.length === 0 ? '—' : (
                   <div className="flex-row" style={{ gap: 8, flexWrap: 'wrap' }}>
                     {effectiveCrew.map(({ user: u, standing }) => (
                       <span key={u.id} className="flex-row" style={{ gap: 6, alignItems: 'center' }}>
-                        <Avatar initials={u.initials} variant={u.avatar} size="sm" />
-                        <span className="text-sm">{u.name}{standing && <span className="text-muted text-xs"> (standing)</span>}</span>
+                        <Avatar user={u} size="sm" />
+                        <span className="text-sm">{u.name}{standing && <span className="text-muted text-xs"> {t('jobPage.standing')}</span>}</span>
                       </span>
                     ))}
                   </div>
@@ -800,16 +848,16 @@ export default function JobDetail() {
                   can clock out — so the office must be able to see it without opening the
                   edit. */}
               {savedCovers.length > 0 && (
-                <div><dt>Covering for</dt><dd>
+                <div><dt>{t('jobPage.coveringFor')}</dt><dd>
                   {savedCovers.map(([coverId, coveredId]) => (
                     <div key={coverId} className="text-sm">
-                      {crewName(coverId)} <span className="text-muted">is covering for</span> {crewName(coveredId)}
+                      {t.rich('jobPage.isCoveringFor', { cover: crewName(coverId), covered: crewName(coveredId) }, { muted: (chunk) => <span className="text-muted">{chunk}</span> })}
                     </div>
                   ))}
-                  <span className="text-muted text-xs">They fill the covered cleaner’s checklist on this clean.</span>
+                  <span className="text-muted text-xs">{t('jobPage.coverNote')}</span>
                 </dd></div>
               )}
-              <div><dt>Notes</dt><dd>{job.notes || <span className="text-muted">No notes</span>}</dd></div>
+              <div><dt>{t('jobPage.notes')}</dt><dd>{job.notes || <span className="text-muted">{t('jobPage.noNotes')}</span>}</dd></div>
             </dl>
           ) : (
             <div>
@@ -852,7 +900,8 @@ export default function JobDetail() {
                 <ScheduleBlocksEditor
                   blocks={editBlocks}
                   onChange={setEditBlocks}
-                  crewPool={users.filter((u) => u.status === 'active')}
+                  crewPool={activeCrew}
+                  preferCrew={preferCrew}
                 />
               ) : (
                 <div className="form-row">
@@ -869,31 +918,19 @@ export default function JobDetail() {
                     onBlur={() => { const n = normalizeHm(currentForm.endTime); if (n && n !== currentForm.endTime) setForm({ ...currentForm, endTime: n }); }} />
                 </div>
               )}
-              {!(editScope === 'future' && isWeeklySeries && editBlocks) && (() => {
-                // Crew is exactly whoever is named on the clean. Toggling a chip adds
-                // or removes them from crewIds.
-                const named = new Set(currentForm.crewIds || []);
-                const toggleCrew = (id) => {
-                  const next = new Set(named);
-                  if (next.has(id)) next.delete(id); else next.add(id);
-                  setForm({ ...currentForm, crewIds: [...next] });
-                };
-                return (
-                <FormField label="Crew" help="Whoever is highlighted works this clean and can clock in. Click to add or remove someone.">
-                  <div className="chip-picker">
-                    {users.filter((u) => u.status === 'active').map((u) => {
-                      const on = named.has(u.id);
-                      return (
-                        <button key={u.id} type="button" className={`chip ${on ? 'on' : ''}`} onClick={() => toggleCrew(u.id)}>
-                          <Avatar initials={u.initials} variant={u.avatar} size="sm" />
-                          <span>{u.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* Crew is exactly whoever is named on the clean — the searchable, capped
+                  CrewPicker New clean uses (CS-673: this was one chip per active person, a
+                  1,544-chip wall at Matt's size, with no search). */}
+              {!(editScope === 'future' && isWeeklySeries && editBlocks) && (
+                <FormField label="Crew" help={t('jobPage.crewHelp')}>
+                  <CrewPicker
+                    value={currentForm.crewIds || []}
+                    onChange={(ids) => setForm({ ...currentForm, crewIds: ids })}
+                    pool={activeCrew}
+                    preferIds={preferCrew}
+                  />
                 </FormField>
-                );
-              })()}
+              )}
               {/* 🔴 "Covering for" (R8, 2026-09-27) — ONLY on the single-visit scope, the
                   only save that writes `job.coverFor`. A cleaner covering someone's shift
                   fills the COVERED cleaner's checklist on that clean, so the office has to
@@ -964,29 +1001,29 @@ export default function JobDetail() {
         </div>
 
         <div className="card detail-card">
-          <h3 className="dash-card-title">Service instructions</h3>
+          <h3 className="dash-card-title">{t('jobPage.instructions')}</h3>
           <dl className="detail-dl">
-            <div><dt>Expected time</dt><dd>{expectedMins != null ? fmtMins(expectedMins) : <span className="text-muted">Not set</span>}</dd></div>
+            <div><dt>{t('jobPage.expectedTime')}</dt><dd>{expectedMins != null ? fmtMins(expectedMins) : <span className="text-muted">{t('jobPage.notSet')}</span>}</dd></div>
             {accessInstructions ? (
-              <div><dt>Access</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{accessInstructions}</dd></div>
+              <div><dt>{t('jobPage.access')}</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{accessInstructions}</dd></div>
             ) : null}
             {/* Encrypted door/alarm codes — masked, revealed on demand for authorized
                 staff at THIS site (manager, standing crew, or on a job here). */}
             {canRevealHere && (siteSec.doorCodeCipher || siteSec.alarmCodeCipher) ? (
               <div>
-                <dt>Codes</dt>
+                <dt>{t('jobPage.codes')}</dt>
                 <dd style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', alignItems: 'center' }}>
                   {siteSec.doorCodeCipher && (
                     <span>
-                      Door: <span className="security-code">{revealedCodes.door || '••••'}</span>
-                      {siteSec.codeHint && !revealedCodes.door && <span className="text-muted text-xs"> (hint: {siteSec.codeHint})</span>}
-                      <button type="button" className="btn btn-link" onClick={() => revealSiteCode('door')}>{revealedCodes.door ? 'Hide' : 'Reveal'}</button>
+                      {t('jobPage.door')} <span className="security-code">{revealedCodes.door || '••••'}</span>
+                      {siteSec.codeHint && !revealedCodes.door && <span className="text-muted text-xs"> {t('jobPage.hint', { hint: siteSec.codeHint })}</span>}
+                      <button type="button" className="btn btn-link" onClick={() => revealSiteCode('door')}>{revealedCodes.door ? t('jobPage.hide') : t('jobPage.reveal')}</button>
                     </span>
                   )}
                   {siteSec.alarmCodeCipher && (
                     <span>
-                      Alarm: <span className="security-code">{revealedCodes.alarm || '••••'}</span>
-                      <button type="button" className="btn btn-link" onClick={() => revealSiteCode('alarm')}>{revealedCodes.alarm ? 'Hide' : 'Reveal'}</button>
+                      {t('jobPage.alarm')} <span className="security-code">{revealedCodes.alarm || '••••'}</span>
+                      <button type="button" className="btn btn-link" onClick={() => revealSiteCode('alarm')}>{revealedCodes.alarm ? t('jobPage.hide') : t('jobPage.reveal')}</button>
                     </span>
                   )}
                 </dd>
@@ -997,10 +1034,10 @@ export default function JobDetail() {
           {/* Account checklist bound to this clean — completion (job_id) shows here;
               self-hides when no checklist is set and none was completed. */}
           <CleanChecklist job={job} client={client} />
-          <div className="ji-areas-head">Cleaning areas</div>
+          <div className="ji-areas-head">{t('jobPage.areas')}</div>
           {cleaningAreas.length > 0
             ? <CleaningAreasEditor value={cleaningAreas} readOnly />
-            : <p className="text-muted text-xs">No cleaning instructions set for this site yet.</p>}
+            : <p className="text-muted text-xs">{t('jobPage.noAreas')}</p>}
           {/* Manager-uploaded reference media (scope cleaning_instruction, site-wide)
 . Read-only for the crew working the clean; renders nothing when the
               site has none (CREW_AUDIT #18). Distinct from the per-clean
@@ -1010,7 +1047,7 @@ export default function JobDetail() {
               siteId={job.siteId}
               clientId={job.clientId || site?.clientId || null}
               scope="cleaning_instruction"
-              label="Reference photos & video"
+              label={t('jobPage.referenceMedia')}
               hint={null}
               readOnly
               hideWhenEmpty
@@ -1027,8 +1064,8 @@ export default function JobDetail() {
       {job.seriesId && seriesVisits.length > 1 && !editing && (
         <div className="card detail-card series-visits">
           <div className="section-head">
-            <h3 className="dash-card-title">Visits in this series</h3>
-            <span className="text-muted text-sm">{seriesJobs.length} total</span>
+            <h3 className="dash-card-title">{t('jobPage.seriesVisits')}</h3>
+            <span className="text-muted text-sm">{t('jobPage.seriesTotal', { count: seriesJobs.length })}</span>
           </div>
           <div className="series-visits-list">
             {seriesVisits.map((j) => {
@@ -1038,13 +1075,13 @@ export default function JobDetail() {
                 <>
                   <span className="series-visit-date">{fmtDate(j.startAt)}</span>
                   <span className="series-visit-time">{fmtTimeRange(j.startAt, j.endAt)}</span>
-                  <span className="series-visit-crew text-muted">{crew || 'Unassigned'}</span>
-                  <Badge variant={statusBadgeVariant(STATUS_LABEL[j.status])}>{STATUS_LABEL[j.status]}</Badge>
+                  <span className="series-visit-crew text-muted">{crew || t('jobPage.unassigned')}</span>
+                  <Badge variant={statusBadgeVariant(STATUS_LABEL[j.status])}>{statusText(j.status)}</Badge>
                 </>
               );
               return isCurrent ? (
                 <div key={j.id} className="series-visit-row is-current" aria-current="true">
-                  {body}<span className="series-visit-current">Viewing</span>
+                  {body}<span className="series-visit-current">{t('jobPage.viewing')}</span>
                 </div>
               ) : (
                 <Link key={j.id} to={`/schedule/${j.id}`} state={nav} className="series-visit-row">{body}</Link>
@@ -1053,7 +1090,7 @@ export default function JobDetail() {
           </div>
           {seriesJobs.length > seriesVisits.length && (
             <div className="text-xs text-muted" style={{ marginTop: 8 }}>
-              Showing {seriesVisits.length} of {seriesJobs.length} visits — open one to page further through the series.
+              {t('jobPage.seriesShowing', { shown: seriesVisits.length, total: seriesJobs.length })}
             </div>
           )}
         </div>
@@ -1063,29 +1100,27 @@ export default function JobDetail() {
           2fr/1fr grid (inside it, the punch table landed in the narrow column and
           pushed Service instructions down a row). Manager-only: the component
           self-gates on time.view; crew see nothing extra here. */}
-      <TimeClockHistory jobIds={[job.id]} title="Time clock" hide={['location']} allTime />
+      <TimeClockHistory jobIds={[job.id]} title={t('jobPage.timeClock')} hide={['location']} allTime />
 
       {/* Recurring series: ONE choice prompt (shared SeriesScopeModal). Cancel / X
           aborts entirely. No chained second dialog, so dismissing never re-prompts. */}
-      {/* 🔴 NO WHOLE-SERIES OPERATION AGAINST A PARTIAL JOB SET — EDIT *OR* DELETE.
+      {/* 🔴 NO WHOLE-SERIES OPERATION AGAINST A PARTIAL SERIES — EDIT *OR* DELETE.
           Both UPDATE_JOB_SERIES and DELETE_JOB_SERIES build their target set with
           `state.jobs.filter(...)` and locate the recurrence master with
-          `state.jobs.find(...)`. Since E6 that array is a ~-45/+100 day WINDOW, so both
-          reads are partial until the detached backfill lands:
-            · occurrences beyond +100 days are never edited or deleted, and the backfill
-              then merges them straight back;
-            · a series older than 45 days has its master outside the window, so
-              UPDATE skips the recurrence re-sync and DELETE skips the endDate CAP. 
-              and without that cap TOP_UP re-materialises the entire deleted tail, which
-              is exactly what the comment on DELETE_JOB_SERIES warns about.
+          `state.jobs.find(...)`. The app holds the jobs WINDOW (−45/+100 days), never the
+          table (CS-676), so until THIS series is loaded both reads are partial:
+            · occurrences beyond the window would never be edited or deleted;
+            · a series older than the window has its master outside it, so UPDATE skips
+              the recurrence re-sync and DELETE skips the endDate CAP — and without that
+              cap TOP_UP re-materialises the entire deleted tail, which is exactly what
+              the comment on DELETE_JOB_SERIES warns about.
 
           I previously gated only the EDIT scope here, on the reasoning that "deletes
           need no recurrence re-sync". That was wrong: the delete path performs a MASTER
           WRITE of its own (the cap), and it fails the same way. Hence one gate for both.
 
-          The precondition is FULL HYDRATION, not merely a visible master: even with the
-          master loaded, occurrences past +100 days are outside the set. Schedule already
-          gates TOP_UP on exactly this flag, for exactly this reason. */}
+          The precondition is THE SERIES LOADED (useSeriesJobs: every occurrence, by series
+          id), not merely a visible master. */}
       <SeriesScopeModal
         open={!!showSeriesChoice}
         intent={showSeriesChoice === 'delete' ? 'delete' : 'edit'}
@@ -1093,13 +1128,13 @@ export default function JobDetail() {
         // never touches the recurrence model, so a twice-in-a-day series deletes cleanly.
         // Only the EDIT path has to be closed for it.
         disableFuture={!!job?.seriesId && (
-          !jobsHydrated || !seriesMaster || (showSeriesChoice === 'edit' && seriesRunsTwiceInADay)
+          !seriesLoad.ready || !seriesMaster || (showSeriesChoice === 'edit' && seriesRunsTwiceInADay)
         )}
         // The copy must say WHY, or the disabled state reads as "series edits are
         // broken" (the shipped circular-copy bug — see SeriesScopeModal). 'loading'
-        // is transient: jobsHydrated flipping re-renders this modal in place and
+        // is transient: the series landing re-renders this modal in place and
         // the "all future" button appears while it's open.
-        disableReason={!jobsHydrated ? 'loading'
+        disableReason={!seriesLoad.ready ? (seriesLoad.error ? 'load-failed' : 'loading')
           : (!seriesMaster ? 'no-master'
             : (showSeriesChoice === 'edit' && seriesRunsTwiceInADay ? 'twice-in-a-day' : null))}
         summary={showSeriesChoice === 'delete' && deleteSummary ? (

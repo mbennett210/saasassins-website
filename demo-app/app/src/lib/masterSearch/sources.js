@@ -27,7 +27,10 @@
 //     /pipeline page covers the 3 board names), time entries (punches are not named things;
 //     /time covers), account media (binary), payroll lines / reimbursements / HR docs
 //     (period- or person-scoped rows inside their pages), notifications (the bell owns them),
-//     supplyRequests (the Supplies requests tab covers them).
+//     supply requests (the Supplies requests tab covers them), and a building's supply-list
+//     ITEMS since SUP-13 (2026-10-05): both live in their own tables behind /api/supplies now,
+//     and a record source reads the store. The list is a tab of its customer's page (round 3,
+//     2026-10-06), which the customer source already finds.
 //   • dead store slices checklistTemplates / inspectionTemplates / accountMedia — declared in
 //     INITIAL_STATE but never read by the app (real data is in qcApi / accountMediaApi).
 import {
@@ -42,23 +45,17 @@ import {
   selectInvoices,
   selectOpportunities,
   selectActivePipeline,
-  selectSupplyItems,
   selectServices,
   selectTags,
   selectReminderTemplates,
   selectClientById,
-  selectSiteById,
-  selectServiceById,
 } from '../../store/selectors';
 import { ROLE_LABELS } from '../roles';
 import { deriveInvoiceStatus } from '../money';
-import { fmtDate } from '../dates';
-import { STATUS_OPTIONS as JOB_STATUS_OPTIONS } from '../filters/scheduleFilters';
+import { customerLabel } from '../customerNumber';
 import { collectCandidates, resolveFromSources } from './collect.js';
+import { makeJobSource, cleanWords as clean, capFirst as cap } from './jobRecords.js';
 
-const clean = (arr) => arr.filter((x) => x != null && x !== '' && x !== false).map(String);
-const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '');
-const jobStatusLabel = (st) => JOB_STATUS_OPTIONS.find((o) => o.value === st)?.label || cap(st);
 const TAG_SCOPE_LABELS = { contact: 'People', client: 'Customers', all: 'All records' };
 const stageOf = (s, o) => {
   const pl = (s.pipelines || []).find((p) => p.id === o.pipelineId);
@@ -71,10 +68,11 @@ export const RECORD_SOURCES = [
   {
     type: 'client', typeLabel: 'Customer', groupLabel: 'Customers', groupIcon: 'clients', perm: 'clients.view',
     select: (s, user) => selectVisibleClientsFor(s, user),
-    primary: (c) => c.name || 'Customer',
-    sublabel: (c) => clean([c.contactNumber != null && `#${c.contactNumber}`, c.primaryContact, c.city]).join(' · '),
-    keywords: (c) => clean([c.primaryContact, c.email, c.phone, c.street, c.city, c.state, c.zip,
-      c.contactNumber != null && `#${c.contactNumber}`, c.contactNumber, c.notes, c.type]),
+    // GO-2: a customer is named "0001 Ball Harbor Village" and found by its number.
+    primary: (c) => customerLabel(c) || 'Customer',
+    sublabel: (c) => clean([c.primaryContact, c.city]).join(' · '),
+    keywords: (c) => clean([c.customerNumber, c.primaryContact, c.email, c.phone, c.street, c.city, c.state, c.zip,
+      c.notes, c.type]),
     to: (c) => `/clients/${c.id}`,
     seeAll: (q) => `/clients?q=${encodeURIComponent(q)}`,
     seeAllFiltered: true,
@@ -112,28 +110,13 @@ export const RECORD_SOURCES = [
     seeAll: null,
     seeAllLabel: 'Locations',
   },
-  {
-    type: 'job', typeLabel: 'Clean', groupLabel: 'Cleans', groupIcon: 'schedule', perm: 'schedule.view',
+  // The cleans: built in ./jobRecords.js (CS-674 — indexed lookups, dates once per start,
+  // only the visits that changed rebuilt, a bounded window of past visits). Crew see only the
+  // visits they are on, through the Schedule's own scoped selector.
+  makeJobSource({
     select: (s, user) => (user?.role === 'crew' ? selectJobsForUser(s, user.id) : selectJobs(s)),
-    primary: (j, s) => selectClientById(s, j.clientId)?.name || 'Clean',
-    sublabel: (j, s) => clean([
-      j.startAt && fmtDate(j.startAt, { weekday: 'short', month: 'short', day: 'numeric' }),
-      selectServiceById(s, j.serviceId)?.name,
-      jobStatusLabel(selectEffectiveJobStatus(j)),
-    ]).join(' · '),
-    keywords: (j, s) => clean([
-      selectServiceById(s, j.serviceId)?.name,
-      selectSiteById(s, j.siteId)?.name,
-      j.startAt && fmtDate(j.startAt, { month: 'short', day: 'numeric' }),
-      jobStatusLabel(selectEffectiveJobStatus(j)),
-      j.notes,
-    ]),
-    // A customer's cleans all share one label; show the ones nearest today first.
-    order: (j, s, now) => (j.startAt ? Math.abs(new Date(j.startAt).getTime() - now) : Number.MAX_SAFE_INTEGER),
-    to: (j) => `/schedule/${j.id}`,
-    seeAll: () => '/schedule',
-    seeAllLabel: 'Schedule',
-  },
+    effectiveStatus: selectEffectiveJobStatus,
+  }),
   {
     type: 'invoice', typeLabel: 'Invoice', groupLabel: 'Invoices', groupIcon: 'invoices', perm: 'invoices.view',
     select: (s) => selectInvoices(s),
@@ -174,17 +157,6 @@ export const RECORD_SOURCES = [
     to: () => '/keys',
     seeAll: () => '/keys',
     seeAllLabel: 'Keys',
-  },
-  {
-    // Approved items live on the Approved tab, which the Supplies page shows only to managers.
-    type: 'supplyItem', typeLabel: 'Supply item', groupLabel: 'Supply items', groupIcon: 'box', perm: 'supplies.manage',
-    select: (s) => selectSupplyItems(s),
-    primary: (i) => i.name || 'Supply item',
-    sublabel: (i, s) => clean([selectClientById(s, i.clientId)?.name]).join(' · '),
-    keywords: (i, s) => clean([selectClientById(s, i.clientId)?.name]),
-    to: () => '/supplies?tab=approved',
-    seeAll: () => '/supplies?tab=approved',
-    seeAllLabel: 'Supplies',
   },
   {
     type: 'service', typeLabel: 'Service', groupLabel: 'Services', groupIcon: 'invoices', perm: 'settings.services',

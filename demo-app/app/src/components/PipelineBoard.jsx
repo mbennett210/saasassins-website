@@ -2,18 +2,21 @@ import { useMemo, useRef, useState } from 'react';
 import { useDispatch, useStore } from '../store';
 import { ACTIONS } from '../store/reducer';
 import {
-  selectPipelineOpportunities,
+  selectBoardOpportunities,
   selectActivePipelineStages,
   selectPipelines,
   selectActivePipeline,
   selectOpenOpportunityValue,
 } from '../store/selectors';
+import { isTerminalStage } from '../lib/pipelines';
+import { isWalkthroughStage } from '../lib/walkthrough';
 import { usePermission } from '../hooks/usePermission';
 import { money } from '../lib/dates';
 import PipelineCard from './PipelineCard';
 import FormField from './FormField';
 import AddContactsToStageModal from './AddContactsToStageModal';
 import OpportunityDetailModal from './OpportunityDetailModal';
+import WalkthroughPrompt from './WalkthroughPrompt';
 
 const EDGE_ZONE = 80;
 const MAX_SPEED = 18;
@@ -22,6 +25,16 @@ const MIN_SPEED = 3;
 // The sales board. One pipeline, real stages as columns, and each card is an
 // OPPORTUNITY (a company-owned deal) rendered company-first. Drag a card between
 // columns to change its stage. No people on this board, ever.
+//
+// The board draws OPEN deals only: dropping a card on Won or Lost closes the deal and it
+// leaves the board (Matt, 2026-09-29, MISC-1 → CS-141). The headline says "Open deals" and
+// is the sum of exactly the cards drawn, so it can no longer disagree with the columns.
+// Closed deals keep their place in the data and stay on the company's Opportunities tab.
+//
+// A deal moved (or added) into "Walkthrough Scheduled" is ASKED for its walkthrough's date and
+// time (Daniel, 2026-10-20): the move happens first, then the question opens (WalkthroughPrompt);
+// "Not now" leaves the deal where it was dropped. A deal that already has a walkthrough ahead is
+// not asked again.
 export default function PipelineBoard() {
   const state = useStore();
   const dispatch = useDispatch();
@@ -30,7 +43,7 @@ export default function PipelineBoard() {
   const pipelines = selectPipelines(state);
   const activePipeline = selectActivePipeline(state);
   const columns = selectActivePipelineStages(state);        // the board's real stages
-  const opportunities = selectPipelineOpportunities(state);  // the cards (deals)
+  const opportunities = selectBoardOpportunities(state);  // the cards (OPEN deals)
   const openValue = selectOpenOpportunityValue(state);
 
   const [dropTarget, setDropTarget] = useState(null);
@@ -38,6 +51,7 @@ export default function PipelineBoard() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [addStage, setAddStage] = useState(null);
   const [detailOpp, setDetailOpp] = useState(null);
+  const [walkPrompt, setWalkPrompt] = useState(null);     // { id, stageLabel } — the question after a move
 
   const boardRef = useRef(null);
   const scrollRafRef = useRef(null);
@@ -80,12 +94,23 @@ export default function PipelineBoard() {
 
   const clearSelection = () => setSelectedIds(new Set());
 
+  // After a deal lands in the walkthrough stage: ask when, unless it already has a walkthrough ahead.
+  const askWalkthrough = (id, stageKey) => {
+    if (!canEdit || !isWalkthroughStage(stageKey)) return;
+    const opp = (state.opportunities || []).find((o) => o.id === id);
+    if (opp && Date.parse(opp.walkthroughAt || '') > Date.now()) return;
+    setWalkPrompt({ id, stageLabel: columns.find((c) => c.key === stageKey)?.label || '' });
+  };
+
   const bulkMoveToColumn = (columnKey) => {
     if (!columnKey || !canEdit) return;
-    [...effectiveSelected].forEach((id) => {
+    const moved = [...effectiveSelected];
+    moved.forEach((id) => {
       dispatch({ type: ACTIONS.SET_OPPORTUNITY_STAGE, id, stage: columnKey, pipelineId: activePipeline?.id });
     });
     clearSelection();
+    // One deal moved: ask for its walkthrough. Several: each card says its time is not set.
+    if (moved.length === 1 && opportunities.find((o) => o.id === moved[0])?.stage !== columnKey) askWalkthrough(moved[0], columnKey);
   };
 
   const bulkDelete = () => {
@@ -178,6 +203,8 @@ export default function PipelineBoard() {
       if (originalIdx === targetIndex || originalIdx === targetIndex - 1) return;
     }
     dispatch({ type: ACTIONS.SET_OPPORTUNITY_STAGE, id, stage: columnKey, pipelineId: activePipeline?.id, insertBeforeId });
+    // The move has happened; now ask (a prompt, never a block).
+    if (current.stage !== columnKey) askWalkthrough(id, columnKey);
   };
 
   const selectionCount = effectiveSelected.size;
@@ -194,7 +221,7 @@ export default function PipelineBoard() {
         />
         <div className="pipeline-total" style={{ marginLeft: 'auto', textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 2, alignSelf: 'flex-start' }}>
           <span className="text-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Total opportunity value
+            Open deals
           </span>
           <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
             {money(openValue)}
@@ -228,6 +255,7 @@ export default function PipelineBoard() {
         pipelineId={addStage?.pipelineId}
         stageKey={addStage?.stage}
         stageLabel={addStage?.label || ''}
+        onAdded={(ids, stageKey) => { if (ids.length === 1) askWalkthrough(ids[0], stageKey); }}
       />
 
       <div
@@ -241,6 +269,10 @@ export default function PipelineBoard() {
         {columns.map((column) => {
           const isDropTargetCol = dropTarget?.stage === column.key;
           const cards = byColumn[column.key] || [];
+          // Won / Lost: a drop target, never a place to CREATE a deal — a deal dropped here
+          // is closed and leaves the board, so an "Add deal" tile would mint a card that
+          // vanished on the spot (MISC-1 / CS-141).
+          const terminal = isTerminalStage(column.key);
           const sumValue = cards.reduce((acc, o) => acc + (Number(o.value) || 0), 0);
           const colSelectedCount = cards.filter((o) => effectiveSelected.has(o.id)).length;
           const allSelected = cards.length > 0 && colSelectedCount === cards.length;
@@ -274,7 +306,13 @@ export default function PipelineBoard() {
               </div>
               <div className="pipeline-col-body">
                 {cards.length === 0 && !slotActive(column.key, 0) && (
-                  canEdit ? (
+                  terminal ? (
+                    <div className="pipeline-col-empty">
+                      <span className="text-xs text-muted">
+                        Drop a deal here to mark it {column.label.toLowerCase()} — it leaves the board.
+                      </span>
+                    </div>
+                  ) : canEdit ? (
                     <button
                       type="button"
                       className="add-tile"
@@ -307,7 +345,7 @@ export default function PipelineBoard() {
                     )}
                   </div>
                 ))}
-                {canEdit && cards.length > 0 && (
+                {canEdit && !terminal && cards.length > 0 && (
                   <button
                     type="button"
                     className="add-tile"
@@ -326,6 +364,12 @@ export default function PipelineBoard() {
         open={!!detailOpp}
         onClose={() => setDetailOpp(null)}
         opportunity={detailOpp}
+      />
+
+      <WalkthroughPrompt
+        opportunityId={walkPrompt?.id || null}
+        stageLabel={walkPrompt?.stageLabel || ''}
+        onClose={() => setWalkPrompt(null)}
       />
     </div>
   );

@@ -5,10 +5,16 @@
   "wordmark": "CleanSpace",
   "shortName": "Clean Space",
   "appTitle": "Clean Space CRM",
+  "product": {
+    "name": "Clean Corner",
+    "wordmark": "CleanCorner",
+    "shortName": "Clean Corner",
+    "appTitle": "Clean Corner"
+  },
   "description": "Operations CRM for Clean Space — schedule, message, invoice.",
   "monogram": "CS",
   "slug": "cleanspace",
-  "appUrl": "https://cleanspace-gilt.vercel.app",
+  "appUrl": "https://www.cleancorner.app",
   "company": {
     "domain": "cleanspaceonline.com",
     "website": "www.cleanspaceonline.com",
@@ -26,66 +32,24 @@
     }
   },
   "email": {
-    "quotesFrom": "Clean Space <quotes@billing.cleanspaceonline.com>",
-    "authFrom": "Clean Space <login@billing.cleanspaceonline.com>"
+    "authFrom": "Clean Space <office@cleanspaceonline.com>"
   },
   "colors": {
-    "primary": "#18181B",
-    "secondary": "#FFD45A",
-    "link": "#283CA1",
-    "neutral": "#64748b",
-    "pins": {
-      "neutral-50": "#f8fafc",
-      "neutral-100": "#f1f5f9",
-      "neutral-200": "#e2e8f0",
-      "neutral-300": "#cbd5e1",
-      "neutral-400": "#94a3b8",
-      "neutral-500": "#64748b",
-      "neutral-600": "#475569",
-      "neutral-700": "#334155",
-      "neutral-800": "#1e293b",
-      "neutral-900": "#0f172a",
-      "primary-50": "#F4F4F5",
-      "primary-100": "#E4E4E7",
-      "primary-400": "#52525B",
-      "primary-500": "#18181B",
-      "primary-600": "#0F0F12",
-      "primary-700": "#09090B",
-      "secondary-50": "#FEF9EC",
-      "secondary-100": "#FCEFC7",
-      "secondary-400": "#FFDE7A",
-      "secondary-500": "#FFD45A",
-      "secondary-600": "#E6B434",
-      "secondary-700": "#B8901F",
-      "surface-page": "#F4F5F7",
-      "surface-sunken": "#E8EBEF",
-      "border": "#E4E7EB",
-      "field": "#EEF1F5",
-      "zebra": "#F5F7F9",
-      "bubble": "#EEF1F5",
-      "link": "#283CA1",
-      "upcoming-bg": "#FEF9EC",
-      "upcoming-border": "#F1E7C6"
-    }
+    "primary": "#073B70",
+    "secondary": "#4FCFBD",
+    "link": "#107E72",
+    "neutral": "#6C727B"
   },
   "logos": {
     "mark": {
-      "file": "cleanspace-mark.png",
-      "box": {
-        "left": 2760,
-        "top": 1500,
-        "width": 2700,
-        "height": 1640
-      }
+      "file": "mark.png",
+      "color": "mark-color.png",
+      "tile": "white"
     },
     "lockup": {
-      "file": "cleanspace-logo-src.jpg",
-      "box": {
-        "left": 0,
-        "top": 0,
-        "width": 1080,
-        "height": 146
-      }
-    }
+      "file": "lockup.png",
+      "color": "lockup-color.png"
+    },
+    "sidebar": "mark"
   }
 }

@@ -14,7 +14,7 @@
 // Days are the ORG's calendar days (lib/dates) — the same days the time-off entries are
 // keyed in and the schedule buckets cleans by.
 import { dayKey as orgDayKey } from '../dates.js';
-import { isCallOut, isUserOffOn } from '../../store/timeOffRules.js';
+import { isCallOut, isUserOffOn, timeOffReasonText } from '../../store/timeOffRules.js';
 
 const TERMINAL_JOB = new Set(['cancelled', 'canceled']);
 
@@ -87,7 +87,12 @@ export function calledOutOn({
       // A deleted cleaner's call-out is kept and carries their name (DELETE_USER stamps
       // userName), so they don't read as "—".
       userName: usersById.get(userId)?.name || first.userName || '—',
-      reason: entries.map((t) => t.reason).filter(Boolean).join('; '),
+      // ALR-7: the coded reason and its note read through the ONE shared formatter, so this
+      // report, Team › Time off and HR › PTO say the same words about the same entry. An entry
+      // booked before the list existed still reads by its free text.
+      reason: entries.map((t) => timeOffReasonText(t)).filter((v) => v && v !== 'time off').join('; '),
+      // The codes alone, for counting: the office's question is how often TRANSPORT is why.
+      reasonCodes: [...new Set(entries.map((t) => t.calloutReason).filter(Boolean))],
       cleans: shown,
       cleanCount: shown.length,
       uncoveredCount: shown.filter((c) => c.uncovered).length,

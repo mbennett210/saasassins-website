@@ -8,10 +8,16 @@
 // that job's detail). Written by demoBootstrap.ensureDemoData(), then persisted. Light
 // illustrations on purpose — clearly stand-ins, not real Clean Space sites.
 import { seedId } from '../lib/ids';
+import { demoSupplyCatalogId } from './demoSupplyCatalog';
 
 // The localStorage key accountMediaApi's demo stub reads. Mirror of its private
 // STUB_KEY — keep in lockstep if that ever changes.
 export const MEDIA_STUB_KEY = 'cleanspace_account_media_stub_v1';
+
+// The client hub's two demo visits, both visits of the manager's day (data/demoManagerDay.js): Coral
+// Bay's under way (the job the ledger's open punches name) and Flagler's finished one.
+export const HUB_DEMO_CORAL_BAY_VISIT = seedId('j', 'cbay-w1');
+export const HUB_DEMO_FLAGLER_VISIT = seedId('j', 'md-flagler');
 
 const enc = (svg) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 const FONT = 'font-family="system-ui,Segoe UI,Arial,sans-serif"';
@@ -74,16 +80,19 @@ const SCENES = {
 const daysAgoIso = (n) => new Date(Date.now() - n * 86400000).toISOString();
 
 let seq = 0;
-function photo(siteKey, clientKey, scene, caption, ageDays, { scope = 'cleaning_instruction', refKey = null } = {}) {
-  const iso = daysAgoIso(ageDays);
+function photo(siteKey, clientKey, scene, caption, ageDays, { scope = 'cleaning_instruction', refKey = null, refId = null, areaId = null, ageHours = null } = {}) {
+  const iso = ageHours != null ? new Date(Date.now() - ageHours * 3600000).toISOString() : daysAgoIso(ageDays);
   seq += 1;
   return {
     id: `am_seed_${seq}`,
     site_id: seedId('st', siteKey),
     client_id: seedId('cl', clientKey),
     // scope 'cleaning_instruction' = account reference photos (Photos tab); scope
-    // 'clean' + ref_id (a job id) = that clean's before/after shots on the job.
-    scope, area_id: null, ref_id: refKey ? seedId('j', refKey) : null,
+    // 'clean' + ref_id (a job id) = that clean's before/after shots on the job; scope
+    // 'checklist' + ref_id (a submission's client_submit_id) + area_id (the checklist ITEM
+    // key) = a photo taken on a checklist item (CS-547). `refId` is a record id used as it
+    // is (a ticket, a checklist submission), `areaId` an item key.
+    scope, area_id: areaId, ref_id: refId || (refKey ? seedId('j', refKey) : null),
     kind: 'image', mimeType: 'image/svg+xml', sizeBytes: 42000 + seq * 900,
     caption, url: SCENES[scene](caption),
     createdAt: iso, created_at: iso,
@@ -117,6 +126,40 @@ export function buildDemoSiteMedia() {
       photo('evgrn-main', 'evergreen', 'lobby',    'After — reception',      1, { scope: 'clean', refKey: 'evgrn-w1' }),
       photo('evgrn-main', 'evergreen', 'corridor', 'Before — ward corridor', 1, { scope: 'clean', refKey: 'evgrn-w1' }),
       photo('evgrn-main', 'evergreen', 'corridor', 'After — ward corridor',  1, { scope: 'clean', refKey: 'evgrn-w1' }),
+      // HUB-15 / QR-2: the latest Full Clean at Coral Bay's Clubhouse photographed the lobby
+      // floor as it finished the entrance (data/demoStubs.js `cr_coralbay_full`, submitted 3
+      // hours back, its entrance items stamped about 5¾ hours back) — so the lobby's QR code
+      // (/scan/<code>) shows its newest checklist photo under its last-cleaned time.
+      photo('mtb-clbhs', 'mtbaker', 'lobby', 'Lobby floor after the clean', 0,
+        { scope: 'checklist', refId: 'cs_cr_coralbay_full', areaId: 'fi_entry_floor', ageHours: 5.75 }),
+      // The client hub's photos (Phase 2 Wave 2 Round 2), filed exactly as production files them:
+      // a checklist ITEM's photo (scope 'checklist', the submission's id, the item key — HUB-15),
+      // two tickets' COMPLETION photos (scope 'problem_report' — WO-10, shown once completed),
+      // and the photo the customer attached to their own ticket (scope 'client_ticket').
+      photo('mtb-clbhs', 'mtbaker', 'corridor', 'Hall floor after mopping',   2, { scope: 'checklist', refId: 'cs_cr_coralbay_floors_2', areaId: 'f_mop' }),
+      photo('mtb-clbhs', 'mtbaker', 'lobby',    'Clubhouse carpet, cleaned',  1, { scope: 'problem_report', refId: 'pr_coralbay_carpet' }),
+      photo('mtb-clbhs', 'mtbaker', 'pool',     'Pool deck chairs set out',  10, { scope: 'problem_report', refId: 'pr_coralbay_pool' }),
+      photo('mtb-clbhs', 'mtbaker', 'lobby',    'Lobby glass',                1, { scope: 'client_ticket', refId: 'pr_coralbay_windows' }),
+      // The client hub redesign (2026-10-08). Today's Visit shows the visit's OWN before/after
+      // photos, filed as the cleaner's guided visit files them (scope 'clean', the job id, area
+      // 'before' | 'after'), on two visits of the manager's day (data/demoManagerDay.js): Coral
+      // Bay's under way (the job the ledger's open punches name: two before, one after so far)
+      // and Flagler's finished one. Appended, so every earlier seeded id stays the same.
+      photo('mtb-clbhs', 'mtbaker', 'lobby',    'Lobby, before',          0, { scope: 'clean', refId: HUB_DEMO_CORAL_BAY_VISIT, areaId: 'before', ageHours: 0.5 }),
+      photo('mtb-clbhs', 'mtbaker', 'corridor', 'East corridor, before',  0, { scope: 'clean', refId: HUB_DEMO_CORAL_BAY_VISIT, areaId: 'before', ageHours: 0.5 }),
+      photo('mtb-clbhs', 'mtbaker', 'lobby',    'Lobby, after',           0, { scope: 'clean', refId: HUB_DEMO_CORAL_BAY_VISIT, areaId: 'after', ageHours: 0.2 }),
+      photo('sal-main',  'salishan', 'exterior', 'Entrance, before',      0, { scope: 'clean', refId: HUB_DEMO_FLAGLER_VISIT, areaId: 'before', ageHours: 2 }),
+      photo('sal-main',  'salishan', 'exterior', 'Entrance, after',       0, { scope: 'clean', refId: HUB_DEMO_FLAGLER_VISIT, areaId: 'after', ageHours: 1 }),
+      // …and the failed Coral Bay inspection's photos (its report, and the hub's Inspections tile).
+      photo('mtb-clbhs', 'mtbaker', 'corridor', 'Pool restroom stall',     1, { scope: 'inspection', refId: 'ir_coralbay_fail', areaId: 'a_fix' }),
+      photo('mtb-clbhs', 'mtbaker', 'lobby',    'Soap dispenser, empty',   1, { scope: 'inspection', refId: 'ir_coralbay_fail', areaId: 'a_supply' }),
+      // S131: the delivery photo on the demo's partly delivered supply order (data/demoStubs.js
+      // DEMO_SUPPLY_PARTIAL_ID, SO-1046): the paper towels left at Coral Bay's clubhouse office (the
+      // demo cleaner's stop, where her orders are since the S131 integration)
+      // yesterday — filed under the ORDER (scope 'supply'), the item its area, with no site, as the
+      // server files a delivery photo. Appended, so every earlier seeded id stays the same.
+      { ...photo('mtb-clbhs', 'mtbaker', 'lobby', 'Paper towels at the clubhouse office', 1,
+        { scope: 'supply', refId: seedId('sr', 'prc-partial'), areaId: demoSupplyCatalogId('towel'), ageHours: 24 }), site_id: null },
     ],
   };
 }

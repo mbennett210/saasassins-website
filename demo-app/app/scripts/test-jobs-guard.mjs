@@ -458,7 +458,7 @@ ok('manager DELETE is kept (was dropped)',
 ok('manager RE-CREW is kept (was put back)',
   same((await decide({ role: 'manager', selfId: MGR, changed: [job({ crewIds: [OTHER, 'u_b'] })] })).changed[0].crewIds, [OTHER, 'u_b']));
 {
-  // Time off's "take them off these cleans" (APPLY_TIME_OFF_EXCLUSIONS): crewIds loses one member.
+  // Time off's "take them off these cleans" (ADD_TIME_OFF { removeFromCleans }, CS-054): crewIds loses one member.
   const stored = job({ crewIds: [OTHER, 'u_off'] });
   const r = await decide({ role: 'manager', selfId: MGR, changed: [job({ crewIds: [OTHER] })], rows: prevMap(stored) });
   ok('manager time-off exclusion is kept (was put back)', same(r.changed[0].crewIds, [OTHER]));
@@ -670,8 +670,14 @@ for (const role of [null, undefined, '', 'Owner', 'Manager', 'superuser', ['owne
   const to = src('../src/components/TimeOffCard.jsx');
   ok('Time off offers "take them off these cleans" only with it',
     /const canEditJobs = useCanEditJobs\(\);/.test(to)
-      && /if \(!start \|\| !jobsHydrated \|\| !canEditJobs\) return \[\];/.test(to)
-      && /const removable = jobsHydrated && canEditJobs \?/.test(to));
+      && /if \(!start \|\| !daysLoaded \|\| !canEditJobs\) return \[\];/.test(to)
+      && /removeFromCleans: alsoRemove && daysLoaded && canEditJobs/.test(to));
+  // CS-054: HR › PTO books the same way, so it gates the removal the same way.
+  const pto = src('../src/pages/hr/PtoTab.jsx');
+  ok('HR › PTO offers it only with it too',
+    /const canEditJobs = useCanEditJobs\(\);/.test(pto)
+      && /if \(!form\.userId \|\| !form\.startDate \|\| !daysLoaded \|\| !canEditJobs\) return \[\];/.test(pto)
+      && /removeFromCleans: form\.alsoRemove && daysLoaded && canEditJobs/.test(pto));
   ok('Dashboard\'s Schedule quick action gates on it', /const canSchedule = useCanEditJobs\(\);/.test(src('../src/pages/Dashboard.jsx')));
   // A NEW surface gating on the bare key is a decision to make on purpose: does it write
   // protected fields? Reviewed: Job Detail's status buttons (status is kept from anyone

@@ -23,11 +23,12 @@ import { getRecentErrors } from '../lib/errorBuffer';
 import { APP_SHA, APP_BUILD, TAB_ID } from '../lib/appBuild';
 import { countMedia } from '../lib/mediaQueue';
 import { countChecklists } from '../lib/checklistQueue';
+import { useT } from '../i18n/react';
 
 const PRIORITIES = [
-  { value: 'normal', label: 'Normal' },
-  { value: 'high', label: 'High' },
-  { value: 'low', label: 'Low' },
+  { value: 'normal', labelKey: 'report.priority.normal' },
+  { value: 'high', labelKey: 'report.priority.high' },
+  { value: 'low', labelKey: 'report.priority.low' },
 ];
 
 // A CRM ticket id is a uuid — the first block is plenty for "quote this back
@@ -46,6 +47,7 @@ const resolvedTimeZone = () => {
 };
 
 export default function ReportIssueModal({ open, onClose }) {
+  const t = useT();
   const toast = useToast();
   const location = useLocation();
   const currentUser = useSelector(selectCurrentUser);
@@ -77,7 +79,7 @@ export default function ReportIssueModal({ open, onClose }) {
     e.preventDefault();
     if (sending) return;
     const subj = subject.trim();
-    if (!subj) { setError('Please give the issue a short title.'); return; }
+    if (!subj) { setError(t('report.needTitle')); return; }
     setError(null);
     setUnavailable(false);
     setSending(true);
@@ -122,8 +124,8 @@ export default function ReportIssueModal({ open, onClose }) {
       if (isSupportUnavailable(err)) {
         setUnavailable(true);
       } else {
-        setError(err.message || 'Something went wrong. Please try again.');
-        toast.error(err.message || 'Could not send the report.');
+        setError(t.lang === 'en' && err.message ? err.message : t('report.failed'));
+        toast.error(t.lang === 'en' && err.message ? err.message : t('report.failedToast'));
       }
     } finally {
       setSending(false);
@@ -133,53 +135,52 @@ export default function ReportIssueModal({ open, onClose }) {
   const reference = sent ? shortRef(sent.ticketId) : null;
 
   return (
-    <Modal open={open} onClose={safeClose} title="Report an issue" size="md">
+    <Modal open={open} onClose={safeClose} title={t('report.title')} size="md">
       {sent ? (
         <div className="support-success">
           <span className="support-success-icon" aria-hidden><Icon name="check" size={22} /></span>
-          <h3>Report sent</h3>
-          {reference && <p className="support-success-ref">Reference: <strong>{reference}</strong></p>}
+          <h3>{t('report.sent')}</h3>
+          {reference && <p className="support-success-ref">{t.rich('report.reference', { ref: reference })}</p>}
           <p className="support-success-sub">
-            Our team has been notified. We&rsquo;ll reach out if we need more detail.
+            {t('report.notified')}
           </p>
           <div className="modal-actions">
-            <button type="button" className="btn btn-primary" onClick={onClose}>Done</button>
+            <button type="button" className="btn btn-primary" onClick={onClose}>{t('common.done')}</button>
           </div>
         </div>
       ) : (
         <form onSubmit={send}>
           <ScreenshotDropzone files={files} onChange={setFiles} disabled={sending}>
             <p className="support-intro">
-              Tell us what went wrong. Your report goes straight to the support team,
-              along with technical details from this session that help us fix it faster.
+              {t('report.intro')}
             </p>
             <div className="form-group">
-              <label className="form-label" htmlFor="support-subject">What&rsquo;s the issue?</label>
+              <label className="form-label" htmlFor="support-subject">{t('report.subjectLabel')}</label>
               <input
                 id="support-subject"
                 className="input"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                placeholder="Short title, e.g. &ldquo;Schedule won't load on Fridays&rdquo;"
+                placeholder={t('report.subjectPlaceholder')}
                 maxLength={300}
                 disabled={sending}
                 autoFocus
               />
             </div>
             <div className="form-group">
-              <label className="form-label" htmlFor="support-description">What happened?</label>
+              <label className="form-label" htmlFor="support-description">{t('report.descLabel')}</label>
               <textarea
                 id="support-description"
                 className="input"
                 rows={5}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="What were you doing, what did you expect, and what happened instead?"
+                placeholder={t('report.descPlaceholder')}
                 disabled={sending}
               />
             </div>
             <div className="form-group">
-              <span className="form-label" id="support-priority-label">Priority</span>
+              <span className="form-label" id="support-priority-label">{t('report.priority')}</span>
               <div className="segmented" role="group" aria-labelledby="support-priority-label">
                 {PRIORITIES.map((p) => (
                   <button
@@ -190,7 +191,7 @@ export default function ReportIssueModal({ open, onClose }) {
                     onClick={() => setPriority(p.value)}
                     disabled={sending}
                   >
-                    {p.label}
+                    {t(p.labelKey)}
                   </button>
                 ))}
               </div>
@@ -201,17 +202,16 @@ export default function ReportIssueModal({ open, onClose }) {
             <div className="support-unavailable" role="alert">
               <Icon name="warning" size={16} />
               <span>
-                Support is temporarily unavailable. Please try again shortly,
-                or email your account manager.
+                {t('report.unavailable')}
               </span>
             </div>
           )}
           {error && <p className="form-error" role="alert">{error}</p>}
 
           <div className="modal-actions">
-            <button type="button" className="btn btn-outline" onClick={safeClose} disabled={sending}>Cancel</button>
+            <button type="button" className="btn btn-outline" onClick={safeClose} disabled={sending}>{t('common.cancel')}</button>
             <button type="submit" className="btn btn-primary" disabled={sending}>
-              {sending ? 'Sending…' : 'Send report'}
+              {sending ? t('report.sending') : t('report.send')}
             </button>
           </div>
         </form>

@@ -9,6 +9,7 @@ import { demoBackendsEngaged } from './demoMode';
 import { isOfflineError } from './netError';
 import { addMedia, allMedia, removeMedia as removeQueuedMedia, updateMedia, newMediaId, OFFLINE_CAP } from './mediaQueue';
 import { drainQueue } from './offlineRetry';
+import { decodeImage, drawJpeg, closeBitmap, shrinkPhoto } from './imageCanvas';
 
 const STUB = demoBackendsEngaged(); // prod builds ignore VITE_TIME_STUB — see lib/demoMode.js (Sept 1 incident)
 const BACKEND = STUB
@@ -40,10 +41,14 @@ async function api(path, { method = 'GET', body } = {}) {
   return json;
 }
 
+// A supply ORDER's delivery photos (S131, scope `supply`) have no site: the order alone names them,
+// and the supply keys gate them on the server (api/_lib/accountMedia/refs.js supplyMediaGrant).
 export async function listMedia({ siteId, refId, scope = 'cleaning_instruction', areaId = null }) {
-  if (!siteId) return [];
+  const byOrder = scope === 'supply' && !!refId;
+  if (!siteId && !byOrder) return [];
   if (BACKEND) {
-    const qs = new URLSearchParams({ siteId, scope });
+    const qs = new URLSearchParams({ scope });
+    if (siteId) qs.set('siteId', siteId);
     if (refId) qs.set('refId', refId);
     if (areaId) qs.set('areaId', areaId);
     return (await api(`/account-media/list?${qs.toString()}`)).media;
@@ -51,7 +56,12 @@ export async function listMedia({ siteId, refId, scope = 'cleaning_instruction',
   return stubList({ siteId, refId, scope, areaId });
 }
 
-export async function uploadMedia(file, { siteId, clientId, scope = 'cleaning_instruction', areaId = null, refId = null, clientMediaId = null }) {
+// A PHOTO is shrunk on the device first (lib/imageCanvas shrinkPhoto, CS-678: at most 1,600 px
+// on the long edge, a JPEG of a few hundred KB), before the size cap, the upload and the offline
+// queue — so the bytes stored, and the ones a phone keeps while offline, are the small ones. A
+// video, and anything that is not a camera photo, goes up exactly as picked.
+export async function uploadMedia(picked, { siteId, clientId, scope = 'cleaning_instruction', areaId = null, refId = null, clientMediaId = null }) {
+  const file = await shrinkPhoto(picked);
   const isVideo = (file.type || '').startsWith('video');
   if (file.size > (isVideo ? VIDEO_CAP : IMAGE_CAP)) {
     throw new Error(`That file is too large (max ${isVideo ? '200MB video' : '10MB image'}).`);
@@ -89,7 +99,10 @@ export async function uploadMedia(file, { siteId, clientId, scope = 'cleaning_in
 // clientMediaId threads through to confirm for row idempotency.
 async function doUpload(file, { siteId, clientId, scope, areaId, refId, clientMediaId }) {
   const isVideo = (file.type || '').startsWith('video');
-  const { path, token, kind, thumb } = await api('/account-media/upload-url', { method: 'POST', body: { siteId, mimeType: file.type, sizeBytes: file.size } });
+  // `scope` + `refId` say what the photo is for: a cleaner the office NAMED on a ticket may file
+  // that ticket's completion photo at a building they do not clean (the Cleaner Hub, D3 —
+  // api/_lib/accountMedia/refs.js namedTicketGrant; the server reads the ticket, never this).
+  const { path, token, kind, thumb } = await api('/account-media/upload-url', { method: 'POST', body: { siteId, mimeType: file.type, sizeBytes: file.size, scope, refId } });
   const { error } = await supabase.storage.from(BUCKET).uploadToSignedUrl(path, token, file);
   if (error) throw new Error(error.message || 'Upload failed');
   // Poster/thumbnail — STRICTLY best-effort and never blocks the media itself. Without
@@ -143,19 +156,19 @@ const THUMB_QUALITY = 0.72;
 // Build a small JPEG poster: downscale for an image, first-frame grab for a video.
 // Any failure (unsupported codec, no canvas, timeout) resolves null and the upload
 // proceeds without a thumbnail — the gallery then falls back to the full-res URL.
-async function makeThumbnail(file, isVideo) {
+// Exported for the client hub's ticket photo (lib/clientHubApi), which uploads through its
+// own route but wants the same small poster.
+// The canvas work is the shared lib/imageCanvas routine (the team photo's crop uses it too).
+export async function makeThumbnail(file, isVideo) {
   try {
     const source = isVideo ? await videoFirstFrame(file) : file;
     if (!source) return null;
-    const bmp = await createImageBitmap(source);
+    const bmp = await decodeImage(source);
+    if (!bmp) return null;
     const scale = Math.min(1, THUMB_MAX_EDGE / Math.max(bmp.width, bmp.height));
-    const w = Math.max(1, Math.round(bmp.width * scale));
-    const h = Math.max(1, Math.round(bmp.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
-    if (bmp.close) bmp.close();
-    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', THUMB_QUALITY));
+    const blob = await drawJpeg(bmp, { width: bmp.width * scale, height: bmp.height * scale, quality: THUMB_QUALITY });
+    closeBitmap(bmp);
+    return blob;
   } catch { return null; }
 }
 
@@ -191,6 +204,36 @@ export async function updateMediaCaption(id, caption) {
 
 // ── stub store (demo / local-only) ───────────────────────────────────────────
 const STUB_KEY = 'cleanspace_account_media_stub_v1';
+// WO-10: how many photos a record carries in the DEMO, read by the demo twin of the
+// resolve gate (lib/qcApi stubUpdateProblem). Exported so the stub does not reach into
+// this module's private store, and so both halves count the same rows.
+export function stubMediaCount({ scope, refId }) {
+  if (!refId) return 0;
+  return loadStub().media.filter((m) => m && m.ref_id === refId && (!scope || m.scope === scope)).length;
+}
+// CS-547: WHICH parts of a record carry a photo in the DEMO — the stub twin of the
+// server's `checklistPhotoKeys`. For a checklist submission the `area_id` is the ITEM key,
+// so this is the set of items that have their required photo. Exported for the same reason
+// stubMediaCount is: the qcApi stub must not reach into this module's private store, and
+// both halves have to count the same rows.
+export function stubMediaAreaIds({ scope, refId }) {
+  if (!refId) return [];
+  return [...new Set(loadStub().media
+    .filter((m) => m && m.ref_id === refId && (!scope || m.scope === scope))
+    .map((m) => m.area_id)
+    .filter(Boolean))];
+}
+// The demo twin of the server's removeMediaForRefs: every photo ONE record owns at a scope,
+// deleted with the record (an inspection draft discarded or past its 30 days —
+// lib/inspectionDrafts). Exported for the reason the two above are. → how many went.
+export function stubRemoveMediaForRef({ scope, refId }) {
+  if (!refId || !scope) return 0;
+  const db = loadStub();
+  const before = db.media.length;
+  db.media = db.media.filter((m) => !(m && m.ref_id === refId && m.scope === scope));
+  if (db.media.length !== before) saveStub(db);
+  return before - db.media.length;
+}
 const nowIso = () => new Date().toISOString();
 const rid = (p) => `${p}_${Math.random().toString(36).slice(2, 12)}`;
 const loadStub = () => { try { return JSON.parse(localStorage.getItem(STUB_KEY)) || { media: [] }; } catch { return { media: [] }; } };
@@ -218,6 +261,20 @@ async function stubUpload(file, { siteId, clientId, scope, areaId, refId }) {
     id: rid('am'), site_id: siteId, client_id: clientId || null, scope, area_id: areaId || null, ref_id: refId || null,
     kind: (file.type || '').startsWith('video') ? 'video' : 'image', mimeType: file.type,
     sizeBytes: file.size, caption: file.name || null, url, createdAt: nowIso(), created_at: nowIso(),
+  };
+  db.media.push(media); saveStub(db); return media;
+}
+// The DEMO twin of the public scan route filing a visitor's one photo (QR-23 e, api/_lib/scanCodes/
+// visitor storeVisitorPhoto): a photo the page already holds as a data URL, filed under the ticket at
+// its own scope. Called only by lib/scanCodesApi's demo branch (dead in a production build); one per
+// report, as the server's `clientMediaId` keeps it. → the row, or null.
+export function stubAttachDataUrl({ dataUrl, mimeType, sizeBytes = null, siteId, clientId = null, scope, refId }) {
+  if (!dataUrl || !scope || !refId) return null;
+  const db = loadStub();
+  if (db.media.some((m) => m && m.scope === scope && m.ref_id === refId)) return null;
+  const media = {
+    id: rid('am'), site_id: siteId || null, client_id: clientId || null, scope, area_id: null, ref_id: refId,
+    kind: 'image', mimeType, sizeBytes, caption: null, url: dataUrl, createdAt: nowIso(), created_at: nowIso(),
   };
   db.media.push(media); saveStub(db); return media;
 }

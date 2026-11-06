@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useDispatch } from '../store';
 import { useToast } from './Toast';
 import { ACTIONS } from '../store/reducer';
+import { msg } from '../i18n/core';
 
 // The crew-facing account note: shown to cleaners on every clean at this account
 // (via AccountNotesPanel on My Day + Job detail). Read-first — an "Edit" button flips
@@ -22,7 +23,8 @@ export default function OpsNoteCard({ client, canEdit, currentUser }) {
       id: client.id,
       patch: { opsNotes: draft },
       actorName: currentUser?.name,
-      summary: 'Account notes for the crew were updated.',
+      // A message: the crew's bell row is written in each cleaner's language (CS-193).
+      summary: msg('alerts.ops.notesUpdated'),
     });
     toast.success('Crew note updated. Assigned crew notified');
     setEditing(false);

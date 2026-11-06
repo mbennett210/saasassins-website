@@ -12,21 +12,26 @@ import {
 import { ACTIONS } from '../../store/reducer';
 import { usePermission } from '../../hooks/usePermission';
 import AddUserModal from '../../components/AddUserModal';
+import TeamImportModal from '../../components/TeamImportModal';
+import Centred from '../../components/Centred';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import Badge from '../../components/Badge';
 import Avatar from '../../components/Avatar';
 import EmptyState from '../../components/EmptyState';
 import Icon from '../../components/Icon';
 import { useToast } from '../../components/Toast';
-import { ROLE_LABELS, compareUsersByName, liveOverrideKeys } from '../../lib/roles';
+import { ROLE_LABELS, compareUsersByName, liveOverrideKeys, isOfficeRole, memberRoleLabel, memberRoleEnglish } from '../../lib/roles';
 import { CLOCK_RULE_OFF_BADGES, clockRulesOff } from '../../lib/clockRules';
 import { teamLimit, teamLimitReason } from '../../lib/teamLimits';
 import { sendEmail, buildInviteEmail } from '../../lib/email';
-import { listOrphanLogins } from '../../lib/teamApi';
+import { listOrphanLogins, listTeamSignIns } from '../../lib/teamApi';
+import { useT } from '../../i18n/react';
 import { getTeamPushStatus } from '../../lib/push';
 import { usePagedRows } from '../../hooks/usePagedRows';
 import ListPager from '../../components/ListPager';
 import AppVersionsCard from '../../components/AppVersionsCard';
+import { worksAtClients } from '../../lib/worksAt';
+import { customerLabel } from '../../lib/customerNumber';
 
 function relativeTime(iso) {
   if (!iso) return '';
@@ -44,6 +49,7 @@ export default function SettingsTeam() {
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
+  const t = useT();
   const nav = useFromHere();
   const navigate = useNavigate();
   const canEdit = usePermission('settings.team.edit');
@@ -56,12 +62,13 @@ export default function SettingsTeam() {
   const overrides = selectUserPermissionOverrides(state);
   const company = selectCompany(state);
   const currentUser = selectCurrentUser(state);
-  const canSeePush = ['owner', 'admin', 'manager'].includes(currentUser?.role);
+  // The office tiers (lib/roles OFFICE_ROLES), the push route's own gate (api/push/status).
+  const canSeePush = isOfficeRole(currentUser?.role);
   // The Clock rules column is for whoever can change them (step 4b) — the same rule the
   // Push column follows: a column nobody can act on is noise on an already-wide table. That
   // is an OFFICE role AND the key, as on the member page: a per-user grant of the key to a
   // cleaner does nothing for this field, so it shows them nothing to act on either.
-  const canSeeClockRules = holdsClockRules && ['owner', 'admin', 'manager'].includes(currentUser?.role);
+  const canSeeClockRules = holdsClockRules && isOfficeRole(currentUser?.role);
   const userPager = usePagedRows(sortedUsers, { param: 'page' });
   // Custom = an override that can change what they may do (an OWNER_ONLY entry on a
   // non-owner does nothing, lib/roles.js liveOverrideKeys).
@@ -69,6 +76,8 @@ export default function SettingsTeam() {
     && liveOverrideKeys(o.grants, u.role).length + liveOverrideKeys(o.revokes, u.role).length > 0);
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Settings → Team → Import team (task #466, components/TeamImportModal).
+  const [importOpen, setImportOpen] = useState(false);
   // Global search "Invite team member" deep-link: ?new=1 opens the invite modal once, then
   // strips it. Gated on canEdit. The strip REPLACES the history entry, so it re-passes the
   // location state — SettingsLayout's back arrow reads state.from, and dropping it would
@@ -106,6 +115,24 @@ export default function SettingsTeam() {
     // Re-check when the roster changes so adopting one clears it from the banner.
   }, [canEdit, rosterCount]);
 
+  // Members whose login never signed in, or who have no login (CS-661): invited while email is
+  // off, they hold a login nobody used yet, and the roster says Active. Their Status reads
+  // "Hasn't signed in" instead. Same reach as the banner above; non-blocking.
+  const [signIns, setSignIns] = useState({ never: new Set(), none: new Set() });
+  useEffect(() => {
+    if (!canEdit) { setSignIns({ never: new Set(), none: new Set() }); return undefined; }
+    let alive = true;
+    listTeamSignIns()
+      .then((r) => { if (alive) setSignIns({ never: new Set(r?.neverSignedIn || []), none: new Set(r?.noLogin || []) }); })
+      .catch(() => { if (alive) setSignIns({ never: new Set(), none: new Set() }); });
+    return () => { alive = false; };
+  }, [canEdit, rosterCount]);
+  const signInOf = (u) => {
+    const e = (u.email || '').trim().toLowerCase();
+    if (u.status !== 'active' || !e) return null;
+    return signIns.never.has(e) ? 'never' : signIns.none.has(e) ? 'none' : null;
+  };
+
   // Per-user mobile-push status (owner/admin/manager only, matching the server
   // role gate). Non-blocking: a 403 or unconfigured backend just leaves the column
   // blank. Reflects ACTUAL device subscriptions (push_subscriptions), not the
@@ -127,13 +154,12 @@ export default function SettingsTeam() {
         inviteeName: user.name,
         inviterName: currentUser?.name || 'Your team',
         companyName: company.name,
-        roleLabel: ROLE_LABELS[user.role],
+        roleLabel: memberRoleEnglish(user),
         token: invitation.token,
         expiresAt: invitation.expiresAt,
       });
       await sendEmail({
         to: user.email,
-        from: company.email || 'no-reply@example.com',
         subject,
         body,
         replyTo: currentUser?.email || company.email,
@@ -163,9 +189,15 @@ export default function SettingsTeam() {
         <div className="page-head-text">
           <h1 className="page-head-title">Team</h1>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
           {canEditRoles && (
             <Link to="/settings/roles" state={nav} className="text-sm text-muted">Edit role defaults →</Link>
+          )}
+          {canEdit && (
+            <button type="button" className="btn btn-gold" onClick={() => setImportOpen(true)}>
+              {/* Its words in its middle by code (components/Centred), as the pop-up it opens. */}
+              <Centred>{t('teamImport.title')}</Centred>
+            </button>
           )}
           {canEdit && (
             <button className="btn btn-primary" onClick={() => { setInvitePrefill(null); setInviteOpen(true); }}>
@@ -175,11 +207,10 @@ export default function SettingsTeam() {
         </div>
       </div>
 
-      {/* Fleet build telemetry (Sept 1 hardening) — GET is owner/admin server-side,
-          so gate the mount on the same roles to avoid a guaranteed 403. Manager is a
-          full-access tier (S35), so it mounts too; the server GET twin must allow
-          manager at go-live (API is stripped in this demo build). */}
-      {['owner', 'admin', 'manager'].includes(currentUser?.role) && (
+      {/* Fleet build telemetry (Sept 1 hardening) — mounted for the office tiers (lib/roles
+          OFFICE_ROLES; the server's heartbeat GET gates on settings.team.view, which this page's
+          route already requires). */}
+      {isOfficeRole(currentUser?.role) && (
         <AppVersionsCard users={sortedUsers} />
       )}
 
@@ -216,10 +247,10 @@ export default function SettingsTeam() {
       {users.length === 0 ? (
         <EmptyState icon={<Icon name="clients" size={28} />} title="No team members yet" />
       ) : (
-        <div className="table-wrap mobile-stack">
+        <div className="table-wrap mobile-stack team-table">
             <table>
               <thead>
-                <tr><th>Name</th><th>Email</th><th>Role</th><th>Access</th>{canSeeClockRules && <th>Clock rules</th>}{canSeePush && <th>Push</th>}<th>Status</th><th></th></tr>
+                <tr><th>Name</th><th>Role</th><th>{t('worksAt.label')}</th><th>Access</th>{canSeeClockRules && <th>Clock rules</th>}{canSeePush && <th>Push</th>}<th>Status</th><th></th></tr>
               </thead>
               <tbody>
                 {userPager.pageRows.map((u) => {
@@ -230,6 +261,7 @@ export default function SettingsTeam() {
                   // Revoking sets the member's status, and only a Super Admin may change a
                   // Super Admin's (lib/teamLimits.js; the server refuses it from anyone else).
                   const revokeLimit = invitation ? teamLimit(currentUser, u, 'revoke') : null;
+                  const signInState = signInOf(u);
                   return (
                     <tr
                       key={u.id}
@@ -239,13 +271,29 @@ export default function SettingsTeam() {
                       <td className="cell-primary">
                         {/* Keep the inner Link for keyboard nav + right-click "Open in new tab".
                             The row-level onClick handles the broader hit area. */}
-                        <Link to={`/settings/team/${u.id}`} state={nav} className="flex-row table-name-link" style={{ gap: 8, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
-                          <Avatar initials={u.initials} variant={u.avatar} size="sm" />
-                          <span className="name truncate" title={u.name}>{u.name}</span>
+                        {/* The email sits under the name, so a name never drops under the photo. */}
+                        <Link to={`/settings/team/${u.id}`} state={nav} className="table-name-link team-person" onClick={(e) => e.stopPropagation()}>
+                          <Avatar user={u} size="sm" centred />
+                          <span className="team-person-text">
+                            <span className="name truncate" title={u.name}>{u.name}</span>
+                            <span className="team-person-sub truncate" title={u.email || ''}>{u.email || '—'}</span>
+                          </span>
                         </Link>
                       </td>
-                      <td data-label="Email"><span className="truncate" title={u.email || ''}>{u.email || '—'}</span></td>
-                      <td data-label="Role">{ROLE_LABELS[u.role]}</td>
+                      <td data-label="Role" className="team-role">{memberRoleLabel(t, u)}</td>
+                      <td data-label={t('worksAt.label')} className="team-works">
+                        {/* The customers a cleaner works at (lib/worksAt): the first, then how many more. */}
+                        {(() => {
+                          const works = u.role === 'crew' ? worksAtClients(u, state.clients) : [];
+                          if (!works.length) return <span className="text-xs text-muted">—</span>;
+                          const all = works.map(customerLabel).join(', ');
+                          return (
+                            <span className="truncate" title={all}>
+                              {customerLabel(works[0])}{works.length > 1 && <span className="text-muted"> {t('worksAt.more', { count: works.length - 1 })}</span>}
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td data-label="Access">
                         <Badge variant={hasOverride(u) ? 'amber' : 'slate'}>
                           {hasOverride(u) ? 'Custom' : 'Default'}
@@ -289,9 +337,15 @@ export default function SettingsTeam() {
                       )}
                       <td data-label="Status">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <Badge variant={u.status === 'active' ? 'green' : u.status === 'invited' ? 'amber' : 'slate'}>
-                            {u.status.charAt(0).toUpperCase() + u.status.slice(1)}
-                          </Badge>
+                          {signInState ? (
+                            <Badge variant={signInState === 'never' ? 'amber' : 'slate'}>
+                              {t(signInState === 'never' ? 'teamSignIns.never' : 'teamSignIns.noLogin')}
+                            </Badge>
+                          ) : (
+                            <Badge variant={u.status === 'active' ? 'green' : u.status === 'invited' ? 'amber' : 'slate'}>
+                              {u.status.charAt(0).toUpperCase() + u.status.slice(1)}
+                            </Badge>
+                          )}
                           {invitation && sentLabel && (
                             <span className="text-xs text-muted">{sentLabel}</span>
                           )}
@@ -340,6 +394,7 @@ export default function SettingsTeam() {
         </div>
       )}
 
+      <TeamImportModal open={importOpen} onClose={() => setImportOpen(false)} />
       <AddUserModal
         open={inviteOpen}
         initial={invitePrefill}

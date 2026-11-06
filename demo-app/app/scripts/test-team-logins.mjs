@@ -2,7 +2,7 @@
 // both halves, through the REAL handlers (api/settings/[...path].js, api/state/org-state.js)
 // and the REAL supabase-js, against a local fake GoTrue + PostgREST
 // (scripts/fake-supabase-server.mjs). Offline by construction: a fetch guard refuses every
-// host but the fake, and the Resend key is removed so no email can be sent.
+// host but the fake, and no system sender is configured so no email can be sent.
 //
 // What this pins (fixed 2026-09-23, owner's decisions). Before:
 //   • claims.js VALID_ROLES was owner/admin/crew: nobody could invite a manager or re-role
@@ -42,7 +42,7 @@ Object.assign(process.env, {
   CLEANSPACE_ORG_ID: ORG,
   APP_BASE_URL: 'http://127.0.0.1',
 });
-for (const k of ['RESEND_API_KEY', 'ALERT_WEBHOOK_URL', 'RESEND_AUTH_FROM']) delete process.env[k];
+for (const k of ['SYSTEM_SENDER_EMAIL', 'ALERT_WEBHOOK_URL']) delete process.env[k];
 const realFetch = globalThis.fetch;
 const strays = [];
 globalThis.fetch = (input, init) => {
@@ -173,8 +173,10 @@ function world({ secondOwner = null, overrides = [], perms = matrix, orphanOwner
 const punch = (k, iso) => ({ id: `te_${k}_${iso}`, organization_id: ORG, user_id: idOf(k), clock_in_at: iso, clock_out_at: iso, status: 'closed' });
 
 const mockRes = () => ({
-  statusCode: 0, body: null,
+  statusCode: 0, body: null, headers: {},
   status(c) { this.statusCode = c; return this; },
+  // A real response has it: an answer carrying a one-time link is `no-store` (CS-661).
+  setHeader(k, v) { this.headers[String(k).toLowerCase()] = v; return this; },
   json(o) { this.body = o; return this; },
 });
 // POST (or GET with no body) /api/settings/users[/sub] as `k`.
@@ -456,12 +458,16 @@ ok('the owner can remove an admin', r.statusCode === 200 && !login('admin'));
 // ── reset links + the orphan list ─────────────────────────────────────────────────────
 fresh();
 r = await users('mgr', 'reset-link', { email: email('member') });
-// No Resend key offline, so an allowed reset reaches the send and fails there — past the gate.
-ok('a MANAGER may send a reset link (staff.resetPassword): it reaches the send', r.statusCode !== 403 && /Email is not configured/.test(errOf(r)));
+// No system sender offline, so an allowed reset can't be emailed. Since CS-661 (S128) the route
+// then hands the one-time link to the caller, who holds everything a crew member holds — no-store,
+// never logged — instead of failing with "Email isn't set up" (the dead end the member page had).
+// Who may be handed whose link is test-client-logins-route.mjs §E.
+const handed = (x) => x.statusCode === 200 && x.body?.emailed === false && /^https?:\/\//.test(x.body?.link || '') && /no-store/.test(x.headers['cache-control'] || '');
+ok('a MANAGER may send a reset link (staff.resetPassword): with no mailbox they are handed the link', handed(r));
 r = await users('mgr', 'reset-link', { email: email('owner') });
 ok("a manager cannot reset a Super Admin's password", r.statusCode === 403);
 r = await users('admin', 'reset-link', { email: email('member') });
-ok('an admin still may (never tightened)', r.statusCode !== 403 && /Email is not configured/.test(errOf(r)));
+ok('an admin still may (never tightened)', handed(r));
 r = await users('crew', 'reset-link', { email: email('member') });
 ok('crew may not', r.statusCode === 403);
 r = await users('mgr', 'orphans');

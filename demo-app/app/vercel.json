@@ -7,16 +7,38 @@
     { "source": "/api/webhooks/:rest*",    "destination": "/api/webhooks/_?subpath=:rest*" },
     { "source": "/api/public/pay/:rest*",  "destination": "/api/public/pay/_?subpath=:rest*" },
     { "source": "/api/public/qc/:rest*",    "destination": "/api/public/qc/_?subpath=:rest*" },
+    { "source": "/api/public/auth/:rest*",  "destination": "/api/public/auth/_?subpath=:rest*" },
     { "source": "/api/workspaces/:rest*",  "destination": "/api/workspaces/_?subpath=:rest*" },
     { "source": "/api/site-security/:rest*", "destination": "/api/site-security/_?subpath=:rest*" },
     { "source": "/api/account-media/:rest*", "destination": "/api/account-media/_?subpath=:rest*" },
+    { "source": "/api/site-attachments/:rest*", "destination": "/api/site-attachments/_?subpath=:rest*" },
     { "source": "/api/invoice-attachments/:rest*", "destination": "/api/invoice-attachments/_?subpath=:rest*" },
     { "source": "/api/hr-files/:rest*",     "destination": "/api/hr-files/_?subpath=:rest*" },
     { "source": "/api/qc/:rest*",           "destination": "/api/qc/_?subpath=:rest*" },
     { "source": "/api/time/:rest*",         "destination": "/api/time/_?subpath=:rest*" },
+    { "source": "/api/payroll/:rest*",      "destination": "/api/payroll/_?subpath=:rest*" },
     { "source": "/api/variance/:rest*",     "destination": "/api/variance/_?subpath=:rest*" },
-    { "source": "/api/reviews/:rest*",      "destination": "/api/reviews/_?subpath=:rest*" },
+    { "source": "/api/quickbooks/:rest*",   "destination": "/api/quickbooks/_?subpath=:rest*" },
+    { "source": "/api/activity/:rest*",     "destination": "/api/activity/_?subpath=:rest*" },
+    { "source": "/api/hub/:rest*",          "destination": "/api/hub/_?subpath=:rest*" },
+    { "source": "/api/client-users/:rest*", "destination": "/api/client-users/_?subpath=:rest*" },
+    { "source": "/api/contracts/:rest*",    "destination": "/api/contracts/_?subpath=:rest*" },
+    { "source": "/api/supplies/:rest*",     "destination": "/api/supplies/_?subpath=:rest*" },
+    { "source": "/api/scan-codes/:rest*",   "destination": "/api/scan-codes/_?subpath=:rest*" },
+    { "source": "/api/public/scan/:rest*",  "destination": "/api/public/scan/_?subpath=:rest*" },
+    { "source": "/api/i18n/:rest*",         "destination": "/api/i18n/_?subpath=:rest*" },
+    { "source": "/api/avatars/:rest*",      "destination": "/api/avatars/_?subpath=:rest*" },
+    { "source": "/api/hr-warnings/:rest*",  "destination": "/api/hr-warnings/_?subpath=:rest*" },
+    { "source": "/api/hr-incidents/:rest*", "destination": "/api/hr-incidents/_?subpath=:rest*" },
+    { "source": "/api/hr-terminations/:rest*", "destination": "/api/hr-terminations/_?subpath=:rest*" },
+    { "source": "/api/client-messages/:rest*", "destination": "/api/client-messages/_?subpath=:rest*" },
+    { "source": "/api/customer-documents/:rest*", "destination": "/api/customer-documents/_?subpath=:rest*" },
+    { "source": "/api/sms/:rest*",          "destination": "/api/sms/_?subpath=:rest*" },
     { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
+    { "source": "/sw.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
   ],
   "crons": [
     { "path": "/api/inbox/ingest", "schedule": "* * * * *" },
@@ -25,7 +47,7 @@
     { "path": "/api/cron/ops-alerts", "schedule": "*/5 * * * *" },
     { "path": "/api/time/auto-close", "schedule": "0 * * * *" },
     { "path": "/api/time/watchdog", "schedule": "0 14 * * *" },
-    { "path": "/api/reviews/sync", "schedule": "0 */6 * * *" },
-    { "path": "/api/cron/reap", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/reap", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/qbo-refresh", "schedule": "30 6-8 * * *" }
   ]
 }

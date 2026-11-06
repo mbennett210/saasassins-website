@@ -167,6 +167,8 @@ const state = {
   pipelines: [{ id: 'plp' }], opportunities: [{ id: 'op' }], activePipelineId: 'plp',
   marketingInboxes: [{ id: 'mi' }], marketingSequences: [{ id: 'ms' }], marketingEnrollments: [{ id: 'me' }],
   marketingSends: [{ id: 'msd' }], marketingReplies: [{ id: 'mr' }], marketingSuppressions: [{ id: 'msp' }], marketingSettings: { on: true },
+  // `reviews` (the Indeed count) and `reminderEvents` are RETIRED slices a committed blob may still
+  // carry until their data-ops strip them: unclassified, so dropped.
   reviews: { indeedActual: 3 }, opsAlertEvents: [{ id: 'oe' }], supplyItems: [{ id: 'si' }], supplyRequests: [{ id: 'sr' }],
   contactActivities: [{ id: 'ca' }], clientReview: { sections: { x: 1 } },
   reminderTemplates: [{ id: 'rt' }], reminderEvents: [{ id: 're' }],
@@ -190,7 +192,7 @@ ok('keep: version', v.version === 56);
 ok('keep: company', v.company && v.company.name === 'Clean Space');
 
 // F2 (CS-002 L3): company.integrations is TRIMMED for crew to exactly the send-readiness
-// fields the crew-reachable messaging surface reads (useMessageSender + ReminderScheduler:
+// fields the crew-reachable messaging surface reads (useMessageSender:
 // twilio connected/phoneNumber/a2p.status; email defaultReplyTo). No last4s, EIN, business
 // address, DKIM/DNS records, webhook URLs, verified domain or tokens ever reach a crew tab.
 // Pre-fix `company` was classified 'keep' and passed through WHOLE — every field below shipped.

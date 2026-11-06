@@ -13,7 +13,7 @@ The app's one icon set: 49 hand-picked stroke glyphs on a 24px grid.
 
 ## Names
 
-dashboard · schedule · clients · invoices · reminders · messaging · settings · search · plus · edit · trash · check · x · camera · bell · bellOff · building · chart · dollarCircle · user · lock · logout · archive · tag · filter · mail · phone · mapPin · phoneSolid · mailSolid · messagingSolid · chevronRight · chevronLeft · arrowLeft · chevronUp · chevronDown · resizeGrip · dots · star · moon · folder · forms · expand · repeat · warning · paperclip · upload · box · grip
+dashboard · schedule · clients · invoices · reminders · messaging · settings · search · plus · edit · trash · check · x · camera · bell · bellOff · building · chart · dollarCircle · user · lock · logout · archive · tag · filter · mail · phone · mapPin · phoneSolid · mailSolid · messagingSolid · chevronRight · chevronLeft · arrowLeft · chevronUp · chevronDown · resizeGrip · dots · star · moon · folder · forms · expand · repeat · warning · paperclip · upload · box · home · clock · shield · grip
 
 ## Rules
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-26T16:32:24.547Z",
+  "generatedAt": "2026-11-04T05:52:40.978Z",
   "rebaselined": [
     {
       "at": "2026-09-25",
@@ -9,11 +9,11 @@
     }
   ],
   "totals": {
-    "no-inline-px": 544,
-    "scaffold-inline": 55,
+    "no-inline-px": 377,
+    "scaffold-inline": 39,
     "no-raw-hex": 31,
-    "no-raw-px": 2495,
-    "off-grid": 519
+    "no-raw-px": 2398,
+    "off-grid": 504
   },
   "files": {
     "App.jsx": {
@@ -23,13 +23,13 @@
       "no-inline-px": 6
     },
     "components/AddContactModal.jsx": {
-      "no-inline-px": 7
+      "no-inline-px": 5
     },
     "components/AddContactsToStageModal.jsx": {
       "no-inline-px": 3
     },
     "components/AddUserModal.jsx": {
-      "no-inline-px": 7
+      "no-inline-px": 6
     },
     "components/AddWorkspaceModal.jsx": {
       "no-inline-px": 4
@@ -38,18 +38,12 @@
       "no-inline-px": 6,
       "scaffold-inline": 1
     },
-    "components/ChecklistFill.jsx": {
-      "no-inline-px": 1
-    },
     "components/CleaningInstructionsCard.jsx": {
       "no-inline-px": 3,
       "scaffold-inline": 1
     },
     "components/ClientPicker.jsx": {
       "no-inline-px": 1
-    },
-    "components/ConnectEmailProviderModal.jsx": {
-      "no-inline-px": 5
     },
     "components/ConnectFailureHelp.jsx": {
       "no-inline-px": 3
@@ -64,15 +58,12 @@
       "no-inline-px": 2
     },
     "components/ConversationMessagePanel.jsx": {
-      "no-inline-px": 18,
+      "no-inline-px": 8,
       "scaffold-inline": 1
     },
     "components/CreateQuoteModal.jsx": {
       "no-inline-px": 1,
       "scaffold-inline": 1
-    },
-    "components/CsvImportModal.jsx": {
-      "no-inline-px": 19
     },
     "components/DriveTimeReport.jsx": {
       "no-inline-px": 3,
@@ -90,24 +81,9 @@
     "components/GmailConnectInstructions.jsx": {
       "no-inline-px": 16
     },
-    "components/GmbInsightsPanel.jsx": {
-      "no-inline-px": 13,
-      "scaffold-inline": 2
-    },
-    "components/GmbPhotosPanel.jsx": {
-      "no-inline-px": 9,
-      "scaffold-inline": 1
-    },
-    "components/GmbPostsPanel.jsx": {
-      "no-inline-px": 19,
-      "scaffold-inline": 1
-    },
     "components/GoogleWorkspacesSection.jsx": {
       "no-inline-px": 16,
       "scaffold-inline": 2
-    },
-    "components/InspectionFill.jsx": {
-      "no-inline-px": 1
     },
     "components/InspectionTemplateEditor.jsx": {
       "no-inline-px": 1
@@ -126,7 +102,7 @@
       "no-inline-px": 4
     },
     "components/LogPaymentModal.jsx": {
-      "no-inline-px": 2
+      "no-inline-px": 1
     },
     "components/MediaGallery.jsx": {
       "no-inline-px": 4
@@ -156,10 +132,6 @@
     },
     "components/PipelineBoard.jsx": {
       "no-inline-px": 2
-    },
-    "components/ReviewGrowthPanel.jsx": {
-      "no-inline-px": 11,
-      "scaffold-inline": 1
     },
     "components/ScheduleBlocksEditor.jsx": {
       "no-inline-px": 1
@@ -195,8 +167,8 @@
       "no-raw-hex": 31
     },
     "index.css": {
-      "no-raw-px": 2486,
-      "off-grid": 518
+      "no-raw-px": 2389,
+      "off-grid": 503
     },
     "layouts/AppLayout.jsx": {
       "no-inline-px": 2
@@ -209,7 +181,7 @@
       "no-inline-px": 2
     },
     "pages/Dashboard.jsx": {
-      "no-inline-px": 16,
+      "no-inline-px": 14,
       "scaffold-inline": 1
     },
     "pages/Inspections.jsx": {
@@ -234,20 +206,6 @@
     "pages/Login.jsx": {
       "no-inline-px": 2
     },
-    "pages/marketing/RepliesTab.jsx": {
-      "no-inline-px": 1
-    },
-    "pages/marketing/SequenceEditorPanel.jsx": {
-      "no-inline-px": 1
-    },
-    "pages/MyDay.jsx": {
-      "no-inline-px": 7,
-      "scaffold-inline": 4
-    },
-    "pages/public-form.css": {
-      "no-raw-px": 9,
-      "off-grid": 1
-    },
     "pages/PublicQuote.jsx": {
       "no-inline-px": 13
     },
@@ -257,15 +215,25 @@
     "pages/Quotes.jsx": {
       "no-inline-px": 2
     },
-    "pages/Reviews.jsx": {
-      "no-inline-px": 44,
-      "scaffold-inline": 4
-    },
     "pages/Schedule.jsx": {
       "no-inline-px": 2
     },
+    "pages/Variance.jsx": {
+      "no-inline-px": 5,
+      "scaffold-inline": 3
+    },
+    "pages/marketing/RepliesTab.jsx": {
+      "no-inline-px": 1
+    },
+    "pages/marketing/SequenceEditorPanel.jsx": {
+      "no-inline-px": 1
+    },
+    "pages/public-form.css": {
+      "no-raw-px": 9,
+      "off-grid": 1
+    },
     "pages/settings/Account.jsx": {
-      "no-inline-px": 21,
+      "no-inline-px": 19,
       "scaffold-inline": 2
     },
     "pages/settings/ConnectedInboxes.jsx": {
@@ -273,14 +241,11 @@
       "scaffold-inline": 1
     },
     "pages/settings/Integrations.jsx": {
-      "no-inline-px": 53,
-      "scaffold-inline": 11
+      "no-inline-px": 39,
+      "scaffold-inline": 8
     },
     "pages/settings/Operations.jsx": {
       "no-inline-px": 3
-    },
-    "pages/settings/Reminders.jsx": {
-      "no-inline-px": 2
     },
     "pages/settings/Services.jsx": {
       "no-inline-px": 7,
@@ -291,17 +256,10 @@
       "scaffold-inline": 1
     },
     "pages/settings/Team.jsx": {
-      "no-inline-px": 8
+      "no-inline-px": 7
     },
     "pages/settings/TeamDetail.jsx": {
-      "no-inline-px": 10
-    },
-    "pages/Variance.jsx": {
-      "no-inline-px": 5,
-      "scaffold-inline": 3
-    },
-    "store/index.jsx": {
-      "no-inline-px": 1
+      "no-inline-px": 8
     }
   }
 }

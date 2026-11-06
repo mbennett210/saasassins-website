@@ -31,7 +31,7 @@ const baseState = (markers) => ({
 // marker-retention logic (which runs before the fan-out, regardless of scope).
 const raise = (state, id) => reducer(state, {
   type: ACTIONS.RAISE_OPS_ALERT,
-  alert: { id, kind: 'shiftLate', recipientScope: 'crew', crewIds: [], title: 't', body: 'b', url: '/x' },
+  alert: { id, kind: 'shiftMissed', recipientScope: 'crew', crewIds: [], title: 't', body: 'b', url: '/x' },
 });
 const ids = (s) => new Set((s.opsAlertEvents || []).map((e) => e.id));
 
@@ -41,7 +41,7 @@ console.log('ops-alert marker retention:');
 ok('501 markers all within the lookback window are all retained (no still-eligible eviction)', () => {
   const now = Date.now();
   const recent = Array.from({ length: 500 }, (_, i) => ({
-    id: `oa_pre_${i}`, kind: 'shiftLate', clientId: null, jobId: `j${i}`,
+    id: `oa_pre_${i}`, kind: 'shiftMissed', clientId: null, jobId: `j${i}`,
     firedAt: new Date(now - i * 1000).toISOString(), // all within the last ~500s, well inside 48h
   }));
   const next = raise(baseState(recent), 'oa_new');
@@ -56,7 +56,7 @@ ok('markers older than 2x lookback (min 48h) are pruned', () => {
   const now = Date.now();
   const stale = [
     { id: 'oa_stale', kind: 'shiftMissed', clientId: null, jobId: 'jz', firedAt: new Date(now - 100 * HOUR).toISOString() },
-    { id: 'oa_fresh', kind: 'shiftLate', clientId: null, jobId: 'jy', firedAt: new Date(now - 1 * HOUR).toISOString() },
+    { id: 'oa_fresh', kind: 'shiftMissed', clientId: null, jobId: 'jy', firedAt: new Date(now - 1 * HOUR).toISOString() },
   ];
   const next = raise(baseState(stale), 'oa_new2');
   const set = ids(next);
@@ -68,7 +68,7 @@ ok('markers older than 2x lookback (min 48h) are pruned', () => {
 // ── retention scales with a larger configured lookback ──
 ok('a larger shiftAlertLookbackHours widens retention (72h marker kept at 48h lookback)', () => {
   const now = Date.now();
-  const s = baseState([{ id: 'oa_72h', kind: 'shiftLate', clientId: null, jobId: 'jw', firedAt: new Date(now - 72 * HOUR).toISOString() }]);
+  const s = baseState([{ id: 'oa_72h', kind: 'shiftMissed', clientId: null, jobId: 'jw', firedAt: new Date(now - 72 * HOUR).toISOString() }]);
   s.opsSettings = { shiftAlertLookbackHours: 48 }; // retention = max(96, 48) = 96h -> 72h kept
   const next = raise(s, 'oa_new3');
   assert.ok(ids(next).has('oa_72h'), '72h marker must be kept when lookback is 48h (96h retention)');
@@ -76,7 +76,7 @@ ok('a larger shiftAlertLookbackHours widens retention (72h marker kept at 48h lo
 
 // ── undated (legacy) markers are kept, never pruned by the time filter ──
 ok('legacy markers without firedAt are retained', () => {
-  const next = raise(baseState([{ id: 'oa_legacy', kind: 'shiftLate', clientId: null, jobId: 'jl' }]), 'oa_new4');
+  const next = raise(baseState([{ id: 'oa_legacy', kind: 'shiftMissed', clientId: null, jobId: 'jl' }]), 'oa_new4');
   assert.ok(ids(next).has('oa_legacy'), 'an undated marker must not be pruned');
 });
 
@@ -119,7 +119,7 @@ ok('a newer episode for the same account supersedes its older marker (one per cu
 
 ok('the 5000 backstop trims shift markers only, oldest first — never an inspection marker', () => {
   const now = Date.now();
-  const shifts = Array.from({ length: 5000 }, (_, i) => ({ id: `oa_s_${i}`, kind: 'shiftLate', clientId: null, jobId: `j${i}`, firedAt: new Date(now - 1000).toISOString() }));
+  const shifts = Array.from({ length: 5000 }, (_, i) => ({ id: `oa_s_${i}`, kind: 'shiftMissed', clientId: null, jobId: `j${i}`, firedAt: new Date(now - 1000).toISOString() }));
   const next = raise(baseState([inspMarker('oa_inspectionDue_cl9_x', 'cl9', 10 * DAY), ...shifts]), 'oa_new5');
   const set = ids(next);
   assert.ok(set.has('oa_inspectionDue_cl9_x'), 'the inspection marker survives the backstop');

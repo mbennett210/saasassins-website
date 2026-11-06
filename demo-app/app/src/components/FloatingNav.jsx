@@ -1,13 +1,18 @@
+import { assetUrl } from '../lib/assetUrl'; // polishpoint-demo
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Icon from './Icon';
 import UserSwitcher from './UserSwitcher';
-import { assetUrl } from '../lib/assetUrl';
 import { useSelector } from '../store';
 import { selectCurrentUser } from '../store/selectors';
 import { usePermissionChecker } from '../hooks/usePermission';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { mobileTabs } from '../lib/navData';
+import { mobileTabs, mobileMenu, managerNav, supplyNav, isSupplyRole, navPath, navRowOn } from '../lib/navData';
+import { seesTeamPages } from '../lib/teamScope';
+import { useT } from '../i18n/react';
+import { useManagerNavCounts, menuCountsFor } from '../hooks/useManagerHomeReads';
+import { useFromHere } from '../hooks/useFromHere';
+import { OFFICE_SCAN_PATH } from '../lib/scanLanding';
 
 // Mobile-only (≤640px) glass floating nav — the CleanSpace port of the ReciFeast
 // "liquid glass" bar (adapted: CleanSpace gold accents, no orange; see the
@@ -23,9 +28,13 @@ import { mobileTabs } from '../lib/navData';
 // surfaces (Pipeline, Quotes) omitted on mobile. (Marketing is desktopOnly too but is
 // currently dormant everywhere — gated off via MARKETING_ENABLED, lib/features.js.)
 // The slide-out menu
-// deliberately EXCLUDES the four primary tabs (Dashboard / Schedule·My Day / Messaging
+// deliberately EXCLUDES the four primary tabs (Dashboard / Schedule / Messaging
 // / Customers) — they already live in the always-visible tray, so the menu lists only
-// what the tray doesn't.
+// what the tray doesn't. For a MANAGER the menu is Matt's order instead (D2, UI_RULES §152:
+// lib/navData managerNav — his rows, a line, Account, then "More"); their tray never changes. A
+// SUPPLY MANAGER's phone is their own app (S131 Wave 2, UI_RULES §169): the bar is Order Queue ·
+// Supply Catalog · Messages (lib/navData SUPPLY_TABS) and the menu supplyNav's rows. OFFICE viewers
+// only: a cleaner gets the crew shell, which mounts no FloatingNav (layouts/AppLayout, UI_RULES §165).
 
 // The menu button shows the CleanSpace glyph when closed (see .cs-fnav-logo) and this
 // X when open. (The old hamburger MenuGlyph was replaced by the logo.)
@@ -36,14 +45,27 @@ const CloseGlyph = () => (
 );
 
 export default function FloatingNav() {
+  // `tr`, not `t`: this component already names its tabs `t` in its loops. Every label is
+  // the catalog's line in the reader's language (CS-193); labelKey comes from lib/navData.
+  const tr = useT();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  // The Scan row's referrer: Back from the scanner returns to the page it was opened on.
+  const nav = useFromHere();
   const check = usePermissionChecker();
   const user = useSelector(selectCurrentUser);
   const isMobile = useIsMobile();
-  const isCrew = user?.role === 'crew';
+  // A MANAGER's menu is Matt's order (D2, UI_RULES §152), by ROLE like the sidebar's.
+  const isManager = user?.role === 'manager';
+  // The team pages (Accounts, S131): the owner's, an admin's and an Operations Manager's.
+  const team = seesTeamPages(user);
+  // A SUPPLY MANAGER's phone is their own app (S131 Wave 2, UI_RULES §169): their bar (Order Queue ·
+  // Supply Catalog · Messages) and their menu (supplyNav), by ROLE like the manager's.
+  const supply = isSupplyRole(user);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  // The manager menu's "More" list: shut until tapped (or while one of its pages is open).
+  const [moreOpen, setMoreOpen] = useState(false);
   // The destination of a tap whose page is still loading. Navigations run in a React
   // transition, so `pathname` keeps the OLD route until the new page's chunk arrives; on a
   // slow network (a phone just resumed) the tray looked dead for that whole wait. Lighting
@@ -54,31 +76,36 @@ export default function FloatingNav() {
   const pillRef = useRef(null);
   const tabRefs = useRef([]);
 
-  // The four primary tray tabs (Dashboard · Schedule/My Day · Messaging · Customers/
-  // Quality) come from lib/navData, shared with the search launchpad's "Go to" grid.
-  const tabDefs = mobileTabs(check, isCrew);
+  // The primary tray tabs (Dashboard · Schedule · Messaging · Customers for the office; the supply
+  // manager's own three) come from lib/navData, shared with the search launchpad's "Go to" grid.
+  const tabDefs = mobileTabs(check, { supply });
 
   // Secondary sections only — the four primary tabs above are omitted here because
-  // they already live in the always-visible tray (per Daniel's S31 request).
-  const menuDefs = [
-    // Review is desktop-only (like Pipeline / Quotes), so it has NO entry in the phone nav.
-    { to: '/time', label: 'Time Clock', icon: 'schedule', perm: 'time.view' },
-    { to: '/variance', label: 'Variance', icon: 'chart', perm: 'variance.view' },
-    { to: '/payroll', label: 'Payroll', icon: 'invoices', perm: 'payroll.view', badge: 'NEW' },
-    { to: '/hr', label: 'HR', icon: 'clients', perm: 'hr.view', badge: 'NEW' },
-    { to: '/inspections', label: 'Quality', icon: 'check', perm: 'qc.view' },
-    { to: '/keys', label: 'Keys', icon: 'lock', perm: 'keys.view' },
-    { to: '/supplies', label: 'Supplies', icon: 'box', perm: 'supplies.view', badge: 'NEW' },
-    { to: '/reviews', label: 'Reviews', icon: 'star', perm: 'reviews.view' },
-    { to: '/invoices', label: 'Invoices', icon: 'invoices', perm: 'invoices.view' },
-    { to: '/settings', label: 'Settings', icon: 'settings', perm: 'settings.account' },
-  ].filter(Boolean).filter((m) => check(m.perm))
-    // Never duplicate a primary tray tab in the menu (e.g. crew's Quality now lives in
-    // the tray).
-    .filter((m) => !tabDefs.some((t) => t.to === m.to));
+  // they already live in the always-visible tray (per Daniel's S31 request). The list lives in
+  // lib/navData (MOBILE_MENU; Review is desktop-only, so it has NO entry in the phone nav), and
+  // mobileMenu() drops what the viewer can't open and every tab the tray already shows.
+  // A MANAGER instead gets Matt's order, a line, Account, then "More" with every other page the
+  // menu offered them before (managerNav, the tray's paths excluded the same way).
+  const mgr = isManager ? managerNav(check, { isMobile: true, tray: tabDefs.map((t) => t.to), team })
+    : supply ? supplyNav(check, { isMobile: true, tray: tabDefs.map((t) => t.to) }) : null;
+  // The count pills, the same shared reads as the sidebar's and the Home's: a manager's, and the
+  // owner's and an admin's (menuCountsFor; Daniel, 2026-10-30).
+  const pills = useManagerNavCounts(menuCountsFor(user?.role));
+  const menuDefs = mgr ? mgr.primary : mobileMenu(check, { team });
 
-  const shownPath = pendingTo ?? pathname;
-  const isActive = (to, end) => (end ? shownPath === to : shownPath === to || shownPath.startsWith(`${to}/`));
+  const shownPath = navPath(pendingTo ?? pathname);
+  const shownSearch = pendingTo != null ? (String(pendingTo).split('?')[1] || '') : search;
+  // Every row this phone draws (the bar and the menu, More included), for navRowOn below.
+  const drawn = [...tabDefs, ...menuDefs, ...(mgr ? mgr.more : [])];
+  // By PATH: a row with a query (the supply manager's Supply Catalog, the Supplies page's Catalog tab)
+  // is lit on its page. Two rows on one path (the office's Supplies and Supply Catalog, task #125)
+  // are lit by the query, never both (lib/navData navRowOn).
+  const isActive = (to, end) => {
+    const p = navPath(to);
+    const onPath = end ? shownPath === p : shownPath === p || shownPath.startsWith(`${p}/`);
+    return onPath && navRowOn({ to }, drawn, shownSearch);
+  };
+  const moreShown = !!mgr && (moreOpen || mgr.more.some((m) => isActive(m.to, m.end)));
   // The active primary tab (if the current route is one of the four); drives the
   // condensed puck's fill + icon.
   const activeTab = tabDefs.find((t) => isActive(t.to, t.end));
@@ -153,13 +180,15 @@ export default function FloatingNav() {
     scroller.style.overflow = 'hidden';
     return () => { scroller.style.overflow = prev; };
   }, [menuOpen]);
-  useEffect(() => { setMenuOpen(false); setPendingTo(null); }, [pathname]);
+  // The query too: a tap on the Supply Catalog row (/supplies?tab=catalog) from the Supplies page lands
+  // on the same path, and a tap still "pending" would keep the wrong row lit.
+  useEffect(() => { setMenuOpen(false); setMoreOpen(false); setPendingTo(null); }, [pathname, search]);
 
   if (!isMobile) return null;
 
   const go = (to) => {
     setMenuOpen(false);
-    if (to !== pathname) setPendingTo(to);
+    if (to !== pathname + search) setPendingTo(to);
     navigate(to);
   };
 
@@ -178,39 +207,96 @@ export default function FloatingNav() {
       <button
         type="button"
         className="cs-fnav-scrim"
-        aria-label="Close menu"
+        aria-label={tr('nav.closeMenu')}
         tabIndex={menuOpen ? 0 : -1}
         onClick={() => setMenuOpen(false)}
       />
 
-      <nav className="cs-fnav-menu" aria-label="All sections" aria-hidden={!menuOpen}>
-        <div className="cs-fnav-cap">Go to</div>
-        {/* Global search (MasterSearch listens for cs:open-search). Here on every page for
-            non-crew, including the ones whose header owns the top-right corner (Schedule,
-            Messaging) where the floating magnifier steps aside. Crew have no search at all
-            (owner, 2026-09-22). Dispatched inside this tap so the sheet can focus its field
-            and iOS raises the keyboard. */}
-        {!isCrew && (
+      <nav className="cs-fnav-menu" aria-label={tr('nav.allSections')} aria-hidden={!menuOpen}>
+        <div className="cs-fnav-cap">{tr('nav.goTo')}</div>
+        {/* Global search (MasterSearch listens for cs:open-search). Here on every page, including
+            the ones whose header owns the top-right corner (Schedule, Messaging) where the
+            floating magnifier steps aside. This menu is the office shell's alone: crew have no
+            search (owner, 2026-09-22) and no tray at all (the crew shell, UI_RULES §165).
+            Dispatched inside this tap so the sheet can focus its field and iOS raises the
+            keyboard. */}
+        <button
+          type="button"
+          className="cs-fnav-mitem"
+          tabIndex={menuOpen ? 0 : -1}
+          onClick={() => { setMenuOpen(false); window.dispatchEvent(new CustomEvent('cs:open-search')); }}
+        >
+          <span className="cs-fnav-mlabel">{tr('nav.search')}</span>
+          <Icon name="search" size={22} />
+        </button>
+        {/* QR-21: the office's Scan, beside Search on every page of a phone, for every office viewer (this
+            menu is the office shell's alone): the camera, then the scanned area's page (UI_RULES §172). */}
+        <button
+          type="button"
+          className="cs-fnav-mitem"
+          tabIndex={menuOpen ? 0 : -1}
+          onClick={() => { setMenuOpen(false); navigate(OFFICE_SCAN_PATH, { state: nav }); }}
+        >
+          <span className="cs-fnav-mlabel">{tr('officeScan.menu')}</span>
+          <Icon name="camera" size={22} />
+        </button>
+        {/* Report an issue — the phone's ONLY route to it (CS-049). The desktop sidebar
+            owns the button, and the mobile sidebar is off-canvas and never opened, so
+            crew in the field, the intended reporters, could not file anything. Dispatched
+            like Search: the sidebar stays mounted and its modal portals to <body>.
+            Unpermissioned on purpose — anyone who can reach a broken screen may report it. */}
+        <button
+          type="button"
+          className="cs-fnav-mitem"
+          style={{ display: 'none' }} // polishpoint-demo: no Report an issue
+          tabIndex={menuOpen ? 0 : -1}
+          onClick={() => { setMenuOpen(false); window.dispatchEvent(new CustomEvent('cs:open-report')); }}
+        >
+          <span className="cs-fnav-mlabel">{tr('nav.reportIssue')}</span>
+          <Icon name="warning" size={22} />
+        </button>
+        {menuDefs.map((m, i) => (m.divider ? (
+          <span key={`line-${i}`} className="cs-fnav-rule" role="separator" />
+        ) : (
           <button
-            type="button"
-            className="cs-fnav-mitem"
-            tabIndex={menuOpen ? 0 : -1}
-            onClick={() => { setMenuOpen(false); window.dispatchEvent(new CustomEvent('cs:open-search')); }}
-          >
-            <span className="cs-fnav-mlabel">Search</span>
-            <Icon name="search" size={22} />
-          </button>
-        )}
-        {menuDefs.map((m) => (
-          <button
-            key={`${m.to}-${m.label}`}
+            key={`${m.to}-${m.labelKey}`}
             type="button"
             className={`cs-fnav-mitem ${isActive(m.to, m.end) ? 'is-on' : ''}`}
             tabIndex={menuOpen ? 0 : -1}
             onClick={() => go(m.to)}
           >
-            {m.badge && <span className="cs-fnav-badge">{m.badge}</span>}
-            <span className="cs-fnav-mlabel">{m.label}</span>
+            {pills[m.to] > 0 ? (
+              <span className="cs-fnav-badge" aria-label={tr('nav.countAria', { count: pills[m.to] })}>{pills[m.to] > 999 ? '999+' : pills[m.to]}</span>
+            ) : null /* polishpoint-demo: no NEW pills */}
+            <span className="cs-fnav-mlabel">{tr(m.labelKey)}</span>
+            <Icon name={m.icon} size={22} />
+          </button>
+        )))}
+        {/* The manager's "More": every other page the menu offered them before, folded under one
+            row so Matt's order stays short (D2). It opens on a tap, and stays open while one of
+            its pages is the one on screen. */}
+        {mgr && mgr.more.length > 0 && (
+          <button
+            type="button"
+            className={`cs-fnav-mitem cs-fnav-more ${moreShown ? 'is-open' : ''}`}
+            tabIndex={menuOpen ? 0 : -1}
+            aria-expanded={moreShown}
+            onClick={() => setMoreOpen((o) => !o)}
+          >
+            <span className="cs-fnav-mlabel">{tr('nav.more')}</span>
+            <Icon name={moreShown ? 'chevronUp' : 'chevronDown'} size={22} />
+          </button>
+        )}
+        {mgr && moreShown && mgr.more.map((m) => (
+          <button
+            key={`more-${m.to}`}
+            type="button"
+            className={`cs-fnav-mitem cs-fnav-sub ${isActive(m.to, m.end) ? 'is-on' : ''}`}
+            tabIndex={menuOpen ? 0 : -1}
+            onClick={() => go(m.to)}
+          >
+            {null /* polishpoint-demo: no NEW pills */}
+            <span className="cs-fnav-mlabel">{tr(m.labelKey)}</span>
             <Icon name={m.icon} size={22} />
           </button>
         ))}
@@ -222,7 +308,7 @@ export default function FloatingNav() {
         </div>
       </nav>
 
-      <div ref={pillRef} className={`cs-fnav-pill ${condensed ? 'is-condensed' : ''}`} role="tablist" aria-label="Primary navigation">
+      <div ref={pillRef} className={`cs-fnav-pill ${condensed ? 'is-condensed' : ''}`} role="tablist" aria-label={tr('nav.primary')}>
         {tabDefs.map((t, i) => {
           const on = isActive(t.to, t.end);
           return (
@@ -237,7 +323,7 @@ export default function FloatingNav() {
               onClick={() => go(t.to)}
             >
               <Icon name={t.icon} size={22} />
-              <span className="cs-fnav-label">{t.label}</span>
+              <span className="cs-fnav-label">{tr(t.labelKey)}</span>
             </button>
           );
         })}
@@ -247,7 +333,7 @@ export default function FloatingNav() {
         <button
           type="button"
           className={`cs-fnav-puck ${activeTab ? 'is-on' : ''}`}
-          aria-label="Scroll to top and refresh"
+          aria-label={tr('nav.toTop')}
           aria-hidden={!condensed}
           tabIndex={condensed ? 0 : -1}
           onClick={bringToTop}
@@ -259,7 +345,7 @@ export default function FloatingNav() {
       <button
         type="button"
         className="cs-fnav-menu-btn"
-        aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+        aria-label={menuOpen ? tr('nav.closeMenu') : tr('nav.openMenu')}
         aria-expanded={menuOpen}
         onClick={() => setMenuOpen((o) => !o)}
       >

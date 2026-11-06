@@ -247,8 +247,8 @@ export function netSourceGrep() {
 // the retention/prune call sites. Every one must be classified in the manifest's
 // `actions` block (as a mode, or `not-a-delete`) — a new unclassified delete action
 // fails the gate exactly like an unclassified field.
-const DELETE_ACTION = /^(DELETE|REMOVE|CLEAR|BULK_DELETE|UNTAG|UNENROLL|REVOKE|DISCONNECT|SCRUB|RESET_A2P|RETRY_MARKETING_SEND|APPLY_TIME_OFF_EXCLUSIONS|PATCH_JOBS|SET_JOBS|UPDATE_JOB_SERIES|COMPLETE_SUPPLY_REQUEST|SET_INSPECTION_FOLLOWUP|SET_USER_PERMISSION_OVERRIDE|REMOVE_INVOICE_PAYMENT|DELETE_MARKETING_STEP)/;
-const RETENTION_CALL = /\b(capTail|capTailProtected|capInsert|pruneSupplyRequests|applyLogCaps|ADD_REMINDER_EVENT)\b/;
+const DELETE_ACTION = /^(DELETE|REMOVE|CLEAR|BULK_DELETE|UNTAG|UNENROLL|REVOKE|DISCONNECT|SCRUB|RESET_A2P|RETRY_MARKETING_SEND|ADD_TIME_OFF|PATCH_JOBS|SET_JOBS|UPDATE_JOB_SERIES|SET_INSPECTION_FOLLOWUP|SET_USER_PERMISSION_OVERRIDE|REMOVE_INVOICE_PAYMENT|DELETE_MARKETING_STEP)/;
+const RETENTION_CALL = /\b(capTail|capTailProtected|capInsert|applyLogCaps)\b/;
 
 export function netActionSweep() {
   const src = readFileSync(REDUCER_PATH, 'utf8');

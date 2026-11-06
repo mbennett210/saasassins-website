@@ -19,16 +19,22 @@ const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, '..', '..', 'supabase', 'migrations');
 const storePath = join(here, '..', 'api', '_lib', 'time', 'store.js');
 
-// Collect every source-CHECK definition across all migrations, LAST ONE WINS
-// (a widening migration drops + re-adds the constraint).
+// Collect every source-CHECK definition ON time_entries across all migrations, LAST ONE WINS
+// (a widening migration drops + re-adds the constraint). Only a statement that names
+// time_entries counts: another table's `source` column (sms_opt_outs, 2026-10-28) has a CHECK of
+// its own, and reading it as this one's would judge the time store against the wrong set.
 const checkRe = /check\s*\(\s*source\s+in\s*\(([^)]+)\)\)/gi;
 let allowed = null;
 for (const f of readdirSync(migrationsDir).sort()) {
   if (!f.endsWith('.sql')) continue;
   const sql = readFileSync(join(migrationsDir, f), 'utf8');
-  let m;
-  while ((m = checkRe.exec(sql))) {
-    allowed = new Set([...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+  for (const statement of sql.split(';')) {
+    if (!/\btime_entries\b/.test(statement)) continue;
+    let m;
+    checkRe.lastIndex = 0;
+    while ((m = checkRe.exec(statement))) {
+      allowed = new Set([...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+    }
   }
 }
 ok('a source CHECK exists in the migrations', allowed instanceof Set && allowed.size > 0);

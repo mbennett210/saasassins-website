@@ -1,6 +1,9 @@
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useDismissTap } from '../hooks/useDismissTap';
 import { useIsMobile } from '../hooks/useIsMobile';
 import MobileSheet from './MobileSheet';
+import { floatPlacement } from '../lib/floatPlacement';
 
 // PopMenu: the shared floating-panel surface for the app's anchored pickers and
 // menus (Select, the *Picker family, ClientStatusMenu, UserSwitcher, the filter
@@ -25,10 +28,54 @@ import MobileSheet from './MobileSheet';
 // On mobile the panel keeps its own class (so its list layout still applies; its rows are the
 // kit's .menu-option, 48px in a sheet) plus `pop-in-sheet`, which drops
 // the anchored geometry so the sheet owns the frame + scroll (see index.css).
-export default function PopMenu({ open, onClose, anchorRef, className = '', role, sheetTitle, children, ...rest }) {
+//
+// `float` (desktop; CS-724): for a picker inside something that CLIPS — a table row, whose
+// .table-wrap scrolls sideways (overflow-x auto, which makes overflow-y hidden), so an anchored
+// menu on a bottom row is cut off. The panel is drawn through a portal in fixed position at the
+// trigger (lib/floatPlacement: below it when it fits, else on the side with more room), with the
+// class `is-float`; the click-outside spares it as the second ref; a scroll outside it or a resize
+// moves the trigger from under it, so it closes (the key-status menu's rule, pages/Keys). On a phone
+// it is the sheet, as always.
+export default function PopMenu({ open, onClose, anchorRef, className = '', role, sheetTitle, float = false, children, ...rest }) {
   const isMobile = useIsMobile();
-  // Desktop-only: on mobile the MobileSheet owns its own dismissal (backdrop + Esc).
-  useDismissTap({ open: open && !isMobile, ref: anchorRef, onDismiss: onClose });
+  const floating = float && !isMobile;
+  const menuRef = useRef(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; });
+  // Desktop-only: on mobile the MobileSheet owns its own dismissal (backdrop + Esc). A floating
+  // panel lives outside `anchorRef` (in a portal), so it is spared as the second ref.
+  useDismissTap({ open: open && !isMobile, ref: anchorRef, ref2: floating ? menuRef : null, onDismiss: onClose });
+
+  // A floating panel is placed before it paints, then closes on a scroll outside it or a resize.
+  useLayoutEffect(() => {
+    if (!open || !floating) return undefined;
+    const menu = menuRef.current;
+    const anchor = anchorRef?.current;
+    if (menu && anchor) {
+      const p = floatPlacement(anchor.getBoundingClientRect(), { width: window.innerWidth, height: window.innerHeight });
+      // Both ends of both axes, so nothing is left to the stylesheet (scripts/position-lint.mjs).
+      Object.assign(menu.style, {
+        left: `${p.left}px`,
+        right: 'auto',
+        width: `${p.width}px`,
+        maxHeight: `${p.maxHeight}px`,
+        top: p.top == null ? 'auto' : `${p.top}px`,
+        bottom: p.bottom == null ? 'auto' : `${p.bottom}px`,
+      });
+      menu.dataset.side = p.up ? 'up' : 'down';
+    }
+    const onScroll = (e) => {
+      if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return;
+      closeRef.current?.();
+    };
+    const onResize = () => closeRef.current?.();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, floating, anchorRef]);
 
   if (!open) return null;
 
@@ -37,6 +84,13 @@ export default function PopMenu({ open, onClose, anchorRef, className = '', role
       <MobileSheet open onClose={onClose} title={sheetTitle}>
         <div className={`${className} pop-in-sheet`.trim()} role={role} {...rest}>{children}</div>
       </MobileSheet>
+    );
+  }
+
+  if (floating) {
+    return createPortal(
+      <div ref={menuRef} className={`${className} is-float`.trim()} role={role} {...rest}>{children}</div>,
+      document.body,
     );
   }
 

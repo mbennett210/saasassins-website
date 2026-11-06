@@ -1,12 +1,13 @@
 // Regression suite for the pure delete decisions in lib/deleteCascade.js: the LIVE wiring
-// audit's fixes (2026-09-20 — LW-01 DELETE_CLIENT orphans supplies + ops-alerts, LW-02
+// audit's fixes (2026-09-20 — LW-01 the customer delete's orphans, retired with that delete by
+// CS-663 (customers are archived, never deleted), LW-02
 // DELETE_TAG misses marketingSequences.replyTags, LW-03 REMOVE_OAUTH_WORKSPACE ignores
 // marketing inboxes) and the deletion-ripple audit's user-delete sweep + delete guards
 // (2026-09-22). Unit level; the end-to-end proof is test-deletion-ripple.mjs.
 //   node app/scripts/test-delete-cascade.mjs
 import * as cascade from '../src/lib/deleteCascade.js';
 import {
-  sweepClientOrphans, scrubTagFromSequences, oauthWorkspaceInUse, sweepUserOrphans,
+  scrubTagFromSequences, oauthWorkspaceInUse, sweepUserOrphans,
   hasUnsettledPay, hasUnpaidSalary, payCutoffKey, payCutoffIso, memberDeleteBlock,
   reimbursementForLine, removeReimbursement,
 } from '../src/lib/deleteCascade.js';
@@ -16,32 +17,11 @@ import { calledOutOn } from '../src/lib/reports/calledOut.js';
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass += 1; } else { fail += 1; console.error('  ✗ ' + msg); } };
 
-// ── LW-01: sweepClientOrphans removes supplies + ops-alerts keyed to the deleted client ──
-{
-  const state = {
-    supplyItems: [{ id: 'si1', clientId: 'cl1' }, { id: 'si2', clientId: 'cl2' }],
-    supplyRequests: [{ id: 'sr1', clientId: 'cl1' }, { id: 'sr2', clientId: 'cl2' }],
-    opsAlertEvents: [
-      { id: 'oa1', clientId: 'cl1', jobId: 'j1' },   // by clientId
-      { id: 'oa2', clientId: 'cl2', jobId: 'j2' },   // kept
-      { id: 'oa3', clientId: null, jobId: 'j1' },    // job-scoped, job belongs to cl1
-      { id: 'oa4', clientId: null, jobId: 'j9' },    // unrelated → kept
-    ],
-  };
-  const out = sweepClientOrphans(state, 'cl1', new Set(['j1']));
-  ok(out.supplyItems.length === 1 && out.supplyItems[0].id === 'si2', 'LW-01 A: supply items for the deleted client are swept, others kept');
-  ok(out.supplyRequests.length === 1 && out.supplyRequests[0].id === 'sr2', 'LW-01 B: supply requests for the deleted client are swept');
-  const ids = out.opsAlertEvents.map((e) => e.id).sort();
-  ok(ids.length === 2 && ids[0] === 'oa2' && ids[1] === 'oa4', 'LW-01 C: ops-alerts by clientId AND by deleted-jobId are swept; unrelated kept');
-  // pre-fix state (no sweep) kept si1/sr1/oa1/oa3 — this assertion fails against that.
-  ok(!out.supplyItems.some((r) => r.clientId === 'cl1'), 'LW-01 D: no supply item survives with the dead clientId');
-}
-
-// Empty/missing slices never throw.
-{
-  const out = sweepClientOrphans({}, 'clX');
-  ok(out.supplyItems.length === 0 && out.supplyRequests.length === 0 && out.opsAlertEvents.length === 0, 'LW-01 E: missing slices default to [] safely');
-}
+// ── LW-01 retired with the customer delete (CS-663) ──
+// LW-01's sweepClientOrphans cleared what a DELETE_CLIENT left behind. Customers are ARCHIVED,
+// never deleted now (Matt's "Never delete customers"; test-customer-archive.mjs), so there is no
+// customer delete to orphan anything, and the sweep went with it (replace means delete).
+ok(!('sweepClientOrphans' in cascade), 'LW-01: no customer sweep left behind — customers are archived, never deleted (CS-663)');
 
 // ── LW-02: scrubTagFromSequences drops the dead tag id from every sequence's replyTags ──
 {
@@ -80,7 +60,6 @@ const ok = (cond, msg) => { if (cond) { pass += 1; } else { fail += 1; console.e
     clientActivities: [{ id: 'a1', authorUserId: 'u1' }, { id: 'a2', authorUserId: 'u2' }],
     marketingInboxes: [{ id: 'mi1', connectedByUserId: 'u1' }],
     marketingSequences: [{ id: 's1', createdByUserId: 'u1', notifyOnReplyUserId: 'u1' }],
-    supplyRequests: [{ id: 'sr1', requestedByUserId: 'u1', completedByUserId: 'u1' }],
     timeOff: [{ id: 'to1', userId: 'u1', createdBy: 'u1' }],
     employeeDocuments: [{ id: 'd1', userId: 'u1' }, { id: 'd2', userId: 'u2' }],
     inspectionFollowUps: [{ id: 'f1', assigneeUserId: 'u1', updatedBy: 'u1' }],
@@ -99,7 +78,9 @@ const ok = (cond, msg) => { if (cond) { pass += 1; } else { fail += 1; console.e
   ok(out.clientActivities[0].authorUserId === null && out.clientActivities[1].authorUserId === 'u2', 'USR-D: clientActivities author nulled (the DR-20 twin of contactActivities)');
   ok(out.marketingInboxes[0].connectedByUserId === null, 'USR-E: marketingInbox connectedBy nulled');
   ok(out.marketingSequences[0].createdByUserId === null && out.marketingSequences[0].notifyOnReplyUserId === null, 'USR-F: sequence author + notify nulled');
-  ok(out.supplyRequests[0].requestedByUserId === null && out.supplyRequests[0].completedByUserId === null, 'USR-G: supply requested/completed nulled');
+  // USR-G retired with SUP-13: a supply request stores its people's NAMES with each act, in its own
+  // table, so a user delete sweeps nothing there.
+  ok(!('supplyRequests' in out), 'USR-G: supply requests are not in the user-delete sweep any more (SUP-13)');
   ok(out.timeOff[0].createdBy === null && out.timeOff[0].userId === 'u1', 'USR-H: timeOff.createdBy nulled but userId KEPT (DR-11 is a decision)');
   ok(out.employeeDocuments.length === 1 && out.employeeDocuments[0].id === 'd2', 'USR-I: the deleted user\'s employeeDocuments are swept');
   ok(out.inspectionFollowUps[0].assigneeUserId === null && out.inspectionFollowUps[0].updatedBy === null, 'USR-J: follow-up assignee + updatedBy nulled');
@@ -123,7 +104,6 @@ const ok = (cond, msg) => { if (cond) { pass += 1; } else { fail += 1; console.e
     payrollLines: [{ id: 'pl1', userId: 'u1', periodKey: '2000-01-01' }, { id: 'pl2', userId: 'u2', userName: 'Keep Me' }],
     reimbursements: [{ id: 'r1', userId: 'u1', status: 'approved' }],
     timeOff: [{ id: 't1', userId: 'u1', createdBy: 'u9' }],
-    supplyRequests: [{ id: 's1', requestedByUserId: 'u1', completedByUserId: 'u1' }, { id: 's2', requestedByUserId: 'u2', requestedByName: 'Pre-set' }],
   };
   const out = sweepUserOrphans(state, 'u1', 'Andre Baptiste');
   const pl = Object.fromEntries(out.payrollLines.map((l) => [l.id, l]));
@@ -131,11 +111,8 @@ const ok = (cond, msg) => { if (cond) { pass += 1; } else { fail += 1; console.e
   ok(pl.pl2.userName === 'Keep Me', 'NAME-B: another employee\'s line is untouched');
   ok(out.reimbursements[0].userName === 'Andre Baptiste', 'NAME-C: their reimbursement gains their name');
   ok(out.timeOff[0].userName === 'Andre Baptiste' && out.timeOff[0].userId === 'u1', 'NAME-D: their kept PTO row gains their name (the Called-out report reads it)');
-  const s1 = out.supplyRequests.find((r) => r.id === 's1');
-  ok(s1.requestedByUserId === null && s1.requestedByName === 'Andre Baptiste' && s1.completedByUserId === null && s1.completedByName === 'Andre Baptiste', 'NAME-E: supply request requested/completed-by: id cleared, name kept');
-  ok(out.supplyRequests.find((r) => r.id === 's2').requestedByName === 'Pre-set', 'NAME-F: an unrelated request is untouched');
   const noName = sweepUserOrphans(state, 'u1');
-  ok(noName.payrollLines[0].userName == null && noName.supplyRequests[0].requestedByName == null, 'NAME-G: without a name to stamp, nothing is invented');
+  ok(noName.payrollLines[0].userName == null, 'NAME-G: without a name to stamp, nothing is invented');
   // an already-stored name is never overwritten (the handler's keys/messages rule)
   const stored = sweepUserOrphans({ timeOff: [{ id: 't9', userId: 'u1', userName: 'Stored Name' }] }, 'u1', 'Andre Baptiste');
   ok(stored.timeOff[0].userName === 'Stored Name', 'NAME-I: a row that already stores a name keeps it');

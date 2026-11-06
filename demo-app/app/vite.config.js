@@ -1,6 +1,9 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { execSync } from 'node:child_process'
+// Writes each build's offline list into dist/sw.js (CS-665): the shell and the crew's screens
+// a phone keeps for working with no signal. The dev server never runs it.
+import { swPrecachePlugin } from './vite-plugins/sw-precache.mjs'
 
 // Monotonic build id inlined into the bundle, stamped on every org_state / jobs write
 // (src/lib/appBuild.js). It is what makes the fleet-reload gate machine-checkable:
@@ -27,13 +30,13 @@ export default defineConfig(({ mode }) => {
   // against the SAME Supabase data the team and client see during construction (one
   // shared view). Override with VITE_API_PROXY in app/.env.local to point at a local
   // `vercel dev` (http://localhost:3000) once the vercel-dev :rest* routing bug is fixed.
-  const API_PROXY = env.VITE_API_PROXY || 'https://cleanspace-gilt.vercel.app';
+  // The live app's own address (brands/cleanspace appUrl); the old cleanspace-gilt.vercel.app
+  // alias serves the same deployment while it lasts.
+  const API_PROXY = env.VITE_API_PROXY || 'https://www.cleancorner.app';
   return {
-    // Base path is env-driven so the same shell serves the per-client product at '/' and the
-    // marketing demo under '/polishpoint/' (VITE_BASE_PATH, set in .env.demo). React Router
-    // reads import.meta.env.BASE_URL for its basename, so routes + assets follow the prefix.
+    // polishpoint-demo: the SaaSassins site serves this build under /polishpoint/ (VITE_BASE_PATH, .env.demo).
     base: env.VITE_BASE_PATH || '/',
-    plugins: [react()],
+    plugins: [react(), swPrecachePlugin()],
     define: {
       'import.meta.env.VITE_APP_BUILD': JSON.stringify(APP_BUILD),
       'import.meta.env.VITE_APP_SHA': JSON.stringify(APP_SHA),

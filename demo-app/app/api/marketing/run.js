@@ -31,6 +31,7 @@ import {
 import { readOrgState, writeOrgState } from '../_lib/orgState.js';
 import { performSend } from '../_lib/sender.js';
 import { loadStepAttachmentsForSend } from '../_lib/marketing/attachments.js';
+import { refuseUnconfiguredCron } from '../_lib/cronGate.js';
 
 const CAS_RETRIES = 5;
 
@@ -168,9 +169,12 @@ export default async function handler(req, res) {
   // /api/push/dispatch): with no secret configured, refuse to run rather than
   // accept unauthenticated calls that could force real drip sends or dry-run-probe
   // pipeline counts.
+  // An unset secret is a 500 with a body that names nothing, the gap logged (`_lib/cronGate.js`);
+  // a wrong or missing bearer is a 401.
   const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.authorization !== `Bearer ${secret}`) {
-    res.status(secret ? 401 : 500).json({ ok: false, error: secret ? 'Unauthorized' : 'CRON_SECRET is not configured' });
+  if (!secret) { refuseUnconfiguredCron(res, 'marketing/run'); return; }
+  if (req.headers.authorization !== `Bearer ${secret}`) {
+    res.status(401).json({ ok: false, error: 'Unauthorized' });
     return;
   }
   const dryRun = req.query?.dryRun === '1' || req.query?.dryRun === 'true';

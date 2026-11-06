@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Badge from './Badge';
 import Avatar from './Avatar';
-import ChecklistFill from './ChecklistFill';
 import { usePermission } from '../hooks/usePermission';
 import { useAuth } from '../hooks/useAuth';
+import { useFromHere } from '../hooks/useFromHere';
+import { crewPaths } from '../lib/crewPaths';
 import { useChecklistResults } from '../hooks/useCleanChecklist';
 import { useStore } from '../store';
 import { selectEffectiveCrewForJob, selectUserById } from '../store/selectors';
@@ -12,8 +14,11 @@ import {
   isChecklistComplete, latestChecklistFor,
 } from '../lib/crewChecklist';
 import { coveredCleanerId } from '../lib/jobCover';
-import { fmtDate } from '../lib/dates';
+import { checklistFillRefusal, checklistOpensAt } from '../lib/checklistWindow';
+import { fmtDate, fmtTime } from '../lib/dates';
 import * as qcApi from '../lib/qcApi';
+import { useT } from '../i18n/react';
+import { templateNameOf, templateNameLabel } from '../lib/checklistI18n';
 
 // The cleaner's checklist, surfaced INSIDE a clean (My Day + JobDetail). A checklist is
 // assigned PER CLEANER and only per cleaner (client.crewChecklists, lib/crewChecklist);
@@ -27,23 +32,53 @@ import * as qcApi from '../lib/qcApi';
 // Self-hides when nothing is assigned and nothing was ever completed here. Records are a
 // component-local projection (checklist_results, keyed by job_id).
 //
+// THE CLEANER FILLS IT ON ITS OWN PAGE (Cleaner Hub, Brief B, UI_RULES §166): "Complete
+// checklist" opens My Checklist (`crewPaths.checklist(jobId)` → pages/crew/CrewChecklist) —
+// a photo, a comment and "not completed" on every task, saved on the phone as they go, one
+// Save at the end. It REPLACED opening the ChecklistFill pop-up from here, which stays the
+// office's standalone "Fill a checklist" (the Quality hub).
+//
 // A result belongs to a cleaner by `completed_by_user_id` — the only actor the backend
 // stores. It was matched on the completer's NAME until CS-403: the real backend returns
 // no name, so the filter kept every row and two cleaners sharing a checklist on one
 // clean each read the other's completion. Display names come from the roster.
+// Every word is a catalog line in the viewer's language (CS-193); a checklist's NAME is the
+// office's own and shows as written.
 
-export default function CleanChecklist({ job, client, compact = false, variant = 'card', onStatus = null }) {
+// `clockedIn` = the viewer is clocked in to this clean (My Day and the crew visit pass it):
+// past the clean's window a cleaner still on the clock there may fill it in (CS-690).
+export default function CleanChecklist({ job, client, compact = false, variant = 'card', onStatus = null, clockedIn = false }) {
+  const t = useT();
   const canPerform = usePermission('qc.checklist.perform');
   const { currentUser } = useAuth();
   const state = useStore();
-  const [open, setOpen] = useState(false);
-  const [fillTemplateId, setFillTemplateId] = useState('');
+  const navigate = useNavigate();
+  const nav = useFromHere();
+
+  // 🔴 THE CLEAN'S WINDOW (CS-690, lib/checklistWindow): a checklist counts for this clean only
+  // when filled in from 2 h before it starts to its end plus the grace — or later while still
+  // clocked in here. Outside that the server keeps a fill but NOT for this clean (it cannot
+  // unlock the clock-out or stamp an area "last cleaned"), so the button says when it opens
+  // instead of taking a fill that would not count. It used to take the night-before fill that
+  // unlocked the next morning's clock-out. The clock ticks while it waits to open.
+  const graceMins = state.opsSettings?.autoCloseGraceMins;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const fillRefusal = job ? checklistFillRefusal(job, nowMs, { graceMins, clockedIn }) : null;
+  useEffect(() => {
+    if (fillRefusal !== 'early') return undefined;
+    const id = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, [fillRefusal]);
+  const opensAt = fillRefusal === 'early' ? checklistOpensAt(job, { graceMins }) : null;
+  const fillNote = fillRefusal === 'early'
+    ? t('checklist.clean.opensAt', { time: fmtTime(new Date(opensAt).toISOString()) })
+    : (fillRefusal === 'late' ? t('checklist.clean.closed') : null);
   const [templates, setTemplates] = useState([]); // roster mode only — for names of unfinished assignments
 
   // ONE read per clean, shared with the clock button on the same card (hooks/
   // useCleanChecklist): two fetches could show a finished checklist beside a Clock-out
   // button that still read it as unfinished. `results` is null while unread or unreadable.
-  const { results, loading, reload } = useChecklistResults(job?.id || null);
+  const { results, loading } = useChecklistResults(job?.id || null);
 
   const viewerId = currentUser?.id || null;
   const crew = useMemo(() => selectEffectiveCrewForJob(state, job).map((c) => c.user), [state, job]);
@@ -64,11 +99,26 @@ export default function CleanChecklist({ job, client, compact = false, variant =
   const coveredId = coveredCleanerId(job, viewerId);
   const coveredName = coveredId ? (selectUserById(state, coveredId)?.name || null) : null;
   const needTemplates = rosterMode || !!coveredId;
+  // THIS CLEAN'S CUSTOMER, not the company (R2, plan step 5). Every checklist that can be
+  // named here — the roster's picks and the covered cleaner's — is filed under this
+  // customer, because `crewChecklists` lives on the customer row; a cover is served the
+  // COVERED cleaner's pick at the SAME customer, so the scoped read still names it. At ~750
+  // customers the company-wide read was ~3,750 rows to label a handful.
+  const templateClientId = client?.id || job?.clientId || null;
   useEffect(() => {
-    if (!needTemplates) return;
-    qcApi.listTemplates({ kind: 'checklist' }).then((t) => setTemplates(t || [])).catch(() => setTemplates([]));
-  }, [needTemplates]);
-  const templateName = useCallback((id) => (id ? (templates.find((t) => t.id === id)?.name || null) : null), [templates]);
+    if (!needTemplates || !templateClientId) { setTemplates([]); return undefined; }
+    let alive = true;
+    qcApi.listTemplates({ kind: 'checklist', clientId: templateClientId })
+      .then((list) => { if (alive) setTemplates(list || []); })
+      .catch(() => { if (alive) setTemplates([]); });
+    return () => { alive = false; };
+  }, [needTemplates, templateClientId]);
+  // The checklist's NAME in the reader's language (CS-850: the row carries its published version's
+  // name lines, lib/checklistI18n templateNameOf).
+  const templateName = useCallback((id) => {
+    const row = id ? templates.find((x) => x.id === id) : null;
+    return row?.name ? templateNameOf(row, t.lang) : null;
+  }, [templates, t.lang]);
 
   // The viewer's OWN checklist (My Day, the crew step). A cleaner's completion is matched
   // to their USER ID — the only actor the backend stores (CS-403). A manager who is not on
@@ -84,23 +134,15 @@ export default function CleanChecklist({ job, client, compact = false, variant =
     onStatus({ hasChecklist: !!myTemplateId, complete: isChecklistComplete(myLatest) });
   }, [results, myTemplateId, myLatest, onStatus]);
 
-  const openFill = (tid) => { setFillTemplateId(tid || ''); setOpen(true); };
-  const fillModal = (
-    <ChecklistFill
-      open={open}
-      onClose={() => setOpen(false)}
-      onSubmitted={() => { setOpen(false); reload(); }}
-      presetSiteId={job?.siteId || ''}
-      presetTemplateId={fillTemplateId || ''}
-      jobId={job?.id || null}
-    />
-  );
+  // The cleaner's own checklist page for this clean, with the referrer so its back arrow
+  // returns here (My Day, the crew visit).
+  const openChecklist = () => { if (job?.id) navigate(crewPaths.checklist(job.id), { state: nav }); };
 
   // The cover's own line, shown wherever they see their checklist. `coverNote` is the
   // whole of R8 in one sentence: whose shift this is and which checklist that makes theirs.
   const coverNote = coveredName ? (
     <div className="text-xs clean-checklist-cover">
-      Covering for {coveredName}
+      {t('checklist.clean.coveringFor', { name: coveredName })}
       {templateName(myTemplateId) ? <> · {templateName(myTemplateId)}</> : null}
     </div>
   ) : null;
@@ -112,29 +154,29 @@ export default function CleanChecklist({ job, client, compact = false, variant =
       const covers = coveredCleanerId(job, u.id);
       return {
         u, tid, covers,
-        coversName: covers ? (selectUserById(state, covers)?.name || 'another cleaner') : null,
+        coversName: covers ? (selectUserById(state, covers)?.name || t('checklist.clean.anotherCleaner')) : null,
         res: latestChecklistFor(results, { templateId: tid, userId: u.id }),
       };
     });
     return (
       <div className={`clean-checklist${compact ? ' clean-checklist-compact' : ''}`}>
         <div className="clean-checklist-head">
-          <span className="clean-checklist-title">Checklists by cleaner</span>
+          <span className="clean-checklist-title">{t('checklist.clean.byCleaner')}</span>
         </div>
         <ul className="crew-checklist-list">
           {rows.map(({ u, tid, res, coversName }) => (
             <li key={u.id} className="crew-checklist-row">
-              <span className="crew-checklist-who"><Avatar initials={u.initials} variant={u.avatar} size="sm" /><span className="crew-checklist-wname">{u.name}</span></span>
+              <span className="crew-checklist-who"><Avatar user={u} size="sm" /><span className="crew-checklist-wname">{u.name}</span></span>
               <span className="crew-checklist-status">
                 {tid
-                  ? (res ? <Badge variant={isChecklistComplete(res) ? 'green' : 'amber'}>{res.completed_count}/{res.total_count}</Badge> : <Badge variant="slate">Not started</Badge>)
+                  ? (res ? <Badge variant={isChecklistComplete(res) ? 'green' : 'amber'}>{res.completed_count}/{res.total_count}</Badge> : <Badge variant="slate">{t('checklist.clean.notStarted')}</Badge>)
                   : null}
               </span>
               <span className="crew-checklist-what">
                 {tid
-                  ? <>{templateName(tid) || res?.template_snapshot?.name || 'Checklist'}</>
-                  : <span className="text-muted">No checklist</span>}
-                {coversName ? <span className="text-muted"> · covering for {coversName}</span> : null}
+                  ? <>{templateName(tid) || (res?.template_snapshot?.name ? templateNameLabel(res.template_snapshot.name, res.template_snapshot.schema?.nameI18n, t.lang) : null) || t('checklist.clean.checklist')}</>
+                  : <span className="text-muted">{t('checklist.clean.noChecklist')}</span>}
+                {coversName ? <span className="text-muted"> · {t('checklist.clean.coveringForLower', { name: coversName })}</span> : null}
               </span>
             </li>
           ))}
@@ -150,17 +192,24 @@ export default function CleanChecklist({ job, client, compact = false, variant =
   // ── Crew step (CrewJobVisit): ONE gold button that opens the fill modal ──
   if (variant === 'button') {
     if (myTemplateId && !canPerform) {
-      return !myLatest ? <div className="text-xs text-muted">A checklist is set for this clean.{coveredName ? ` Covering for ${coveredName}.` : ''}</div> : null;
+      return !myLatest ? (
+        <div className="text-xs text-muted">
+          {t('checklist.clean.setForThisClean')}
+          {coveredName ? ` ${t('checklist.clean.coveringForSentence', { name: coveredName })}` : ''}
+        </div>
+      ) : null;
     }
     return (
       <>
         {coverNote}
-        <button type="button" className="btn btn-gold" onClick={() => openFill(myTemplateId)}>
+        <button type="button" className="btn btn-gold" disabled={!!fillRefusal} onClick={openChecklist}>
           {isChecklistComplete(myLatest)
-            ? '✓ Checklist complete'
-            : (myLatest ? `Finish checklist · ${myLatest.completed_count}/${myLatest.total_count}` : 'Complete checklist')}
+            ? t('checklist.clean.completeDone')
+            : (myLatest
+              ? t('checklist.clean.finishProgress', { done: myLatest.completed_count, total: myLatest.total_count })
+              : t('checklist.clean.complete'))}
         </button>
-        {fillModal}
+        {fillNote && <div className="text-xs text-muted">{fillNote}</div>}
       </>
     );
   }
@@ -174,35 +223,35 @@ export default function CleanChecklist({ job, client, compact = false, variant =
   return (
     <div className={`clean-checklist${compact ? ' clean-checklist-compact' : ''}`}>
       <div className="clean-checklist-head">
-        <span className="clean-checklist-title">Checklist</span>
+        <span className="clean-checklist-title">{t('checklist.clean.checklist')}</span>
         {myLatest ? (
-          <Badge variant={complete ? 'green' : 'amber'}>{myLatest.completed_count}/{myLatest.total_count} done</Badge>
+          <Badge variant={complete ? 'green' : 'amber'}>{t('checklist.clean.doneProgress', { done: myLatest.completed_count, total: myLatest.total_count })}</Badge>
         ) : loading ? (
-          <span className="text-xs text-muted">Loading…</span>
+          <span className="text-xs text-muted">{t('common.loading')}</span>
         ) : results === null ? (
           // Offline, or the read failed: "Not started" would be a claim we can't make (UX-13).
-          <span className="text-xs text-muted">Not checked yet</span>
+          <span className="text-xs text-muted">{t('checklist.clean.notCheckedYet')}</span>
         ) : (
-          <Badge variant="slate">Not started</Badge>
+          <Badge variant="slate">{t('checklist.clean.notStarted')}</Badge>
         )}
       </div>
       {coverNote}
       {myLatest && (
         <div className="text-xs text-muted">
-          {myLatest.template_snapshot?.name || 'Checklist'}
+          {myLatest.template_snapshot?.name || t('checklist.clean.checklist')}
           {completedByName ? ` · ${completedByName}` : ''}
           {myLatest.performed_at ? ` · ${fmtDate(myLatest.performed_at)}` : ''}
         </div>
       )}
       {myTemplateId && canPerform && (
-        <button type="button" className="btn btn-link" style={{ paddingLeft: 0 }} onClick={() => openFill(myTemplateId)}>
-          {myLatest ? 'Complete again' : 'Complete checklist'}
+        <button type="button" className="btn btn-link" style={{ paddingLeft: 0 }} disabled={!!fillRefusal} onClick={openChecklist}>
+          {myLatest ? t('checklist.clean.completeAgain') : t('checklist.clean.complete')}
         </button>
       )}
+      {myTemplateId && canPerform && fillNote && <div className="text-xs text-muted">{fillNote}</div>}
       {myTemplateId && !canPerform && !myLatest && (
-        <div className="text-xs text-muted">A checklist is assigned for this clean. The crew completes it on the clean.</div>
+        <div className="text-xs text-muted">{t('checklist.clean.assignedCrewCompletes')}</div>
       )}
-      {fillModal}
     </div>
   );
 }

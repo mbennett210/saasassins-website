@@ -81,7 +81,7 @@ export default function WebhooksSection() {
     <div style={{ marginBottom: 16 }}>
       <h3 className="dash-card-title"><Icon name="repeat" size={16} /> Webhooks</h3>
       <p className="text-xs text-muted" style={{ marginBottom: 12 }}>
-        Push data into {IDENTITY.name} (inbound) or send events out (outbound). All payloads are JSON, signed with HMAC-SHA256 (<code>X-CleanSpace-Signature: sha256=…</code>).
+        Push data into {IDENTITY.product.name} (inbound) or send events out (outbound). All payloads are JSON, signed with HMAC-SHA256 (<code>X-PolishPoint-Signature: sha256=…</code>).
       </p>
 
       {/* Inbound */}

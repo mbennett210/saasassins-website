@@ -1,28 +1,32 @@
 // Catch-all for the Integrations/Webhooks area (one serverless function → 12 total).
 // Admin (JSON):  GET/POST /webhooks, PATCH/DELETE /webhooks/:id,
 //                GET/POST /outbound, PATCH/DELETE /outbound/:id,
-//                GET /snapshot, GET /deliveries?webhook=:id
+//                GET /snapshot
 // Public inbound: POST /inbound/:slug  (HMAC-verified; financial_snapshot → upsert)
 // bodyParser disabled so the inbound HMAC verifies the raw body; admin routes
 // read + JSON.parse the raw body manually.
 import {
   listEndpoints, createEndpoint, updateEndpoint, deleteEndpoint, getEndpointBySlug, touchEndpoint, rotateToken,
   listOutbound, createOutbound, updateOutbound, deleteOutbound,
-  recordDelivery, listDeliveries, getSnapshot, upsertSnapshot,
+  recordDelivery, getSnapshot, upsertSnapshot,
 } from '../_lib/integrations/store.js';
 import { verifyInbound } from '../_lib/integrations/hmac.js';
-import { CLEANSPACE_PLACE_ID } from '../_lib/constants.js';
 import {
   createUserAccount, deleteUserAccount, setUserDisabled, getAuthoritativeRoleByEmail, sendPasswordResetLink,
-  syncUserClaims, listOrphanLogins, findAuthUserByEmail, hasOtherActiveOwnerLogin, ROSTER_UNREADABLE,
+  syncUserClaims, listOrphanLogins, hasOtherActiveOwnerLogin, ROSTER_UNREADABLE,
+  listAllLogins, pickSignIns, loginTarget,
 } from '../_lib/users.js';
+import { systemSenderReady } from '../_lib/email.js';
 import { VALID_ROLES, isOrgUserId } from '../_lib/claims.js';
 import { resolveAuthority, permissionChecker, requireAuthority } from '../_lib/authz.js';
 import { readOrgState, writeOrgState, readProtectedSlices } from '../_lib/orgState.js';
 import { reconcileSelfDecision } from '../_lib/reconcile.js';
-import { loginRefusal, matrixAuthority, owedPayFor } from '../_lib/teamAuthority.js';
+import { loginRefusal, linkHandoverRefusal, matrixAuthority, owedPayFor } from '../_lib/teamAuthority.js';
 import { removalPayFacts } from '../_lib/memberRemoval.js';
+import { removeFromRoster } from '../_lib/rosterRemoval.js';
+import { smsStatus } from '../_lib/sms/twilio.js';
 import { reportError } from '../_lib/monitor.js';
+import { appPublicUrl } from '../_lib/appUrl.js';
 
 export const config = { api: { bodyParser: false } };
 
@@ -88,26 +92,8 @@ const TEAM_SELECT = 'users:state->users,permissions:state->permissions,'
 
 const emailKey = (e) => (typeof e === 'string' ? e.trim().toLowerCase() : '');
 
-// The member a login route acts on: their login's claims (the trust root) and every
-// committed roster row carrying their email or their claimed u_* id. A row matched either
-// way counts, so a split (a login whose claim points at a row with another email) reads
-// as the stricter of the two.
-async function loginTarget(email, roster) {
-  const au = await findAuthUserByEmail(email);
-  const md = au?.app_metadata || {};
-  const claimOrgUserId = isOrgUserId(md.org_user_id) ? md.org_user_id : null;
-  const key = emailKey(email);
-  const rows = (Array.isArray(roster) ? roster : [])
-    .filter((u) => u && typeof u === 'object' && ((key && emailKey(u.email) === key) || (claimOrgUserId && u.id === claimOrgUserId)))
-    .map((u) => ({ id: u.id, role: u.role, email: u.email }));
-  return {
-    email,
-    authUserId: au?.id ?? null,
-    claimRole: VALID_ROLES.includes(md.role) ? md.role : null,
-    claimOrgUserId,
-    rows,
-  };
-}
+// The member a login route acts on is users.js loginTarget (shared with a termination turning a
+// login off, api/_lib/hrTerminations/access.js).
 
 // Whether the roster keeps a Super Admin row that is not the target's.
 function otherOwnerRow(roster, target) {
@@ -136,9 +122,15 @@ async function owedPayOnRemoval(committed, target) {
   }
 }
 
-// In-memory cache for the live Google review count (limits Places API calls to
-// ~1/hour per warm instance). Non-sensitive public data.
-let GR_CACHE = null; // { at: epoch_ms, data: { count, rating, configured } }
+// 🔴 THE BRANCH ABOVE THE LOGIN (CS-648's family, the CS-077 class): `inbound/:slug` answers
+// callers with no session, so a failure there is a sentence and a stable code, never the
+// provider's words (a table name) — the detail is logged, as the public scan page does
+// (api/public/scan). Every branch below the login keeps this file's catch-all. (The other public
+// branch, the Places rating card, left with Google reviews on 2026-10-20.)
+export const PUBLIC_SETTINGS_ERRORS = Object.freeze({
+  // 5xx so a sender (a Google Sheet's script, Zapier) retries, as api/webhooks does.
+  inbound: Object.freeze({ status: 500, code: 'inbound-failed', error: 'This delivery could not be processed just now. Please retry.' }),
+});
 
 export default async function handler(req, res) {
   // Vercel doesn't match multi-segment catch-alls on this project, so vercel.json
@@ -153,52 +145,31 @@ export default async function handler(req, res) {
     // ── public inbound receiver ──────────────────────────────────────────
     if (seg0 === 'inbound') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-      const slug = seg1;
-      const ep = await getEndpointBySlug(slug);
-      if (!ep || !ep.is_active) return res.status(404).json({ error: 'Endpoint not found' });
-      const raw = await readRaw(req);
-      const sig = req.headers['x-cleanspace-signature'] || req.headers['x-webhook-signature'];
-      if (!verifyInbound(raw, sig, ep.signing_secret)) {
-        await recordDelivery({ webhookId: ep.id, direction: 'inbound', ok: false, statusCode: 401, error: 'bad signature' });
-        return res.status(401).json({ error: 'Invalid signature' });
-      }
-      const body = json(raw);
-      if (ep.purpose === 'financial_snapshot') {
-        // Pass the whole payload through; upsertSnapshot writes only the known
-        // dashboard metric keys (financial + goals + operational), so a partial
-        // push doesn't clobber the others.
-        await upsertSnapshot({ ...body, source: body.source || 'google_sheet' });
-      }
-      await touchEndpoint(ep.id);
-      await recordDelivery({ webhookId: ep.id, direction: 'inbound', ok: true, statusCode: 200 });
-      return res.status(200).json({ ok: true });
-    }
-
-    // ── public: live Google review count + rating via the Places API. The Maps
-    //    key stays server-side (env); result cached in-memory ~1h. ────────────
-    if (seg0 === 'google-reviews' && req.method === 'GET') {
-      const now = Date.now();
-      if (GR_CACHE && now - GR_CACHE.at < 3600000) return res.status(200).json({ ...GR_CACHE.data, cached: true });
-      const key = process.env.GOOGLE_MAPS_API_KEY;
-      // Place ID is public (appears in Maps URLs); CLEANSPACE_PLACE_ID is the
-      // single source (env-overridable) so only the secret key lives in env.
-      const placeId = CLEANSPACE_PLACE_ID;
-      const writeReviewUrl = `https://search.google.com/local/writereview?placeid=${encodeURIComponent(placeId)}`;
-      if (!key || !placeId) return res.status(200).json({ count: null, rating: null, configured: false, writeReviewUrl });
       try {
-        const gr = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=rating,user_ratings_total,reviews,url&key=${key}`);
-        const gd = await gr.json();
-        if (gd.status !== 'OK') return res.status(200).json({ count: null, rating: null, error: gd.status, writeReviewUrl });
-        const pr = gd.result || {};
-        const data = {
-          count: pr.user_ratings_total ?? null, rating: pr.rating ?? null, url: pr.url || null, configured: true,
-          writeReviewUrl,
-          reviews: (pr.reviews || []).slice(0, 5).map((v) => ({ author: v.author_name, photo: v.profile_photo_url, rating: v.rating, when: v.relative_time_description, text: v.text })),
-        };
-        GR_CACHE = { at: now, data };
-        return res.status(200).json({ ...data, cached: false });
+        const slug = seg1;
+        const ep = await getEndpointBySlug(slug);
+        if (!ep || !ep.is_active) return res.status(404).json({ error: 'Endpoint not found' });
+        const raw = await readRaw(req);
+        const sig = req.headers['x-cleanspace-signature'] || req.headers['x-webhook-signature'];
+        if (!verifyInbound(raw, sig, ep.signing_secret)) {
+          await recordDelivery({ webhookId: ep.id, direction: 'inbound', ok: false, statusCode: 401, error: 'bad signature' });
+          return res.status(401).json({ error: 'Invalid signature' });
+        }
+        const body = json(raw);
+        if (ep.purpose === 'financial_snapshot') {
+          // Pass the whole payload through; upsertSnapshot writes only the known
+          // dashboard metric keys (financial + goals + operational), so a partial
+          // push doesn't clobber the others.
+          await upsertSnapshot({ ...body, source: body.source || 'google_sheet' });
+        }
+        await touchEndpoint(ep.id);
+        await recordDelivery({ webhookId: ep.id, direction: 'inbound', ok: true, statusCode: 200 });
+        return res.status(200).json({ ok: true });
       } catch (e) {
-        return res.status(200).json({ count: null, rating: null, error: String(e?.message || e), writeReviewUrl });
+        // No login on this branch: the detail is logged, the sender gets a sentence and a code.
+        console.error('[api/settings] inbound', e?.code || e?.name || 'error', e?.message || '');
+        const { status, code, error } = PUBLIC_SETTINGS_ERRORS.inbound;
+        return res.status(status).json({ error, code });
       }
     }
 
@@ -222,6 +193,7 @@ export default async function handler(req, res) {
     //      invite  owner+admin | settings.team.edit    role  owner | staff.assignRoles
     //      disable owner | settings.team.edit          remove owner | settings.team.edit
     //      reset   owner+admin | staff.resetPassword   orphans owner+admin | settings.team.edit
+    //      sign-ins owner+admin | settings.team.edit (GET: who never signed in, who has no login)
     //    Only a Super Admin makes, re-roles, disables, removes or re-invites a Super
     //    Admin; nobody changes their own role (a Super Admin neither); nobody removes
     //    themselves but a Super Admin who leaves another; a role is given only by
@@ -253,7 +225,7 @@ export default async function handler(req, res) {
       const claimId = caller.idSource === 'claim' && isOrgUserId(caller.orgUserId) ? caller.orgUserId : null;
       const who = { role: caller.role, orgUserId: claimId, email: caller.email, claimIdentity: !!claimId };
       const authority = matrixAuthority(committed, caller.role, claimId);
-      const refused = (no) => res.status(no.status).json({ error: no.error });
+      const refused = (no) => res.status(no.status).json({ error: no.error, ...(no.code ? { code: no.code } : {}) });
 
       // Logins with no roster row. Read-only; it returns member email addresses, which
       // is not a public list, so it follows who may invite (the Team page shows the
@@ -264,6 +236,19 @@ export default async function handler(req, res) {
         if (no) return refused(no);
         try {
           return res.status(200).json({ orphans: await listOrphanLogins() });
+        } catch (e) {
+          return res.status(500).json({ error: e.message || 'Could not read logins.' });
+        }
+      }
+      // Who on the team has never signed in, and who has no login at all (CS-661, S128): a member
+      // invited while email is off holds a login nobody used, and the roster says Active. The same
+      // reach as the orphan list (member addresses, not a public list); no-store.
+      if (req.method === 'GET' && seg1 === 'sign-ins') {
+        const no = loginRefusal('signIns', { caller: who, authority });
+        if (no) return refused(no);
+        try {
+          res.setHeader('Cache-Control', 'no-store');
+          return res.status(200).json(pickSignIns(await listAllLogins(), committed.users));
         } catch (e) {
           return res.status(500).json({ error: e.message || 'Could not read logins.' });
         }
@@ -305,19 +290,38 @@ export default async function handler(req, res) {
         if (no) return refused(no);
       }
 
-      const origin = process.env.APP_BASE_URL || (req.headers.host ? `https://${req.headers.host}` : '');
+      // Where the member lands from the emailed link (an invite's or a reset's): the app's /login, which
+      // detects the recovery session and shows a set-new-password form. The app's own address from
+      // configuration (_lib/appUrl.js), never this request's Host (DEV_PLAYBOOK 3.4.18), so it can't be
+      // redirected to an arbitrary origin and an office user on an old alias doesn't send people there.
+      const loginUrl = `${appPublicUrl()}/login`;
+      // 🔴 WHEN THE SET-PASSWORD EMAIL CAN'T GO (CS-661, S128): no sending mailbox is connected in
+      // the live app, so an invite or a reset answers the one-time link to the caller, who sends it
+      // to the member themselves (GO-10's shape, staff's too now; a link is never texted, since
+      // 2026-10-28). The link signs in AS the member, so it is handed over
+      // only to someone who already holds everything the member holds (teamAuthority
+      // linkHandoverRefusal); the answer that carries it is no-store and it is never logged.
+      const memberAs = (role, ids) => ({ role: role ?? null, ids: [...new Set(ids.filter((id) => typeof id === 'string' && id))] });
+      const handOverRefusal = (member) => linkHandoverRefusal({ authority, callerRole: caller.role, member });
       if (action === 'invite') {
+        let out;
         try {
-          return res.status(200).json(await createUserAccount(
-            email,
-            origin ? `${origin}/login` : undefined,
-            { role: newRole, orgUserId: b.orgUserId },
-          ));
+          out = await createUserAccount(email, loginUrl, { role: newRole, orgUserId: b.orgUserId });
         } catch (e) {
           // Identity-collision rejections are a conflict, not a server fault; a roster the
           // adoption couldn't read is a retry (nothing was changed).
           return res.status(e?.code === ROSTER_UNREADABLE ? 503 : 409).json({ error: e.message || 'Could not create the login.' });
         }
+        if (out.link) {
+          // The login exists either way; only the link is withheld from someone who may not hold it.
+          if (handOverRefusal(memberAs(newRole, [out.orgUserId]))) {
+            const rest = { ...out };
+            delete rest.link;
+            return res.status(200).json({ ...rest, linkWithheld: true });
+          }
+          res.setHeader('Cache-Control', 'no-store');
+        }
+        return res.status(200).json(out);
       }
       // Re-stamp the JWT trust-root claims (role / org user id) for an existing member:
       // the server-side mirror of a Settings → Team role change. Rebinding `org_user_id`
@@ -330,13 +334,38 @@ export default async function handler(req, res) {
           return res.status(409).json({ error: e.message || 'Could not update the access level.' });
         }
       }
-      if (action === 'remove') return res.status(200).json(await deleteUserAccount(email));
+      // Removal also deletes the member's photo folder and signature image (UI_RULES §141,
+      // CS-627), under every id they were known by: the same id set the pay check used.
+      // 🔴 And takes them off the shared record in this same request (CS-969): the roster row used
+      // to wait for the tab's next save, which a page left in time never sent. The login goes
+      // FIRST: a roster row removed while the login lived would be put back by reconcile-self.
+      // A record write that can't land is reported and answered `roster.pending`; the tab's own
+      // DELETE_USER still carries it, as before, and Remove can be pressed again.
+      if (action === 'remove') {
+        const orgUserIds = [...target.rows.map((r) => r.id), target.claimOrgUserId].filter((id) => typeof id === 'string' && id);
+        const out = await deleteUserAccount(email, { orgUserIds });
+        let roster;
+        try {
+          roster = await removeFromRoster(target.rows.map((r) => r.id));
+        } catch (e) {
+          reportError('team.remove_roster_failed', e, { note: 'the login is deleted but the member is still on the roster until the tab saves or Remove is pressed again', caller: who.orgUserId || who.email || null });
+          roster = { pending: true };
+        }
+        return res.status(200).json({ ...out, roster });
+      }
       if (action === 'status') return res.status(200).json(await setUserDisabled(email, b.disabled !== false));
-      // Where the member lands after clicking the link — the app's /login,
-      // which detects the recovery session and shows a set-new-password form.
-      // Built server-side (not from client input) so it can't be redirected
-      // to an arbitrary origin.
-      return res.status(200).json(await sendPasswordResetLink(email, origin ? `${origin}/login` : undefined));
+      // reset: emailed when a mailbox can send it; otherwise handed to this caller if they may hold
+      // it. A new link VOIDS the member's last one, so none is made when it could only be thrown away.
+      // The same users.js step as the sign-in page's "Forgot password?" (api/public/auth); only this
+      // office call asks for the hand-over.
+      const withheld = handOverRefusal(memberAs(facts.target.authoritativeRole, [target.claimOrgUserId, ...target.rows.map((r) => r.id)]));
+      if (withheld && !(await systemSenderReady())) return refused(withheld);
+      const sent = await sendPasswordResetLink(email, loginUrl, { handOver: true });
+      if (sent.emailed === false) {
+        if (withheld) return refused(withheld);
+        res.setHeader('Cache-Control', 'no-store');
+      }
+      return res.status(200).json(sent);
     }
 
     // ── integrations config — integrations.view reads, integrations.manage changes ──
@@ -359,12 +388,57 @@ export default async function handler(req, res) {
     // owner + manager). Client callers are src/lib/integrationsApi.js from the
     // Integrations settings page — no crew flow touches these.
     //
-    // NOTE: `snapshot` is deliberately NOT in this list. SnapshotSync is mounted
-    // app-wide for EVERY authenticated user, and the same figures already live
-    // in the org_state blob that crew can read directly — gating it would break
-    // every client to hide nothing.
+    // 🔴 `snapshot` IS GATED NOW (CS-019). It used to be deliberately excluded, on the
+    // grounds that SnapshotSync was mounted for every authenticated user and the figures
+    // were readable in the blob anyway — so gating it "would break every client to hide
+    // nothing". Both halves of that have moved: the figures are company REVENUE, MRR,
+    // outstanding-quote value and ACCOUNTS RECEIVABLE, which Q24 hides from Admin and from
+    // crew entirely, and the blob is no longer the crew's to read (CS-002 serves them a
+    // projection via /api/state/view). Leaving a second, ungated door to the same numbers
+    // is the whole finding. The client half rides with it — App.jsx mounts SnapshotSync
+    // only for holders of `invoices.view` — so no tab 403s every 60 s.
+    //
+    // The key is the one the invoice surfaces already use, so server and UI agree by
+    // construction: Super Admin by role, anyone holding `invoices.view` under the
+    // COMMITTED matrix + per-user overrides (so a per-person grant works here too).
+    const FINANCIAL_KEY = 'invoices.view';
     let showSecrets = false;
-    if (seg0 === 'webhooks' || seg0 === 'outbound' || seg0 === 'deliveries') {
+    if (seg0 === 'snapshot') {
+      const a = await resolveAuthority(req);
+      if (!a) return res.status(401).json({ error: 'Unauthorized' });
+      let holds = () => false;
+      if (a.role !== 'owner') {
+        try {
+          holds = await permissionChecker(a);
+        } catch {
+          // A gate that cannot read its inputs fails closed.
+          return res.status(500).json({ error: 'Authorization check failed' });
+        }
+      }
+      if (!(a.role === 'owner' || holds(FINANCIAL_KEY))) {
+        return res.status(403).json({ error: 'Viewing company financials needs the View Invoices permission.' });
+      }
+    }
+    // ── the ALERT-TEXT channel's real state (NTF-1 / CS-069 / CS-038) ─────
+    // 🔴 The Twilio card used to be able to say "Connected" off a browser-writable blob field a
+    // stub had set (CS-038). This is the server's OWN answer: is a Twilio account, token and
+    // sender actually provisioned in the environment? PRESENCE ONLY — env NAMES and the kind of
+    // sender, never a value, not even masked (THE LAW II.9). Read-only, so it follows the same
+    // `integrations.view` gate as the rest of this page, owner by role.
+    if (seg0 === 'sms-status') {
+      if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+      const a = await resolveAuthority(req);
+      if (a?.role !== 'owner') {
+        let holds;
+        try { holds = await permissionChecker(a); } catch { return res.status(500).json({ error: 'Authorization check failed' }); }
+        if (!holds('integrations.view')) {
+          return res.status(403).json({ error: 'Viewing integrations needs the View integrations permission.' });
+        }
+      }
+      return res.status(200).json(smsStatus());
+    }
+
+    if (seg0 === 'webhooks' || seg0 === 'outbound') {
       const a = await resolveAuthority(req);
       const isOwner = a?.role === 'owner';
       let holds = () => false;
@@ -448,9 +522,9 @@ export default async function handler(req, res) {
     if (seg0 === 'snapshot' && req.method === 'GET') {
       return res.status(200).json({ snapshot: await getSnapshot() });
     }
-    if (seg0 === 'deliveries' && req.method === 'GET') {
-      return res.status(200).json({ deliveries: await listDeliveries(req.query.webhook) });
-    }
+    // GET /deliveries was DELETED (CS-220, 2026-09-29): nothing in the app ever called it.
+    // The delivery log is still WRITTEN (recordDelivery, below) - it is the audit trail a
+    // webhook's own retry logic needs; only the unused read is gone.
 
     res.status(404).json({ error: 'Unknown route' });
   } catch (err) {

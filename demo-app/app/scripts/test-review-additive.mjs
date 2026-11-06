@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { loadStore, installResolveShim } from './deletion-core.mjs';
 import { DECISIONS } from '../src/data/buildDecisions.js';
-import { EMAIL_DRAFT_IDS } from '../src/data/emailDraftIds.js';
+import { EMAIL_DRAFT_IDS, EMAIL_DRAFT_ADDED, EMAIL_DRAFT_CHANGED } from '../src/data/emailDraftIds.js';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass += 1; else { fail += 1; console.error('  ✗ ' + m); } };
@@ -82,11 +82,11 @@ for (const c of CASES) {
 // accepted), each verdict a sign-off, so each confirmed change appends the prior one.
 {
   let s = { ...INITIAL_STATE };
-  s = up(s, 'drafts', 'sign-request', { status: DRAFT_ACCEPTED }, 'T1', false);   // sign off
-  s = up(s, 'drafts', 'sign-request', { status: DRAFT_CHANGES }, 'T2', true);      // confirmed change
-  ok(entryOf(s, 'drafts', 'sign-request')?.history?.length === 1, 'history: one entry after the first confirmed change');
-  s = up(s, 'drafts', 'sign-request', { status: DRAFT_ACCEPTED }, 'T3', true);     // confirmed change again
-  const h = entryOf(s, 'drafts', 'sign-request')?.history;
+  s = up(s, 'drafts', 'invoice-sent', { status: DRAFT_ACCEPTED }, 'T1', false);   // sign off
+  s = up(s, 'drafts', 'invoice-sent', { status: DRAFT_CHANGES }, 'T2', true);      // confirmed change
+  ok(entryOf(s, 'drafts', 'invoice-sent')?.history?.length === 1, 'history: one entry after the first confirmed change');
+  s = up(s, 'drafts', 'invoice-sent', { status: DRAFT_ACCEPTED }, 'T3', true);     // confirmed change again
+  const h = entryOf(s, 'drafts', 'invoice-sent')?.history;
   ok(Array.isArray(h) && h.length === 2, 'history: grows to 2 after a second confirmed change');
   ok(h?.[0]?.status === DRAFT_ACCEPTED && h?.[1]?.status === DRAFT_CHANGES, 'history: never shrinks — earlier entries kept in order');
 }
@@ -191,6 +191,11 @@ ok(CR.isDecisionAnswered({ notes: [{ text: 'thinking' }] }) === false, 'a note a
 // checkReviewManifest(manifest, decisions, draftIds) → violation strings. It fails when the
 // catalog drops a manifest id, changes a type or option ids, loses an option, or has an id
 // NOT in the manifest (a new unpublished question/draft). Proven by mutating scratch copies.
+// RETIRING a published draft (2026-10-20, Google reviews' removal): the ONE way a manifest draft
+// may leave the catalog is an entry in `retiredDrafts` (`{ retired: 'YYYY-MM-DD', reason }`). Its
+// id stays in `drafts` (it was published, and Matt's answer in state.clientReview stays keyed by
+// it, untouched), and a retired id may never come back to the catalog (an id is never reused, so an
+// old answer can never attach to new wording).
 function checkReviewManifest(manifest, decisions, draftIds) {
   const v = [];
   if (!manifest || typeof manifest !== 'object') { v.push('manifest missing/unreadable'); return v; }
@@ -208,7 +213,13 @@ function checkReviewManifest(manifest, decisions, draftIds) {
   }
   for (const q of decisions) if (!(q.id in mq)) v.push(`question ${q.id} not yet in the manifest`);
   const mdSet = new Set(md), catSet = new Set(draftIds);
-  for (const id of md) if (!catSet.has(id)) v.push(`draft ${id} in manifest but MISSING from catalog`);
+  const retired = manifest.retiredDrafts && typeof manifest.retiredDrafts === 'object' ? manifest.retiredDrafts : {};
+  for (const [id, r] of Object.entries(retired)) {
+    if (!mdSet.has(id)) v.push(`retired draft ${id} was never published (not in the manifest's drafts)`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(r?.retired || '')) || !String(r?.reason || '').trim()) v.push(`retired draft ${id} needs its date and reason`);
+    if (catSet.has(id)) v.push(`draft ${id} is RETIRED but back in the catalog (a retired id is never reused)`);
+  }
+  for (const id of md) if (!catSet.has(id) && !(id in retired)) v.push(`draft ${id} in manifest but MISSING from catalog`);
   for (const id of draftIds) if (!mdSet.has(id)) v.push(`draft ${id} not yet in the manifest`);
   return v;
 }
@@ -244,12 +255,72 @@ ok(checkReviewManifest(manifest, cloneDecisions().filter((q) => q.id !== 'HUB-1'
 // a removed draft → violation
 ok(checkReviewManifest(manifest, DECISIONS, EMAIL_DRAFT_IDS.filter((id) => id !== 'lead-ack')).some((x) => x.includes('lead-ack') && x.includes('MISSING')),
   'manifest check fails when a published draft is removed');
+// a RETIRED draft: off the catalog is clean; back in the catalog fails; no reason fails
+{
+  const retiredIds = Object.keys(manifest?.retiredDrafts || {});
+  ok(retiredIds.length > 0 && retiredIds.every((id) => !EMAIL_DRAFT_IDS.includes(id) && manifest.drafts.includes(id)),
+    'every retired draft is off the catalog and still in the published list (its answer stays keyed by it)');
+  const back = retiredIds[0];
+  ok(!!back && checkReviewManifest(manifest, DECISIONS, [...EMAIL_DRAFT_IDS, back]).some((x) => x.includes(back) && x.includes('RETIRED')),
+    'manifest check fails when a retired draft id comes back to the catalog (never reused)');
+  const noReason = { ...manifest, retiredDrafts: { ...manifest.retiredDrafts, [back]: { retired: '2026-10-20' } } };
+  ok(!!back && checkReviewManifest(noReason, DECISIONS, EMAIL_DRAFT_IDS).some((x) => x.includes(back) && x.includes('reason')),
+    'manifest check fails when a retirement carries no reason');
+  const never = { ...manifest, retiredDrafts: { ...manifest.retiredDrafts, 'never-published': { retired: '2026-10-20', reason: 'x' } } };
+  ok(checkReviewManifest(never, DECISIONS, EMAIL_DRAFT_IDS).some((x) => x.includes('never-published') && x.includes('never published')),
+    'manifest check fails when a retirement names an id that was never published');
+}
 // an unpublished NEW question id → violation
 {
   const d = cloneDecisions();
   d.push({ id: 'NEW-999', type: 'single', added: '2026-10-01', q: 'x', options: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }] });
   ok(checkReviewManifest(manifest, d, EMAIL_DRAFT_IDS).some((x) => x.includes('NEW-999') && x.includes('not yet in the manifest')),
     'manifest check fails when the catalog adds an id not yet in the manifest');
+}
+
+// ── a draft UPDATED after its verdict takes a fresh one (task #126, Clean Corner's queue) ────
+// A draft whose words changed (EMAIL_DRAFT_CHANGED) after the client's verdict is open again, and
+// its old verdict LOCKED it (an earlier sitting), so the card offered only "Change" and Matt saw no
+// button to press. The card now sends the fresh verdict with confirm + `recheck` (the change date):
+// the reducer keeps the old verdict in history and restamps `at` EVEN WHEN THE STATUS IS THE SAME.
+// Before this, an Accept on a draft accepted before its update was a no-op, so it never cleared.
+// On the tree before the fix the (b) checks FAIL (THE LAW II.3).
+{
+  const UPD = Object.keys(EMAIL_DRAFT_CHANGED)[0];
+  const CHANGED_ON = EMAIL_DRAFT_CHANGED[UPD];
+  const OLD_AT = '2026-09-30T14:43:58.298Z';
+  const withDraft = (e) => ({ ...INITIAL_STATE, clientReview: { sections: {}, picks: {}, decisions: {}, drafts: { [UPD]: e } } });
+  const recheck = (st, patch, sitting, confirm, rc, kind = 'drafts', id = UPD) =>
+    reducer(st, { type: ACTIONS.UPDATE_CLIENT_REVIEW, kind, id, patch, sitting, confirm, recheck: rc });
+  const pending = (st) => CR.reviewSummary(st.clientReview, [], EMAIL_DRAFT_IDS, EMAIL_DRAFT_ADDED, EMAIL_DRAFT_CHANGED).pendingDrafts;
+  ok(!!UPD && typeof CHANGED_ON === 'string', 'task #126: there is an updated draft to test with (EMAIL_DRAFT_CHANGED)');
+
+  // (a) changes requested before the update → Accept
+  const a0 = withDraft({ status: DRAFT_CHANGES, at: OLD_AT, sitting: 'S1', notes: [{ id: 'n1', text: 'old words', at: OLD_AT }] });
+  const a1 = recheck(a0, { status: DRAFT_ACCEPTED }, 'S2', true, CHANGED_ON);
+  const ea = a1.clientReview.drafts[UPD];
+  ok(ea.status === DRAFT_ACCEPTED && ea.at >= CHANGED_ON && ea.sitting === 'S2', 'task #126 (a): Accept on a draft updated after "changes requested" applies, stamped now');
+  ok(ea.history?.length === 1 && ea.history[0].status === DRAFT_CHANGES && ea.history[0].at === OLD_AT, 'task #126 (a): the old verdict stays in history ("Earlier verdicts")');
+  ok(pending(a1) === pending(a0) - 1, 'task #126 (a): the draft is no longer pending');
+
+  // (b) accepted before the update → Accept again (the same status)
+  const b0 = withDraft({ status: DRAFT_ACCEPTED, at: OLD_AT, sitting: 'S1' });
+  const b1 = recheck(b0, { status: DRAFT_ACCEPTED }, 'S2', true, CHANGED_ON);
+  const eb = b1.clientReview.drafts[UPD];
+  ok(b1 !== b0 && eb.at >= CHANGED_ON && eb.sitting === 'S2', '🔴 task #126 (b): Accept on a draft accepted BEFORE its update records a fresh acceptance (was a no-op)');
+  ok(eb.history?.length === 1 && eb.history[0].status === DRAFT_ACCEPTED && eb.history[0].at === OLD_AT, '🔴 task #126 (b): the earlier acceptance stays in history');
+  ok(pending(b1) === pending(b0) - 1, '🔴 task #126 (b): the draft is no longer pending');
+
+  // (c) a replay of the same write changes nothing (the answer is now after the change)
+  ok(recheck(b1, { status: DRAFT_ACCEPTED }, 'S2', true, CHANGED_ON) === b1, 'task #126 (c): a replayed recheck is a no-op (same state)');
+  // (d) the lock still holds: no confirm, no write
+  ok(recheck(b0, { status: DRAFT_ACCEPTED }, 'S2', false, CHANGED_ON) === b0, 'task #126 (d): a recheck WITHOUT confirm on a locked draft is refused');
+  // (e) a verdict already given after the change is not re-stamped
+  const e0 = withDraft({ status: DRAFT_ACCEPTED, at: '2026-10-21T10:00:00.000Z', sitting: 'S1' });
+  ok(recheck(e0, { status: DRAFT_ACCEPTED }, 'S2', true, CHANGED_ON) === e0, 'task #126 (e): a recheck on a verdict newer than the change is a no-op');
+  // (f) only drafts take a recheck
+  const f0 = { ...INITIAL_STATE, clientReview: { sections: {}, picks: {}, drafts: {}, decisions: { 'HUB-1': { choice: 'a', at: OLD_AT, sitting: 'S1' } } } };
+  ok(recheck(f0, { choice: 'a' }, 'S2', true, CHANGED_ON, 'decisions', 'HUB-1') === f0, 'task #126 (f): a recheck on a question (not a draft) is ignored');
 }
 
 console.log(`review additive: ${pass}/${pass + fail} passed`);

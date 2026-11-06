@@ -75,7 +75,7 @@ const seedState = () => ({
   accountMedia: [],
   quotes: [], syncedPayments: [], financialSnapshot: null, employeeDocuments: [], pipelines: [], opportunities: [], activePipelineId: null,
   marketingInboxes: [], marketingSequences: [], marketingEnrollments: [], marketingSends: [], marketingReplies: [], marketingSuppressions: [], marketingSettings: {},
-  reviews: { indeedActual: 0 }, inspectionFollowUps: [], opsAlertEvents: [], supplyItems: [], supplyRequests: [], contactActivities: [],
+  inspectionFollowUps: [], opsAlertEvents: [], supplyItems: [], supplyRequests: [], contactActivities: [],
   clientReview: { sections: {}, drafts: {}, picks: {} }, reminderTemplates: [], reminderEvents: [], oauthWorkspaces: [], connectedInboxes: [], invitations: [], jobs: [],
 });
 
@@ -83,7 +83,8 @@ function freshOrg() {
   fake.tables.org_state.splice(0, fake.tables.org_state.length, {
     organization_id: ORG, state: seedState(), version: 5, protected_fingerprint: null, min_client_build: null, freeze_strip: [],
   });
-  fake.tables.jobs = [{ id: 'j1', organization_id: ORG, data: { id: 'j1', crewIds: ['u_crew'], clientId: 'c1', siteId: 's1' } }];
+  // A clean tomorrow: a cleaner's scope is the cleans in the jobs window (CS-677), so the row carries its start.
+  fake.tables.jobs = [{ id: 'j1', organization_id: ORG, start_at: new Date(Date.now() + 86400000).toISOString(), data: { id: 'j1', crewIds: ['u_crew'], clientId: 'c1', siteId: 's1', startAt: new Date(Date.now() + 86400000).toISOString() } }];
 }
 const st = () => fake.tables.org_state[0].state;
 const served = () => clone(projectCrewView(seedState(), { userId: 'u_crew', crewJobs: CREW_JOBS }));

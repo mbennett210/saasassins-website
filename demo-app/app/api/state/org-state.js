@@ -18,19 +18,22 @@
 // (the platform cap silently 413'd base64 uploads once, HANDOFF 2026-07-19).
 //
 // If the residual blob ever approaches this, that is a decomposition emergency,
-// not a limit to raise. Note the client falls back to a direct write on a 413
-// rather than losing the edit — see lib/stateApi.js.
+// not a limit to raise. The client answers a 413 by keeping the edits on the device,
+// backing off and telling the person (lib/stateApi.js, store/sync.js — CS-009); it has
+// no other way to write.
 import { requireAuthority, OFFICE_ROLES, crewAssignedScope } from '../_lib/authz.js';
 import {
   writeOrgStateFromClient, describeWriteMiss, readProtectedFingerprint, readProtectedSlices, isDigestCurrent, parseStoredDigest, readOrgState,
 } from '../_lib/orgState.js';
-import { protectedFieldViolations, protectedFingerprint, removedMemberIds, PROTECTED_SELECT } from '../_lib/orgStateGuard.js';
+import { protectedFieldViolations, protectedFingerprint, removedMemberIds, payrollLedgerFactNeeded, PROTECTED_SELECT, restoreRetiredSlices } from '../_lib/orgStateGuard.js';
 import { removalPayFacts } from '../_lib/memberRemoval.js';
-import { oversizedImageUsers, oversizedImageMessage, MAX_STATE_BYTES } from '../_lib/blobBudget.js';
+import { readRuns } from '../_lib/payroll/ledger.js';
+import { oversizedImageUsers, oversizedImageMessage, MAX_STATE_BYTES, STATE_TOO_LARGE_CODE, mergedSaveOverLimit } from '../_lib/blobBudget.js';
 import { syncAssignmentsFromState } from '../_lib/crewAssignments.js';
 import { syncLoginBansFromState, banRemovedLogins } from '../_lib/loginBanSync.js';
 import { getCrewJobs } from '../_lib/jobsTable.js';
 import { mergeCrewChanges } from '../_lib/crewMerge.js';
+import { collectOrgStateActivity, commitOrgStateActivity } from '../_lib/activityLog.js';
 import { dispatchDue } from '../_lib/push/dispatch.js';
 import { pushConfigured } from '../_lib/push/store.js';
 import { reportError } from '../_lib/monitor.js';
@@ -44,18 +47,33 @@ export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
 
 // What the guard's removal pay rule needs (the pay slices + the time ledger), read only
 // when this save removes a member: removals are rare. A read that fails leaves the facts
-// out, so the guard REFUSES the removal (a 403 with violations, which the client reverts
-// on) instead of this route answering 500: a 5xx sends the client to its direct-write
-// fallback (lib/stateApi.js), which skips this guard wherever 1e is not applied.
-async function removalFacts(prev, state, a) {
+// out, so the guard REFUSES the removal (a 403 with violations: the client drops that
+// change alone and says so, CS-008) instead of this route answering 500, which the client
+// would retry after a backoff for as long as the read keeps failing (CS-009).
+async function guardFacts(prev, state, a) {
+  const facts = {};
   const removed = removedMemberIds(prev, state);
-  if (!removed.length) return {};
-  try {
-    return { removal: await removalPayFacts(prev, removed) };
-  } catch (e) {
-    reportError('org_state.removal_pay_check_failed', e, { caller: a.orgUserId || a.email || null, removed: removed.length });
-    return { removal: null };
+  if (removed.length) {
+    try {
+      facts.removal = await removalPayFacts(prev, removed);
+    } catch (e) {
+      reportError('org_state.removal_pay_check_failed', e, { caller: a.orgUserId || a.email || null, removed: removed.length });
+      facts.removal = null; // a check that can't run refuses the removal, never waves it through
+    }
   }
+  // W2-L: the closed-period + pay-schedule rules need the closed runs, read ONLY when a pay
+  // line's money or the pay schedule moved (payrollLedgerFactNeeded). A failed read fails
+  // those rules closed ({ ok:false }); the guard leaves them silent when the fact is absent.
+  if (payrollLedgerFactNeeded(prev, state)) {
+    try {
+      const { runs } = await readRuns();
+      facts.payrollRuns = { ok: true, periodKeys: runs.map((r) => r.period_key), anyRun: runs.length > 0 };
+    } catch (e) {
+      reportError('org_state.payroll_runs_check_failed', e, { caller: a.orgUserId || a.email || null });
+      facts.payrollRuns = { ok: false };
+    }
+  }
+  return facts;
 }
 
 export default async function handler(req, res) {
@@ -82,7 +100,7 @@ export default async function handler(req, res) {
     ? declared
     : Buffer.byteLength(JSON.stringify(state), 'utf8');
   if (bytes > MAX_STATE_BYTES) {
-    return res.status(413).json({ error: `body is ${Math.round(bytes / 1024)} KB, over the ${Math.round(MAX_STATE_BYTES / 1024)} KB limit` });
+    return res.status(413).json({ error: `body is ${Math.round(bytes / 1024)} KB, over the ${Math.round(MAX_STATE_BYTES / 1024)} KB limit`, code: STATE_TOO_LARGE_CODE });
   }
 
   // ── EMBEDDED-IMAGE BUDGET ────────────────────────────────────────────────
@@ -172,13 +190,23 @@ export default async function handler(req, res) {
   // see _lib/orgState.js), and the fast path trusts it only while the row is still that
   // commit at `baseVersion` (isDigestCurrent). The route stores it with every commit, and
   // writeOrgState does after checking the stored one still describes the row it replaces;
-  // any other write that moves `version` or `updated_at` (an operator script, the pre-1e
-  // browser fallback, a direct write) leaves a tag that no longer matches, so the next save
+  // any other write that moves `version` or `updated_at` (an operator script, a direct SQL
+  // or Studio write) leaves a tag that no longer matches, so the next save
   // takes the full check. Until 2026-09-23 the digest was
   // untagged and only this route refreshed it: after reconcile-self appended a roster row,
   // a crew save that removed it again matched the older digest and committed with no
   // guard run (200; judged, it is a 403). A digest stored before tagging vouches for
   // nothing: one full check, then a tagged one.
+  // ── ACTIVITY LOG (CS-379) ────────────────────────────────────────────────
+  // Three loggable things live in the blob: a member's PAY and ROLE, a CUSTOMER's existence
+  // and archive state, and an INVOICE's amount (a supply request's status is logged by
+  // /api/supplies since SUP-13, which moved the requests to their own table). Started here and
+  // NOT awaited, so its one ~100-byte baseline read overlaps the guard's reads below and
+  // costs the save no wall-clock time; a save that touched nothing loggable stops at that
+  // read and never looks at the blob. It never rejects, and it is committed only after the
+  // CAS write lands (below). See _lib/activityLog.js.
+  const activityPlan = collectOrgStateActivity({ state, baseVersion, authority: a });
+
   let fingerprint;
   let authorityChanged = false;
   // The committed protected slices (incl. users), captured in handler scope so the
@@ -206,8 +234,8 @@ export default async function handler(req, res) {
       // ── BASELINE INTEGRITY (C6) ──────────────────────────────────────────
       // `protected_fingerprint` is a STORED column, written by the server writers (this
       // endpoint, and writeOrgState when the digest it replaces was current). A write to
-      // `state` from anywhere else (an operator script, the pre-1e fallback, a direct write
-      // under the still-open RLS policy, which can also write this column) therefore leaves
+      // `state` from anywhere else (an operator script, a direct SQL or Studio write, which
+      // can also write this column) therefore leaves
       // it describing the content before that write — and because `prev` is read from the
       // already-modified blob, a poisoned baseline compares equal to a poisoned proposal
       // and NO violation fires. The tamper launders itself through the next legitimate save.
@@ -222,14 +250,15 @@ export default async function handler(req, res) {
       // describes the row), so a script that changes a protected field alarms on the next
       // save that reaches here; a server write alarms itself only when it couldn't check
       // (its digest read failed) after changing a protected field. Not caught: a write that
-      // also forges or blanks this column, which the pre-1e RLS policy lets any session do.
+      // also forges or blanks this column (a direct SQL or Studio write can; a browser
+      // session could before Increment 1e).
       //
-      // It ALARMS rather than refuses, deliberately. The pre-1e fallback in
-      // stateApi writes directly whenever the server is unreachable, and those
-      // writes legitimately do not update the fingerprint — so refusing here would
-      // turn a transient outage into a permanently unsaveable blob. Detection is
-      // what is achievable before 1e; 1e is what actually closes it, because the
-      // hole is "the baseline is writable", not "the digest is stale".
+      // It ALARMS rather than refuses, deliberately. An outside write (an operator
+      // script, a hand repair) legitimately does not update the fingerprint, so
+      // refusing here would turn one script run into a permanently unsaveable blob for
+      // everyone. (The browser's own direct-write fallback, the original reason, is gone
+      // since CS-009.) 1e is what actually closes the hole, because the hole is "the
+      // baseline is writable", not "the digest is stale".
       const stored = parseStoredDigest(prev.protected_fingerprint);
       if (stored.fingerprint != null) {
         const baselineFp = protectedFingerprint(prev);
@@ -239,7 +268,7 @@ export default async function handler(req, res) {
           const how = since == null
             ? 'and the stored digest names no commit (it predates version tags)'
             : since < prev.version
-              ? `since v${since}, the last commit a server writer vouched for (an operator script, the pre-1e browser fallback or a direct RLS write since then, or a server write that could not check the row)`
+              ? `since v${since}, the last commit a server writer vouched for (an operator script or a direct SQL write since then, or a server write that could not check the row)`
               : sameCommit
                 ? `within v${since} itself (a direct write that kept the version and updated_at, or a deploy that changed the digest's format)`
                 : `and the stored digest names v${since}, a commit the row no longer is (a restore that rewound the version?)`;
@@ -251,18 +280,29 @@ export default async function handler(req, res) {
           );
         }
       }
-      const violations = protectedFieldViolations(prev, state, a.role, a.orgUserId, await removalFacts(prev, state, a));
+      const violations = protectedFieldViolations(prev, state, a.role, a.orgUserId, await guardFacts(prev, state, a));
       if (violations.length) {
         return res.status(403).json({
           error: `Your access level does not allow you to ${violations.join(', or ')}.`,
           violations,
         });
       }
+      // 🔴 SUP-13: the two RETIRED supply slices are the server's. A save that moved them (an
+      // installed PWA's stale bundle still writing supplyRequests, or a bundle that never had
+      // them) is put back to exactly what is committed — kept until supplies-move.mjs --strip
+      // removes them, dropped after — and the digest is recomputed from what is actually written.
+      if (restoreRetiredSlices(prev, state).changed) fingerprint = protectedFingerprint(state);
     }
   } catch (e) {
     // A guard that cannot run must not silently pass the write through.
     return res.status(500).json({ error: e.message || 'Authorization check failed' });
   }
+
+  // 🔴 Resolved BEFORE the write, never after: the diff's "before" is the row this CAS is
+  // about to replace, so a read that lands after the write returns the NEW state and the
+  // change is silently never logged. It was started above, so it has been running alongside
+  // the guard's own reads and costs the save nothing here. It never rejects.
+  const activityReady = await activityPlan;
 
   try {
     const r = await writeOrgStateFromClient({
@@ -381,6 +421,11 @@ export default async function handler(req, res) {
           reportError('login_ban.removed_sync_failed', e, { caller: a.orgUserId || a.email || null });
         }
       }
+      // (A customer this save removed used to take its supply rows with it here. Customers are
+      // archived, never deleted — CS-663 — and the guard refuses a removal, so there is none.)
+      // The save committed, so record what it changed (CS-379). Best-effort by contract: a
+      // failed audit write is reported loudly and never fails a save the user already made.
+      await commitOrgStateActivity(activityReady, r.version);
       return res.status(200).json({
         ok: true,
         version: r.version,
@@ -451,16 +496,37 @@ async function handleCrewWrite(res, { a, posted, baseVersion, buildNum, tabId })
 
   // ── DEFENSE IN DEPTH ──────────────────────────────────────────────────────
   // The merge must NEVER have changed a protected field. If it did, that is a bug in the
-  // allowlist, not a user error — refuse (500) and report, never commit. removalFacts is
-  // {} unless the merge somehow removed a member (it never does), so the pay rule stays inert.
+  // allowlist, not a user error — refuse (500) and report, never commit. guardFacts is
+  // {} unless the merge removed a member (it never does) or moved a pay line / the pay
+  // schedule (crew changes never do), so the pay + payroll-run rules stay inert.
   try {
-    const violations = protectedFieldViolations(full, next, a.role, userId, await removalFacts(full, next, a));
+    const violations = protectedFieldViolations(full, next, a.role, userId, await guardFacts(full, next, a));
     if (violations.length) {
       reportError('crew_merge.protected_violation', new Error(violations.join('; ')), { caller: userId, role: a.role || null });
       return res.status(500).json({ error: 'Crew merge produced a protected change (refused)' });
     }
   } catch (e) {
     return res.status(500).json({ error: e.message || 'Authorization check failed' });
+  }
+
+  // ── CS-671: THE MERGED RECORD MUST STILL FIT ─────────────────────────────────
+  // The 413 at the top measured what the cleaner POSTED, a projection. What commits is the FULL
+  // record with their changes merged in — and the bell rows those changes ring — so near the ceiling
+  // one ordinary message committed past it with a 200, and from then on every office save was
+  // refused and every server writer threw. Measured here, after the merge: a save that would GROW
+  // the record past what the office's next save can carry is refused with the same 413 the office
+  // gets (the phone keeps the change and says so, once); one that does not grow it still lands.
+  // The crew's own texts are capped in the merge (crewMerge CREW_LIMITS), so this is the ceiling
+  // itself speaking, not one message's size.
+  const over = mergedSaveOverLimit(full, next);
+  if (over) {
+    reportError('crew_merge.over_size_limit', new Error(
+      `a crew save would take the shared record to ${over.bytes} bytes (limit ${over.max}); refused. The record needs room before anyone can add to it.`,
+    ), { caller: userId, bytes: over.bytes, before: over.before });
+    return res.status(413).json({
+      error: `This change would take the company’s shared record to ${Math.round(over.bytes / 1024)} KB, over its ${Math.round(over.max / 1024)} KB limit, so it was not saved.`,
+      code: STATE_TOO_LARGE_CODE,
+    });
   }
 
   try {

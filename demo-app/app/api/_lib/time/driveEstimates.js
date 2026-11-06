@@ -136,7 +136,11 @@ async function writeCache(pair, fromSite, toSite, est) {
 // Returns { lookup: Map(driveEstimateKey -> {durationMinutes,distanceMeters,source}),
 //           pending: n }  — `pending` counts pairs deferred past the per-call cap or
 // left unresolved by a Google failure, so the UI can say coverage is partial.
-export async function resolveDriveEstimates(pairs, siteById, { allowFetch = true } = {}) {
+// `mayFetch` (optional): asked just before EACH billable Routes call, after the cache, the
+// coordinates and the key have all been checked; answering false stops fetching there and the
+// rest stay pending. It is how a per-login allowance counts only the requests that would
+// actually reach Google (the crew hint's CS-083 limit) — only this function knows which do.
+export async function resolveDriveEstimates(pairs, siteById, { allowFetch = true, mayFetch = null } = {}) {
   const lookup = new Map();
   const list = Array.isArray(pairs) ? pairs : [];
   if (!list.length) return { lookup, pending: 0, fetched: 0 };
@@ -185,6 +189,7 @@ export async function resolveDriveEstimates(pairs, siteById, { allowFetch = true
   // Sequential on purpose: a fan-out of billable calls from one page load is how a
   // Maps bill surprises someone. The cap plus the cache means steady-state is ~0.
   for (const p of batch) {
+    if (typeof mayFetch === 'function' && !mayFetch()) break;
     let est = null;
     try { est = await fetchGoogleRoute(p.fromSite, p.toSite, apiKey); }
     catch (e) { console.error('[drive/estimates] Routes fetch failed', e?.message || e); }
@@ -196,9 +201,9 @@ export async function resolveDriveEstimates(pairs, siteById, { allowFetch = true
   return { lookup, pending: misses.length - fetched, fetched };
 }
 
-// Single-pair convenience for the crew "drive to your next site" hint.
-export async function resolveOneEstimate(fromSiteId, toSiteId, siteById) {
+// Single-pair convenience for the crew "drive to your next site" hint. `mayFetch` as above.
+export async function resolveOneEstimate(fromSiteId, toSiteId, siteById, { mayFetch = null } = {}) {
   if (!fromSiteId || !toSiteId || fromSiteId === toSiteId) return null;
-  const { lookup } = await resolveDriveEstimates([{ fromSiteId, toSiteId }], siteById);
+  const { lookup } = await resolveDriveEstimates([{ fromSiteId, toSiteId }], siteById, { mayFetch });
   return lookup.get(driveEstimateKey(fromSiteId, toSiteId)) || null;
 }

@@ -16,6 +16,7 @@ import { composeIso, composeEndIso, splitIso, todayKey, addDaysKey, dayOfWeekKey
 import { draftEffectiveCrewIds } from '../store/timeOffRules';
 import { seriesFromDate, STARTED_SERIES_NOTE, STARTED_SERIES_MOVE_BLOCK } from '../lib/seriesScope';
 import { newId } from '../lib/ids';
+import { linkedCleanerIds } from '../lib/worksAt';
 
 // A "same shape" series: same site (or same account when siteless), same
 // frequency + weekday set, same start time — the signature the office reads as
@@ -72,6 +73,8 @@ export default function NewJobModal({ open, onClose, mode = 'create', initialDat
   const crewPool = selectActiveUsers(state);
 
   const [form, setForm] = useState(() => buildEmpty(state, { clientId: presetClientId, siteId: presetSiteId }));
+  // The cleaners who work at the picked customer lead the crew picker, after those picked (lib/worksAt).
+  const preferCrew = useMemo(() => linkedCleanerIds(state.users, form.clientId), [state.users, form.clientId]);
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState('');
   // One-shot override for the same-shape duplicate warning; re-arms on any
@@ -305,10 +308,11 @@ export default function NewJobModal({ open, onClose, mode = 'create', initialDat
       startAt, endAt,
       notes: form.notes,
     };
-    // Any job create/update dispatched before the FULL set hydrates cannot be mirrored
+    // Any job create/update dispatched before the jobs window lands cannot be mirrored
     // to public.jobs (mirrorJobs no-ops while !jobsReady) — it lives only in RAM and is
     // lost on reload (the "nothing saves" report, 2026-08-12, on a slow link). This used
-    // to guard only the series-create path below; EVERY mutation here needs it.
+    // to guard only the series-create path below; EVERY mutation here needs it. A
+    // "this & all future" reschedule arrives here only after Schedule loaded the series.
     if (!jobsHydrated) {
       setSubmitError('Still loading the full schedule. Try again in a few seconds.');
       return;
@@ -507,6 +511,7 @@ export default function NewJobModal({ open, onClose, mode = 'create', initialDat
                   value={form.crewIds}
                   onChange={(ids) => update({ crewIds: ids })}
                   pool={crewPool}
+                  preferIds={preferCrew}
                   placeholder="Add crew…"
                 />
               </FormField>
@@ -560,6 +565,7 @@ export default function NewJobModal({ open, onClose, mode = 'create', initialDat
                       blocks={form.blocks}
                       onChange={(blocks) => update({ blocks }, ['days', 'blocks'])}
                       crewPool={crewPool}
+                      preferCrew={preferCrew}
                       errors={errors.blocks || {}}
                     />
                     {errors.days && <div className="form-error" style={{ marginBottom: 8 }}>{errors.days}</div>}

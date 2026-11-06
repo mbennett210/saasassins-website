@@ -14,7 +14,8 @@ import FilterBar from '../components/filters/FilterBar';
 import { useUrlFilters } from '../hooks/useUrlFilters';
 import { varianceFilterSpecs } from '../lib/filters/varianceFilters';
 import { useFromHere } from '../hooks/useFromHere';
-import { useStore } from '../store';
+import { useStore, useSelector } from '../store';
+import { selectUsers } from '../store/selectors';
 import { useAuth } from '../hooks/useAuth';
 import { usePermission } from '../hooks/usePermission';
 import { useToast } from '../components/Toast';
@@ -22,13 +23,17 @@ import { report as fetchReport } from '../lib/varianceApi';
 import { metersToFeet } from '../lib/geo';
 import { GEOFENCE_REASON_LABELS } from '../lib/clockRules';
 import * as timeApi from '../lib/timeApi';
-import TimeEntryModal from '../components/TimeEntryModal';
+import TimeEntryModal, { TimeDeleteDialog, TimeRestoreDialog } from '../components/TimeEntryModal';
 import DriveTimeReport from '../components/DriveTimeReport';
+import { useTimeScope } from '../hooks/useTimeScope';
 import { flagBadgeVariant, flagLabel, varianceFlag } from '../lib/variance';
-import { driveFlagLabel } from '../lib/driveTime';
+import { TIME_REFUSALS } from '../lib/timeRules';
+import { punchActionGate } from '../lib/filters/timeApprovals';
+import { driveFlagLabel, drivePayEnabled } from '../lib/driveTime';
 import * as driveApi from '../lib/driveApi';
-import { currentWeekMinutesByUser, otStatus, startOfPayWeek, minutesToHours } from '../lib/payroll';
-import { fmtDuration, fmtDelta, fmtDate, fmtTime, startOfWeek, startOfMonth, dayKey, todayKey, composeIso, addDaysKey, startOfDayKey, startOfQuarterKey, startOfYearKey } from '../lib/dates';
+import { currentWeekMinutesByUser, otStatus, startOfPayWeek, minutesToHours, payWeekStartDayOf, currentPayWeekWindow } from '../lib/payroll';
+import { fmtPunchTime } from '../lib/wallClock';
+import { fmtDuration, fmtDelta, fmtDate, fmtTime, startOfMonth, dayKey, todayKey, composeIso, addDaysKey, startOfDayKey, startOfQuarterKey, startOfYearKey } from '../lib/dates';
 import { usePagedRows } from '../hooks/usePagedRows';
 import ListPager from '../components/ListPager';
 
@@ -55,8 +60,10 @@ const PERIODS = [
 // noon-to-noon window (yesterday 12:00 → today 12:00, capped at now) so one
 // overnight shift falls in one bucket. All boundaries anchor to the ORG's calendar
 // day (company.timezone), so a clean finishing after midnight lands in the right
-// local day and the report reads the same for the office and an off-site VA.
-function resolvePeriod(period, custom, now = new Date()) {
+// local day and the report reads the same for the office and an off-site VA. WTD starts
+// on the ORG's workweek (`weekStartDay`, opsSettings.payWeekStartDay), the week the pay run
+// and this page's overtime watch count — it was a fixed Monday whatever the setting (CS-055).
+function resolvePeriod(period, custom, { now = new Date(), weekStartDay = 0 } = {}) {
   const end = now.toISOString();
   const todayK = dayKey(now);
   const back = (n) => startOfDayKey(addDaysKey(todayK, -n)).toISOString(); // org day-start N days ago
@@ -71,7 +78,7 @@ function resolvePeriod(period, custom, now = new Date()) {
     case '7d': return { fromIso: back(7), toIso: end };
     case '30d': return { fromIso: back(30), toIso: end };
     case '90d': return { fromIso: back(90), toIso: end };
-    case 'wtd': return { fromIso: startOfWeek(now).toISOString(), toIso: end };
+    case 'wtd': return { fromIso: startOfPayWeek(now, weekStartDay).toISOString(), toIso: end };
     case 'mtd': return { fromIso: startOfMonth(now).toISOString(), toIso: end };
     case 'qtd': return { fromIso: startOfDayKey(startOfQuarterKey(todayK)).toISOString(), toIso: end };
     case 'ytd': return { fromIso: startOfDayKey(startOfYearKey(todayK)).toISOString(), toIso: end };
@@ -180,12 +187,23 @@ export default function Variance() {
   const canPayroll = usePermission('payroll.view');
   const canEdit = usePermission('time.edit.all');
   const canApprove = usePermission('time.approve');
+  // Manager scope: the Locations facet is already scoped (varianceFilters); here we constrain the
+  // labor request to the manager's sites and show the no-locations state for an empty scope — never
+  // an empty siteIds list, which the server reads as "all" (spec §8.4).
+  const { unscoped, siteIds: scopeSiteIds } = useTimeScope();
+  const noLocations = !unscoped && (scopeSiteIds || []).length === 0;
 
   const [searchParams, setSearchParams] = useSearchParams();
   // Two reports share this page's period + filter chrome: clocked labor vs
   // expected, and paid travel BETWEEN cleans. URL-persisted so a link restores the
   // exact view (UI_RULES §21).
-  const view = searchParams.get('view') === 'drive' ? 'drive' : 'labor';
+  // 🔴 PAY-6 (Matt, 2026-09-29): "Should drive time between buildings be paid? — (b) No. we
+  // dont use this." While `payDriveTime` is off the drive-time report is HIDDEN: the tab is
+  // not offered, and a saved or bookmarked `?view=drive` link falls back to labor rather than
+  // opening a report about pay nobody gets. The DATA stays — the legs, the overrides and the
+  // rulings are untouched, so turning it back on restores the report whole.
+  const payDriveTime = drivePayEnabled(state.opsSettings || {});
+  const view = (payDriveTime && searchParams.get('view') === 'drive') ? 'drive' : 'labor';
   const period = searchParams.get('p') || 'last_night';
   const custom = { from: searchParams.get('cf') || '', to: searchParams.get('ct') || '' };
   const setParam = (key, value, def) => {
@@ -204,6 +222,8 @@ export default function Variance() {
   const [openEntries, setOpenEntries] = useState([]); // who's on the clock now (projection)
   const [manualOpen, setManualOpen] = useState(false);
   const [correctTarget, setCorrectTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [restoreTarget, setRestoreTarget] = useState(null);
   const [otRows, setOtRows] = useState([]); // cleaners at/over 40h THIS week (projection)
   // Why the watch may be wrong: 'hours' = the week's punches didn't load (it can't say who
   // is near 40h); 'drive' = punches loaded but paid drive didn't (labor only — it may
@@ -212,13 +232,18 @@ export default function Variance() {
   const [driveRows, setDriveRows] = useState([]); // hoisted from the drive view for the shared CSV button
 
   const ops = state.opsSettings || {};
+  // The ORG's workweek start (lib/payroll's one reader): WTD and the overtime watch count the
+  // week the pay run pays on — Monday in production (CS-055).
+  const weekStartDay = payWeekStartDayOf(ops);
   const request = useMemo(() => {
-    const window = resolvePeriod(period, custom);
+    const window = resolvePeriod(period, custom, { weekStartDay });
     return {
       fromIso: window.fromIso,
       toIso: window.toIso,
       filters: {
-        siteIds: filters.values.loc?.length ? filters.values.loc : null,
+        // A manager with no location filter selected is still constrained to their sites; an
+        // empty list would read as "all" server-side, so noLocations shows the empty state instead.
+        siteIds: filters.values.loc?.length ? filters.values.loc : (unscoped ? null : scopeSiteIds),
         userIds: filters.values.cleaner?.length ? filters.values.cleaner : null,
         flaggedOnly: filters.values.flagged === '1',
       },
@@ -228,22 +253,22 @@ export default function Variance() {
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, custom.from, custom.to, filters.values.loc, filters.values.cleaner, filters.values.flagged, ops.expectedBasis, ops.varianceFlagOverMins, ops.varianceFlagUnderMins]);
+  }, [period, custom.from, custom.to, filters.values.loc, filters.values.cleaner, filters.values.flagged, ops.expectedBasis, ops.varianceFlagOverMins, ops.varianceFlagUnderMins, unscoped, scopeSiteIds, weekStartDay]);
 
   // The drive view's window, memoized on the SAME deps as `request`. resolvePeriod
   // defaults `now` to this instant, so calling it inline in render would hand the
   // child a new toIso every pass and spin its fetch effect forever.
   const driveWindow = useMemo(
-    () => resolvePeriod(period, custom),
+    () => resolvePeriod(period, custom, { weekStartDay }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [period, custom.from, custom.to],
+    [period, custom.from, custom.to, weekStartDay],
   );
 
   const load = useCallback(async () => {
-    if (view !== 'labor') return;   // the drive view owns its own fetch
+    if (view !== 'labor' || noLocations) return;   // the drive view owns its own fetch; no scope = nothing to read
     setError(null); setData(null);
     try { setData(await fetchReport(request)); } catch (e) { setError(e.message || 'Could not load the variance report.'); }
-  }, [request, view]);
+  }, [request, view, noLocations]);
   useEffect(() => { load(); }, [load]);
 
   const loadOpen = useCallback(async () => {
@@ -253,27 +278,33 @@ export default function Variance() {
 
   // Approaching-40h lens: this week's CLOCKED labor per cleaner (operational —
   // approved or not), surfaced so a manager sees OT building BEFORE payroll. This
-  // is independent of the selected report period. Best-effort projection.
+  // is independent of the selected report period. Best-effort projection. "This week" is the
+  // ORG's pay week (payWeekStartDayOf), whole org-zone days — the week the run pays OT on; it was
+  // a hard-coded Sunday + 7 device days (CS-055).
   const loadOt = useCallback(async () => {
     try {
       const now = new Date();
-      const ws = startOfPayWeek(now, 0);
-      const we = new Date(ws); we.setDate(we.getDate() + 7);
-      const entries = await timeApi.rollup({ fromIso: ws.toISOString(), toIso: we.toISOString() });
+      const week = currentPayWeekWindow(now, { weekStartDay: payWeekStartDayOf(ops) });
+      const entries = await timeApi.rollup({ fromIso: week.fromIso, toIso: week.toIso });
       // Paid drive time is hours worked, so the 40h watch has to include it — or it
       // under-warns for exactly the cleaners doing the most driving. The payroll read
       // (complete for the week, compact rows) also keeps this background poll off the
       // billable route lookup.
       let driveSegments = [];
+      // PAY-6: with drive pay off there is no paid drive to fold in, so the read is not made
+      // and its failure mode is not reported — an "it may under-warn" note about hours nobody
+      // is paid for would be noise.
       let driveLoaded = true;
-      try {
-        const drive = await driveApi.report({
-          fromIso: ws.toISOString(), toIso: we.toISOString(), payroll: true,
-          config: { maxGapMins: ops.driveMaxGapMins }, sites: state.sites,
-        });
-        driveSegments = drive?.rows || [];
-      } catch { driveLoaded = false; /* labor-only OT watch is still useful — flagged as such */ }
-      const byUser = currentWeekMinutesByUser(entries, { now: now.getTime(), weekStartDay: 0, driveSegments });
+      if (drivePayEnabled(ops)) {
+        try {
+          const drive = await driveApi.report({
+            fromIso: week.fromIso, toIso: week.toIso, payroll: true,
+            config: { maxGapMins: ops.driveMaxGapMins }, sites: state.sites,
+          });
+          driveSegments = drive?.rows || [];
+        } catch { driveLoaded = false; /* labor-only OT watch is still useful — flagged as such */ }
+      }
+      const byUser = currentWeekMinutesByUser(entries, { now: now.getTime(), weekStartDay: payWeekStartDayOf(ops), driveSegments });
       const flagged = [...byUser.values()]
         .map((u) => ({ ...u, status: otStatus(u.minutes) }))
         .filter((u) => u.status)
@@ -281,13 +312,14 @@ export default function Variance() {
       setOtRows(flagged);
       setOtIssue(driveLoaded ? null : 'drive');
     } catch { setOtRows([]); setOtIssue('hours'); }
-  }, [ops.driveMaxGapMins, state.sites]);
+  }, [ops.driveMaxGapMins, ops.payWeekStartDay, ops.payDriveTime, state.sites]);
   useEffect(() => { loadOt(); }, [loadOt]);
 
-  const approve = async (entryId, approval) => {
+  const approve = async (entryId, version) => {
     try {
-      await timeApi.approveEntry({ entryId, approval });
-      toast.success(approval === 'rejected' ? 'Entry rejected' : 'Entry approved');
+      const [res] = await timeApi.approveEntries([{ entryId, version }]);
+      if (res && res.ok === false) toast.error(TIME_REFUSALS[res.code] || 'Could not approve this entry');
+      else toast.success('Entry approved');
       load();
     } catch (e) { toast.error(e.message || 'Could not update approval'); }
   };
@@ -332,7 +364,9 @@ export default function Variance() {
       {/* Which report — labor vs paid travel between cleans */}
       <div className="tab-container-line" role="group" aria-label="Report">
         <button type="button" className={`tab-btn ${view === 'labor' ? 'active' : ''}`} onClick={() => setParam('view', 'labor', 'labor')}>Labor variance</button>
-        <button type="button" className={`tab-btn ${view === 'drive' ? 'active' : ''}`} onClick={() => setParam('view', 'drive', 'labor')}>Drive time</button>
+        {payDriveTime && (
+          <button type="button" className={`tab-btn ${view === 'drive' ? 'active' : ''}`} onClick={() => setParam('view', 'drive', 'labor')}>Drive time</button>
+        )}
       </div>
 
       {/* Period pills */}
@@ -383,7 +417,13 @@ export default function Variance() {
         </div>
       )}
 
-      {view === 'drive' ? (
+      {noLocations ? (
+        <EmptyState
+          icon={<Icon name="building" size={28} />}
+          title="No locations are assigned to you yet"
+          message="A Super Admin assigns each location's manager on the customer's Service setup."
+        />
+      ) : view === 'drive' ? (
         <DriveTimeReport
           window={driveWindow}
           canAct={canAct}
@@ -467,7 +507,8 @@ export default function Variance() {
                   onToggle={() => setExpanded(expanded === r.key ? null : r.key)}
                   canApprove={canApprove} canEdit={canEdit}
                   onApprove={approve} onCorrect={(entry) => setCorrectTarget(entry)}
-                  navigate={navigate} nav={nav}
+                  onDelete={(entry) => setDeleteTarget(entry)} onRestore={(entry) => setRestoreTarget(entry)}
+                  navigate={navigate} nav={nav} user={currentUser}
                   thresholds={data?.threshold || { overMins: ops.varianceFlagOverMins ?? 15, underMins: ops.varianceFlagUnderMins ?? 15 }}
                 />
               ))}
@@ -481,6 +522,8 @@ export default function Variance() {
 
       <TimeEntryModal open={manualOpen} onClose={() => setManualOpen(false)} mode="manual" onSaved={afterEdit} />
       <TimeEntryModal open={!!correctTarget} onClose={() => setCorrectTarget(null)} mode="correct" entry={correctTarget} onSaved={afterEdit} />
+      <TimeDeleteDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} entry={deleteTarget} label={deleteTarget?.userName} onDeleted={() => { setDeleteTarget(null); afterEdit(); }} />
+      <TimeRestoreDialog open={!!restoreTarget} onClose={() => setRestoreTarget(null)} entry={restoreTarget} label={restoreTarget?.userName} onRestored={() => { setRestoreTarget(null); afterEdit(); }} />
     </div>
   );
 }
@@ -506,11 +549,14 @@ function approvalBadge(status) {
   return <Badge variant="white">pending</Badge>;
 }
 
-function RowGroup({ row, expanded, onToggle, canApprove, canEdit, onApprove, onCorrect, navigate, nav, thresholds }) {
+function RowGroup({ row, expanded, onToggle, canApprove, canEdit, onApprove, onCorrect, onDelete, onRestore, navigate, nav, thresholds, user }) {
   // A clean's time entries are a child component's own list, so each expanded row
   // pages independently (a hook can't live in the parent's rows.map). Usually a
   // handful of cleaners — the pager only appears past 20.
   const entriesPager = usePagedRows(row.entries || EMPTY);
+  // The roster, so a cleaner's avatar shows their photo (UI_RULES §141); a punch whose person
+  // has left keeps the initials of the name it was stored with.
+  const users = useSelector(selectUsers);
   // Per-cleaner expected = the clean baseline split evenly across the crew, so the
   // drill's Expected/Actual/Variance columns SUM back to the clean header exactly
   // (the Totals row proves it). Even-split is the labor-basis-correct allocation —
@@ -563,14 +609,17 @@ function RowGroup({ row, expanded, onToggle, canApprove, canEdit, onApprove, onC
                       const perVar = (expPerCleaner != null && actual != null) ? actual - expPerCleaner : null;
                       const perFlag = varianceFlag(perVar, expPerCleaner != null, thresholds);
                       const varClass = perFlag === 'over' ? 'var-over' : perFlag === 'under' ? 'var-under' : 'var-ok';
+                      // Only a Super Admin acts on their OWN time (server refuses own-entry) — a
+                      // non-owner's own punch shows no actions + the reason, as Approvals does (W4-F).
+                      const gate = punchActionGate(user, e);
                       return (
                         <tr key={e.id}>
                           <td>
                             <div className="entry-cleaner">
-                              <Avatar initials={cleanerInitials(e.userName)} variant={(String(e.userId || '').length % 5) + 1} size="sm" />
+                              <Avatar user={e.userId ? (users || []).find((u) => u.id === e.userId) || null : null} initials={cleanerInitials(e.userName)} variant={(String(e.userId || '').length % 5) + 1} size="sm" />
                               <div className="entry-idbox">
                                 <div className="entry-name truncate" title={e.userName}>{e.userName}{!e.clockOutAt ? <span className="text-muted text-xs"> · on the clock</span> : ''}</div>
-                                <div className="entry-window text-xs">{e.clockInAt ? fmtTime(e.clockInAt) : '—'}{e.clockOutAt ? `–${fmtTime(e.clockOutAt)}` : ''}</div>
+                                <div className="entry-window text-xs">{e.clockInAt ? fmtPunchTime(e.clockInAt) : '—'}{e.clockOutAt ? `–${fmtPunchTime(e.clockOutAt)}` : ''}</div>
                               </div>
                             </div>
                           </td>
@@ -578,11 +627,19 @@ function RowGroup({ row, expanded, onToggle, canApprove, canEdit, onApprove, onC
                           <td className="col-num entry-actual">{actual != null ? fmtDuration(actual) : <span className="text-muted">In progress</span>}</td>
                           <td className={`col-num entry-var ${varClass}`}>{perVar != null ? fmtDelta(perVar) : <span className="text-muted">—</span>}</td>
                           <td>{geoBadge(e.geofenceResult, e.overrideReason)}{e.distanceM != null && <span className="text-muted text-xs"> {metersToFeet(e.distanceM)} ft</span>}</td>
-                          <td>{approvalBadge(e.approvalStatus)}</td>
+                          <td>{e.status === 'voided' ? <Badge variant="red">deleted</Badge> : approvalBadge(e.approvalStatus)}</td>
                           <td className="col-review variance-entry-actions">
-                            {canApprove && e.clockOutAt && e.approvalStatus !== 'approved' && <button className="btn btn-sm btn-gold" onClick={() => onApprove(e.id, 'approved')}>Approve</button>}
-                            {canApprove && e.clockOutAt && e.approvalStatus !== 'rejected' && <button className="btn btn-sm btn-outline" onClick={() => onApprove(e.id, 'rejected')}>Reject</button>}
-                            {canEdit && <button className="btn btn-sm btn-outline" onClick={() => onCorrect({ ...e, siteName: row.siteName, clientName: row.clientName })}>Correct</button>}
+                            {!gate.canAct ? (
+                              <span className="text-muted text-xs">{gate.reason}</span>
+                            ) : e.status === 'voided' ? (
+                              canEdit && <button className="btn btn-sm btn-outline" onClick={() => onRestore({ ...e, clientName: row.clientName })}>Restore</button>
+                            ) : (
+                              <>
+                                {canApprove && e.clockOutAt && e.approvalStatus !== 'approved' && <button className="btn btn-sm btn-gold" onClick={() => onApprove(e.id, e.rowVersion)}>Approve</button>}
+                                {canEdit && <button className="btn btn-sm btn-outline" onClick={() => onCorrect({ ...e, siteName: row.siteName, clientName: row.clientName })}>Correct</button>}
+                                {canEdit && <button className="btn btn-sm btn-outline" onClick={() => onDelete({ ...e, clientName: row.clientName })}>Delete</button>}
+                              </>
+                            )}
                           </td>
                         </tr>
                       );

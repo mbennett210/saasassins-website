@@ -11,9 +11,11 @@
 //                     "Complete" once the cron ran, so "Yesterday" hid every forgotten
 //                     clock-out. A manager-corrected clock-out reads complete.
 //   on_clock          clocked in, the clean isn't over yet — not a problem yet
-//   no_punch          never clocked in, and the clean started more than the late grace ago
+//   no_punch          never clocked in, and the clean started more than the missed-shift
+//                     mark ago (opsSettings.missedAfterStartMins — the SAME number the
+//                     missed-shift alert fires on, so the report and the alert agree)
 //   upcoming          not clocked in because the clean hasn't started (or is still inside
-//                     the late grace). It used to read "No punch", so running Today before
+//                     that mark). It used to read "No punch", so running Today before
 //                     a night shift listed every cleaner on it as a no-show.
 //   off               never clocked in, but booked off that day (a call-out or planned
 //                     time off) — a known absence, listed on Reports › Called out.
@@ -22,6 +24,11 @@
 // (unique per occurrence), not by clock-in time, so an overnight clean clocked in after
 // midnight still counts.
 import { timeOffEntryFor, isCallOut } from '../store/timeOffRules.js';
+// ALR-11: ONE number decides when a clean with no clock-in is a problem. It is defined
+// beside the alert that fires on it, never restated here — a second copy is how the
+// office's report and the supervisor's phone end up disagreeing.
+import { OPS_ALERT_DEFAULTS } from './opsAlerts.js';
+import { clockOutCorrected } from './autoClose.js';
 
 export const ATT_COMPLETE = 'complete';
 export const ATT_MISSING_OUT = 'missing_clock_out';
@@ -34,29 +41,30 @@ export const ATT_OFF = 'off';
 export const ATT_INCOMPLETE = new Set([ATT_NO_PUNCH, ATT_MISSING_OUT]);
 
 const TERMINAL_JOB = new Set(['cancelled', 'canceled']);
-const NOT_A_PUNCH = new Set(['voided', 'no_show']);
+// A punch the office deleted or marked a no-show is not a clock-in. Exported for the QR area page's
+// "On site now" (lib/areaPage onSiteNow, QR Wave 2), so the two never disagree about who arrived.
+export const NOT_A_PUNCH = new Set(['voided', 'no_show']);
 const MIN = 60 * 1000;
 const FALLBACK_SHIFT_MINS = 120; // a clean with no end time is assumed this long (as the alerts do)
-const DEFAULT_GRACE_MINS = 10;   // opsSettings.lateAlertGraceMins default
+const DEFAULT_GRACE_MINS = OPS_ALERT_DEFAULTS.missedAfterStartMins;   // opsSettings.missedAfterStartMins
 const ms = (iso) => { const t = new Date(iso).getTime(); return Number.isFinite(t) ? t : NaN; };
 const inWindow = (t, from, to) => Number.isFinite(t) && t >= from && t <= to;
 
-// Was this auto-closed punch's clock-out corrected by a manager AFTER the cron closed
-// it? Then the clock-out is a real, reviewed time — not the system's synthetic one — and
-// the punch is complete. (correctEntry records a history row per field it changes; the
-// cron records { field:'status', to:'auto_closed' }; the demo stub joins changed field
-// names with commas.) Without this a corrected punch read "Missing clock-out (auto)"
-// forever — the correction form never clears the auto_closed status.
-export function clockOutCorrected(e) {
-  const hist = Array.isArray(e && e.edit_history) ? e.edit_history : [];
-  let closedAt = -1;
-  hist.forEach((h, i) => { if (h && h.field === 'status' && h.to === 'auto_closed') closedAt = i; });
-  for (let i = closedAt + 1; i < hist.length; i += 1) {
-    if (String((hist[i] && hist[i].field) || '').split(',').includes('clock_out_at')) return true;
-  }
-  return false;
-}
+// An auto-closed punch whose clock-out no manager has corrected since the cron closed it
+// (lib/autoClose `clockOutCorrected`, the auto-close module's own rule — the cleaner's card
+// asks the same question, so it lives beside the cron's rule rather than here).
 const autoClosedUnfixed = (e) => e.status === 'auto_closed' && !clockOutCorrected(e);
+
+// THE "nobody has clocked in yet" rule (ALR-11), for a clean that starts at `startMs`:
+// no_punch once `now` is STRICTLY past the start plus the missed-shift mark, else upcoming
+// (not started, or still inside the mark). Exported so the manager's today view
+// (lib/managerToday) asks this question through the same function the report does, rather
+// than holding a second copy of the mark (2026-10-09). `graceMins` is
+// opsAlerts.missedAfterStartMins(opsSettings); omitted, the shipped default applies.
+export function noPunchStatus(startMs, now, graceMins = DEFAULT_GRACE_MINS) {
+  const grace = (Number.isFinite(graceMins) ? graceMins : DEFAULT_GRACE_MINS) * MIN;
+  return now > startMs + grace ? ATT_NO_PUNCH : ATT_UPCOMING;
+}
 
 // Build the attendance rows for a day-window.
 //   jobs         : state.jobs (need id/startAt/endAt/status/clientId/siteId/crewIds)
@@ -67,17 +75,21 @@ const autoClosedUnfixed = (e) => e.status === 'auto_closed' && !clockOutCorrecte
 //   managerId    : optional — only cleans at accounts this manager supervises
 //   now          : the clock the statuses are judged against
 //   graceMins    : minutes past start with no clock-in before "No punch", and past the
-//                  end before an open punch is "Missing clock-out" (opsSettings.lateAlertGraceMins)
+//                  end before an open punch is "Missing clock-out"
+//                  (opsAlerts.missedAfterStartMins(opsSettings) — the missed-shift mark)
 //   timeOff      : state.timeOff — a no-punch cleaner booked off that day reads "off"
 // Returns one row per scheduled (cleaner, clean):
 //   { userId, userName, clientId, clientName, siteId, siteName, jobId, scheduledStart,
-//     scheduledEnd, clockInAt, clockOutAt, autoClosed, offKind, status }
+//     scheduledEnd, clockInAt, clockOutAt, autoClosed, entryId, entryVersion, offKind, status }
+// entryId / entryVersion name the open or auto-closed punch behind a missing_clock_out row
+// (null otherwise) so the Approvals screen's "Fix clock-out" can Edit it under the CAS.
 export function computeAttendanceReport({
   jobs = [], timeEntries = [], usersById = new Map(), clientsById = new Map(),
   sitesById = new Map(), fromMs = -Infinity, toMs = Infinity, managerId = null,
   now = Date.now(), graceMins = DEFAULT_GRACE_MINS, timeOff = [],
 } = {}) {
-  const grace = (Number.isFinite(graceMins) ? graceMins : DEFAULT_GRACE_MINS) * MIN;
+  const graceIn = Number.isFinite(graceMins) ? graceMins : DEFAULT_GRACE_MINS;
+  const grace = graceIn * MIN;
 
   // Group punches by `${jobId}|${userId}` — the clean a cleaner was scheduled on. A
   // cleaner can clock in and out more than once on one clean (a break); EVERY session
@@ -108,21 +120,34 @@ export function computeAttendanceReport({
       let clockInAt = null;
       let clockOutAt = null;
       let autoClosed = false;
+      // The punch behind a missing_clock_out row, so the Approvals screen can offer
+      // "Fix clock-out" (Edit, which needs the CAS row_version): the still-open punch, or the
+      // auto-closed one no manager has corrected. Null for every other status.
+      let entryId = null;
+      let entryVersion = null;
       if (punches.length) {
         const ins = punches.map((p) => p.clock_in_at).sort();
         clockInAt = ins[0];
         const open = punches.some((p) => !p.clock_out_at);
         if (open) {
           status = now > endMs + grace ? ATT_MISSING_OUT : ATT_ON_CLOCK;
+          if (status === ATT_MISSING_OUT) {
+            const openPunch = punches.find((p) => !p.clock_out_at);
+            if (openPunch) { entryId = openPunch.id ?? null; entryVersion = openPunch.row_version ?? null; }
+          }
         } else {
           clockOutAt = punches.map((p) => p.clock_out_at).sort().pop();
           autoClosed = punches.some(autoClosedUnfixed);
           status = autoClosed ? ATT_MISSING_OUT : ATT_COMPLETE;
+          if (autoClosed) {
+            const autoPunch = punches.find(autoClosedUnfixed);
+            if (autoPunch) { entryId = autoPunch.id ?? null; entryVersion = autoPunch.row_version ?? null; }
+          }
         }
       } else if (off) {
         status = ATT_OFF;
       } else {
-        status = now > startMs + grace ? ATT_NO_PUNCH : ATT_UPCOMING;
+        status = noPunchStatus(startMs, now, graceIn);
       }
       rows.push({
         userId: uid,
@@ -137,6 +162,8 @@ export function computeAttendanceReport({
         clockInAt,
         clockOutAt,
         autoClosed,
+        entryId,
+        entryVersion,
         offKind: off ? (isCallOut(off) ? 'callout' : 'planned') : null,
         status,
       });

@@ -8,14 +8,17 @@
 //      inbound email AND marketing replies land even when nobody has the app open.
 //
 // The ingest cursor (last buffered `seq` threaded) lives in the org state
-// itself (`state.inboundIngestSeq`). Threading is idempotent (dedup by
-// Message-ID), so overlap with the client-side InboundListener is harmless.
+// itself (`state.inboundIngestSeq`). The client-side InboundListener never files
+// an email at or below it (src/lib/inboundCursor.js, CS-968): the Message-ID dedup
+// alone let a browser polling from an old cursor file again a reply whose thread
+// had been deleted since.
 
 import { getInboundSince, listAccountEmails } from '../_lib/accounts.js';
 import { pollDueInboxes } from '../_lib/gmailPoll.js';
 import { readOrgState, writeOrgState } from '../_lib/orgState.js';
 import { ingestInboundEmail } from '../_lib/ingestEmail.js';
 import { ingestMarketingReply } from '../_lib/ingestMarketingReply.js';
+import { refuseUnconfiguredCron } from '../_lib/cronGate.js';
 
 const MAX_PER_RUN = 200;
 const CAS_RETRIES = 5;
@@ -83,9 +86,12 @@ export default async function handler(req, res) {
   // Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. Fail CLOSED (like
   // /api/push/dispatch): with no secret configured the endpoint refuses to run
   // rather than accepting unauthenticated calls that could force inbox ingest.
+  // An unset secret is a 500 with a body that names nothing, the gap logged (`_lib/cronGate.js`);
+  // a wrong or missing bearer is a 401.
   const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.authorization !== `Bearer ${secret}`) {
-    res.status(secret ? 401 : 500).json({ ok: false, error: secret ? 'Unauthorized' : 'CRON_SECRET is not configured' });
+  if (!secret) { refuseUnconfiguredCron(res, 'inbox/ingest'); return; }
+  if (req.headers.authorization !== `Bearer ${secret}`) {
+    res.status(401).json({ ok: false, error: 'Unauthorized' });
     return;
   }
   try {

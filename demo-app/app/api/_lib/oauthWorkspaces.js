@@ -28,12 +28,10 @@ function metadata(row) {
   };
 }
 
-export async function listWorkspaces() {
-  const { data, error } = await getSupabase()
-    .from('oauth_workspaces').select('*').order('created_at', { ascending: true });
-  if (error) throw new Error(`Workspace list failed: ${error.message}`);
-  return (data || []).map(metadata);
-}
+// listWorkspaces() was DELETED with GET /api/workspaces/list (CS-220, 2026-09-29): the only
+// caller was that route, and the route had no caller of its own. The Workspaces UI reads the
+// roster from the shared record; the server reads ONE workspace's creds
+// (resolveCredsForWorkspaceId / getWorkspaceCreds below) and never needs the list.
 
 export async function getWorkspaceMeta(id) {
   const { data, error } = await getSupabase()

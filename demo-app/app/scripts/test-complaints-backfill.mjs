@@ -5,7 +5,7 @@
 //
 //   node scripts/test-complaints-backfill.mjs
 import assert from 'node:assert/strict';
-import { complaintToWorkOrderRow, computeDueAt } from '../src/lib/workOrders.js';
+import { complaintToWorkOrderRow, computeDueAt, TYPE_DEADLINE_HOURS } from '../src/lib/workOrders.js';
 
 let pass = 0;
 const ok = (label, fn) => { fn(); pass += 1; console.log(`  ✓ ${label}`); };
@@ -33,7 +33,9 @@ ok('an open complaint maps to an open type:complaint Work Order', () => {
   assert.equal(r.title, 'Exam room 3 not serviced overnight');
   assert.equal(r.description, 'Exam room 3 not serviced overnight');
   assert.equal(r.created_at, '2026-09-10T14:00:00.000Z');
-  assert.equal(r.due_at, computeDueAt('2026-09-10T14:00:00.000Z', 'medium')); // SLA clock preserved
+  // WO-20: a complaint's deadline is its TYPE's (lib/workOrders TYPE_DEADLINE_HOURS), not its urgency's.
+  assert.equal(r.due_at, computeDueAt('2026-09-10T14:00:00.000Z', { type: 'complaint', priority: 'medium' }));
+  assert.equal(Date.parse(r.due_at) - Date.parse(r.created_at), TYPE_DEADLINE_HOURS.complaint * 3600000);
   assert.equal(r.escalated_at, null);
 });
 

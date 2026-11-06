@@ -3,8 +3,8 @@
 // ══ WHY THIS EXISTS ═══════════════════════════════════════════════════════════
 // Signature images are base64 data URLs inside the org_state blob today. The only
 // validation is `file.size > 1024 * 1024` in Settings → Account — CLIENT SIDE, and the
-// blob is directly writable under the open RLS policy until Increment 1e, so that
-// check is advisory in both directions. This is the server half.
+// blob is whatever a caller posts to the save route (directly writable before Increment
+// 1e), so that check is advisory in both directions. This is the server half.
 //
 // ⚠️ THE PATH IS DERIVED FROM THE CALLER'S CLAIM, NEVER FROM THE BODY.
 // That is the whole security property. account-media shipped with the opposite shape —

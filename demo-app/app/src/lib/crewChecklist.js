@@ -1,10 +1,10 @@
-// The checklist rules — PURE / node-safe (no imports, no browser globals), so the UI,
+// The checklist rules — PURE / node-safe (no browser globals; its ONE import,
+// ./checklistCount.js, is itself import-free, so this still loads in raw Node), so the UI,
 // the reminder walkers, the clock-out gate and the server answer the same questions the
 // same way:
 //
 //   WHICH checklist does this cleaner get on this clean?  → checklistFor()
 //   WHOSE submission counts as theirs?                    → the completion helpers below
-//   MAY this cleaner clock out of this clean?             → clockOutGate()
 //   MAY this cleaner clock out of this clean?             → clockOutGate()
 //
 // A clean's checklist is assigned PER CLEANER and ONLY per cleaner
@@ -12,6 +12,7 @@
 // a cleaner with no pick of their own has no checklist, and that is a normal state, never
 // a warning (R3 + R1, Daniel 2026-09-27). The retired field, `client.checklistTemplateId`,
 // is converted into explicit picks and deleted by retireLocationDefaultsV57 below.
+import { itemNotCompleted } from './checklistCount.js';
 
 // The checklist template id that applies to `userId` on this clean: the COVERED cleaner's
 // pick when this cleaner is covering someone on it, else their OWN pick, else null. There
@@ -133,8 +134,10 @@ export function hasChecklistOnClean({ client, job = null, crewIds = [] } = {}) {
 
 // ── The clock-out gate (R4-R6) ───────────────────────────────────────────────
 // R4: a cleaner with a checklist on a clean cannot clock out of it until every item is
-// ticked. R5: they have no way around it (notes on the items, or the office closes the
-// entry). R6: the office can turn R4 off for one cleaner (`user.clockRules`).
+// accounted for — ticked, N/A where the office allows it, or (Matt, 2026-10-13) marked "not
+// completed" with a reason, which the office then sees. R5: they have no other way around it
+// (the office closes the entry). R6: the office can turn R4 off for one cleaner
+// (`user.clockRules`).
 //
 // ONE pure verdict, so the crew button (components/ClockControl) and the server refusal
 // (api/_lib/time/checklistGate) can never disagree — the client-side block would
@@ -149,11 +152,23 @@ export const GATE = Object.freeze({
 
 // A queued (still-on-the-phone) submission, in the shape a synced `checklist_results` row
 // has, so ONE completeness rule judges both. `payload` is the exact POST body qcApi
-// buffered (lib/checklistQueue): items carry `checked`, and `completedByUserId` is the
-// cleaner ChecklistFill stamped. A legacy payload without it is read as this phone's
+// buffered (lib/checklistQueue): items carry `checked` and `na`, and `completedByUserId` is
+// the cleaner ChecklistFill stamped. A legacy payload without it is read as this phone's
 // cleaner — the queue is per-device and the punch queue already holds a coworker's work
 // for its owner. An item the drain marked `failed` is NOT counted: it will never sync, so
 // treating it as done would clock someone out against a checklist the server never got.
+//
+// 🔴 THE ONE DECLARED EXCEPTION to `lib/checklistCount` (CS-494, and CS-546 for the `na`
+// half): this counts the PAYLOAD, because a buffered submission carries no schema and this
+// module takes no imports by design. It is sound because the row is never persisted and the
+// server re-counts the replay against the published schema — and because the payload came
+// from THIS phone's own fill, which offers the N/A control only where the schema allows it.
+// Reading `na` as unfinished here would lock an offline cleaner out of their clock-out over
+// an item that genuinely does not apply tonight, which is the defect this fix exists to
+// remove. (An offline clock-out is accepted and FLAGGED, never refused — THE LAW II.8.)
+// A task marked NOT COMPLETED counts here through the SAME function the server's count
+// reads (`itemNotCompleted`: the reason, as it would be stored, is what makes it count), so a
+// queued fill with a blank reason keeps the phone locked exactly as the server would.
 function queuedAsRows(queued, userId) {
   const out = [];
   for (const it of queued || []) {
@@ -167,9 +182,11 @@ function queuedAsRows(queued, userId) {
       site_id: p.siteId ?? null,
       template_id: p.templateId ?? null,
       completed_by_user_id: who,
-      completed_count: items.filter((i) => i && i.checked).length,
+      completed_count: items.filter((i) => i && (i.checked || i.na || itemNotCompleted(i))).length,
       total_count: items.length,
-      performed_at: it.createdAt || null,
+      // When the cleaner pressed Submit (lib/qcApi stamps `filledAt` on what it queues), else
+      // when it was queued — the clock-out gate's window check reads it (CS-690).
+      performed_at: p.filledAt || it.createdAt || null,
       queued: true,
     });
   }
@@ -183,7 +200,12 @@ const newestFirst = (a, b) => (Date.parse(b?.performed_at || 0) || 0) - (Date.pa
 //   different from "none submitted".
 // `queued`  = lib/checklistQueue items still waiting to sync; NULL means not read yet.
 // `rules`   = that cleaner's `user.clockRules` (sparse; absent means normal).
-export function clockOutGate({ checklistId = null, rules = null, results = null, queued = null, userId = null, jobId = null } = {}) {
+// `opensAt` = when the clean's window opened, in ms (lib/checklistWindow checklistOpensAt):
+//   a fill from BEFORE it — the night before, from home — never unlocks the clock-out
+//   (CS-690). The server stores such a fill without the clean in the first place; this is the
+//   same answer for a fill still on the phone, and for a row stored before that rule. Null =
+//   no window known (as before).
+export function clockOutGate({ checklistId = null, rules = null, results = null, queued = null, userId = null, jobId = null, opensAt = null } = {}) {
   const verdict = (state, done = 0, total = 0) => ({ state, done, total });
   if (!checklistId) return verdict(GATE.NONE);
   if (rules && rules.checklistBlockOff === true) return verdict(GATE.OFF);
@@ -193,8 +215,9 @@ export function clockOutGate({ checklistId = null, rules = null, results = null,
 
   const queuedRows = queuedAsRows(queued, userId);
   const synced = Array.isArray(results) ? results : [];
+  const beforeWindow = (r) => Number.isFinite(opensAt) && Date.parse(r.performed_at) < opensAt;
   const rows = [...synced, ...queuedRows]
-    .filter((r) => r && r.job_id === jobId && r.completed_by_user_id === userId && r.template_id === checklistId)
+    .filter((r) => r && r.job_id === jobId && r.completed_by_user_id === userId && r.template_id === checklistId && !beforeWindow(r))
     .sort(newestFirst);
 
   // DONE wins whatever came after it: a later partial re-submission never undoes a

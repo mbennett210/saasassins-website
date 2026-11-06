@@ -17,8 +17,12 @@ import {
   selectOtherParticipant,
   invoiceTotal, deriveInvoiceStatus,
 } from '../store/selectors';
-import { ROLE_LABELS } from '../lib/roles';
-import { fmtDate, fmtRelative, money } from '../lib/dates';
+import { roleLabel, compareUsersByName } from '../lib/roles';
+import { capOptions, PICKER_MAX_VISIBLE } from '../lib/pickerOptions';
+import PickerCapNote from './PickerCapNote';
+import { fmtDate, money } from '../lib/dates';
+import { useT } from '../i18n/react';
+import { timeShort } from '../i18n/relative';
 
 const LIFECYCLE_VARIANTS = {
   lead: 'amber',
@@ -32,10 +36,24 @@ const LIFECYCLE_VARIANTS = {
 // "history" = synthesized timeline of events (was "Activities" before).
 // "activities" = related records (invoices, jobs) (was "Related" before).
 const TABS = [
-  { key: 'contact',    label: 'Contact' },
-  { key: 'activities', label: 'Activities' },
-  { key: 'notes',      label: 'Notes' },
+  { key: 'contact',    labelKey: 'messages.ctx.tab.contact' },
+  { key: 'activities', labelKey: 'messages.ctx.tab.activities' },
+  { key: 'notes',      labelKey: 'messages.ctx.tab.notes' },
 ];
+// Record states, in the reader's language; anything unlisted shows as stored.
+const LIFECYCLE_KEYS = {
+  lead: 'messages.ctx.lifecycle.lead', prospect: 'messages.ctx.lifecycle.prospect',
+  client: 'messages.ctx.lifecycle.client', vendor: 'messages.ctx.lifecycle.vendor',
+};
+const INVOICE_STATUS_KEYS = {
+  paid: 'messages.ctx.invoice.paid', overdue: 'messages.ctx.invoice.overdue',
+  pending: 'messages.ctx.invoice.pending', draft: 'messages.ctx.invoice.draft',
+};
+const JOB_STATUS_KEYS = {
+  upcoming: 'messages.ctx.job.upcoming', in_progress: 'messages.ctx.job.in_progress',
+  done: 'messages.ctx.job.done', cancelled: 'messages.ctx.job.cancelled',
+};
+const keyed = (t, keys, value, fallback) => (keys[value] ? t(keys[value]) : fallback);
 
 // Build the inline-edit form shape from a contact. Kept outside the component so the
 // same snapshot logic drives both initial state and dirty-diff comparison.
@@ -54,6 +72,7 @@ function buildForm(contact) {
 // actions (Change contact / Unlink) live in an overflow menu in the context-panel
 // HEAD — not here — so this card stays focused on the contact record itself.
 function ContactLinkCard({ contact, company, onLinkContact, nav }) {
+  const t = useT();
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
@@ -69,15 +88,15 @@ function ContactLinkCard({ contact, company, onLinkContact, nav }) {
     return (
       <div className="context-card">
         <div className="context-card-title-row">
-          <div className="context-card-title">Contact</div>
+          <div className="context-card-title">{t('messages.ctx.contact')}</div>
         </div>
         <div className="text-xs text-muted" style={{ marginBottom: 8 }}>
-          This conversation isn't linked to a contact yet.
+          {t('messages.ctx.notLinked')}
         </div>
         <ContactPicker
           value={null}
           onChange={(id) => onLinkContact?.(id || null)}
-          placeholder="Link a contact…"
+          placeholder={t('messages.ctx.linkContact')}
           allowClear={false}
         />
       </div>
@@ -106,7 +125,7 @@ function ContactLinkCard({ contact, company, onLinkContact, nav }) {
         (c) => c.id !== contact.id && (c.email || '').toLowerCase() === lower
       );
       if (dup) {
-        toast.error(`${dup.firstName} ${dup.lastName} already uses ${patch.email}`);
+        toast.error(t('messages.ctx.emailTaken', { name: `${dup.firstName} ${dup.lastName}`, email: patch.email }));
         return;
       }
     }
@@ -114,7 +133,7 @@ function ContactLinkCard({ contact, company, onLinkContact, nav }) {
     if (Object.keys(patch).length > 0) {
       dispatch({ type: ACTIONS.UPDATE_CONTACT, id: contact.id, patch });
     }
-    toast.success('Contact updated');
+    toast.success(t('messages.ctx.contactUpdated'));
     setEditing(false);
   };
 
@@ -123,49 +142,49 @@ function ContactLinkCard({ contact, company, onLinkContact, nav }) {
   return (
     <div className="context-card">
       <div className="context-card-title-row">
-        <div className="context-card-title">Details</div>
+        <div className="context-card-title">{t('messages.ctx.details')}</div>
         {canEdit && !editing && (
-          <button type="button" className="btn btn-outline" onClick={() => setEditing(true)}>Edit</button>
+          <button type="button" className="btn btn-outline" onClick={() => setEditing(true)}>{t('messages.ctx.edit')}</button>
         )}
       </div>
 
       <dl className={`context-dl${editing ? ' context-dl-editable' : ''}`}>
         <div>
-          <dt>Email</dt>
+          <dt>{t('messages.ctx.email')}</dt>
           <dd>{editing
             ? <input className="inline-input" type="email" value={form.email} onChange={up('email')} disabled={!canEdit} />
             : (contact.email || <span className="text-muted">—</span>)}</dd>
         </div>
         <div>
-          <dt>Phone</dt>
+          <dt>{t('messages.ctx.phone')}</dt>
           <dd>{editing
             ? <input className="inline-input" type="tel" value={form.phone} onChange={up('phone')} disabled={!canEdit} placeholder="—" />
             : (contact.phone || <span className="text-muted">—</span>)}</dd>
         </div>
         <div>
-          <dt>Title</dt>
+          <dt>{t('messages.ctx.title')}</dt>
           <dd>{editing
             ? <input className="inline-input" value={form.title} onChange={up('title')} disabled={!canEdit} placeholder="—" />
             : (contact.title || <span className="text-muted">—</span>)}</dd>
         </div>
         <div>
-          <dt>Dept.</dt>
+          <dt>{t('messages.ctx.department')}</dt>
           <dd>{editing
             ? <input className="inline-input" value={form.department} onChange={up('department')} disabled={!canEdit} placeholder="—" />
             : (contact.customFields?.department || <span className="text-muted">—</span>)}</dd>
         </div>
         <div>
-          <dt>Company</dt>
+          <dt>{t('messages.ctx.company')}</dt>
           <dd>{company ? <Link to={`/clients/${company.id}`} state={nav}>{company.name}</Link> : <span className="text-muted">—</span>}</dd>
         </div>
-        <div><dt>Last activity</dt><dd><span className="text-muted">{fmtRelative(contact.updatedAt || contact.createdAt)}</span></dd></div>
-        <div><dt>Created</dt><dd><span className="text-muted">{fmtDate(contact.createdAt)}</span></dd></div>
+        <div><dt>{t('messages.ctx.lastActivity')}</dt><dd><span className="text-muted">{timeShort(t, contact.updatedAt || contact.createdAt)}</span></dd></div>
+        <div><dt>{t('messages.ctx.created')}</dt><dd><span className="text-muted">{fmtDate(contact.createdAt)}</span></dd></div>
       </dl>
 
       {editing && (
         <div className="context-card-save-row">
-          <button type="button" className="btn btn-outline" onClick={handleDiscard}>Cancel</button>
-          <button type="button" className="btn btn-primary" onClick={handleSave} disabled={!isDirty}>Save</button>
+          <button type="button" className="btn btn-outline" onClick={handleDiscard}>{t('common.cancel')}</button>
+          <button type="button" className="btn btn-primary" onClick={handleSave} disabled={!isDirty}>{t('common.save')}</button>
         </div>
       )}
     </div>
@@ -173,6 +192,7 @@ function ContactLinkCard({ contact, company, onLinkContact, nav }) {
 }
 
 function DmContextPanel({ conversation }) {
+  const t = useT();
   const state = useStore();
   const { currentUser } = useAuth();
   const other = selectOtherParticipant(state, conversation, currentUser?.id);
@@ -181,43 +201,42 @@ function DmContextPanel({ conversation }) {
     <aside className="context-pane">
       <div className="context-head">
         {other ? (
-          <Avatar initials={other.initials} variant={other.avatar} size="md" />
+          <Avatar user={other} size="md" />
         ) : (
           <Avatar initials="?" variant={1} size="md" />
         )}
         <div className="context-head-text">
-          <div className="context-head-name">{other ? other.name : 'Unknown user'}</div>
+          <div className="context-head-name">{other ? other.name : t('messages.unknownUser')}</div>
           <div className="text-xs text-muted">
-            {other ? (ROLE_LABELS[other.role] || other.role) : 'Participant not found'}
+            {other ? roleLabel(t, other.role) : t('messages.ctx.participantMissing')}
           </div>
           <div className="context-head-badges">
-            <Badge variant="blue">Direct Message</Badge>
-            {other?.status === 'disabled' && <Badge variant="slate">Inactive</Badge>}
+            <Badge variant="blue">{t('messages.ctx.directMessage')}</Badge>
+            {other?.status === 'disabled' && <Badge variant="slate">{t('messages.ctx.inactive')}</Badge>}
           </div>
         </div>
       </div>
       <div className="context-body">
         <div className="context-card">
-          <div className="context-card-title">Participant</div>
+          <div className="context-card-title">{t('messages.ctx.participant')}</div>
           {other ? (
             <dl className="context-dl">
-              <div><dt>Name</dt><dd>{other.name}</dd></div>
-              <div><dt>Role</dt><dd>{ROLE_LABELS[other.role] || other.role}</dd></div>
-              <div><dt>Email</dt><dd>{other.email || <span className="text-muted">—</span>}</dd></div>
-              <div><dt>Phone</dt><dd>{other.phone || <span className="text-muted">—</span>}</dd></div>
-              <div><dt>Status</dt><dd>{other.status === 'active' ? 'Active' : (other.status || '—')}</dd></div>
+              <div><dt>{t('messages.ctx.name')}</dt><dd>{other.name}</dd></div>
+              <div><dt>{t('messages.ctx.role')}</dt><dd>{roleLabel(t, other.role)}</dd></div>
+              <div><dt>{t('messages.ctx.email')}</dt><dd>{other.email || <span className="text-muted">—</span>}</dd></div>
+              <div><dt>{t('messages.ctx.phone')}</dt><dd>{other.phone || <span className="text-muted">—</span>}</dd></div>
+              <div><dt>{t('messages.ctx.status')}</dt><dd>{other.status === 'active' ? t('messages.ctx.active') : other.status === 'disabled' ? t('messages.ctx.inactive') : (other.status || '—')}</dd></div>
             </dl>
           ) : (
             <div className="text-xs text-muted">
-              The other participant could not be found. They may have been removed.
+              {t('messages.ctx.participantGone')}
             </div>
           )}
         </div>
         <div className="context-card">
-          <div className="context-card-title">Privacy</div>
+          <div className="context-card-title">{t('messages.ctx.privacy')}</div>
           <div className="text-xs text-muted">
-            Direct messages are visible only to the two participants. Owners and admins
-            cannot read this thread unless they're a participant.
+            {t('messages.ctx.dmPrivacy')}
           </div>
         </div>
       </div>
@@ -226,6 +245,7 @@ function DmContextPanel({ conversation }) {
 }
 
 function InternalContextPanel({ conversation }) {
+  const t = useT();
   const state = useStore();
   const dispatch = useDispatch();
   const [adding, setAdding] = useState(false);
@@ -238,8 +258,18 @@ function InternalContextPanel({ conversation }) {
   const participants = participantIds
     .map((id) => selectUserById(state, id))
     .filter(Boolean);
-  const eligible = (state.users || [])
-    .filter((u) => u.status === 'active' && !participantIds.includes(u.id));
+  const eligible = useMemo(() => (state.users || [])
+    .filter((u) => u.status === 'active' && !participantIds.includes(u.id)), [state.users, conversation.participantUserIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Who can be added: the team by name, searched, never all of it at once (UI_RULES §127;
+  // CS-722 — this listed every login with no search).
+  const [addQuery, setAddQuery] = useState('');
+  const addMatches = useMemo(() => {
+    const q = addQuery.trim().toLowerCase();
+    return eligible
+      .filter((u) => !q || (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q))
+      .sort(compareUsersByName);
+  }, [eligible, addQuery]);
+  const { shown: addShown, noteMsg } = useMemo(() => capOptions(addMatches, PICKER_MAX_VISIBLE), [addMatches]);
 
   const onAdd = (userId) => {
     dispatch({
@@ -253,19 +283,19 @@ function InternalContextPanel({ conversation }) {
   return (
     <aside className="context-pane">
       <div className="context-head">
-        <h3 className="context-title">{conversation.title || 'Team discussion'}</h3>
-        <div className="text-xs text-muted">Internal-only channel. Not visible to clients.</div>
+        <h3 className="context-title">{conversation.title || t('messages.teamDiscussion')}</h3>
+        <div className="text-xs text-muted">{t('messages.ctx.internalOnly')}</div>
       </div>
       <div className="context-body">
         <div className="context-card">
-          <div className="context-card-title">Participants</div>
+          <div className="context-card-title">{t('messages.ctx.participants')}</div>
           {participants.length === 0 ? (
-            <div className="text-xs text-muted">No participants yet.</div>
+            <div className="text-xs text-muted">{t('messages.ctx.noParticipants')}</div>
           ) : (
             <ul className="context-participants">
               {participants.map((u) => (
                 <li key={u.id} className="context-participant">
-                  <Avatar initials={u.initials} variant={u.avatar} size="sm" />
+                  <Avatar user={u} size="sm" />
                   <span>{u.name}</span>
                 </li>
               ))}
@@ -275,45 +305,58 @@ function InternalContextPanel({ conversation }) {
           {adding ? (
             <div className="participant-add-picker">
               {eligible.length === 0 ? (
-                <div className="text-xs text-muted">Everyone is already in this channel.</div>
+                <div className="text-xs text-muted">{t('messages.ctx.everyoneIn')}</div>
               ) : (
+                <>
+                <input
+                  className="input"
+                  type="search"
+                  value={addQuery}
+                  onChange={(e) => setAddQuery(e.target.value)}
+                  placeholder={t('messages.searchTeammates')}
+                  aria-label={t('messages.searchTeammates')}
+                  autoFocus
+                />
+                <PickerCapNote note={noteMsg} />
+                {addMatches.length === 0 && <div className="text-xs text-muted">{t('messages.noTeammatesMatch')}</div>}
                 <ul className="participant-add-list">
-                  {eligible.map((u) => (
+                  {addShown.map((u) => (
                     <li key={u.id}>
                       <button
                         type="button"
                         className="participant-add-row"
                         onClick={() => onAdd(u.id)}
                       >
-                        <Avatar initials={u.initials} variant={u.avatar} size="sm" />
+                        <Avatar user={u} size="sm" />
                         <span className="participant-add-row-name">{u.name}</span>
                         <span className="participant-add-row-role text-xs text-muted">
-                          {ROLE_LABELS[u.role]}
+                          {roleLabel(t, u.role)}
                         </span>
                       </button>
                     </li>
                   ))}
                 </ul>
+                </>
               )}
               <button
                 type="button"
                 className="btn btn-link participant-add-cancel"
                 onClick={() => setAdding(false)}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           ) : eligible.length > 0 ? (
             <button
               type="button"
               className="btn btn-outline participant-add-trigger"
-              onClick={() => setAdding(true)}
+              onClick={() => { setAddQuery(''); setAdding(true); }}
             >
-              Add participant
+              {t('messages.ctx.addParticipant')}
             </button>
           ) : (
             <div className="text-xs text-muted participant-add-empty">
-              Everyone is already in this channel.
+              {t('messages.ctx.everyoneIn')}
             </div>
           )}
         </div>
@@ -323,6 +366,7 @@ function InternalContextPanel({ conversation }) {
 }
 
 export default function ConversationContextPanel({ conversation, contact, onLinkContact }) {
+  const t = useT();
   const state = useStore();
   const nav = useFromHere();
   const [tab, setTab] = useState('contact');
@@ -347,7 +391,7 @@ export default function ConversationContextPanel({ conversation, contact, onLink
   if (!conversation) {
     return (
       <aside className="context-pane context-pane-empty">
-        <EmptyState message="Select a conversation to see contact details." />
+        <EmptyState message={t('messages.ctx.pickConversation')} />
       </aside>
     );
   }
@@ -373,7 +417,7 @@ export default function ConversationContextPanel({ conversation, contact, onLink
   const channelLabel = (conversation.channel || '').toUpperCase();
   const unlinkedTitle = conversation.title
     || conversation.handle
-    || (channelLabel ? `${channelLabel} conversation` : 'Unlinked conversation');
+    || (channelLabel ? t('messages.ctx.channelConversation', { channel: channelLabel }) : t('messages.ctx.unlinkedConversation'));
 
   return (
     <aside className="context-pane">
@@ -388,16 +432,16 @@ export default function ConversationContextPanel({ conversation, contact, onLink
               <div className="text-xs text-muted">{contact.title || '—'}</div>
               <div className="context-head-badges">
                 <Badge variant={LIFECYCLE_VARIANTS[contact.lifecycle] || 'slate'}>
-                  {(contact.lifecycle || 'lead').charAt(0).toUpperCase() + (contact.lifecycle || 'lead').slice(1)}
+                  {keyed(t, LIFECYCLE_KEYS, contact.lifecycle || 'lead', (contact.lifecycle || '').charAt(0).toUpperCase() + (contact.lifecycle || '').slice(1))}
                 </Badge>
               </div>
             </>
           ) : (
             <>
               <div className="context-head-name">{unlinkedTitle}</div>
-              <div className="text-xs text-muted">No contact linked</div>
+              <div className="text-xs text-muted">{t('messages.ctx.noContactLinked')}</div>
               <div className="context-head-badges">
-                <Badge variant="slate">Unlinked</Badge>
+                <Badge variant="slate">{t('messages.unlinked')}</Badge>
               </div>
             </>
           )}
@@ -405,9 +449,9 @@ export default function ConversationContextPanel({ conversation, contact, onLink
       </div>
 
       <div className="tab-container tab-container-line context-tabs">
-        {TABS.map((t) => (
-          <button key={t.key} className={`tab-btn ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
-            {t.label}
+        {TABS.map((tb) => (
+          <button key={tb.key} className={`tab-btn ${tab === tb.key ? 'active' : ''}`} onClick={() => setTab(tb.key)}>
+            {t(tb.labelKey)}
           </button>
         ))}
       </div>
@@ -424,13 +468,13 @@ export default function ConversationContextPanel({ conversation, contact, onLink
             />
             {contact && (
               <div className="context-card">
-                <div className="context-card-title">Tags</div>
+                <div className="context-card-title">{t('messages.ctx.tags')}</div>
                 <div className="flex-row" style={{ gap: 4 }}>
                   {(contact.tagIds || []).length === 0 ? (
-                    <span className="text-xs text-muted">No tags</span>
+                    <span className="text-xs text-muted">{t('messages.ctx.noTags')}</span>
                   ) : (contact.tagIds || []).map((tid) => {
-                    const t = selectTagById(state, tid);
-                    return t ? <TagChip key={tid} tag={t} /> : null;
+                    const tag = selectTagById(state, tid);
+                    return tag ? <TagChip key={tid} tag={tag} /> : null;
                   })}
                 </div>
               </div>
@@ -441,7 +485,7 @@ export default function ConversationContextPanel({ conversation, contact, onLink
         {tab === 'history' && (
           <div className="context-card">
             {activity.length === 0 ? (
-              <EmptyState message={contact ? 'No activity yet.' : 'Link a contact to see their activity.'} />
+              <EmptyState message={contact ? t('messages.ctx.noActivity') : t('messages.ctx.linkForActivity')} />
             ) : (
               <ul className="context-activity">
                 {activity.map((a) => (
@@ -449,7 +493,7 @@ export default function ConversationContextPanel({ conversation, contact, onLink
                     <div className="context-activity-kind">{a.kind}</div>
                     <div className="context-activity-body">
                       <div>{a.body}</div>
-                      <div className="text-xs text-muted">{fmtRelative(a.occurredAt)}</div>
+                      <div className="text-xs text-muted">{timeShort(t, a.occurredAt)}</div>
                     </div>
                   </li>
                 ))}
@@ -461,9 +505,9 @@ export default function ConversationContextPanel({ conversation, contact, onLink
         {tab === 'activities' && (
           <>
             <div className="context-card">
-              <div className="context-card-title">Invoices ({invoices.length})</div>
+              <div className="context-card-title">{t('messages.ctx.invoices', { count: invoices.length })}</div>
               {invoices.length === 0 ? (
-                <div className="text-xs text-muted">{contact ? 'No invoices linked.' : 'Link a contact to see related invoices.'}</div>
+                <div className="text-xs text-muted">{contact ? t('messages.ctx.noInvoices') : t('messages.ctx.linkForInvoices')}</div>
               ) : (
                 <ul className="context-related">
                   {invoices.slice(0, 5).map((inv) => {
@@ -474,7 +518,7 @@ export default function ConversationContextPanel({ conversation, contact, onLink
                           <span className="context-related-primary">{inv.id}</span>
                           <span className="context-related-sub">{fmtDate(inv.issueDate)} · {money(invoiceTotal(inv))}</span>
                           <Badge variant={statusBadgeVariant(st === 'paid' ? 'Paid' : st === 'overdue' ? 'Overdue' : 'Pending')}>
-                            {st.charAt(0).toUpperCase() + st.slice(1)}
+                            {keyed(t, INVOICE_STATUS_KEYS, st, st.charAt(0).toUpperCase() + st.slice(1))}
                           </Badge>
                         </Link>
                       </li>
@@ -485,18 +529,18 @@ export default function ConversationContextPanel({ conversation, contact, onLink
             </div>
 
             <div className="context-card">
-              <div className="context-card-title">Jobs ({jobs.length})</div>
+              <div className="context-card-title">{t('messages.ctx.jobs', { count: jobs.length })}</div>
               {jobs.length === 0 ? (
-                <div className="text-xs text-muted">{contact ? "No jobs linked via this contact's client." : 'Link a contact to see related jobs.'}</div>
+                <div className="text-xs text-muted">{contact ? t('messages.ctx.noJobs') : t('messages.ctx.linkForJobs')}</div>
               ) : (
                 <ul className="context-related">
                   {jobs.slice(0, 5).map((j) => (
                     <li key={j.id}>
                       <Link to={`/schedule/${j.id}`} state={nav} className="context-related-row">
                         <span className="context-related-primary">{fmtDate(j.startAt)}</span>
-                        <span className="context-related-sub">{state.services.find((s) => s.id === j.serviceId)?.name || 'Service'}</span>
+                        <span className="context-related-sub">{state.services.find((s) => s.id === j.serviceId)?.name || t('messages.ctx.service')}</span>
                         <Badge variant={statusBadgeVariant(j.status === 'done' ? 'Confirmed' : j.status === 'in_progress' ? 'In Progress' : 'Pending')}>
-                          {j.status.replace('_', ' ')}
+                          {keyed(t, JOB_STATUS_KEYS, j.status, j.status.replace('_', ' '))}
                         </Badge>
                       </Link>
                     </li>
@@ -519,6 +563,7 @@ export default function ConversationContextPanel({ conversation, contact, onLink
 // Notes tab — compact append-then-scroll layout. Uses the same APPEND_CONTACT_NOTE
 // action the full Contact page uses, so notes stay consistent across surfaces.
 function NotesCard({ contact }) {
+  const t = useT();
   const dispatch = useDispatch();
   const toast = useToast();
   const { currentUser } = useAuth();
@@ -528,8 +573,8 @@ function NotesCard({ contact }) {
   if (!contact) {
     return (
       <div className="context-card">
-        <div className="context-card-title">Notes</div>
-        <div className="text-xs text-muted">Link a contact to add notes.</div>
+        <div className="context-card-title">{t('messages.ctx.notes')}</div>
+        <div className="text-xs text-muted">{t('messages.ctx.linkForNotes')}</div>
       </div>
     );
   }
@@ -544,7 +589,7 @@ function NotesCard({ contact }) {
       authorUserId: currentUser?.id,
     });
     setDraft('');
-    toast.success('Note added');
+    toast.success(t('messages.ctx.noteAdded'));
   };
 
   const onKeyDown = (e) => {
@@ -558,9 +603,9 @@ function NotesCard({ contact }) {
   return (
     <div className="context-card context-notes-card">
       <div className="context-card-title-row">
-        <div className="context-card-title">Notes</div>
+        <div className="context-card-title">{t('messages.ctx.notes')}</div>
         {draft.trim() && (
-          <span className="text-xs text-muted">⌘↵ to save</span>
+          <span className="text-xs text-muted">{t('messages.ctx.saveShortcut')}</span>
         )}
       </div>
 
@@ -569,7 +614,7 @@ function NotesCard({ contact }) {
           <textarea
             className="input notes-compose"
             rows={3}
-            placeholder="Call recap, follow-up, decision…"
+            placeholder={t('messages.ctx.notePlaceholder')}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
@@ -581,7 +626,7 @@ function NotesCard({ contact }) {
               disabled={!draft.trim()}
               onClick={append}
             >
-              Append note
+              {t('messages.ctx.appendNote')}
             </button>
           </div>
         </>
@@ -591,7 +636,7 @@ function NotesCard({ contact }) {
         <pre className="notes-history">{contact.notes}</pre>
       ) : (
         <div className="text-xs text-muted" style={{ padding: '8px 0' }}>
-          No notes yet. Notes are timestamped and appended in order.
+          {t('messages.ctx.noNotes')}
         </div>
       )}
     </div>

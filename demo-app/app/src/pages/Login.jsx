@@ -2,9 +2,15 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSession } from '../auth/AuthProvider';
 import { INITIAL_STATE } from '../data/seed';
-import { assetUrl } from '../lib/assetUrl';
-import { friendlyAuthError, SESSION_EXPIRED_MESSAGE } from '../lib/authErrors';
+import { friendlyAuthError, friendlyResetError, SESSION_EXPIRED_KEY } from '../lib/authErrors';
+import { forgotEmail } from '../lib/passwordReset';
+import { terminalAuthKey } from '../lib/terminalAuth';
+import { useT } from '../i18n/react';
 import { IDENTITY } from '../brand/identity.generated.js';
+import { LIGHT_LOGO_URL } from '../brand/logo.js';
+import { terrazzoStyle } from '../lib/terrazzo';
+import InstallWelcome from '../components/InstallWelcome';
+import { installWelcomeNow } from '../lib/installApp';
 
 // Pre-auth there is no store, so the brand comes straight from the seed —
 // per-client config, same place the rest of the shell gets its identity.
@@ -16,6 +22,9 @@ const company = INITIAL_STATE.company;
 // reset link, it shows a "set a new password" form instead of the sign-in form,
 // and surfaces a clear message when a link is expired or already used.
 export default function Login() {
+  // Before sign-in there is no roster row, so the language is this phone's (or the choice
+  // this device last saw) — a Spanish cleaner's sign-in screen is Spanish (CS-193).
+  const t = useT();
   const {
     signIn, sendPasswordReset, updatePassword,
     recovery, clearRecovery, authError, clearAuthError,
@@ -31,8 +40,16 @@ export default function Login() {
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [busy, setBusy] = useState(false);
+  // "Forgot password?" in flight: the link is disabled and reads "Sending…" until the answer lands.
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // the terrazzo tiles, drawn once in the theme's own colours (lib/terrazzo.js)
+  const [floor] = useState(terrazzoStyle);
+  // A phone's browser that hasn't added the app sees the Home Screen welcome over this page first
+  // (UI_RULES §178). Then the email box doesn't take the cursor on its own: its keyboard would come up
+  // behind the welcome. Read once, as the page opens.
+  const [welcomeDue] = useState(() => !!installWelcomeNow());
 
   // Already signed in (and NOT mid password-reset) → don't show the form.
   useEffect(() => {
@@ -47,35 +64,48 @@ export default function Login() {
       // Map Supabase's terse errors to a clear, actionable line — a wrong password,
       // an unactivated invite, and a rate-limit must not all read the same (the
       // 2026-08-03 "is it me or the system?" confusion). See lib/authErrors.js.
-      if (err) { setError(friendlyAuthError(err)); return; }
+      if (err) { setError(friendlyAuthError(err, t)); return; }
       navigate(from, { replace: true });
     } catch (err) {
       // A thrown rejection (e.g. the auth backend is unreachable) must not leave
       // the button stuck on "Signing in…" with no feedback.
-      setError(friendlyAuthError(err));
+      setError(friendlyAuthError(err, t));
     } finally {
       setBusy(false);
     }
   }
 
+  // "Forgot password?" (lib/passwordReset.js, the server's api/public/auth): one request at a time, so
+  // a second tap while the first is on its way sends nothing (CS-122). The address is checked with the
+  // server's own rule first. Every success reads the same neutral line, because the server's answer
+  // never says whether the address has a login.
   async function onForgot() {
+    if (resetting) return;
     clearAuthError();
-    if (!email.trim()) { setError('Enter your email above, then tap “Forgot password”.'); return; }
+    if (!email.trim()) { setError(t('login.enterEmailFirst')); return; }
+    if (!forgotEmail(email)) { setError(t('login.badEmail')); return; }
     setError(''); setNotice('');
-    const { error: err } = await sendPasswordReset(email);
-    if (err) setError(err.message || 'Could not send reset email.');
-    else setNotice('If that email has an account, a password-reset link is on its way.');
+    setResetting(true);
+    try {
+      const { error: err } = await sendPasswordReset(email);
+      if (err) setError(friendlyResetError(err, t));
+      else setNotice(t('login.resetSent'));
+    } catch (err) {
+      setError(friendlyResetError(err, t));
+    } finally {
+      setResetting(false);
+    }
   }
 
   async function onSetPassword(e) {
     e.preventDefault();
     setError(''); setNotice('');
-    if (newPw.length < 8) { setError('Password must be at least 8 characters.'); return; }
-    if (newPw !== confirmPw) { setError('Passwords do not match.'); return; }
+    if (newPw.length < 8) { setError(t('login.tooShort')); return; }
+    if (newPw !== confirmPw) { setError(t('login.mismatch')); return; }
     setBusy(true);
     const { error: err } = await updatePassword(newPw);
     setBusy(false);
-    if (err) { setError(err.message || 'Could not set the new password. The link may have expired. Go back and request a new one.'); return; }
+    if (err) { setError(t('login.setFailed')); return; }
     clearRecovery();
     navigate('/', { replace: true });
   }
@@ -83,28 +113,33 @@ export default function Login() {
   const shownError = error || authError;
 
   const shell = (children) => (
-    <div className="login-page">
-      <svg className="login-mtn" viewBox="0 0 1440 280" preserveAspectRatio="none" aria-hidden="true">
-        <path className="login-mtn-far" d="M0 280 L210 150 L350 215 L520 90 L660 190 L760 148 L930 230 L1090 160 L1260 235 L1440 170 L1440 280 Z" />
-        <path className="login-mtn-near" d="M0 280 L130 225 L330 130 L470 200 L700 48 L800 120 L880 95 L1060 210 L1230 155 L1440 225 L1440 280 Z" />
-        <path className="login-mtn-cap" d="M640 128 L700 48 L758 120 L738 108 L720 122 L700 102 L672 124 L654 112 Z" />
-      </svg>
+    <div className="login-page" style={floor || undefined}>
+      {/* The mark inlaid in a terrazzo floor (UI_RULES §18): two corner brackets, the brand's primary one owning
+          the top-left corner and its accent one the bottom-right, each a chip-filled inlay inside a divider strip,
+          with the card in the channel between them. Desktop turns the pair 6° at page scale; a phone sets them in its corners. */}
+      <div className="login-mark" aria-hidden="true">
+        <div className="login-inlay login-inlay-primary"><i /></div>
+        <div className="login-inlay login-inlay-accent"><i /></div>
+      </div>
       <div className="card login-card">
-        {company.logoUrl
-          ? <img className="login-logo" src={assetUrl(company.logoUrl)} alt={company.name} />
-          : <div className="login-brand-name">{company.name}</div>}
-        <div className="login-sub">{recovery ? 'Set a new password' : 'Sign in to your workspace'}</div>
+        {/* the logo made for a light ground: the sidebar's (company.logoUrl) is knocked out for the dark rail (CS-564).
+            It is the SOFTWARE's (the brand pack's product, UI_RULES §129); the © line below is the company's. */}
+        <img className="login-logo" src={LIGHT_LOGO_URL} alt={IDENTITY.product.name} />
+        <div className="login-sub">{recovery ? t('login.setNew') : t('login.signInTo')}</div>
         {children}
         {accountDisabled && !recovery && !shownError && (
-          <p className="text-xs login-msg login-msg-error">{accountDisabled.message}</p>
+          <p className="text-xs login-msg login-msg-error">{t(terminalAuthKey(accountDisabled.code))}</p>
         )}
         {sessionExpired && !accountDisabled && !recovery && !shownError && !notice && (
-          <p className="text-xs login-msg login-msg-notice">{SESSION_EXPIRED_MESSAGE}</p>
+          <p className="text-xs login-msg login-msg-notice">{t(SESSION_EXPIRED_KEY)}</p>
         )}
         {shownError && <p className="text-xs login-msg login-msg-error">{shownError}</p>}
         {notice && <p className="text-xs login-msg login-msg-notice">{notice}</p>}
       </div>
-      <div className="login-foot">© 2026 {company.name}</div>
+      <div className="login-foot">
+        <span>© 2026 {company.name}</span>
+        {IDENTITY.company.tagline && <span>{IDENTITY.company.tagline}</span>}
+      </div>
     </div>
   );
 
@@ -114,14 +149,14 @@ export default function Login() {
       <>
         <form className="login-form" onSubmit={onSetPassword}>
           <div className="login-field">
-            <label className="form-label">New password</label>
+            <label className="form-label">{t('login.newPassword')}</label>
             <input
               className="input" type="password" autoComplete="new-password" value={newPw}
-              onChange={(e) => setNewPw(e.target.value)} placeholder="At least 8 characters" required autoFocus
+              onChange={(e) => setNewPw(e.target.value)} placeholder={t('login.atLeast8')} required autoFocus
             />
           </div>
           <div className="login-field">
-            <label className="form-label">Confirm new password</label>
+            <label className="form-label">{t('login.confirmNew')}</label>
             <input
               className="input" type="password" autoComplete="new-password" value={confirmPw}
               onChange={(e) => setConfirmPw(e.target.value)} placeholder="••••••••" required
@@ -129,33 +164,38 @@ export default function Login() {
           </div>
           <button className="btn btn-primary" type="submit" disabled={busy}
             style={{ width: '100%', marginTop: 8, justifyContent: 'center' }}>
-            {busy ? 'Saving…' : 'Set password & sign in'}
+            {busy ? t('common.saving') : t('login.setAndSignIn')}
           </button>
         </form>
         <button type="button" className="btn btn-link" onClick={() => { clearRecovery(); setError(''); }}
           style={{ display: 'block', margin: '12px auto 0' }}>
-          Back to sign in
+          {t('login.backToSignIn')}
         </button>
       </>
     );
   }
 
-  // Normal sign-in.
+  // Normal sign-in. The Home Screen welcome shows here, before sign-in: on an iPhone the Home Screen app
+  // keeps its own sign-in, apart from Safari's, so adding it first means signing in once. Not on the
+  // set-a-new-password screen above: an app added there would open without the link's token.
   return shell(
     <>
+      <InstallWelcome />
       <form className="login-form" onSubmit={onSubmit}>
         <div className="login-field">
-          <label className="form-label">Email</label>
+          <label className="form-label">{t('login.email')}</label>
           <input
             className="input" type="email" autoComplete="username" value={email}
-            onChange={(e) => setEmail(e.target.value)} placeholder={`you@${IDENTITY.company.domain}`}
-            required autoFocus
+            onChange={(e) => setEmail(e.target.value)} /* i18n-ok: an example address, not words */ placeholder={`you@${IDENTITY.company.domain}`}
+            required autoFocus={!welcomeDue}
           />
         </div>
         <div className="login-field">
           <div className="login-label-row">
-            <label className="form-label">Password</label>
-            <button type="button" className="linklike login-forgot" onClick={onForgot}>Forgot password?</button>
+            <label className="form-label">{t('login.password')}</label>
+            <button type="button" className="linklike login-forgot" onClick={onForgot} disabled={resetting} aria-busy={resetting || undefined}>
+              {resetting ? t('login.sending') : t('login.forgot')}
+            </button>
           </div>
           <input
             className="input" type="password" autoComplete="current-password" value={password}
@@ -164,11 +204,11 @@ export default function Login() {
         </div>
         <button className="btn btn-primary" type="submit" disabled={busy || loading}
           style={{ width: '100%', marginTop: 8, justifyContent: 'center' }}>
-          {busy ? 'Signing in…' : 'Sign in'}
+          {busy ? t('login.signingIn') : t('login.signIn')}
         </button>
       </form>
 
-      <div className="login-fine">Need an account? Access is provisioned by your administrator.</div>
+      <div className="login-fine">{t('login.needAccount')}</div>
     </>
   );
 }

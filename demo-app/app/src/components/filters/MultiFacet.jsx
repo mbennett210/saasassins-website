@@ -1,30 +1,44 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PopMenu from '../PopMenu';
+import PickerCapNote from '../PickerCapNote';
+import { capOptions, PICKER_MAX_VISIBLE } from '../../lib/pickerOptions';
+
+const NO_LEAD = [];
 
 // A searchable multi-select facet with grouped options (e.g. locations grouped by
 // account, cleaners, labels). The label sits ABOVE the box (like the Date-range and
 // other facets, so they line up); the box reads a generic "Select" placeholder when
 // empty, or the single choice / "N selected". The menu is a type-to-filter checkable
 // list. value = string[]; options = [{ value, label, group? }].
+// It never renders the whole team or book (UI_RULES §127; CS-722: the Schedule's Cleaners facet
+// drew 1,540 rows, its Locations 767): typing narrows first; the values picked when the menu
+// OPENED lead (a snapshot, so a toggle never moves a row), so the cap never hides a choice in
+// force; then the first PICKER_MAX_VISIBLE show with the footnote.
 export default function MultiFacet({ label, value = [], options = [], onChange }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [lead, setLead] = useState(NO_LEAD);
   const wrapRef = useRef(null);
 
   useEffect(() => { if (!open) setQuery(''); }, [open]);
+  const toggleMenu = () => { if (!open) setLead(value); setOpen((o) => !o); };
 
-  // Filter by query, then bucket into groups preserving first-seen order.
-  const groups = useMemo(() => {
+  // Filter by query, lead with what was picked at open, cap, then bucket into groups preserving
+  // first-seen order.
+  const { groups, noteMsg } = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matched = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+    const picked = new Set(lead);
+    const ordered = picked.size ? [...matched.filter((o) => picked.has(o.value)), ...matched.filter((o) => !picked.has(o.value))] : matched;
+    const capped = capOptions(ordered, PICKER_MAX_VISIBLE);
     const map = new Map();
-    for (const o of matched) {
+    for (const o of capped.shown) {
       const g = o.group || '';
       if (!map.has(g)) map.set(g, []);
       map.get(g).push(o);
     }
-    return [...map.entries()];
-  }, [options, query]);
+    return { groups: [...map.entries()], noteMsg: capped.noteMsg };
+  }, [options, query, lead]);
 
   const isOn = (v) => value.includes(v);
   const toggle = (v) => onChange(isOn(v) ? value.filter((x) => x !== v) : [...value, v]);
@@ -45,7 +59,7 @@ export default function MultiFacet({ label, value = [], options = [], onChange }
           className="select-trigger"
           aria-haspopup="listbox"
           aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
+          onClick={toggleMenu}
         >
           <span className={`select-trigger-text${count === 0 ? ' is-placeholder' : ''}`}>{summary}</span>
           <span className="select-trigger-caret" aria-hidden>▾</span>
@@ -92,6 +106,7 @@ export default function MultiFacet({ label, value = [], options = [], onChange }
               Clear selection
             </button>
           )}
+          <PickerCapNote note={noteMsg} />
         </PopMenu>
       </div>
     </div>

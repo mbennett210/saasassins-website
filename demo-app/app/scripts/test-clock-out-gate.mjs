@@ -17,10 +17,19 @@ import {
   completeChecklistIndex, checklistFor,
 } from '../src/lib/crewChecklist.js';
 import {
-  clockOutButtonState, CLOCK_OUT_LABEL, CLOCK_OUT_LOCKED_LABEL,
-  NO_SIGNAL_HINT, CHECK_FAILED_HINT,
+  clockOutButtonState,
   CHECKLIST_CHECK_FAILED_CODE, CHECKLIST_CHECK_FAILED_ERROR,
 } from '../src/lib/clockOutBlock.js';
+import { english, isMsg } from '../src/i18n/core.js';
+
+// CS-193: the button's words are CATALOG lines now — the state carries messages, and the
+// control renders them in the cleaner's language. Compared here in English, read from the
+// catalog itself (the source of truth), never restated.
+const CLOCK_OUT_LABEL = english('clock.out');
+const CLOCK_OUT_LOCKED_LABEL = english('clock.outLocked');
+const NO_SIGNAL_HINT = english('clock.hint.noSignal');
+const CHECK_FAILED_HINT = english('clock.hint.checkFailed');
+const asText = (x) => (isMsg(x) ? english(x) : x);
 import {
   memoKey, pruneGateMemo, readGateMemo, writeGateMemo, forgetGateMemo,
   GATE_MEMO_KEY, GATE_MEMO_MAX, GATE_MEMO_MAX_AGE_MS,
@@ -122,6 +131,21 @@ eq('a QUEUED submission with no completedByUserId is read as this phone’s clea
 eq('a queued item already marked failed does not count',
   clockOutGate({ checklistId: LIST, results: [], queued: [{ ...queuedItem(ticked(5, 5)), failed: true }], userId: ME, jobId: JOB }).state, GATE.BLOCKED);
 
+// CS-546 — an item marked N/A on the phone counts on the phone. The buffered payload
+// carries no schema (this module takes no imports by design), so the gate cannot re-check
+// that the office allowed it. It does not need to: `ChecklistFill` only offers the control
+// on an allowed item, the row is never persisted, and the server re-counts the replay
+// against the published schema. Reading it any other way would lock an offline cleaner out
+// of their clock-out for an item that genuinely does not apply tonight — which is the whole
+// defect. (An offline clock-out is accepted and FLAGGED, never refused, II.8.)
+const naMarked = (n, total) => Array.from({ length: total }, (_, i) => ({ key: `n${i}`, checked: false, na: i < n }));
+eq('a QUEUED submission that marks the rest N/A counts as done',
+  clockOutGate({ checklistId: LIST, results: null, queued: [queuedItem([...ticked(3, 3), ...naMarked(2, 2)])], userId: ME, jobId: JOB }).state, GATE.DONE);
+eq('a QUEUED submission still short of the list is blocked with its progress',
+  `${clockOutGate({ checklistId: LIST, results: null, queued: [queuedItem([...ticked(2, 5), ...naMarked(1, 1)])], userId: ME, jobId: JOB }).done}/6`, '3/6');
+eq('an unmarked queued item is neither ticked nor N/A',
+  clockOutGate({ checklistId: LIST, results: null, queued: [queuedItem(naMarked(0, 4))], userId: ME, jobId: JOB }).state, GATE.BLOCKED);
+
 // ── unknown: offline with nothing synced, cached or queued to judge by ───────
 eq('no list, no queue → unknown',
   clockOutGate({ checklistId: LIST, results: null, queued: null, userId: ME, jobId: JOB }).state, GATE.UNKNOWN);
@@ -165,7 +189,7 @@ eq('finishing their OWN checklist does not',
   clockOutGate({ checklistId: LIST, results: [done({ template_id: OTHER_LIST })], userId: ME, jobId: JOB }).state, GATE.BLOCKED);
 
 // ── the ClockControl states (pure copy + lock) ───────────────────────────────
-const st = (p) => clockOutButtonState(p);
+const st = (p) => { const s = clockOutButtonState(p); return { ...s, label: asText(s.label), hint: asText(s.hint) }; };
 const checking = st({ gate: null, loading: true });
 ok('checking: disabled', checking.locked === true && checking.checking === true);
 eq('checking: normal label', checking.label, CLOCK_OUT_LABEL);
@@ -382,7 +406,8 @@ ok('…and not a second time on My Day', !/<OfflineQueueFailures/.test(myDay));
 
 // K2's other half: the component drops a stale 409 once the gate says done, so the state
 // cannot outlive the refusal it described.
-const cc = src('../src/components/ClockControl.jsx');
+// The ONE clock (the Cleaner Hub, brief A): what a punch does lives in hooks/useClockActions; ClockControl draws it.
+const cc = `${src('../src/components/ClockControl.jsx')}\n${src('../src/hooks/useClockActions.js')}`;
 ok('ClockControl clears a stale serverBlock when the gate reaches DONE', /gate\.state === GATE\.DONE[\s\S]{0,120}setServerBlock\(null\)/.test(cc));
 // S2's client half: a 503 checklist_check_failed sets its own state (never serverBlock,
 // which would lock the button and accuse the cleaner), and a later answer clears it.

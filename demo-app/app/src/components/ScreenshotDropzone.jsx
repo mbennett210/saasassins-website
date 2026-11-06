@@ -17,6 +17,8 @@ import {
   TICKET_ATTACHMENT_ALLOWED_MIME, TICKET_ATTACHMENT_MAX_COUNT,
   filesFromDataTransfer, validateAttachment, formatBytes, isImageMime,
 } from '../lib/supportApi';
+import { useT } from '../i18n/react';
+import { msg } from '../i18n/core';
 
 // Preview a not-yet-uploaded File without holding its object URL in state.
 // The ref callback mints the URL when the <img> mounts and React 19 runs the
@@ -43,10 +45,11 @@ export default function ScreenshotDropzone({
   onChange,
   disabled = false,
   maxCount = TICKET_ATTACHMENT_MAX_COUNT,
-  label = 'Screenshots',
-  hint = 'Paste with Ctrl+V, drag files in, or browse. PNG, JPG, WebP, GIF or PDF.',
+  label = null,
+  hint = null,
   children,
 }) {
+  const t = useT();
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
@@ -55,7 +58,7 @@ export default function ScreenshotDropzone({
     if (disabled || !incoming?.length) return;
     const room = maxCount - files.length;
     if (room <= 0) {
-      setError(`That's the limit. ${maxCount} file${maxCount === 1 ? '' : 's'} per report.`);
+      setError(msg('report.files.limitReached', { count: maxCount }));
       return;
     }
     const accepted = [];
@@ -66,7 +69,7 @@ export default function ScreenshotDropzone({
       accepted.push(f);
     });
     if (incoming.length > room && !problem) {
-      problem = `Only the first ${room} file${room === 1 ? '' : 's'} were added. ${maxCount} per report is the limit.`;
+      problem = msg('report.files.onlyFirst', { count: room, max: maxCount });
     }
     setError(problem);
     if (accepted.length) onChange?.([...files, ...accepted]);
@@ -104,7 +107,7 @@ export default function ScreenshotDropzone({
       {children}
 
       <div className="form-group">
-        <span className="form-label">{label}</span>
+        <span className="form-label">{label ?? t('report.files.label')}</span>
         <div className="ticket-dropzone-body">
           {files.length > 0 && (
             <ul className="ticket-thumb-strip">
@@ -120,8 +123,8 @@ export default function ScreenshotDropzone({
                     className="thumb-remove"
                     onClick={() => removeAt(i)}
                     disabled={disabled}
-                    aria-label={`Remove ${f.name}`}
-                    title={`Remove ${f.name}`}
+                    aria-label={t('report.files.remove', { name: f.name })}
+                    title={t('report.files.remove', { name: f.name })}
                   >
                     <Icon name="x" size={12} />
                   </button>
@@ -140,12 +143,12 @@ export default function ScreenshotDropzone({
               className="btn btn-outline"
               onClick={() => inputRef.current?.click()}
               disabled={disabled || full}
-              title={full ? `${maxCount} files is the limit` : 'Choose files'}
+              title={full ? t('report.files.limitTitle', { max: maxCount }) : t('report.files.choose')}
             >
-              <Icon name="upload" size={14} /> Add file{files.length ? 's' : ''}
+              <Icon name="upload" size={14} /> {files.length ? t('report.files.addMore') : t('report.files.addOne')}
             </button>
             <span className="text-xs text-muted">
-              {full ? `${maxCount} of ${maxCount}. That's the limit` : hint}
+              {full ? t('report.files.full', { max: maxCount }) : (hint ?? t('report.files.hint'))}
             </span>
           </div>
 
@@ -158,7 +161,7 @@ export default function ScreenshotDropzone({
             onChange={(e) => { add(Array.from(e.target.files || [])); e.target.value = ''; }}
           />
         </div>
-        {error && <p className="form-error" role="alert">{error}</p>}
+        {error && <p className="form-error" role="alert">{t(error)}</p>}
       </div>
     </div>
   );

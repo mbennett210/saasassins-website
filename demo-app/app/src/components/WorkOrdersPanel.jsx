@@ -5,29 +5,40 @@
 // grouped-by-location list, and a detail drawer with status / assign / escalate
 // controls + completion photos. Records are relational (qcApi → /api/qc or the demo
 // stub); the message thread + the Complaints fold-in land in later increments.
+// The drawer is its own component, `WorkOrderDrawer`, shared with Client Requests (the manager
+// view redesign, 2026-10-09).
+//
+// 🔴 CS-640: two reads, never the newest N. EVERY open ticket (qcApi.listOpenProblems, a complete
+// read) — the queue, its stat cards and chips count that set; and the RESOLVED history one page at
+// a time (qcApi.listResolvedProblems: newest resolved first, the exact total and how many were
+// resolved in the last 24 hours), scoped to the queue on the server so the page and its total
+// describe the same queue, with Load more. It was one read of the newest 500 work orders of every
+// status, so past 500 tickets the oldest open ones vanished from the queue and its counts.
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useStore } from '../store';
 import { useAuth } from '../hooks/useAuth';
 import { usePermission } from '../hooks/usePermission';
 import { useToast } from './Toast';
 import { selectClientById, selectUserById, selectActiveUsers } from '../store/selectors';
 import { SUPERVISOR_ROLES } from '../lib/roles';
+import { TEAM, isOpsManager, teamClientIds } from '../lib/teamScope';
 import * as qcApi from '../lib/qcApi';
-import { fmtDate } from '../lib/dates';
 import {
-  toWorkOrder, deriveSla, isBreaching, isOpenStatus, nextStatus,
+  toWorkOrder, deriveSla, isBreaching, isOpenStatus, WO_RESOLVED_PAGE,
+  WO_CATEGORIES, WO_CATEGORY_META,
   woStatusLabel, woPriorityLabel, woPriorityRank, woTypeLabel,
-  WO_STATUS_META, WO_PRIORITY_META, WO_TYPE_META, WO_PRIORITIES,
+  WO_STATUS_META, WO_TYPE_META,
 } from '../lib/workOrders';
 import Badge from './Badge';
 import Icon from './Icon';
 import Avatar from './Avatar';
 import EmptyState from './EmptyState';
-import SearchSelect from './SearchSelect';
-import MediaGallery from './MediaGallery';
 import WorkOrderModal from './WorkOrderModal';
+import WorkOrderDrawer, { initialsOf, WorkOrderOriginChip } from './WorkOrderDrawer';
 import { usePagedRows } from '../hooks/usePagedRows';
 import ListPager from './ListPager';
+import { useT } from '../i18n/react';
 
 const STATS = [
   { f: 'open', label: 'Open work orders', hint: 'in the queue', tone: '' },
@@ -43,30 +54,12 @@ const CHIPS = [
 const FILTER_HINT = {
   all: 'Click any stat or chip to filter — they drive the same filter.',
   open: 'Filtered to open work orders.', escalated: 'Filtered to escalated.',
-  breaching: 'Filtered to breaching / at-risk SLA.', resolved: 'Filtered to resolved (last 24h).',
+  breaching: 'Filtered to breaching / at-risk SLA.', resolved: 'Filtered to resolved work orders, newest resolved first.',
   awaiting_client: 'Filtered to awaiting client.', unassigned: 'Filtered to unassigned.',
 };
-const initialsOf = (name) => (name || '').split(' ').map((p) => p[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
-const fmtMsgTime = (iso) => { try { return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
-
-// One message in the work-order thread. Client messages sit left (gold), office/crew
-// right (ink). translated_body renders the auto-translation under the original.
-function WorkOrderMessage({ m }) {
-  const client = m.author_role === 'client';
-  return (
-    <div className={`wo-msg ${client ? 'client' : 'us'}`}>
-      <span className={`wo-msg-av ${client ? 'client' : ''}`}>{initialsOf(m.author_name) || (client ? 'C' : 'S')}</span>
-      <div className="wo-bub">
-        <div className="wo-msg-who">{m.author_name || (client ? 'Client' : 'Staff')}</div>
-        <div>{m.body}</div>
-        {m.translated_body && <div className="wo-trans">“{m.translated_body}” · auto-translated from {m.from_lang}</div>}
-        <div className="wo-msg-at">{fmtMsgTime(m.created_at)}</div>
-      </div>
-    </div>
-  );
-}
 
 export default function WorkOrdersPanel({ canManage }) {
+  const t = useT();
   const state = useStore();
   const { currentUser } = useAuth();
   const canReport = usePermission('problems.manage');
@@ -76,8 +69,26 @@ export default function WorkOrdersPanel({ canManage }) {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState('all');
+  // WO-12: the category is its OWN filter, not one of the CHIPS — those are one
+  // mutually-exclusive selection (a chip click replaces the last), and "open AND spills" is a
+  // question the queue has to be able to ask.
+  const [category, setCategory] = useState('');
   const [groupBy, setGroupBy] = useState(true);
-  const [openId, setOpenId] = useState(null);
+  // A bell about ONE ticket links here with `?wo=<id>` (api/_lib/qc/store.ticketDeepLink — a
+  // customer's reply in the hub): that ticket's drawer opens, whichever queue is showing, and
+  // the parameter is dropped when it closes so Back and a refresh do not reopen it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedId = searchParams.get('wo');
+  const [openId, setOpenId] = useState(() => linkedId || null);
+  useEffect(() => { if (linkedId) setOpenId(linkedId); }, [linkedId]);
+  const closeDrawer = () => {
+    setOpenId(null);
+    if (searchParams.get('wo')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('wo');
+      setSearchParams(next, { replace: true });
+    }
+  };
   const [createOpen, setCreateOpen] = useState(false);
 
   // Queue = account supervisor. Only managers who actually hold accounts are queues.
@@ -85,48 +96,107 @@ export default function WorkOrdersPanel({ canManage }) {
     () => selectActiveUsers(state).filter((u) => SUPERVISOR_ROLES.includes(u.role) && (state.clients || []).some((c) => c.supervisorId === u.id)),
     [state],
   );
-  const myQueueDefault = useMemo(
-    () => (isSupervisor && managers.some((m) => m.id === currentUser.id) ? currentUser.id : 'all'),
-    [isSupervisor, managers, currentUser],
+  // An Operations Manager's queue is their TEAM (S131): their buildings and their account
+  // managers' — "My team", where they open when the team holds any. The resolved history asks the
+  // server for `team`, which it resolves from the claim (api/qc); the open set is narrowed here.
+  const om = isOpsManager(currentUser);
+  const teamBuildings = useMemo(
+    () => (om ? teamClientIds(state.users, state.clients, currentUser.id) : null),
+    [om, state.users, state.clients, currentUser],
   );
+  const myQueueDefault = useMemo(() => {
+    if (teamBuildings && teamBuildings.size) return TEAM;
+    return isSupervisor && managers.some((m) => m.id === currentUser.id) ? currentUser.id : 'all';
+  }, [isSupervisor, managers, currentUser, teamBuildings]);
   const [queue, setQueue] = useState('all');
   useEffect(() => { setQueue(myQueueDefault); }, [myQueueDefault]);
 
-  const load = useCallback(async () => {
+  // EVERY open ticket — complete; the queue narrows it here (the open set is the whole truth).
+  const loadOpen = useCallback(async () => {
     setErr(null);
-    try { setRows(await qcApi.listProblems({})); }
+    try { setRows(await qcApi.listOpenProblems({})); }
     catch (e) { setErr(e.message || 'Could not load work orders'); setRows([]); }
   }, []);
-  useEffect(() => { load(); }, [load]);
+  // The resolved history, newest resolved first, one page at a time — scoped to the QUEUE on the
+  // server, so its total is the queue's. `resolved`: { rows, total, last24h } | null while loading.
+  const [resolved, setResolved] = useState(null);
+  const [resolvedErr, setResolvedErr] = useState(null);
+  const [moreBusy, setMoreBusy] = useState(false);
+  const resolvedQueue = queue === 'all' ? undefined : queue;
+  const loadResolved = useCallback(async () => {
+    setResolvedErr(null);
+    try {
+      const r = await qcApi.listResolvedProblems({ supervisorId: resolvedQueue, offset: 0 });
+      setResolved({ rows: r.problems, total: r.total, last24h: r.last24h });
+    } catch (e) { setResolvedErr(e.message || 'Could not load resolved work orders'); setResolved(null); }
+  }, [resolvedQueue]);
+  const loadMoreResolved = async () => {
+    if (!resolved || moreBusy) return;
+    setMoreBusy(true);
+    try {
+      const r = await qcApi.listResolvedProblems({ supervisorId: resolvedQueue, offset: resolved.rows.length });
+      setResolved((cur) => {
+        const have = new Set((cur?.rows || []).map((x) => x.id));
+        return { rows: [...(cur?.rows || []), ...r.problems.filter((x) => !have.has(x.id))], total: r.total, last24h: r.last24h };
+      });
+    } catch (e) { toast.error(e.message || 'Could not load more resolved work orders'); }
+    finally { setMoreBusy(false); }
+  };
+  const load = useCallback(async () => { await Promise.all([loadOpen(), loadResolved()]); }, [loadOpen, loadResolved]);
+  useEffect(() => { loadOpen(); }, [loadOpen]);
+  useEffect(() => { loadResolved(); }, [loadResolved]);
 
   const supervisorOf = useCallback((clientId) => (clientId ? selectClientById(state, clientId)?.supervisorId || null : null), [state]);
 
+  // The open set and the loaded resolved pages, each ticket once (a ticket resolved between the
+  // two reads keeps its open copy until the next read), narrowed to the queue.
   const scoped = useMemo(() => {
-    const all = (rows || []).map(toWorkOrder);
-    return queue === 'all' ? all : all.filter((w) => supervisorOf(w.client_id) === queue);
-  }, [rows, queue, supervisorOf]);
+    const seen = new Set();
+    const all = [];
+    for (const r of [...(rows || []), ...((resolved && resolved.rows) || [])]) {
+      if (!r || seen.has(r.id)) continue;
+      seen.add(r.id);
+      all.push(toWorkOrder(r));
+    }
+    if (queue === 'all') return all;
+    if (queue === TEAM) return all.filter((w) => !!teamBuildings && teamBuildings.has(w.client_id));
+    return all.filter((w) => supervisorOf(w.client_id) === queue);
+  }, [rows, resolved, queue, supervisorOf, teamBuildings]);
   const withSla = useMemo(
     () => scoped.map((w) => ({ ...w, sla: deriveSla({ dueAt: w.due_at, status: w.status, resolvedAt: w.resolved_at }) })),
     [scoped],
   );
 
+  // Every count is over a COMPLETE set (CS-640): the open ones count the open set; "Resolved (24h)"
+  // and the resolved part of "All" are the server's exact figures for the queue, never the length
+  // of the pages loaded so far.
   const counts = useMemo(() => {
-    const c = { all: withSla.length, open: 0, escalated: 0, breaching: 0, resolved: 0, awaiting_client: 0, unassigned: 0 };
+    const c = { all: 0, open: 0, escalated: 0, breaching: 0, resolved: resolved ? resolved.last24h : 0, awaiting_client: 0, unassigned: 0 };
     for (const w of withSla) {
-      if (isOpenStatus(w.status)) c.open += 1;
+      if (!isOpenStatus(w.status)) continue;
+      c.open += 1;
       if (w.escalated) c.escalated += 1;
       if (isBreaching(w.sla.state)) c.breaching += 1;
-      if (w.status === 'resolved') c.resolved += 1;
       if (w.status === 'awaiting_client') c.awaiting_client += 1;
-      if (!w.assignee_user_id && isOpenStatus(w.status)) c.unassigned += 1;
+      if (!w.assignee_user_id) c.unassigned += 1;
     }
+    c.all = c.open + (resolved ? resolved.total : 0);
+    return c;
+  }, [withSla, resolved]);
+
+  // How many OPEN tickets each category holds in the current queue (the complete set), so the
+  // selector can say what picking one would find in the queue's open work.
+  const categoryCounts = useMemo(() => {
+    const open = withSla.filter((w) => isOpenStatus(w.status));
+    const c = { '': open.length };
+    for (const w of open) { const k = w.category || '_none'; c[k] = (c[k] || 0) + 1; }
     return c;
   }, [withSla]);
 
   const matches = useCallback((w) => {
     switch (filter) {
       case 'open': return isOpenStatus(w.status);
-      case 'escalated': return w.escalated;
+      case 'escalated': return w.escalated && isOpenStatus(w.status);
       case 'breaching': return isBreaching(w.sla.state);
       case 'resolved': return w.status === 'resolved';
       case 'awaiting_client': return w.status === 'awaiting_client';
@@ -138,7 +208,7 @@ export default function WorkOrdersPanel({ canManage }) {
   const SLA_ORDER = { breached: 0, soon: 1, ok: 2, paused: 3, met: 4, missed: 4, none: 5 };
   const filtered = useMemo(() => {
     const rank = (w) => (w.escalated ? 0 : 1) * 100 + (SLA_ORDER[w.sla.state] ?? 5) * 10 + woPriorityRank(w.priority);
-    const arr = withSla.filter(matches).slice();
+    const arr = withSla.filter(matches).filter((w) => !category || w.category === category).slice();
     // Grouping keeps a location's rows contiguous (so inline group headers work over
     // the paged rows); severity orders within a group, or overall when ungrouped.
     arr.sort((a, b) => {
@@ -151,21 +221,27 @@ export default function WorkOrdersPanel({ canManage }) {
     });
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [withSla, matches, groupBy]);
+  }, [withSla, matches, groupBy, category]);
   const groupCounts = useMemo(() => {
     const m = {};
     for (const w of filtered) { const k = w.client_id || w.site_id || '_none'; m[k] = (m[k] || 0) + 1; }
     return m;
   }, [filtered]);
 
-  const pager = usePagedRows(filtered, { resetKey: `${filter}|${queue}|${groupBy}` });
+  const pager = usePagedRows(filtered, { resetKey: `${filter}|${queue}|${groupBy}|${category}` });
   const setF = (f) => setFilter((cur) => (f !== 'all' && cur === f ? 'all' : f));
 
   const clientName = (w) => w.client_name || (w.client_id ? selectClientById(state, w.client_id)?.name : null) || w.site_name || '—';
   const userName = (id) => (id ? selectUserById(state, id)?.name : null) || null;
   const update = async (id, patch) => { try { await qcApi.updateProblem({ id, ...patch }); await load(); } catch (e) { toast.error(e.message || 'Update failed'); } };
 
-  const selected = openId ? withSla.find((w) => w.id === openId) : null;
+  // Looked up across EVERY row, not only this queue's: a linked ticket may sit in another
+  // supervisor's queue (its assignee is the one who was rung).
+  const selected = useMemo(() => {
+    if (!openId) return null;
+    const w = withSla.find((x) => x.id === openId) || (rows || []).map(toWorkOrder).find((x) => x.id === openId);
+    return w ? (w.sla ? w : { ...w, sla: deriveSla({ dueAt: w.due_at, status: w.status, resolvedAt: w.resolved_at }) }) : null;
+  }, [openId, withSla, rows]);
 
   const woRow = (w) => (
     <tr key={w.id} className="wo-rowlink" onClick={() => setOpenId(w.id)}>
@@ -174,12 +250,12 @@ export default function WorkOrdersPanel({ canManage }) {
         <div className="truncate" style={{ fontWeight: 600 }} title={w.title}>{w.title}</div>
         <div className="wo-subline">
           <Badge variant={WO_TYPE_META[w.type]?.badge || 'slate'}>{woTypeLabel(w.type)}</Badge>
-          <span className={`wo-origin ${w.origin}`}>{w.origin === 'portal' ? '◆ Client portal' : 'Internal'}</span>
+          <WorkOrderOriginChip origin={w.origin} />
         </div>
       </td>
       {!groupBy && <td data-label="Location"><span className="truncate" title={clientName(w)}>{clientName(w)}</span></td>}
       <td data-label="Assignee">{w.assignee_user_id
-        ? <span className="wo-assignee"><Avatar initials={initialsOf(userName(w.assignee_user_id))} size="xs" /></span>
+        ? <span className="wo-assignee"><Avatar user={selectUserById(state, w.assignee_user_id)} initials={initialsOf(userName(w.assignee_user_id))} size="xs" /></span>
         : <span className="wo-unassigned" title="Unassigned">—</span>}</td>
       <td data-label="SLA"><span className={`wo-sla sla-${w.sla.state}`}>{w.sla.label}</span></td>
       <td data-label="Status">{w.escalated && <span className="wo-esc" title="Escalated"><Icon name="warning" size={12} /></span>}<Badge variant={WO_STATUS_META[w.status]?.badge || 'slate'}>{woStatusLabel(w.status)}</Badge></td>
@@ -196,6 +272,7 @@ export default function WorkOrdersPanel({ canManage }) {
             <span className="wo-queue-lbl">Queue</span>
             <select className="input" value={queue} onChange={(e) => setQueue(e.target.value)}>
               <option value="all">All queues</option>
+              {om && <option value={TEAM}>{t('reportKit.myTeam')}</option>}
               {managers.map((m) => <option key={m.id} value={m.id}>{m.name}{m.id === currentUser?.id ? ' (me)' : ''}</option>)}
             </select>
           </label>
@@ -227,6 +304,18 @@ export default function WorkOrdersPanel({ canManage }) {
       </p>
 
       <div className="wo-chips" role="group" aria-label="Filters">
+        {/* WO-12: filter by reporting category, independent of the chips beside it. */}
+        <select
+          className="input wo-cat-filter"
+          aria-label="Category"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+        >
+          <option value="">{t('workOrders.categoryAllOpen', { count: categoryCounts[''] || 0 })}</option>
+          {WO_CATEGORIES.map((c) => (
+            <option key={c} value={c}>{t('workOrders.categoryOpen', { label: WO_CATEGORY_META[c].label, count: categoryCounts[c] || 0 })}</option>
+          ))}
+        </select>
         {CHIPS.map((c) => (
           <button type="button" key={c.f} className={`chip ${filter === c.f ? 'on' : ''}`} onClick={() => setF(c.f)}>
             {c.label} <span className="control-count tnum">{counts[c.f]}</span>
@@ -266,128 +355,33 @@ export default function WorkOrdersPanel({ canManage }) {
         </table>
         <ListPager pager={pager} noun="work orders" />
       </div>
-
-      {selected && (
-        <>
-          <div className="wo-drawer-backdrop" onClick={() => setOpenId(null)} />
-          <aside className="wo-drawer" aria-label="Work order detail">
-            <WorkOrderDetail
-              wo={selected} state={state} canManage={canManage} onClose={() => setOpenId(null)}
-              onUpdate={update} onRefresh={load} clientName={clientName(selected)} supervisorName={userName(supervisorOf(selected.client_id))}
-            />
-          </aside>
-        </>
+      {/* The resolved history is paged on the server: say how much of it is here, and fetch more. */}
+      {(filter === 'all' || filter === 'resolved') && (
+        resolvedErr ? (
+          <p className="wo-filterhint wo-resolved-note" role="status">
+            {t('workOrders.resolvedFailed')} <button type="button" className="linklike" onClick={loadResolved}>{t('workOrders.retry')}</button>
+          </p>
+        ) : resolved && resolved.total > 0 ? (
+          <p className="wo-filterhint wo-resolved-note" role="status">
+            {t('workOrders.resolvedLoaded', { loaded: resolved.rows.length, total: resolved.total })}
+            {resolved.rows.length < resolved.total && (
+              <> · <button type="button" className="linklike" disabled={moreBusy} onClick={loadMoreResolved}>
+                {moreBusy ? t('workOrders.loadingMore') : t('workOrders.loadMore', { count: Math.min(WO_RESOLVED_PAGE, resolved.total - resolved.rows.length) })}
+              </button></>
+            )}
+          </p>
+        ) : null
       )}
+
+      {/* Always mounted: it draws nothing while closed, and slides out with the last ticket. */}
+      <WorkOrderDrawer
+        wo={selected || null} canManage={canManage} onClose={closeDrawer}
+        onUpdate={update} onRefresh={load}
+        clientName={selected ? clientName(selected) : null}
+        supervisorName={selected ? userName(supervisorOf(selected.client_id)) : null}
+      />
 
       <WorkOrderModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); load(); }} />
-    </>
-  );
-}
-
-// ── Detail drawer ─────────────────────────────────────────────────────────────
-function WorkOrderDetail({ wo, state, canManage, onClose, onUpdate, onRefresh, clientName, supervisorName }) {
-  const { currentUser } = useAuth();
-  const toast = useToast();
-  const assignable = useMemo(() => selectActiveUsers(state), [state]);
-  const assigneeName = wo.assignee_user_id ? (selectUserById(state, wo.assignee_user_id)?.name || null) : null;
-  const next = nextStatus(wo.status);
-  const [messages, setMessages] = useState(null);
-  const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
-  const loadMsgs = useCallback(() => { qcApi.listWorkOrderMessages(wo.id).then(setMessages).catch(() => setMessages([])); }, [wo.id]);
-  useEffect(() => { setMessages(null); loadMsgs(); }, [loadMsgs]);
-  const send = async () => {
-    const b = draft.trim();
-    if (!b || sending) return;
-    setSending(true);
-    try {
-      await qcApi.addWorkOrderMessage({ problemId: wo.id, body: b, authorUserId: currentUser?.id || null, authorRole: currentUser?.role === 'crew' ? 'crew' : 'office', authorName: currentUser?.name || null });
-      setDraft(''); loadMsgs(); onRefresh && onRefresh(); // reload the list — status may have auto-advanced
-    } catch (e) { toast.error(e.message || 'Could not send the message'); } finally { setSending(false); }
-  };
-  return (
-    <>
-      <div className="wo-dh">
-        <div className="wo-dh-top">
-          <span className="mono wo-dh-id">{wo.id?.startsWith('pr_') ? 'WO' : ''} · {fmtDate(wo.created_at)}</span>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">×</button>
-        </div>
-        <h3 className="wo-dh-title">{wo.title}</h3>
-        <div className="wo-dh-acct">{clientName}</div>
-        <div className="wo-dh-badges">
-          {wo.escalated && <span className="wo-esc-ribbon"><Icon name="warning" size={12} /> Escalated</span>}
-          <Badge variant={WO_STATUS_META[wo.status]?.badge || 'slate'}>{woStatusLabel(wo.status)}</Badge>
-          <span className={`wo-pri pri-${wo.priority}`}><span className="wo-dot" />{woPriorityLabel(wo.priority)}</span>
-          <Badge variant={WO_TYPE_META[wo.type]?.badge || 'slate'}>{woTypeLabel(wo.type)}</Badge>
-          <span className={`wo-origin ${wo.origin}`}>{wo.origin === 'portal' ? '◆ Client portal' : 'Internal'}</span>
-        </div>
-      </div>
-
-      <div className="wo-dmeta">
-        <div><div className="wo-k">Queue / supervisor</div><div className="wo-v">{supervisorName || '—'}</div></div>
-        <div><div className="wo-k">SLA</div><div className="wo-v"><span className={`wo-sla sla-${wo.sla.state}`}>{wo.sla.label}</span></div></div>
-        <div>
-          <div className="wo-k">Assignee</div>
-          <div className="wo-v">
-            {canManage ? (
-              <SearchSelect
-                value={wo.assignee_user_id || ''}
-                onChange={(id) => onUpdate(wo.id, { assigneeUserId: id || null })}
-                options={assignable.map((u) => ({ value: u.id, label: u.name }))}
-                placeholder="Unassigned" searchPlaceholder="Assign to…"
-              />
-            ) : (assigneeName || 'Unassigned')}
-          </div>
-        </div>
-        {canManage && (
-          <div>
-            <div className="wo-k">Priority</div>
-            <div className="wo-v">
-              <select className="input" value={wo.priority} onChange={(e) => onUpdate(wo.id, { priority: e.target.value })}>
-                {WO_PRIORITIES.map((p) => <option key={p} value={p}>{WO_PRIORITY_META[p].label}</option>)}
-              </select>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {wo.description && <div className="wo-dsec"><div className="wo-k">Details</div><p className="wo-desc">{wo.description}</p></div>}
-
-      <div className="wo-dsec">
-        <div className="wo-thread-head">
-          <div className="wo-k">Messages</div>
-          {wo.origin === 'portal' && <span className="wo-shared">◆ Shared with {clientName} in the portal</span>}
-        </div>
-        <div className="wo-thread">
-          {messages === null ? <div className="wo-thread-empty">Loading…</div>
-            : messages.length === 0 ? <div className="wo-thread-empty">No messages yet.{wo.origin === 'portal' ? ' Reply and the client sees it in their portal.' : ''}</div>
-            : messages.map((m) => <WorkOrderMessage key={m.id} m={m} />)}
-        </div>
-        {canManage && (
-          <div className="wo-composer">
-            <textarea className="input wo-composer-input" rows={2} placeholder={wo.origin === 'portal' ? 'Reply to the client…' : 'Add a note…'} value={draft} onChange={(e) => setDraft(e.target.value)} />
-            <button type="button" className="btn btn-primary" disabled={sending || !draft.trim()} onClick={send}>{sending ? 'Sending…' : 'Send'}</button>
-          </div>
-        )}
-      </div>
-
-      <div className="wo-dsec">
-        <div className="wo-k">Completion photos</div>
-        {wo.site_id ? (
-          <MediaGallery siteId={wo.site_id} clientId={wo.client_id} scope="problem_report" refId={wo.id} label="" hint="Before / after photos. Managers and (soon) the client see these on the work order." />
-        ) : <p className="text-muted text-sm wo-desc">No location set, so photos can’t be attached.</p>}
-      </div>
-
-      {canManage && (
-        <div className="wo-dactions">
-          {next && <button type="button" className="btn btn-primary" onClick={() => onUpdate(wo.id, { status: next })}><Icon name="chevronRight" size={14} /> {woStatusLabel(next)}</button>}
-          {!wo.escalated && isOpenStatus(wo.status) && <button type="button" className="btn wo-btn-danger" onClick={() => onUpdate(wo.id, { escalated: true })}><Icon name="warning" size={14} /> Escalate</button>}
-          {wo.escalated && <button type="button" className="btn btn-outline" onClick={() => onUpdate(wo.id, { escalated: false })}>De-escalate</button>}
-          {wo.status !== 'resolved'
-            ? <button type="button" className="btn btn-primary" onClick={() => onUpdate(wo.id, { status: 'resolved' })}>Mark resolved</button>
-            : <button type="button" className="btn btn-outline" onClick={() => onUpdate(wo.id, { status: 'open' })}>Reopen</button>}
-        </div>
-      )}
     </>
   );
 }

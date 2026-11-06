@@ -3,6 +3,8 @@
 //   GoTrue    GET /auth/v1/user             (the bearer token → the user, with app_metadata)
 //   PostgREST /rest/v1/org_state            GET + PATCH (select with `a:state->b`, eq, lte, is.null, or)
 //             /rest/v1/crew_assignments     GET, POST, DELETE (id=in.(…))
+//             /rest/v1/activity_log         POST (the CS-379 audit rows the save route writes)
+//             /rest/v1/activity_log_baseline GET + upsert (its org-state change detector)
 // Anything else answers 404 and lands in `unknown`, so a suite can assert it saw none.
 // A GET honours `order=` and `limit=` the way PostgREST does, so a suite that pins
 // "newest first, bounded" is really testing the query and not the insertion order.
@@ -11,6 +13,13 @@
 // bytewise, not in the order they were written. The client writes keys sorted
 // (canonicalJson), so a fake that echoed them back in order would hide exactly the
 // key-order bugs this exists to catch.
+//
+// `stampRowVersion: ['jobs']` emulates a table's row-version TRIGGER (public.jobs restamps
+// `row_version` from a sequence on every insert and update, 20260720010000): a write's own
+// value is replaced by the next number, so a compare-and-swap on it is tested against a
+// version that really moves. Off unless a suite names the table.
+// `failWrites(table)` answers that table's inserts, updates and deletes with a 500 while its
+// reads still work, so a suite can drive a handler's failed-write path in isolation.
 //
 // Not a test file (no `test-` prefix): run-tests.mjs neither runs nor scans it.
 //
@@ -47,26 +56,63 @@ function project(row, cols) {
 }
 
 // One PostgREST filter value (`eq.5`, `is.null`, `lte.7`, `in.(a,b)`, `cs.{json}`) → predicate.
+// The column may be a JSON path into one, as PostgREST takes it (`data->crewIds`, a cleaner's
+// cleans, CS-677; `data->>recurrence`): the path's value is what the filter sees — `->>` as
+// TEXT, with JSON null as SQL NULL.
 function predicate(col, spec) {
+  const path = /^(\w+)((?:->>?\w+)+)$/.exec(col);
+  if (!path) return plainPredicate(col, spec);
+  const inner = plainPredicate(col, spec);
+  return (r) => {
+    let v = r[path[1]];
+    let text = false;
+    for (const [, op, key] of path[2].matchAll(/(->>?)(\w+)/g)) {
+      v = v && typeof v === 'object' ? v[key] : undefined;
+      text = op === '->>';
+    }
+    const cell = v === undefined || v === null ? null : (text && typeof v !== 'string' ? JSON.stringify(v) : v);
+    return inner({ ...r, [col]: cell });
+  };
+}
+function plainPredicate(col, spec) {
   const dot = spec.indexOf('.');
   const op = spec.slice(0, dot);
   const val = spec.slice(dot + 1);
   if (op === 'eq') return (r) => r[col] != null && String(r[col]) === val;
-  if (op === 'lte') return (r) => r[col] != null && Number(r[col]) <= Number(val);
+  if (op === 'neq') return (r) => String(r[col] ?? '') !== val;
+  // `lte` on a number (the org_state fleet gate's build number) or an ISO instant (the auto-close
+  // cron's `scheduled_end` cutoff): numerically when both sides are numbers, else as text, which
+  // sorts ISO-8601 in time order exactly as `gte` / `lt` / `gt` below already compare it.
+  if (op === 'lte') {
+    const num = (x) => (x !== '' && Number.isFinite(Number(x)) ? Number(x) : null);
+    return (r) => {
+      if (r[col] == null) return false;
+      const a = num(r[col]); const b = num(val);
+      return a != null && b != null ? a <= b : String(r[col]) <= val;
+    };
+  }
   if (op === 'gte') return (r) => r[col] != null && String(r[col]) >= val;
+  // `lt` / `gt` on an ISO instant or a number. ISO-8601 sorts lexically in the same order
+  // it sorts chronologically, which is why `gte` above already compares as a string; these
+  // two do the same so a timestamp cutoff (`.lt('clock_in_at', cutoffIso)`) works.
+  if (op === 'lt') return (r) => r[col] != null && String(r[col]) < val;
+  if (op === 'gt') return (r) => r[col] != null && String(r[col]) > val;
   if (op === 'is' && val === 'null') return (r) => r[col] == null;
+  if (op === 'not' && /^is\.null$/.test(val)) return (r) => r[col] != null;
   if (op === 'in') {
     const set = new Set(val.replace(/^\(|\)$/g, '').split(',').map((x) => x.replace(/^"|"$/g, '')));
     return (r) => r[col] != null && set.has(String(r[col]));
   }
-  // jsonb CONTAINS (supabase-js .contains('data', {crewIds:[id]}) → data=cs.{"crewIds":["id"]}),
-  // used by getCrewJobs / getJobsAtSite to filter public.jobs by data.crewIds membership.
+  // jsonb CONTAINS (supabase-js .contains('data', {crewIds:[id]}) → data=cs.{"crewIds":["id"]};
+  // .contains('data->crewIds', '["id"]') → data->crewIds=cs.["id"]), used by getCrewJobRows /
+  // getJobsAtSite to filter public.jobs by data.crewIds membership.
   if (op === 'cs') {
     let obj = null;
     try { obj = JSON.parse(val); } catch { obj = null; }
     return (r) => {
       const cell = r[col];
       if (!obj || !cell || typeof cell !== 'object') return false;
+      if (Array.isArray(obj)) return Array.isArray(cell) && obj.every((x) => cell.includes(x));
       return Object.entries(obj).every(([k, v]) => {
         const cv = cell[k];
         if (Array.isArray(v)) return Array.isArray(cv) && v.every((x) => cv.includes(x));
@@ -102,7 +148,8 @@ function ordering(spec) {
 function filters(params) {
   const preds = [];
   for (const [k, v] of params) {
-    if (['select', 'order', 'limit', 'offset', 'columns'].includes(k)) continue;
+    // `on_conflict` names an UPSERT's conflict target, not a row filter (see the POST branch).
+    if (['select', 'order', 'limit', 'offset', 'columns', 'on_conflict'].includes(k)) continue;
     if (k === 'or') {
       const any = v.replace(/^\(|\)$/g, '').split(',').map((p) => {
         const [col, ...rest] = p.split('.');
@@ -114,15 +161,42 @@ function filters(params) {
   return (r) => preds.every((p) => p(r));
 }
 
-export async function startFakeSupabase({ authUsers = {}, rows = {} } = {}) {
-  const tables = { org_state: [], crew_assignments: [], ...rows };
+export async function startFakeSupabase({ authUsers = {}, rows = {}, rpcs = {}, stampRowVersion = [] } = {}) {
+  // activity_log + activity_log_baseline are here by DEFAULT because the org_state save
+  // route writes them on every commit (CS-379): a fake without them answered 404, which
+  // made the route's audit writer report a failure on every save in every suite that
+  // drives it, and put two 'unknown' calls into suites that assert they saw none.
+  const tables = { org_state: [], crew_assignments: [], activity_log: [], activity_log_baseline: [], ...rows };
   const failing = new Map(); // table -> the message its reads answer 500 with
+  const failingWrites = new Map(); // table -> the message its writes answer 500 with
+  const stamped = new Set(stampRowVersion);
+  let rowVersionSeq = 1000;
+  const stamp = (table, row) => { if (stamped.has(table)) row.row_version = (rowVersionSeq += 1); return row; };
   const requests = [];
   const unknown = [];
   let nextId = 1;
   const send = (res, status, body, headers = {}) => {
     res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
     res.end(body === undefined ? '' : JSON.stringify(body));
+  };
+  // 🔴 `.single()` / `.maybeSingle()` ask PostgREST for the OBJECT form through the Accept
+  // header, and PostgREST answers with the row itself, not a one-element array. The fake
+  // always answered the array, so `const { data } = await db…insert(row).select('*').single()`
+  // handed every caller `[{…}]` — `data.some_column` was undefined, and `if (maybeSingleRow)`
+  // was truthy on an empty result. Harmless while suites read the table rather than the
+  // answer, and a silent wrong answer the moment one reads the answer. So the fake honours
+  // the header, including PostgREST's 406/PGRST116 when the result is not exactly one row
+  // (which is what makes `maybeSingle()` resolve to null and `single()` error, as in prod).
+  const PGRST_OBJECT = /application\/vnd\.pgrst\.object\+json/;
+  const sendRows = (req, res, status, rows, headers = {}) => {
+    if (!PGRST_OBJECT.test(req.headers.accept || '')) return send(res, status, rows, headers);
+    if (rows.length === 1) return send(res, status, rows[0], headers);
+    return send(res, 406, {
+      code: 'PGRST116',
+      message: 'JSON object requested, multiple (or no) rows returned',
+      details: `The result contains ${rows.length} rows`,
+      hint: null,
+    }, headers);
   };
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -136,10 +210,22 @@ export async function startFakeSupabase({ authUsers = {}, rows = {} } = {}) {
           const user = authUsers[token];
           return user ? send(res, 200, user) : send(res, 401, { code: 401, msg: 'invalid JWT' });
         }
+        // A service-role RPC (`db.rpc(name, args)`). Only the ones a suite declares exist;
+        // anything else stays an `unknown` 404, so a handler calling a function nobody
+        // modelled is still caught rather than silently answered.
+        const rpc = /^\/rest\/v1\/rpc\/([a-z0-9_]+)$/.exec(url.pathname);
+        if (rpc) {
+          const fn = rpcs[rpc[1]];
+          if (!fn) { unknown.push(`${req.method} ${url.pathname}`); return send(res, 404, { message: 'rpc not in the fake' }); }
+          return send(res, 200, fn(JSON.parse(raw || '{}')));
+        }
         const m = /^\/rest\/v1\/([a-z_]+)$/.exec(url.pathname);
         // A table a suite has put into failure: PostgREST's own shape for a refused read,
         // so a handler's error path is exercised with provider text it must not leak.
         if (m && failing.has(m[1])) return send(res, 500, { code: '42501', message: failing.get(m[1]), details: null, hint: null });
+        if (m && failingWrites.has(m[1]) && req.method !== 'GET' && req.method !== 'HEAD') {
+          return send(res, 500, { code: '42501', message: failingWrites.get(m[1]), details: null, hint: null });
+        }
         const table = m && tables[m[1]];
         if (!table) { unknown.push(`${req.method} ${url.pathname}`); return send(res, 404, { message: 'not in the fake' }); }
         const match = filters(url.searchParams);
@@ -167,18 +253,31 @@ export async function startFakeSupabase({ authUsers = {}, rows = {} } = {}) {
           const headers = (offset || lim != null)
             ? { 'Content-Range': `${offset}-${Math.max(offset, offset + hit.length - 1)}/${total}` }
             : {};
-          return send(res, 200, hit.map((r) => project(r, cols)), headers);
+          return sendRows(req, res, 200, hit.map((r) => project(r, cols)), headers);
         }
         if (req.method === 'PATCH') {
           const patch = JSON.parse(raw || '{}');
           const hit = table.filter(match);
-          for (const r of hit) Object.assign(r, patch);
-          return wantRows ? send(res, 200, hit.map((r) => project(r, cols))) : send(res, 204);
+          for (const r of hit) stamp(m[1], Object.assign(r, patch));
+          return wantRows ? sendRows(req, res, 200, hit.map((r) => project(r, cols))) : send(res, 204);
         }
         if (req.method === 'POST') {
           const add = [].concat(JSON.parse(raw || '[]')).map((r) => ({ id: `row${nextId++}`, ...r }));
-          table.push(...add);
-          return wantRows ? send(res, 201, add.map((r) => project(r, cols))) : send(res, 201);
+          // An UPSERT is a POST with `on_conflict=<cols>` and `Prefer: resolution=merge-duplicates`.
+          // Appending instead would leave two rows where the real table keeps one, and the next
+          // `.maybeSingle()` read of it would then error — so the conflict target is matched by
+          // value (no unique index is emulated) and a hit is merged in place.
+          const onConflict = (url.searchParams.get('on_conflict') || '').split(',').map((c) => c.trim()).filter(Boolean);
+          if (onConflict.length && /merge-duplicates/.test(req.headers.prefer || '')) {
+            const affected = [];
+            for (const row of add) {
+              const hit = table.find((r) => onConflict.every((k) => r[k] !== undefined && row[k] !== undefined && String(r[k]) === String(row[k])));
+              if (hit) { stamp(m[1], Object.assign(hit, row)); affected.push(hit); } else { table.push(stamp(m[1], row)); affected.push(row); }
+            }
+            return wantRows ? sendRows(req, res, 201, affected.map((r) => project(r, cols))) : send(res, 201);
+          }
+          table.push(...add.map((r) => stamp(m[1], r)));
+          return wantRows ? sendRows(req, res, 201, add.map((r) => project(r, cols))) : send(res, 201);
         }
         if (req.method === 'DELETE') {
           const keep = table.filter((r) => !match(r));
@@ -206,6 +305,8 @@ export async function startFakeSupabase({ authUsers = {}, rows = {} } = {}) {
     // read-failure path — the half no happy-path test reaches.
     fail: (table, message = 'fake: read failed') => failing.set(table, message),
     clearFailures: () => failing.clear(),
+    failWrites: (table, message = 'fake: write failed') => failingWrites.set(table, message),
+    clearWriteFailures: () => failingWrites.clear(),
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }

@@ -10,10 +10,14 @@
 //                             inspectorName, overallScore, result, performedAt },
 //               items:  [{ itemKey, label, rating, comment }],
 //               photos: [{ id, kind, url, caption, areaId }] }   // url = signed URL or data: URI
+//     areaId: a template area id (an OLDER inspection: shown under that area) or
+//             'before' / 'after' (a new one: the Before / After pair, lib/inspections
+//             INSPECTION_PHOTO_PHASES); anything else lands in "Additional photos".
 //     opts:   { forPdf }   // forPdf swaps <video> for a poster <img> (a PDF can't play video)
 //
 // Browser-dep-free (imported by the serverless PDF route) — no window/DOM, explicit imports.
 import { getOrgTimezone } from './dates.js';
+import { INSPECTION_PHOTO_PHASES } from './inspections.js';
 import { DOC_LOGO } from '../brand/logo.js';
 import { DOC, alpha } from '../brand/doc.js';
 import { IDENTITY } from '../brand/identity.generated.js';
@@ -127,6 +131,11 @@ const CSS = `
 .ir-vidtag{position:absolute;top:6px;left:6px;background:${alpha(DOC.ink, 0.78)};color:${DOC.paper};font-size:8.5px;font-weight:700;padding:2px 7px;border-radius:5px;}
 .ir-cap{font-size:9.5px;color:${DOC.muted};padding:5px 8px;background:${DOC.paper};}
 .ir-foot{margin-top:14px;border-top:1px solid var(--doc-line);padding:11px 34px;color:${DOC.muted};font-size:9px;text-align:center;}
+.ir-ba-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.ir-ba-col{min-width:0;}
+.ir-ba-h{margin:0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--doc-muted);font-weight:800;}
+.ir-ba-col .ir-photos{grid-template-columns:1fr;}
+@media (max-width:520px){.ir-ba-grid{grid-template-columns:1fr;}}
 @media print{.ir{max-width:none;}}
 `;
 
@@ -151,14 +160,23 @@ export function buildInspectionReportHtml(report = {}, opts = {}) {
     else if (r != null && r !== '') { scored += 1; }
   }
 
-  // Bucket photos under their section; anything with no/unknown areaId falls to "Additional".
+  // Bucket the photos. A NEW inspection files them as a Before / After pair (area id
+  // 'before' / 'after', the New Inspection form as drawn, 2026-10-09); an OLDER one filed
+  // them under the template's own areas and keeps showing them there — a template area id
+  // wins, so history never drifts. Anything else falls to "Additional photos".
   const areaIds = new Set(areas.map((a) => a.id));
   const byArea = new Map();
+  const before = [];
+  const after = [];
   const other = [];
   for (const p of photos) {
     if (p.areaId && areaIds.has(p.areaId)) {
       if (!byArea.has(p.areaId)) byArea.set(p.areaId, []);
       byArea.get(p.areaId).push(p);
+    } else if (p.areaId === INSPECTION_PHOTO_PHASES.BEFORE) {
+      before.push(p);
+    } else if (p.areaId === INSPECTION_PHOTO_PHASES.AFTER) {
+      after.push(p);
     } else {
       other.push(p);
     }
@@ -202,6 +220,10 @@ export function buildInspectionReportHtml(report = {}, opts = {}) {
     </section>`;
   }).join('');
 
+  const pairCol = (label, list) => `<div class="ir-ba-col"><h3 class="ir-ba-h">${label}</h3>${photoGrid(list, forPdf) || '<div class="ir-empty">No photo.</div>'}</div>`;
+  const pairBlock = (before.length || after.length)
+    ? `<section class="ir-sec ir-ba"><div class="ir-sec-h"><h2>Before / After</h2></div><div class="ir-ba-grid">${pairCol('Before', before)}${pairCol('After', after)}</div></section>`
+    : '';
   const otherBlock = other.length
     ? `<section class="ir-sec"><div class="ir-sec-h"><h2>Additional photos</h2></div>${photoGrid(other, forPdf)}</section>`
     : '';
@@ -228,6 +250,7 @@ export function buildInspectionReportHtml(report = {}, opts = {}) {
     </div>
   </section>
   ${areaBlocks || '<section class="ir-sec"><div class="ir-empty">This inspection has no sections.</div></section>'}
+  ${pairBlock}
   ${otherBlock}
   <footer class="ir-foot">${esc(IDENTITY.name)}&nbsp; ·&nbsp; Quality Inspection Report</footer>
 </div>`;

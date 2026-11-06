@@ -73,18 +73,23 @@ const baseState = () => ({
     user('u_owner', 'owner'), user('u_admin', 'admin'), user('u_mgr', 'manager'),
   ],
   // Per-cleaner checklists only; u_c4 holds none and the location has no default.
-  clients: [{ id: 'c1', name: 'Coral Bay HOA', crewChecklists: { u_c1: 'it_a', u_c2: 'it_b', u_c3: 'it_a', u_mgr: 'it_a' } }],
+  // u_mgr supervises this customer: closing someone else's punch follows the manager's
+  // locations (W5-M F2), so the R5 escape-hatch cases below are about the checklist, not scope.
+  clients: [{ id: 'c1', name: 'Coral Bay HOA', supervisorId: 'u_mgr', crewChecklists: { u_c1: 'it_a', u_c2: 'it_b', u_c3: 'it_a', u_mgr: 'it_a' } }],
   sites: [{ id: 's1', clientId: 'c1', name: 'Tower', expectedCleanMins: 120, lat: 26.1, lng: -80.1, geofenceEnabled: true }],
   permissions: [],
   userPermissionOverrides: [],
   opsSettings: { defaultGeofenceRadiusM: 150, offlineReplayWindowHours: 12 },
 });
 
+// `row_version` is NOT NULL DEFAULT 0 on the real table (20260927225850), and every punch
+// UPDATE is a compare-and-swap on it (W5-M F1), so a fixture without one is not a row this
+// schema can produce — and its writes would all miss the swap.
 const openEntry = (id, userId) => ({
   id, organization_id: ORG, job_id: 'j1', client_id: 'c1', site_id: 's1', user_id: userId,
   clock_in_at: '2026-09-27T13:05:00.000Z', clock_out_at: null, status: 'in_progress',
   scheduled_start: START, scheduled_end: END, approval_status: 'pending', edit_history: [],
-  client_punch_id: null, duration_minutes: null,
+  client_punch_id: null, duration_minutes: null, row_version: 0,
 });
 const result = (p = {}) => ({
   id: p.id || `cr_${Math.random().toString(36).slice(2, 8)}`,
@@ -106,6 +111,14 @@ function reset({ results = [], entries = null } = {}) {
     openEntry('e_c4', 'u_c4'), openEntry('e_mgr', 'u_mgr'),
   ];
   fake.tables.checklist_results = results;
+  // MTA merge: correct/manual read payroll_runs for the paid-lock check (timeWriteContext
+  // -> readRunBounds). No closed runs here, so nothing is paid-locked and the office
+  // correction / manual add behave exactly as this suite expects — the table just has to
+  // exist so the read isn't an "unexpected route".
+  fake.tables.payroll_runs = [];
+  // CS-851: every org-state read also loads this build's translated lines, once per process
+  // (api/_lib/i18n.js ensureStoredLines → one read of the build's fill row). None filled here.
+  fake.tables.machine_translation_fills = [];
   fake.requests.length = 0;
 }
 

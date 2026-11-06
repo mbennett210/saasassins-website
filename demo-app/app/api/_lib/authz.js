@@ -7,19 +7,29 @@
 // (labor, variance, codes, QC config) must re-check authority here. This is the
 // only real boundary for those surfaces. See CLEANSPACE_SWEPT.md §2.4.
 
-import { getClaims } from './claims.js';
+import { getClaims, claimsOf } from './claims.js';
 import { readOrgState, readProtectedSlices } from './orgState.js';
 import { getJobsAtSite } from './jobsTable.js';
 import { assignmentsInitialized, isAssignedToSite } from './crewAssignments.js';
-import { cached } from './requestCache.js';
-import { can, ROLES } from '../../src/lib/roles.js';
+import { cached, withRequestCache } from './requestCache.js';
+import { can, levelVariants, OFFICE_ROLES } from '../../src/lib/roles.js';
+import { managerLevelIn } from '../../src/lib/teamScope.js';
 import { jobGrantsSiteAccess } from '../../src/lib/siteAccess.js';
+import { crewScopeFromJobs } from '../../src/lib/crewScope.js';
+import { CLIENT_LOGIN_REFUSAL, clientUserHasAccess } from '../../src/lib/clientHub.js';
+import {
+  HUB_PREVIEW_HEADER, HUB_PREVIEW_PERMISSION, HUB_PREVIEW_FORBIDDEN, HUB_PREVIEW_CHECK_FAILED, HUB_PREVIEW_SENTENCES,
+  hubPreviewBuildingIdOf,
+} from '../../src/lib/hubPreview.js';
+import { getClientUserById } from './clientHub/store.js';
 
 // Every tier but crew: the roles the app shows EVERY account and site to
-// (store/selectors.js selectVisibleClientIdsFor, where `role !== 'crew'` sees all). Derived
-// from ROLES, so a new non-crew tier is included as it would be in the app, while a null or
-// unknown role matches nothing. Crew reach a site only through an assignment.
-export const OFFICE_ROLES = ROLES.filter((r) => r !== 'crew');
+// (store/selectors.js selectVisibleClientIdsFor, where `role !== 'crew'` sees all). It IS
+// lib/roles OFFICE_ROLES — one list for the server and the browser's read path (store/sync.js),
+// derived from ROLES, so a new non-crew tier (the supply manager, S131) is office here exactly as
+// in the app, while a null or unknown role matches nothing. Crew reach a site only through an
+// assignment.
+export { OFFICE_ROLES };
 
 // Resolve who the caller is and what they may do. THE single authority source
 // for every server gate — routes should never re-derive role or the `u_*` id
@@ -72,6 +82,16 @@ export async function resolveAuthority(req, opts) {
 // ended, or never began). `opts` passes through (the jobs write path sets strictRoster).
 export async function requireAuthority(req, res, opts) {
   const r = await resolveAuthorityDetailed(req, opts);
+  return r.authority || refuseAuthority(res, r);
+}
+
+// The answer for a resolution that holds no authority (requireAuthority's, shared with the hub's
+// preview path below). Always returns null.
+function refuseAuthority(res, r) {
+  if (r.refusal === CLIENT_LOGIN_REFUSAL) {
+    res.status(403).json({ error: 'This area is for staff logins.', code: CLIENT_LOGIN_REFUSAL });
+    return null;
+  }
   if (r.refusal === 'account-disabled') {
     res.status(403).json({ error: 'This account has been disabled.', code: 'account-disabled' });
     return null;
@@ -80,16 +100,37 @@ export async function requireAuthority(req, res, opts) {
     res.status(403).json({ error: 'This login is not on the team.', code: 'not-on-team' });
     return null;
   }
-  if (!r.authority) {
-    res.status(401).json({ error: 'Authentication required' });
-    return null;
-  }
-  return r.authority;
+  res.status(401).json({ error: 'Authentication required' });
+  return null;
 }
 
 async function resolveAuthorityDetailed(req, { strictRoster = false } = {}) {
-  const claims = await getClaims(req);
+  return authorityFromClaims(await getClaims(req), { strictRoster });
+}
+
+// The resolution itself, from claims already read: the hub's gate (requireHubCaller) reads them
+// once to tell a customer from staff, so GoTrue is asked once per request, not twice.
+async function authorityFromClaims(claims, { strictRoster = false } = {}) {
   if (!claims) return { authority: null, refusal: null };
+  // ── 🔴 A CUSTOMER-HUB LOGIN HOLDS NO OFFICE AUTHORITY, EVER (the client hub, 2026-10-03) ──
+  // This is the ONE rule that isolates a client login, and it sits here because EVERY office
+  // gate funnels through this function — requireAuthority, requireRole, requirePermission,
+  // requireAnyPermission, requireRoleOrPermission, requireSiteAssignment, and the domain
+  // gates built on them (inbox ownership, workspaces). A route cannot forget it, and a route
+  // added next year inherits it; app/scripts/test-client-login-isolation.mjs walks app/api and
+  // fails the build on any route that reaches a session without passing through here.
+  //
+  // IT IS DELIBERATELY NOT "no role, so no permission". That was the pre-hub behaviour and it
+  // was only safe by accident, in three ways this refusal closes:
+  //   · an UNREADABLE roster decides as before (rosterStatusVerdict → refused:false), so a
+  //     PostgREST blip handed a client login a roleless-but-real authority — enough for
+  //     /api/state/view's crew projection of the whole shared record;
+  //   · a roster row carrying the SAME EMAIL lends its role to the claim-less fallback below
+  //     (Matt is both the owner and a plausible customer contact);
+  //   · a stray `org_user_id` on the login resolves a full crew identity.
+  // The refusal is before any of that: it needs nothing but the claim, so nothing can widen
+  // it. The hub reaches its own data through requireClientUser instead (below).
+  if (claims.isClient) return { authority: null, refusal: CLIENT_LOGIN_REFUSAL };
   // strictRoster (the jobs write path, 2026-09-23): when the ROLE itself comes from the
   // roster (no role claim: every manager), a roster read that FAILS throws, so the route
   // answers 500 and the tab retries, instead of resolving as "no role", which the jobs
@@ -97,25 +138,37 @@ async function resolveAuthorityDetailed(req, { strictRoster = false } = {}) {
   // leniently, and so does every other route: a failed read decides as before this read.
   const strict = strictRoster && !claims.hasRoleClaim;
   let users = null;
+  let rosterFailed = false;
   try {
     users = await readRosterUsers();
   } catch (e) {
     if (strict) throw e;
+    rosterFailed = true;
     console.error(`[authz] roster unreadable; deciding without it: ${e?.message || e}`);
   }
   // A claim-less field comes from the FIRST row carrying the login's email (an empty email
   // matches nothing: anyone who may add members could add an email-less row).
   const emailRows = rosterRowsByEmail(users, claims.email);
   const me = (!claims.hasRoleClaim || !claims.orgUserId) ? (emailRows[0] || null) : null;
+  const role = claims.role || me?.role || null;
+  const orgUserId = claims.orgUserId || me?.id || null;
   const authority = {
     user: claims.user,
     email: claims.email,
-    role: claims.role || me?.role || null,
-    orgUserId: claims.orgUserId || me?.id || null,
+    role,
+    orgUserId,
     // `roleSource` gates the claim-writing routes — they must never accept
     // authority that came from the blob (see settings/[...path].js).
     roleSource: claims.hasRoleClaim ? 'claim' : 'blob',
     idSource: claims.orgUserId ? 'claim' : 'blob',
+    // The MANAGER LEVEL, off this same committed roster read — what the caller's permission
+    // COLUMN follows (CS-858: an Operations Manager's own column in Settings → Roles; the claim,
+    // RLS and every `role === 'manager'` rule stay the role's). The role is the claim's, the level
+    // the rows' with the caller's u_* id (lib/teamScope managerLevelIn, the app's reading of its
+    // current user). null = it can't be known — the read failed, or the rows disagree — and every
+    // check built on permissionChecker then FAILS CLOSED (a key holds only where both manager
+    // columns hold it; lib/roles levelVariants). No second read: the roster is this one.
+    managerLevel: rosterFailed && role === 'manager' ? null : managerLevelIn(users, { id: orgUserId, role }),
   };
   const verdict = rosterStatusVerdict(authority, users, {
     emailRows,
@@ -192,12 +245,167 @@ function rosterRowsByEmail(users, email) {
 
 // The committed roster, projected out of the blob and cached per REQUEST (the same
 // projection style as readAuthzSlices below; outside a request context `cached` is a
-// straight pass-through). Null when the org has no row yet.
-async function readRosterUsers() {
+// straight pass-through). Null when the org has no row yet. THROWS when the read fails:
+// resolveAuthority decides without it, and any other caller must fail closed. Exported for
+// the team-photo route (api/avatars), which reads the photo versions off the same roster
+// the gate already read, in the same request, for no second fetch.
+export async function readRosterUsers() {
   return cached('rosterUsers', async () => {
     const data = await readProtectedSlices('users:state->users');
     return Array.isArray(data?.users) ? data.users : null;
   });
+}
+
+// ── THE OTHER SIDE OF THE SAME LINE: the customer hub's gate ─────────────────
+// The mirror image of requireAuthority. It admits ONLY a customer-hub login and refuses every
+// staff one, so the two gates between them partition every signed-in caller and neither can
+// be reached by the other's audience. It lives in this file, next to the refusal above,
+// because authz.js is the single authority source and the only module outside _lib/auth.js +
+// _lib/claims.js allowed to resolve a session (test-disabled-authority.mjs C1 holds that).
+//
+// A client login's STATUS is checked here as well as inside the scope resolver, for the same
+// reason the staff roster's is checked at the gate: disabling someone in the office UI must
+// end their reach on the next request, without waiting for the GoTrue ban to propagate
+// (the two are written together, but only one of them is ours to make instant).
+//
+// Returns { user, email, clientUser } — the full public.client_users row, already status-
+// checked — or null with the response written. Caller: `if (!c) return;`
+export async function requireClientUser(req, res) {
+  const claims = await getClaims(req);
+  if (!claims) {
+    res.status(401).json({ error: 'Authentication required' });
+    return null;
+  }
+  if (!claims.isClient) return refuseOfficeLogin(res);
+  return clientCallerFrom(claims, res);
+}
+
+// A staff login at a customer URL is not an error on their part and must not read like an outage:
+// they simply have no customer identity to serve a building list for.
+function refuseOfficeLogin(res) {
+  res.status(403).json({ error: 'This area is for customer logins.', code: 'office-login' });
+  return null;
+}
+
+// The customer half's decision, from claims already known to be a client login's: its
+// public.client_users row, or the code that refuses it — no claimed row, no such row, or a row
+// with no access (Disabled, or the office preview's stand-in, whose status holds none). THROWS
+// when the row can't be read; each caller fails closed.
+async function clientUserOf(claims) {
+  if (!claims.clientUserId) return { row: null, code: 'not-a-client-user' };
+  const row = await getClientUserById(claims.clientUserId);
+  if (!row) return { row: null, code: 'not-a-client-user' };
+  if (!clientUserHasAccess(row.status)) return { row: null, code: 'account-disabled' };
+  return { row, code: null };
+}
+
+// The customer half of the gate, from claims already known to be a client login's.
+async function clientCallerFrom(claims, res) {
+  let r;
+  try {
+    r = await clientUserOf(claims);
+  } catch (e) {
+    // A gate that cannot read its inputs fails CLOSED. Never "assume active".
+    console.error(`[authz] client user unreadable: ${e?.message || e}`);
+    res.status(503).json({ error: 'Your account could not be checked just now. Try again.', code: 'client-user-unreadable' });
+    return null;
+  }
+  if (r.code === 'account-disabled') {
+    res.status(403).json({ error: 'This account has been disabled.', code: 'account-disabled' });
+    return null;
+  }
+  if (r.code) {
+    res.status(403).json({ error: 'This login is not linked to a customer contact.', code: 'not-a-client-user' });
+    return null;
+  }
+  return { user: claims.user, email: claims.email, clientUser: r.row };
+}
+
+// ── WOULD THIS LOGIN BE LET IN? — asked with no session ──────────────────────
+// Every gate above decides a SESSION. The sign-in page's "Forgot password?" (api/public/auth,
+// EP-413) has none, because the person can't sign in, and must still email a reset only to a
+// login that could use it. So it asks the same question of a GoTrue user found by address,
+// through the same code: claimsOf (claims.js, the reading getClaims uses), then
+// authorityFromClaims for a staff login (the committed roster's STATUS: a Disabled member, or a
+// claim-less login no row carries, holds nothing) or clientUserOf for a customer's (no row, a
+// Disabled one, or the preview stand-in: no access).
+// Stricter than a session in one way: a roster or customer row that can't be read REFUSES here.
+// The roster is read first, strictly, in this call's own request cache, so authorityFromClaims
+// decides from that same read; a session's claimed login is decided without the roster instead,
+// but a public caller is never let through on "couldn't check". The login's GoTrue BAN is the
+// caller's to check (users.js isLoginBanned); this asks only what our own records say.
+//   { admitted: true }  |  { admitted: false, reason }   (a refusal code, or 'unreadable')
+// Never throws.
+export async function admissionOf(user) {
+  if (!user || typeof user !== 'object') return { admitted: false, reason: 'no-login' };
+  const claims = claimsOf(user);
+  try {
+    return await withRequestCache(async () => {
+      if (claims.isClient) {
+        const c = await clientUserOf(claims);
+        return c.code ? { admitted: false, reason: c.code } : { admitted: true };
+      }
+      await readRosterUsers();
+      const r = await authorityFromClaims(claims);
+      return r.authority ? { admitted: true } : { admitted: false, reason: r.refusal || 'no-authority' };
+    });
+  } catch (e) {
+    console.error(`[authz] admission unreadable; refused: ${e?.message || e}`);
+    return { admitted: false, reason: 'unreadable' };
+  }
+}
+
+// ── THE HUB ROUTE'S GATE: requireClientUser, plus the office's PREVIEW (the client hub redesign,
+// plan 2026-10-08 §3.7 "Preview as customer", decision D2) ─────────────────────────────────────
+// /api/hub/* runs this instead of requireClientUser. It adds exactly ONE way in for staff and
+// changes nothing for a customer:
+//   · A CUSTOMER login takes requireClientUser's path, UNCHANGED, and the preview header is
+//     IGNORED for it: its scope is still resolved from its own claim, so naming another building in
+//     the header widens nothing (test-hub-preview.mjs §5).
+//   · A STAFF login is admitted ONLY with the preview header (src/lib/hubPreview.js
+//     HUB_PREVIEW_HEADER) AND `hub.users.view`, read CLAIMS-FIRST from the committed matrix +
+//     overrides, exactly as requirePermission reads a key. A disabled member is refused as
+//     everywhere (403 account-disabled / not-on-team). Crew are refused by ROLE whatever they are
+//     granted — the same reasoning as the activity log's floor: can() puts no key out of a per-user
+//     grant's reach, and a cleaner must never read a building's customer hub. A matrix that can't
+//     be read refuses (fail closed). No header: 403 `office-login`, the old answer.
+//   · What a preview may then do is the ROUTE's (api/hub/[...path].js): its scope is exactly the
+//     named building and only while that building is in the live customer book, and EVERY write is
+//     refused (403 preview-read-only) before a branch is looked up.
+// Returns { user, email, clientUser, preview } — `preview` null for a customer; for staff
+// { buildingId, authority } with `clientUser` null (there is no customer behind a preview) — or
+// null with the response written. Caller: `if (!c) return;`
+export async function requireHubCaller(req, res) {
+  const claims = await getClaims(req);
+  if (!claims) {
+    res.status(401).json({ error: 'Authentication required' });
+    return null;
+  }
+  if (claims.isClient) {
+    const c = await clientCallerFrom(claims, res);
+    return c ? { ...c, preview: null } : null;
+  }
+  const raw = req.headers?.[HUB_PREVIEW_HEADER];
+  if (raw === undefined || raw === null || raw === '') return refuseOfficeLogin(res);
+  const r = await authorityFromClaims(claims);
+  if (!r.authority) return refuseAuthority(res, r);
+  const a = r.authority;
+  const forbidden = () => {
+    res.status(403).json({ error: HUB_PREVIEW_SENTENCES[HUB_PREVIEW_FORBIDDEN], code: HUB_PREVIEW_FORBIDDEN });
+    return null;
+  };
+  if (!a.role || !OFFICE_ROLES.includes(a.role)) return forbidden();
+  let holds;
+  try {
+    holds = (await permissionChecker(a))(HUB_PREVIEW_PERMISSION);
+  } catch {
+    // A gate that cannot read its inputs fails CLOSED, never open.
+    res.status(503).json({ error: HUB_PREVIEW_SENTENCES[HUB_PREVIEW_CHECK_FAILED], code: HUB_PREVIEW_CHECK_FAILED });
+    return null;
+  }
+  if (!holds) return forbidden();
+  // A header that names no building is no building: the route's scope check answers 404.
+  return { user: claims.user, email: claims.email, clientUser: null, preview: { buildingId: hubPreviewBuildingIdOf(raw) || '', authority: a } };
 }
 
 // Returns { user, role, orgUserId } when the caller holds one of `roles`;
@@ -261,12 +469,28 @@ export function canCommitted(user, permKey, { permissions, overrides }) {
 }
 
 // One read of the COMMITTED matrix + overrides, then any number of can() checks for this
-// caller: role from the claim-first authority, overrides keyed by its `u_*` id. THROWS when
-// the slices can't be read; every caller must fail closed on that, never open.
+// caller: role from the claim-first authority, overrides keyed by its `u_*` id, and the matrix
+// COLUMN of their manager level (CS-858). THROWS when the slices can't be read; every caller must
+// fail closed on that, never open. A level that can't be known (null) fails closed too: the key
+// must hold at BOTH manager levels (lib/roles levelVariants), so it is never wider than either.
 export async function permissionChecker(a) {
   const slices = await readAuthzSlices();
-  const me = { id: a?.orgUserId, role: a?.role };
-  return (permKey) => !!a && canCommitted(me, permKey, slices);
+  const me = { id: a?.orgUserId, role: a?.role, managerLevel: await callerLevel(a) };
+  const as = levelVariants(me);
+  return (permKey) => !!a && as.every((u) => canCommitted(u, permKey, slices));
+}
+
+// The caller's manager level: the one resolveAuthority read with them — or, for an authority built
+// without one, read off the committed roster now (cached per request, so a route that already
+// resolved the caller pays nothing); null when that read fails. Only a manager has a level.
+async function callerLevel(a) {
+  if (!a || a.role !== 'manager') return undefined;
+  if (Object.prototype.hasOwnProperty.call(a, 'managerLevel')) return a.managerLevel;
+  try {
+    return managerLevelIn(await readRosterUsers(), { id: a.orgUserId, role: a.role });
+  } catch {
+    return null;
+  }
 }
 
 // Authorize a route by PERMISSION KEY, running the SAME can() the client uses
@@ -288,7 +512,7 @@ export async function permissionChecker(a) {
 // never, whatever they are granted), a key that confers job editing and no power to
 // grant, through can() and NEVER this helper: a 403 on the jobs path wedges tabs, so it
 // sanitizes instead (see jobsGuard).
-// This is for FEATURE surfaces (marketing, quotes, qc, reviews, time,
+// This is for FEATURE surfaces (marketing, quotes, qc, time,
 // variance, media) whose client already gates on the same permission key. A gate that
 // predates the matrix and must not tighten uses requireRoleOrPermission below instead.
 //
@@ -298,6 +522,26 @@ export async function requirePermission(req, res, permKey) {
   const a = await requireAuthority(req, res);
   if (!a) return null; // 401 already written
   return (await holdsOrRefuse(a, res, permKey)) ? a : null;
+}
+
+// A route reached by TWO different screens with two different capabilities: pass both keys
+// and holding EITHER is enough. /api/email/send is the case — the Settings test card gates on
+// `integrations.manage`, inviting a member on `settings.team.edit`, and before 2026-09-29 the
+// route asked for neither, which is CS-015 (any crew login relayed company mail). Named
+// requireXxx(req, res, …) so the endpoint inventory can SEE the gate by shape rather than
+// reporting the weaker requireAuthority underneath it (endpoint-lint.mjs).
+// Same contract as requirePermission. Caller: `if (!g) return;`
+export async function requireAnyPermission(req, res, permKeys) {
+  const a = await requireAuthority(req, res);
+  if (!a) return null; // 401 already written
+  const keys = Array.isArray(permKeys) ? permKeys.filter(Boolean) : [];
+  for (const key of keys) {
+    // holdsPermission FAILS CLOSED: an unreadable matrix answers no for every key, so an
+    // outage narrows this gate rather than opening it.
+    if (await holdsPermission(a, key)) return a;
+  }
+  res.status(403).json({ error: 'Insufficient permissions' });
+  return null;
 }
 
 // For a gate that keyed on a role list before the matrix existed and now follows it too:
@@ -484,23 +728,19 @@ function jobStartBounds(w, now) {
 
 // Server-side mirror of the client's crew visibility (selectVisibleClientIdsFor):
 // the client ids + site ids a crew user is ASSIGNED to — via account/site Standing
-// crew (client/site.standingCrewIds) or jobs they're on (clientId, or the job's
-// site's client when null). Used to scope crew reads/writes server-side; the open
-// org_state RLS means the client-side filter is NOT a boundary, so anything a crew
-// user could exfiltrate/mutate through an API route must be re-scoped here.
-// `crewJobs` is the user's jobs, fetched from public.jobs by the caller (getCrewJobs) —
-// state.jobs is empty post-B1, so the job-derived scope must be passed in. Standing-crew
-// scope still comes from state (clients/sites).
+// crew (client/site.standingCrewIds) or the cleans they're on. Used to scope crew
+// reads/writes server-side; the open org_state RLS means the client-side filter is NOT
+// a boundary, so anything a crew user could exfiltrate/mutate through an API route must
+// be re-scoped here. `crewJobs` is the user's jobs, fetched from public.jobs by the caller
+// (getCrewJobs) — state.jobs is empty post-B1, so the job-derived scope must be passed in.
+// The JOB half is the shared rule (src/lib/crewScope.js crewScopeFromJobs, CS-005) the screens
+// and the QC routes read too; standing crew still comes from state (clients/sites).
 export function crewAssignedScope(state, userId, crewJobs = []) {
   if (!userId) return { clientIds: [], siteIds: [] };
   const clients = Array.isArray(state?.clients) ? state.clients : [];
   const sites = Array.isArray(state?.sites) ? state.sites : [];
-  const jobs = Array.isArray(crewJobs) ? crewJobs : [];
-  const clientIds = new Set();
-  const siteIds = new Set();
-  const siteClient = new Map();
+  const { clientIds, siteIds } = crewScopeFromJobs({ jobs: crewJobs, sites, userId });
   for (const si of sites) {
-    siteClient.set(si.id, si.clientId || null);
     if (Array.isArray(si.standingCrewIds) && si.standingCrewIds.includes(userId)) {
       siteIds.add(si.id);
       if (si.clientId) clientIds.add(si.clientId);
@@ -508,12 +748,6 @@ export function crewAssignedScope(state, userId, crewJobs = []) {
   }
   for (const c of clients) {
     if (Array.isArray(c.standingCrewIds) && c.standingCrewIds.includes(userId)) clientIds.add(c.id);
-  }
-  for (const j of jobs) {
-    if (!Array.isArray(j.crewIds) || !j.crewIds.includes(userId)) continue;
-    const cid = j.clientId || (j.siteId ? siteClient.get(j.siteId) : null);
-    if (cid) clientIds.add(cid);
-    if (j.siteId) siteIds.add(j.siteId);
   }
   // Every site of an assigned client is an assigned site too.
   for (const si of sites) {

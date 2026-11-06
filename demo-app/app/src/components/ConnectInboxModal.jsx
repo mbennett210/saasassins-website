@@ -1,10 +1,10 @@
 // Connect a per-user Gmail mailbox so the user can send and receive email
 // through Messaging from their own address.
 //
-// Gmail-only for now — Microsoft 365 and SMTP/IMAP are planned but not yet
-// shipped (the backend handlers don't exist). When those land we'll re-add
-// provider tiles and the SMTP form here. Until then this modal is a single
-// click: Connect with Google.
+// GMAIL ONLY, as a decision rather than a gap (CS-220, 2026-09-29). The Microsoft and SMTP
+// client adapters were deleted: their endpoints never existed, and connectSmtp() would have
+// posted a mailbox password to a 404. Clean Space is a Google Workspace shop and the app's
+// own mail goes through Google too, so this modal is one click: Connect with Google.
 //
 // Multi-Workspace (v47): the shared WorkspacePicker shows a "which workspace?"
 // selector when 2+ Workspaces are registered (invisible with one), and warns if

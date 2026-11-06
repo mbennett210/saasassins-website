@@ -21,7 +21,14 @@ const FONTS = [
 
 // `width` is now a MAX — the pad shrinks to fit its container so it never overflows
 // a narrow modal on mobile (was a hard 380 that spilled ~130px past a 320px sheet).
-const SignatureCapture = forwardRef(function SignatureCapture({ width = 380, height = 130 }, ref) {
+// `words` (optional) replaces the pad's own English: a screen on the translation catalog
+// passes its reader's words (the HR warning a cleaner signs); the quote's signing page, which
+// a CUSTOMER reads, passes nothing and keeps English (LANG-8).
+const ENGLISH_WORDS = {
+  draw: 'Draw', type: 'Type', clear: 'Clear', drawHint: 'Draw your signature above', signed: 'Signed', typePlaceholder: 'Type your full name',
+};
+const SignatureCapture = forwardRef(function SignatureCapture({ width = 380, height = 130, words: given }, ref) {
+  const words = { ...ENGLISH_WORDS, ...(given || {}) };
   const wrapRef = useRef(null);        // measured to fit the container
   const canvasRef = useRef(null);      // draw-mode signature_pad canvas
   const padRef = useRef(null);
@@ -97,14 +104,14 @@ const SignatureCapture = forwardRef(function SignatureCapture({ width = 380, hei
 
   return (
     <div ref={wrapRef} style={{ display: 'block', width: '100%', maxWidth: width }}>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>{tab('draw', 'Draw')}{tab('type', 'Type')}</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>{tab('draw', words.draw)}{tab('type', words.type)}</div>
 
       {mode === 'draw' ? (
         <>
           <canvas ref={canvasRef} style={{ width: w, height, border: '1px solid var(--card-border)', borderRadius: 8, background: 'var(--card-bg)', touchAction: 'none', display: 'block' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-            <span className="text-xs text-muted">{empty ? 'Draw your signature above' : 'Signed'}</span>
-            <button type="button" className="btn btn-link btn-sm" onClick={() => { padRef.current?.clear(); setEmpty(true); }}>Clear</button>
+            <span className="text-xs text-muted">{empty ? words.drawHint : words.signed}</span>
+            <button type="button" className="btn btn-link btn-sm" onClick={() => { padRef.current?.clear(); setEmpty(true); }}>{words.clear}</button>
           </div>
         </>
       ) : (
@@ -112,7 +119,7 @@ const SignatureCapture = forwardRef(function SignatureCapture({ width = 380, hei
           <input
             value={typedName}
             onChange={(e) => setTypedName(e.target.value)}
-            placeholder="Type your full name"
+            placeholder={words.typePlaceholder}
             style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--card-border)', borderRadius: 8, marginBottom: 6, font: 'inherit', boxSizing: 'border-box' }}
           />
           <canvas ref={typeCanvasRef} style={{ width: w, height, border: '1px solid var(--card-border)', borderRadius: 8, background: 'var(--card-bg)', display: 'block' }} />

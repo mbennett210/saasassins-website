@@ -8,7 +8,11 @@
 
 import webpush from 'web-push';
 import { getSupabase } from '../supabase.js';
+import { selectAll, exactCount } from '../pagedSelect.js';
 import { IDENTITY } from '../../../src/brand/identity.generated.js';
+// The push-only reminders and digests write no bell row (so never pass through orgState.js):
+// their callers render each banner for its recipient, with every catalog loaded (CS-193).
+import '../i18n.js';
 
 // Pin to the same org the rest of the backend uses (orgState.js / sync.js).
 const ORG_ID = process.env.CLEANSPACE_ORG_ID || '00000000-0000-0000-0000-000000000001';
@@ -95,13 +99,28 @@ export function maskDevices(rows) {
 // (api/push/status) is role-gated to owner/admin/manager. One query, aggregated in
 // JS. This is the AUTHORITATIVE "is mobile push actually on for this person" signal
 // (an actual subscribed device), distinct from the mobilePushEnabled intent pref.
-export async function subscriptionCountsByUser() {
-  const { data, error } = await getSupabase().from('push_subscriptions')
-    .select('user_id, last_seen_at')
-    .eq('organization_id', ORG_ID);
-  if (error) throw new Error(`push status read failed: ${error.message}`);
+// Read COMPLETELY (CS-727): one row per subscribed device, so at 1,500 cleaners the table
+// passes PostgREST's 1,000-row cap, and the old single read left a third of the team showing
+// "no phone". Count-first ordered pages (pagedSelect selectAll); an answer short of the count
+// is an IncompleteReadError (the route's 503), never a partial roll-up.
+export async function subscriptionCountsByUser(db = getSupabase()) {
+  const mine = (q) => q.eq('organization_id', ORG_ID);
+  const rows = await selectAll({
+    count: async () => {
+      const { count, error } = await mine(db.from('push_subscriptions').select('id', { count: 'exact', head: true }));
+      if (error) throw new Error(`push status read failed: ${error.message}`);
+      return exactCount(count);
+    },
+    page: async (from, to) => {
+      const { data, error } = await mine(db.from('push_subscriptions').select('id, user_id, last_seen_at'))
+        .order('id', { ascending: true })
+        .range(from, to);
+      if (error) throw new Error(`push status read failed: ${error.message}`);
+      return data || [];
+    },
+  });
   const byUser = {};
-  for (const r of data || []) {
+  for (const r of rows) {
     if (!r.user_id) continue;
     const cur = byUser[r.user_id] || { deviceCount: 0, lastSeenAt: null };
     cur.deviceCount += 1;
@@ -112,8 +131,12 @@ export async function subscriptionCountsByUser() {
 }
 
 // Send a payload to an explicit set of subscription rows. Expired endpoints
-// (404/410) are pruned. Returns { delivered, failed, expired }.
-export async function sendToSubscriptions(subs, payload) {
+// (404/410) are pruned from the table the rows came from (`table`: the staff's
+// push_subscriptions, or the customer hub's client_push_subscriptions —
+// api/_lib/clientHub/push.js). Returns { delivered, failed, expired }.
+export const PUSH_TABLES = Object.freeze(['push_subscriptions', 'client_push_subscriptions']);
+export async function sendToSubscriptions(subs, payload, { table = 'push_subscriptions' } = {}) {
+  if (!PUSH_TABLES.includes(table)) throw new Error(`unknown push table: ${table}`);
   if (!ensureVapid()) return { delivered: 0, failed: 0, expired: 0, skipped: 'vapid_unconfigured' };
   const body = JSON.stringify(payload || {});
   let delivered = 0;
@@ -133,7 +156,7 @@ export async function sendToSubscriptions(subs, payload) {
   }));
   if (dead.length) {
     try {
-      await getSupabase().from('push_subscriptions').delete()
+      await getSupabase().from(table).delete()
         .eq('organization_id', ORG_ID).in('endpoint', dead);
     } catch { /* best-effort prune; the next 410 prunes it anyway */ }
   }

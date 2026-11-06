@@ -1,206 +1,162 @@
-// CSV parsing + column-to-field mapping.
-// Handles quoted fields, escaped quotes (RFC-4180), CRLF/LF line endings,
-// and missing trailing newline. No external deps.
+// Reading and writing spreadsheet files (CSV) — and the inbound lead webhook's person engine.
+//
+// THREE CALLERS, TWO ENGINES (2026-10-03; the supply catalog import 2026-10-27):
+//   · Customers → Import customers reads a file through decodeCsvBytes + parseCsv below and
+//     plans it in lib/customerImport.js, where one row is one BUILDING (a customer and its one
+//     location). Its problems file is written by toCsvText.
+//   · Supplies → Catalog → Import items (task 257) reads a CSV the same way, and an Excel
+//     workbook's cells (lib/xlsx.js) through gridTable, so both become the same table; it plans
+//     them in lib/supplyCatalogImport.js and writes its template and problems file too.
+//   · The inbound lead webhook (api/_lib/leads/upsert.js) feeds buildImportPlan one synthetic
+//     PERSON row. The person upsert at the bottom of this file is ITS engine: match by
+//     Contact ID → email → phone, fill blanks, tie a company by name or email domain.
+// The person engine used to BE the Customers import. When the import became customer-first,
+// the parts only that screen used (its location columns, the contacts sample file, the column
+// guesser) left with it (THE LAW II.5); the webhook's behaviour is unchanged.
+// Node-safe (the server and the tests import it). Its one import is the repo's CSV cell
+// escaper, payroll.js `csvCell` (pure).
 
-export function parseCsv(text) {
-  const rows = [];
+import { csvCell } from './payroll.js';
+
+// ── reading a file ──────────────────────────────────────────────────────────────────────────
+// Real spreadsheet exports, not hand-written CSV:
+//   · Excel's "CSV UTF-8" starts with a byte-order mark; its plain "CSV" is Windows-1252;
+//     "Unicode text" is UTF-16 with tabs (decodeCsvBytes);
+//   · where the comma is a decimal mark (most of Europe and Latin America) Excel separates with
+//     semicolons, and sometimes writes a `sep=;` first line to say so;
+//   · Windows line endings (CRLF), and quoted fields holding commas and line breaks;
+//   · blank rows and blank columns trailing a sheet, and two columns with the same header.
+
+const DELIMITERS = [',', ';', '\t'];
+
+// The separator a file uses, counted on its first line outside quotes. Ties go to the comma.
+export function detectDelimiter(text) {
+  const s = String(text ?? '');
+  const counts = new Map(DELIMITERS.map((d) => [d, 0]));
+  let inQuotes = false;
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (ch === '"') { inQuotes = !inQuotes; continue; }
+    if (!inQuotes && (ch === '\n' || ch === '\r')) {
+      if ([...counts.values()].some((n) => n > 0)) break; // the first line that has any separator
+      continue;
+    }
+    if (!inQuotes && counts.has(ch)) counts.set(ch, counts.get(ch) + 1);
+  }
+  let best = ',';
+  for (const d of DELIMITERS) if (counts.get(d) > counts.get(best)) best = d;
+  return best;
+}
+
+// Text → { headers, rows, delimiter, renamed, dropped, sheetRows } (gridTable's table).
+//   headers  the first row, trimmed; a repeated header gets " (2)", " (3)"… so each column can
+//            be told apart (`renamed` lists them: [{ index, from, to }])
+//   rows     every later row with any value in it, trimmed, padded to the header's width
+//   dropped  how many empty columns (no header, no value in any row) were left out
+export function parseCsv(text, { delimiter } = {}) {
+  let s = String(text ?? '');
+  if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+  let sep = delimiter;
+  // Excel's `sep=;` line names the separator and is not part of the data.
+  const directive = /^sep=(.)[ \t]*(\r\n|\n|\r)/i.exec(s);
+  if (directive) { sep = sep || directive[1]; s = s.slice(directive[0].length); }
+  if (!sep) sep = detectDelimiter(s);
+
+  const all = [];
   let row = [];
   let field = '';
   let inQuotes = false;
-  let i = 0;
-  const len = text.length;
-
-  while (i < len) {
-    const ch = text[i];
-
+  const endField = () => { row.push(field); field = ''; };
+  const endRow = () => { endField(); all.push(row); row = []; };
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
     if (inQuotes) {
       if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i += 2;
-          continue;
-        }
-        inQuotes = false;
-        i++;
-        continue;
-      }
-      field += ch;
-      i++;
+        if (s[i + 1] === '"') { field += '"'; i += 1; } else inQuotes = false;
+      } else if (ch === '\r') {
+        field += '\n'; // a line break inside a field is one \n, whatever the file used
+        if (s[i + 1] === '\n') i += 1;
+      } else field += ch;
       continue;
     }
-
-    if (ch === '"') {
-      inQuotes = true;
-      i++;
-      continue;
-    }
-    if (ch === ',') {
-      row.push(field);
-      field = '';
-      i++;
-      continue;
-    }
-    if (ch === '\r') {
-      // swallow — handled by \n
-      i++;
-      continue;
-    }
-    if (ch === '\n') {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-      i++;
-      continue;
-    }
+    if (ch === '"') { inQuotes = true; continue; }
+    if (ch === sep) { endField(); continue; }
+    if (ch === '\r') { if (s[i + 1] === '\n') i += 1; endRow(); continue; }
+    if (ch === '\n') { endRow(); continue; }
     field += ch;
-    i++;
   }
-
-  // flush last field/row if present
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-
-  // strip empty trailing rows (common with trailing newlines)
-  while (rows.length && rows[rows.length - 1].every((c) => c.trim() === '')) {
-    rows.pop();
-  }
-
-  if (rows.length === 0) return { headers: [], rows: [] };
-  const [headers, ...dataRows] = rows;
-  return {
-    headers: headers.map((h) => h.trim()),
-    rows: dataRows.map((r) => r.map((c) => c.trim())),
-  };
+  if (field.length > 0 || row.length > 0) endRow();
+  return { ...gridTable(all), delimiter: sep };
 }
 
-// Heuristics for matching CSV header names to entity fields.
-// Returns the entity-field key that best matches a header, or null.
-export function guessField(header, fieldDefs) {
-  const norm = header.toLowerCase().replace(/[^a-z0-9]/g, '');
-  for (const def of fieldDefs) {
-    for (const alias of def.aliases) {
-      const a = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (norm === a) return def.key;
-    }
+// Rows of cells (a CSV's records, or a sheet's rows by number) → the table an import reads:
+// { headers, rows, renamed, dropped, sheetRows, sheetCols } — the first row with anything in it is
+// the header; `sheetRows` is each data row's index in `grid` (its "Row N" is that + 1) and
+// `sheetCols` each column's (empty columns are left out). `keepRow(index)` keeps a
+// row that has no text (a sheet row holding only a picture).
+export function gridTable(grid, { keepRow = () => false } = {}) {
+  const all = (grid || []).map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? '')) : []));
+  // Rows with nothing in them (Excel's `,,,` rows, a blank line) are not data.
+  const filledAt = [];
+  all.forEach((r, i) => { if (r.some((c) => c.trim() !== '') || (filledAt.length > 0 && keepRow(i))) filledAt.push(i); });
+  if (filledAt.length === 0) return { headers: [], rows: [], renamed: [], dropped: 0, sheetRows: [], sheetCols: [] };
+  const filled = filledAt.map((i) => all[i]);
+  const [head, ...body] = filled;
+  const width = Math.max(head.length, ...body.map((r) => r.length));
+  // A leading apostrophe before = + - @ is a CSV writer's formula guard (ours on the problems
+  // file, payroll.js csvCell), not part of the value.
+  const cell = (r, i) => (r[i] ?? '').trim().replace(/^'(?=[=+\-@])/, '');
+  // A column with no header and no value anywhere is a trailing artefact, not a field.
+  const keep = [];
+  for (let i = 0; i < width; i += 1) {
+    if (cell(head, i) !== '' || body.some((r) => cell(r, i) !== '')) keep.push(i);
   }
-  // partial match — header contains alias or vice versa
-  for (const def of fieldDefs) {
-    for (const alias of def.aliases) {
-      const a = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (a.length >= 4 && (norm.includes(a) || a.includes(norm))) return def.key;
-    }
+  const seen = new Map();
+  const renamed = [];
+  const headers = keep.map((i, at) => {
+    const h = cell(head, i);
+    if (!h) return h;
+    const k = h.toLowerCase();
+    const n = (seen.get(k) || 0) + 1;
+    seen.set(k, n);
+    if (n === 1) return h;
+    const to = `${h} (${n})`;
+    renamed.push({ index: at, from: h, to });
+    return to;
+  });
+  const rows = body.map((r) => keep.map((i) => cell(r, i)));
+  return { headers, rows, renamed, dropped: width - keep.length, sheetRows: filledAt.slice(1), sheetCols: keep };
+}
+
+// Bytes → { text, encoding }. A byte-order mark decides; else the bytes are UTF-8 when they
+// are VALID UTF-8, and Windows-1252 otherwise — Excel's plain "CSV" save, which writes "José"
+// as the single byte E9 (decoded as UTF-8 it reads "Jos�"). The encoding is reported so
+// the screen can say the file was read that way.
+export function decodeCsvBytes(input) {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input || []);
+  const dec = (label, from = 0, fatal = false) => new TextDecoder(label, { fatal }).decode(bytes.subarray(from));
+  if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) return { text: dec('utf-8', 3), encoding: 'utf-8' };
+  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return { text: dec('utf-16le', 2), encoding: 'utf-16le' };
+  if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+    try { return { text: dec('utf-16be', 2), encoding: 'utf-16be' }; } catch { /* no UTF-16BE decoder: fall through */ }
   }
-  return null;
+  try { return { text: dec('utf-8', 0, true), encoding: 'utf-8' }; } catch { /* not valid UTF-8 */ }
+  try { return { text: dec('windows-1252'), encoding: 'windows-1252' }; } catch { /* no legacy decoder */ }
+  return { text: dec('utf-8'), encoding: 'utf-8' };
 }
 
-// Build a row of mapped values keyed by entity field.
-// `mapping` is `{ csvColIndex: entityFieldKey | null }`.
-export function applyMapping(row, headers, mapping) {
-  const out = {};
-  for (const idx in mapping) {
-    const fieldKey = mapping[idx];
-    if (!fieldKey) continue;
-    const val = (row[idx] ?? '').trim();
-    if (val) out[fieldKey] = val;
-  }
-  return out;
+// ── writing a file (the import's template and problems file) ───────────────────────────────
+// RFC 4180 with Excel's habits: a byte-order mark so Excel reads it as UTF-8, and CRLF line
+// ends. Every cell goes through the repo's one escaper, payroll.js `csvCell`: quoted, and
+// 🔴 a text cell starting = + - @ TAB CR LF is written as text (a leading apostrophe). The
+// problems file echoes back what someone typed into a spreadsheet, and Excel runs such a cell
+// as a formula ("+1+cmd|…" too: a sign and a digit is no proof of a number). parseCsv reads
+// the apostrophe back off, so a fixed problems file imports clean.
+export function toCsvText(rows, { bom = true } = {}) {
+  return `${bom ? '﻿' : ''}${(rows || []).map((r) => (r || []).map(csvCell).join(',')).join('\r\n')}\r\n`;
 }
 
-export const CONTACT_FIELDS = [
-  { key: 'firstName', label: 'First Name', aliases: ['first', 'firstname', 'first name', 'given name', 'fname'] },
-  { key: 'lastName',  label: 'Last Name',  aliases: ['last', 'lastname', 'last name', 'surname', 'family name', 'lname'] },
-  { key: 'email',     label: 'Email',      aliases: ['email', 'email address', 'e-mail', 'mail'] },
-  { key: 'phone',     label: 'Phone',      aliases: ['phone', 'phone number', 'mobile', 'cell', 'tel', 'telephone'] },
-  // Service-location address — the CUSTOMER'S one location, never the person (one
-  // location per customer). Routed to the company's site on import (see
-  // locationFromMapped); kept off the contact payload.
-  { key: 'locStreet', label: 'Street',     aliases: ['street', 'address', 'street address', 'service address', 'mailing address', 'addr', 'address line 1', 'address1'] },
-  { key: 'locCity',   label: 'City',       aliases: ['city', 'town'] },
-  { key: 'locState',  label: 'State',      aliases: ['state', 'province', 'region'] },
-  { key: 'locZip',    label: 'ZIP',        aliases: ['zip', 'zipcode', 'postal', 'postal code', 'postcode'] },
-  { key: 'title',     label: 'Title',      aliases: ['title', 'job title', 'position', 'role'] },
-  { key: 'company',   label: 'Company',    aliases: ['company', 'company name', 'account', 'organization', 'org'] },
-  { key: 'type',      label: 'Type',    aliases: ['type', 'customer or vendor', 'lifecycle', 'stage', 'status', 'kind'] },
-  { key: 'notes',     label: 'Notes',      aliases: ['notes', 'note', 'description', 'comment', 'comments'] },
-  { key: 'id',        label: 'Contact ID', aliases: ['id', 'contact id', 'contactid', 'record id', 'recordid', 'ghl id'] },
-];
-
-// The service-location columns (a customer's single location, never the person).
-export const LOCATION_FIELD_KEYS = ['locStreet', 'locCity', 'locState', 'locZip'];
-
-// Pull the structured service address out of a mapped row. Returns null when the
-// row carries no location column, so callers can skip the location entirely.
-export function locationFromMapped(mapped) {
-  const street = (mapped.locStreet || '').trim();
-  const city = (mapped.locCity || '').trim();
-  const state = (mapped.locState || '').trim();
-  const zip = (mapped.locZip || '').trim();
-  if (!street && !city && !state && !zip) return null;
-  return { street, city, state, zip };
-}
-
-// A row is valid if at least one of these fields is non-empty.
-// Mirrors GHL: people can be leads with just a phone, or just a name + company —
-// or just a Contact ID when the file's purpose is to update existing records.
-export const CONTACT_IDENTIFIER_KEYS = ['email', 'phone', 'firstName', 'lastName', 'company', 'id'];
-
-// Normalize mapped values: lowercase the email, and coerce the company Type into
-// Customer / Vendor. Only 'vendor' is special; legacy lifecycle values (lead /
-// prospect / client) all describe a customer, so anything not 'vendor' becomes
-// 'customer'. (Status Lead/Active is derived from real work, never imported.)
-export function normalizeContact(raw) {
-  const out = { ...raw };
-  if (out.email) out.email = out.email.toLowerCase().trim();
-  if (out.type) {
-    out.type = out.type.toLowerCase().trim() === 'vendor' ? 'vendor' : 'customer';
-  }
-  return out;
-}
-
-// Validate a row. Returns { valid: bool, reason?: string }.
-// If email is provided, its format must be valid. Otherwise any one of
-// CONTACT_IDENTIFIER_KEYS being non-empty is enough to accept the row.
-export function validateContactRow(mapped) {
-  if (mapped.email) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mapped.email)) return { valid: false, reason: 'Invalid email' };
-    return { valid: true };
-  }
-  const hasAny = CONTACT_IDENTIFIER_KEYS.some((k) => mapped[k] && String(mapped[k]).trim());
-  if (!hasAny) return { valid: false, reason: 'Need at least one of email, phone, name, or company' };
-  return { valid: true };
-}
-
-// Build a downloadable sample CSV that documents every supported column
-// and demonstrates the variety of identifier combinations the importer accepts.
-export function buildSampleContactCsv() {
-  // Samples create NEW contacts, so omit the internal Contact ID column. Headers use
-  // the human labels (Street/City/State/ZIP = the customer's service location);
-  // guessField maps them back on re-import.
-  const headers = CONTACT_FIELDS.filter((f) => f.key !== 'id').map((f) => f.label);
-  const rows = [
-    ['Pat', 'Ramirez', 'pat@evergreenmgmt.com', '555-0142', '500 SE 3rd Ave', 'Fort Lauderdale', 'FL', '33301', 'Property Manager', 'Evergreen Management', 'customer', 'Long-time customer; prefers Tuesday visits'],
-    ['Morgan', 'Choi', 'morgan@lakesidehoa.org', '', '2000 E Las Olas Blvd', 'Fort Lauderdale', 'FL', '33301', 'Board President', 'Lakeside HOA', 'customer', ''],
-    ['Sasha', 'Lin', '', '555-0188', '1 N Federal Hwy', 'Boca Raton', 'FL', '33432', 'Operations Lead', 'Mt Baker Hospitality', 'customer', 'Phone-only, no email'],
-    ['Alex', 'Rivera', 'alex@sunshinesupply.com', '555-0199', '4000 NW 36th St', 'Miami', 'FL', '33142', 'Account Rep', 'Sunshine Supply Co', 'vendor', 'Cleaning-supplies vendor (kept out of sales views)'],
-  ];
-  const all = [headers, ...rows];
-  return all
-    .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-}
-
-// ── Upsert matching (GHL-style) ──────────────────────────────────────────────
-// Leading CRMs (GoHighLevel, HubSpot, Salesforce) treat CSV import as an UPSERT:
-// match each row to an existing record on a stable key, UPDATE the match (enrich
-// without clobbering), and CREATE only when nothing matches. We mirror that:
-//   • People match on Contact ID -> email -> phone (first hit wins).
-//   • Companies link to an existing account by normalized name or (non-free)
-//     email domain — else a new account is created.
-//   • Enrichment fills BLANK fields only; populated values are never overwritten,
-//     and the match key (email) is never reassigned.
+// ── shared normalizers (Add customer, Add contact and the lead webhook dedupe with these) ───
 
 // Free/consumer email providers — never tie two contacts to one account by these.
 export const FREE_EMAIL_DOMAINS = new Set([
@@ -235,6 +191,52 @@ export function emailDomain(email) {
   return m ? m[1] : '';
 }
 
+// ── the lead webhook's person upsert (api/_lib/leads/upsert.js) ────────────────────────────
+// Leading CRMs (GoHighLevel, HubSpot, Salesforce) treat an inbound lead as an UPSERT: match the
+// person on a stable key, UPDATE the match (enrich without clobbering), CREATE only when nothing
+// matches. We mirror that:
+//   • People match on Contact ID -> email -> phone (first hit wins).
+//   • Companies link to an existing account by normalized name or (non-free)
+//     email domain — else a new account is created.
+//   • Enrichment fills BLANK fields only; populated values are never overwritten,
+//     and the match key (email) is never reassigned.
+
+// A row of mapped values keyed by field. `mapping` is `{ columnIndex: fieldKey | null }`.
+export function applyMapping(row, headers, mapping) {
+  const out = {};
+  for (const idx in mapping) {
+    const fieldKey = mapping[idx];
+    if (!fieldKey) continue;
+    const val = (row[idx] ?? '').trim();
+    if (val) out[fieldKey] = val;
+  }
+  return out;
+}
+
+// A lead is valid if at least one of these is non-empty: a person can arrive with just a phone,
+// or just a name + company — or just a Contact ID when the sender echoes back our own id.
+export const CONTACT_IDENTIFIER_KEYS = ['email', 'phone', 'firstName', 'lastName', 'company', 'id'];
+
+// Lowercase the email (the person's key).
+export function normalizeContact(raw) {
+  const out = { ...raw };
+  if (out.email) out.email = out.email.toLowerCase().trim();
+  return out;
+}
+
+// Validate a row. Returns { valid: bool, reason?: string }.
+// If email is provided, its format must be valid. Otherwise any one of
+// CONTACT_IDENTIFIER_KEYS being non-empty is enough to accept the row.
+export function validateContactRow(mapped) {
+  if (mapped.email) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mapped.email)) return { valid: false, reason: 'Invalid email' };
+    return { valid: true };
+  }
+  const hasAny = CONTACT_IDENTIFIER_KEYS.some((k) => mapped[k] && String(mapped[k]).trim());
+  if (!hasAny) return { valid: false, reason: 'Need at least one of email, phone, name, or company' };
+  return { valid: true };
+}
+
 function resolveAccount(mapped, { clientByNormName, clientByDomain, batchAccounts }) {
   const companyText = (mapped.company || '').trim();
   const normName = normalizeCompanyName(companyText);
@@ -256,8 +258,8 @@ function resolveAccount(mapped, { clientByNormName, clientByDomain, batchAccount
   return null;
 }
 
-// Fields the importer will fill on a matched contact — blanks only, never the
-// match key (email), never a value that's already populated.
+// Fields filled on a matched contact — blanks only, never the match key (email), never a
+// value that's already populated.
 function computeEnrichment(existing, mapped, account) {
   const has = (v) => !!(v && String(v).trim());
   const changes = [];
@@ -268,17 +270,13 @@ function computeEnrichment(existing, mapped, account) {
   return changes;
 }
 
-// Plan every parsed row against existing data. One record per row:
+// Plan every row against existing data. One record per row:
 //   { rowIndex, mapped, action, matchedBy?, contactId?, account?, changes?, reason? }
 //   action: 'create' | 'update' | 'skip' | 'invalid'
 // mode: 'upsert' (create + update) | 'update' (update existing only, never create).
-// `bulk` (optional) describes the bulk options applied to every imported contact:
-//   { tagIds: [...] }
-// A matched contact counts as an UPDATE (not a no-op skip) only when bulk would
-// actually change it — a company tag it lacks. This keeps the preview honest vs.
-// what apply does. (Deals are company Opportunities, placed on the Pipeline board,
-// never a bulk side effect of importing a person, so there is no stage routing here.)
-export function buildImportPlan({ rows, headers, mapping, existingContacts = [], existingClients = [], mode = 'upsert', bulk = null, requireCompany = false }) {
+// `bulk` (optional): { tagIds: [...] } applied to every contact. A matched contact counts as an
+// UPDATE (not a no-op skip) only when bulk would actually change it — a company tag it lacks.
+export function buildImportPlan({ rows, headers, mapping, existingContacts = [], existingClients = [], mode = 'upsert', bulk = null }) {
   const clientById = new Map((existingClients || []).map((c) => [c.id, c]));
   const bulkAffects = (existing, account) => {
     if (!bulk) return false;
@@ -305,9 +303,6 @@ export function buildImportPlan({ rows, headers, mapping, existingContacts = [],
 
   return rows.map((row, i) => {
     const mapped = normalizeContact(applyMapping(row, headers, mapping));
-    // The customer's service-location address (null when the row has no location
-    // columns). Rides the plan so the importer seeds it onto the company's site.
-    const location = locationFromMapped(mapped);
     const v = validateContactRow(mapped);
     if (!v.valid) return { rowIndex: i, mapped, action: 'invalid', reason: v.reason };
 
@@ -331,13 +326,10 @@ export function buildImportPlan({ rows, headers, mapping, existingContacts = [],
       // contactId on the skip too, so a no-op match (e.g. an idempotent webhook
       // re-post) can still report which existing contact it resolved to.
       if (!changes.length && !bulkAffects(match, account)) return { rowIndex: i, mapped, action: 'skip', matchedBy, contactId: match.id, reason: 'Already up to date' };
-      return { rowIndex: i, mapped, action: 'update', matchedBy, contactId: match.id, account, changes, location };
+      return { rowIndex: i, mapped, action: 'update', matchedBy, contactId: match.id, account, changes };
     }
     if (dupInFile) return { rowIndex: i, mapped, action: 'skip', reason: 'Duplicate in file' };
     if (mode === 'update') return { rowIndex: i, mapped, action: 'skip', reason: 'No match. Update-only' };
-    // Company gate (B2B): a NEW contact must belong to a company. Block rows that
-    // neither match nor create one — keeps imported data clean by construction.
-    if (requireCompany && !account) return { rowIndex: i, mapped, action: 'invalid', reason: 'Missing company' };
-    return { rowIndex: i, mapped, action: 'create', account, location };
+    return { rowIndex: i, mapped, action: 'create', account };
   });
 }

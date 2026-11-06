@@ -1,13 +1,18 @@
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useT } from '../i18n/react';
+import { BACK_STATE } from '../lib/pageScroll';
 
-export default function DetailHeader({ backTo, backLabel = 'Back', title, subtitle, badge, actions, relationship }) {
+export default function DetailHeader({ backTo, backLabel = null, title, subtitle, badge, actions, relationship }) {
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const target = location.state?.from || backTo;
-  const label = location.state?.fromLabel || backLabel;
+  // The referrer's label (in the reader's language), else the page's own, else "Back" (CS-193).
+  const label = location.state?.fromLabel || backLabel || t('back.back');
   const handleClick = (e) => {
     e.preventDefault();
-    if (target) navigate(target);
+    // A Back: the shell puts the page where it was left (CS-960, UI_RULES §186).
+    if (target) navigate(target, { state: BACK_STATE });
     else navigate(-1);
   };
   return (

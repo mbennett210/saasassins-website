@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useSelector, useDispatch, useJobsHydrated, shallowEqual } from '../store';
+import { useSelector, useDispatch, useJobsLoader, shallowEqual } from '../store';
 import { ACTIONS } from '../store/reducer';
 import {
   selectNotificationsForUser,
@@ -20,6 +20,8 @@ import { useDismissTap } from '../hooks/useDismissTap';
 import { useIsMobile } from '../hooks/useIsMobile';
 import MobileSheet from './MobileSheet';
 import MobileNotificationList from './MobileNotificationList';
+import { useT } from '../i18n/react';
+import { timeAgo } from '../i18n/relative';
 
 const PANEL_LIMIT = 50;
 
@@ -36,13 +38,14 @@ const PANEL_LIMIT = 50;
 // Delete-time scrubbing therefore cannot be the whole answer; the read side has
 // to cope. Hence this.
 //
-// 🔴 GATED ON FULL HYDRATION, AND THAT GATE IS THE WHOLE TRICK. `state.jobs` is
-// only a ~-45/+100-day WINDOW until the detached backfill lands, so "not in
-// state.jobs" means "deleted" ONLY once everything is loaded. Judging it against
-// the window would mark every out-of-window job dead and strip working links off
-// notifications for real future cleans — the exact false positive that made the
-// first count of this bug wrong by 20. Un-hydrated → treat every link as live
-// (status quo, fails safe).
+// 🔴 JUDGED ONLY FOR CLEANS THE TABLE WAS ASKED ABOUT, AND THAT IS THE WHOLE TRICK.
+// `state.jobs` is the jobs WINDOW (−45/+100 days), never the whole table (CS-676), so
+// "not in state.jobs" means nothing by itself: judging against the window would mark every
+// out-of-window clean dead and strip working links off notifications for real future
+// cleans — the exact false positive that made the first count of this bug wrong by 20. So
+// opening the panel asks the table for the rows' cleans BY ID (useJobsLoader ensureIds);
+// once it has answered, a clean still absent is gone. Until then (or if it can't answer)
+// every link is treated as live (status quo, fails safe).
 const jobIdOfUrl = (url) => {
   const m = /^\/schedule\/([^/?#]+)$/.exec(url || '');
   return m ? m[1] : null;
@@ -58,20 +61,10 @@ function deadJobIds(jobs, rows) {
   return rows.map((n) => jobIdOfUrl(n.url)).filter((id) => id && !live.has(id));
 }
 
-function timeAgo(iso) {
-  if (!iso) return '';
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return 'just now';
-  const m = Math.floor(ms / 60_000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
+// A row's title and body are written in its reader's language when the row is created
+// (lib/notifications); the bell's own words are catalog lines (CS-193).
 export default function NotificationsBell({ className = '' }) {
+  const t = useT();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -103,8 +96,17 @@ export default function NotificationsBell({ className = '' }) {
   // Closed panel → the selector returns '' without ever touching s.jobs. The result is
   // a STRING so the default Object.is comparer settles it — returning a Set or array
   // would be a fresh reference every call and re-render the bell on every dispatch.
-  const jobsHydrated = useJobsHydrated();
-  const deadKey = useSelector((s) => (!open || !jobsHydrated ? '' : deadJobIds(s.jobs, items).join(',')));
+  const jobsLoader = useJobsLoader();
+  const linkedKey = useMemo(() => [...new Set(items.map((n) => jobIdOfUrl(n.url)).filter(Boolean))].sort().join(','), [items]);
+  const [askedKey, setAskedKey] = useState(null); // the ids the table has answered for
+  useEffect(() => {
+    if (!open || !linkedKey) return undefined;
+    let alive = true;
+    jobsLoader.ensureIds(linkedKey.split(',')).then(() => { if (alive) setAskedKey(linkedKey); }, () => {});
+    return () => { alive = false; };
+  }, [open, linkedKey, jobsLoader]);
+  const judged = open && !!linkedKey && askedKey === linkedKey;
+  const deadKey = useSelector((s) => (!judged ? '' : deadJobIds(s.jobs, items).join(',')));
   const deadIds = useMemo(() => new Set(deadKey ? deadKey.split(',') : []), [deadKey]);
   const isDeadLink = useCallback((n) => {
     const id = jobIdOfUrl(n.url);
@@ -149,17 +151,17 @@ export default function NotificationsBell({ className = '' }) {
     <div className="bell-panel-actions">
       {unread > 0 && (
         <button type="button" className="btn btn-link" onClick={markAll}>
-          Mark all read
+          {t('notif.markAllRead')}
         </button>
       )}
       <button type="button" className="btn btn-link" onClick={clearAll}>
-        Clear all
+        {t('notif.clearAll')}
       </button>
     </div>
   );
 
   const panelList = items.length === 0 ? (
-    <div className="bell-empty">You're all caught up.</div>
+    <div className="bell-empty">{t('notif.allCaughtUp')}</div>
   ) : (
     <ul className="bell-list">
       {items.map((n) => {
@@ -170,22 +172,22 @@ export default function NotificationsBell({ className = '' }) {
             type="button"
             className="bell-item-btn"
             onClick={() => handleItemClick(n)}
-            title={dead ? 'This clean was removed from the schedule' : undefined}
+            title={dead ? t('notif.removedTitle') : undefined}
           >
             {!n.readAt && <span className="bell-dot" aria-hidden="true" />}
             <div className="bell-item-text">
               <div className="bell-item-title">{n.title}</div>
               {n.body && <div className="bell-item-body">{n.body}</div>}
               <div className="bell-item-time">
-                {timeAgo(n.createdAt)}
-                {dead && <span className="bell-item-removed"> · clean removed</span>}
+                {timeAgo(t, n.createdAt)}
+                {dead && <span className="bell-item-removed"> · {t('notif.cleanRemoved')}</span>}
               </div>
             </div>
           </button>
           <button
             type="button"
             className="btn-icon btn-icon-ghost"
-            aria-label="Dismiss notification"
+            aria-label={t('notif.dismissAria')}
             onClick={(e) => dismiss(e, n.id)}
           >
             <Icon name="x" size={14} />
@@ -202,7 +204,7 @@ export default function NotificationsBell({ className = '' }) {
         type="button"
         className={`bell-btn ${open ? 'open' : ''}`}
         onClick={() => setOpen((o) => !o)}
-        aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ''}`}
+        aria-label={unread > 0 ? t('notif.bellAriaUnread', { count: unread }) : t('notif.title')}
         aria-haspopup="true"
         aria-expanded={open}
       >
@@ -214,22 +216,32 @@ export default function NotificationsBell({ className = '' }) {
 
       {/* Mobile: a portaled bottom sheet whose full-screen backdrop escapes .main's stacking
           context, sits above the floating nav, closes on an outside tap, and blocks tap-through
-          to the inbox behind (UI_RULES §105 / THEME_CLEANSPACE R9). Desktop: anchored dropdown. */}
+          to the inbox behind (UI_RULES §105 / THEME_CLEANSPACE R9). Desktop: anchored dropdown.
+          On the phone the unread count rides the sheet's title and "Mark all read" its header,
+          so the list starts right under it; "Clear all" sits at the list's foot and asks there. */}
       {isMobile ? (
-        <MobileSheet open={open} onClose={() => setOpen(false)} title="Notifications">
-          {panelActions && <div className="bell-sheet-actions">{panelActions}</div>}
+        <MobileSheet
+          open={open}
+          onClose={() => setOpen(false)}
+          title={t('notif.title')}
+          titleAside={unread > 0 ? <span className="mnotif-count">{unread > 99 ? '99+' : unread}</span> : null}
+          actions={unread > 0 ? (
+            <button type="button" className="btn btn-link" onClick={markAll}>{t('notif.markAllRead')}</button>
+          ) : null}
+        >
           <MobileNotificationList
             items={items}
             isDeadLink={isDeadLink}
             onOpen={handleItemClick}
             onDismiss={(id) => dispatch({ type: ACTIONS.REMOVE_NOTIFICATION, id })}
             onMarkRead={(id) => dispatch({ type: ACTIONS.MARK_NOTIFICATION_READ, id })}
+            onClearAll={clearAll}
           />
         </MobileSheet>
       ) : (open && (
-        <div className="bell-panel" role="dialog" aria-label="Notifications">
+        <div className="bell-panel" role="dialog" aria-label={t('notif.title')}>
           <div className="bell-panel-head">
-            <strong>Notifications</strong>
+            <strong>{t('notif.title')}</strong>
             {panelActions}
           </div>
           {panelList}

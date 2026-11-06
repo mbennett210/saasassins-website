@@ -11,6 +11,14 @@
 // ADD_CLIENT (store/reducer.js), so a customer minted by any path is identical.
 
 import { composeAddress } from './address.js';
+import { DEFAULT_PAYMENT_TERMS } from './money.js';
+import { NOT_ATTEMPTED } from './geocodeLocation.js';
+
+// The deterministic location id for a customer. Exported because the CREATE paths need
+// to address the location `ADD_CLIENT` just minted, in order to write its geocode result
+// onto it (CS-042) — they must not re-derive this string, or a formula change here would
+// silently strand them.
+export const clientLocationId = (clientId) => `st_loc_${clientId}`;
 
 // Build the single location (a `site`) for a customer from its account address.
 // `id` is deterministic (`st_loc_<clientId>`) so a re-run or a failed save can
@@ -29,7 +37,7 @@ export function buildClientLocation(client, services = []) {
   const state = client.state || '';
   const zip = client.zip || '';
   return {
-    id: `st_loc_${client.id}`,
+    id: clientLocationId(client.id),
     clientId: client.id,
     siteContactId: client.primaryContactId ?? null,
     name: 'Main Location',
@@ -42,6 +50,14 @@ export function buildClientLocation(client, services = []) {
     cleaningAreas: [],
     lat: null,
     lng: null,
+    // Explicitly "nobody has tried to locate this yet" rather than an absent field, so
+    // the UI can say that instead of "locating from the address" — which for every
+    // create path was never true (CS-042). The create paths resolve it immediately
+    // through lib/geocodeLocation.js; additive + default-safe (readers treat undefined
+    // as NOT_ATTEMPTED), so no store-version bump.
+    geocodeStatus: NOT_ATTEMPTED,
+    geocodedAddress: null,
+    geocodeCheckedAt: null,
     geofenceEnabled: true,
     expectedCleanMins,
     // Mirror the account's createdAt; fall back to null, NEVER the wall clock, so
@@ -66,7 +82,9 @@ export const CLIENT_BILLING_DEFAULTS = {
   billingCity: '',
   billingState: '',
   billingZip: '',
-  paymentTerms: 'net30',
+  // One terms vocabulary, from lib/money.js — the same table invoice creation reads to
+  // set a due date, so the default can never mean two different day counts (CS-044).
+  paymentTerms: DEFAULT_PAYMENT_TERMS,
   poRequired: false,
   poNumber: '',
   taxExempt: false,

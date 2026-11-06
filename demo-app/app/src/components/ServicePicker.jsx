@@ -71,6 +71,8 @@ export default function ServicePicker({ value, onChange, placeholder = 'Pick a s
       else if (exactMatch) selectService(exactMatch);
       else if (visible.length === 1) selectService(visible[0]);
     } else if (e.key === 'Escape') {
+      // An open list takes Esc: it closes, and the pop-up around it stays (UI_RULES §181).
+      if (open) e.preventDefault();
       setOpen(false);
       inputRef.current?.blur();
     }

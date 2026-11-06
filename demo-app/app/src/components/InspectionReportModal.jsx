@@ -4,6 +4,7 @@ import { useToast } from './Toast';
 import { usePermission } from '../hooks/usePermission';
 import * as qcApi from '../lib/qcApi';
 import { buildInspectionReportHtml } from '../lib/inspectionReportTemplate';
+import { appLink } from '../lib/appLink';
 
 // In-app inspection REPORT viewer. Fetches the normalized report (schema + answers +
 // per-section photos) and renders the SAME self-contained document the public /inspect
@@ -36,7 +37,7 @@ export default function InspectionReportModal({ open, inspectionId, onClose }) {
 
   const copyLink = () => {
     if (!ins.publicToken) return;
-    navigator.clipboard?.writeText(`${window.location.origin}/inspect/${ins.publicToken}`);
+    navigator.clipboard?.writeText(appLink(`/inspect/${ins.publicToken}`)); // the app's own address (lib/appLink.js)
     toast.success('Share link copied');
   };
 
@@ -48,6 +49,22 @@ export default function InspectionReportModal({ open, inspectionId, onClose }) {
         <p className="text-muted text-sm">This report could not be loaded.</p>
       ) : (
         <>
+          {/* HUB-16 — the office's own note, ABOVE the document and outside it. The
+              document below is the client's copy, byte for byte: `buildInspectionReportHtml`
+              is handed `report` and reads only its inspection / items / photos, so a
+              sibling key cannot reach the page, the PDF or the shared link. The server
+              only sends it to a caller holding `qc.inspect`, so there is nothing to hide
+              here — if it is present, this viewer is allowed it. */}
+          {report.internalNote && (
+            <div className="callout callout-info insp-internal-note-read">
+              <strong>Internal note — your team only.</strong>
+              {' '}
+              <span>{report.internalNote}</span>
+              <p className="text-xs text-muted" style={{ margin: '4px 0 0' }}>
+                Not part of the report below, the shared link or the PDF.
+              </p>
+            </div>
+          )}
           <div className="insp-report-scroll">
             <div dangerouslySetInnerHTML={{ __html: buildInspectionReportHtml(report) }} />
           </div>

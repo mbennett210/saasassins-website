@@ -22,6 +22,7 @@
 //
 // Run: node app/scripts/test-checklist-default-retired.mjs
 import { readdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 // crewChecklist.js is a leaf with NO imports, so it loads in raw Node. seed.js and
@@ -156,11 +157,16 @@ eq('only present/future cleans count', RETIRE_DEFAULT_JOB_STATUSES, ['upcoming',
 // ── 2b. The store version moves in lockstep (the numbers, from the files) ────
 // test-persist-chain.mjs owns the generic lockstep property; this pins THIS bump and
 // that the hop delegates to the one shared transform rather than re-implementing it.
+// A LATER bump (v58, the manager's book — test-demo-manager-day.mjs) leaves this one in
+// the chain: the store is at v57 or past it, and the chain runner still runs this hop.
 {
   const persist = readFileSync(path.join(APP, 'src/store/persist.js'), 'utf8');
   const seedSrc = readFileSync(path.join(APP, 'src/data/seed.js'), 'utf8');
-  eq('INITIAL_STATE.version is 57', Number((seedSrc.match(/^\s*version:\s*(\d+)\s*,/m) || [])[1]), 57);
-  ok(/STORAGE_KEY\s*=\s*'pp\.store\.v57'/.test(persist), 'STORAGE_KEY is pp.store.v57');
+  const seedVersion = Number((seedSrc.match(/^\s*version:\s*(\d+)\s*,/m) || [])[1]);
+  const keyVersion = Number((persist.match(/STORAGE_KEY\s*=\s*'pp\.store\.v(\d+)'/) || [])[1]);
+  eq('INITIAL_STATE.version is 57 or a later bump', seedVersion >= 57, true);
+  ok(keyVersion === seedVersion, `STORAGE_KEY is pp.store.v${seedVersion}, in lockstep (got v${keyVersion})`);
+  ok(/version\s*===\s*56\)\s*st\s*=\s*migrateV56toV57/.test(persist), 'the chain runner still runs the v56 → v57 hop');
   const hop = (persist.match(/export function migrateV56toV57\s*\([\s\S]*?\n}/) || [])[0] || '';
   ok(hop.length > 0, 'migrateV56toV57 exists');
   ok(/retireLocationDefaultsV57/.test(hop), 'migrateV56toV57 delegates to the shared retireLocationDefaultsV57 (one transform, demo + live)');
@@ -180,23 +186,43 @@ eq('only present/future cleans count', RETIRE_DEFAULT_JOB_STATUSES, ['upcoming',
 }
 
 // ── 3. Mechanically: the field name and the copy are gone ───────────────────
+// THE ENUMERATION IS THE WORKING TREE MINUS WHAT GIT IGNORES. A local artifact the live
+// scripts write is not a surface: `app/scripts/orgstate-backup-*.json` (app/.gitignore:29)
+// is a pre-mutation dump of the real blob, so it names `checklistTemplateId` by definition
+// and a raw directory walk turned this suite red on any machine that had run the data-op —
+// CI stayed green only because CI has no backup. `orgstate-current.json`,
+// `jwt-claims-backup-*` and `jobs-dedup-backup-*` (app/.gitignore:30, 35, 36) are the same
+// class, so the rule is the ignore file, never a pattern list restated here.
+// `--cached --others --exclude-standard` keeps UNTRACKED files that are not ignored, so a
+// new, uncommitted source file is still caught — which is the whole point of walking disk
+// rather than reading the index.
+const EXTS = /\.(js|jsx|mjs|json|sql|css)$/;
+const ROOTS = ['app/src', 'app/api', 'app/scripts', 'supabase'];
+// Only reached when git is unavailable (an export with no .git). The known local-artifact
+// names are skipped by hand there so the degraded path is not a landmine either.
+const LOCAL_ARTIFACT = /^(orgstate-backup-.*|orgstate-current|jwt-claims-backup-.*|jobs-dedup-backup-.*)\.json$/;
 function walk(dir, out = []) {
   let entries;
   try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
   for (const e of entries) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) { if (e.name !== 'node_modules' && e.name !== 'dist') walk(p, out); continue; }
-    if (/\.(js|jsx|mjs|json|sql|css)$/.test(e.name)) out.push(p);
+    if (EXTS.test(e.name) && !LOCAL_ARTIFACT.test(e.name)) out.push(p);
   }
   return out;
 }
-const SOURCES = [
-  ...walk(path.join(APP, 'src')),
-  ...walk(path.join(APP, 'api')),
-  ...walk(path.join(APP, 'scripts')),
-  ...walk(path.join(REPO, 'supabase')),
-];
+function gitFiles() {
+  try {
+    const out = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', ...ROOTS],
+      { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const files = [...new Set(out.split('\0').filter((f) => f && EXTS.test(f)))].map((f) => path.join(REPO, f));
+    return files.length ? files : null;
+  } catch { return null; }
+}
+const SOURCES = gitFiles() || ROOTS.map((r) => path.join(REPO, r)).flatMap((d) => walk(d));
 ok(SOURCES.length > 400, `enumerated the shipped source + scripts + schema (${SOURCES.length} files)`);
+ok(!SOURCES.some((p) => LOCAL_ARTIFACT.test(path.basename(p))),
+  'the enumeration skips the gitignored blob dumps the live scripts write (app/.gitignore:29)');
 const read = (p) => readFileSync(p, 'utf8');
 // Comments are not surfaces: the migration and the data-op must be able to say, in prose,
 // exactly which field they are retiring.
@@ -247,24 +273,24 @@ const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s
 }
 {
   // The copies that told the operator a default existed. Comments are stripped first: the
-  // migration and the data-op legitimately explain what they are retiring.
-  const UI = walk(path.join(APP, 'src'));
+  // migration and the data-op legitimately explain what they are retiring. Off the ONE
+  // enumeration above, so the ignore rule reaches this sweep too.
+  const SRC_DIR = path.join(APP, 'src') + path.sep;
+  const UI = SOURCES.filter((p) => p.startsWith(SRC_DIR));
   const bad = UI.filter((p) => /Use account default|Default checklist|account default/i.test(stripComments(read(p)))).map(rel);
   ok(bad.length === 0, `COPY: no surface offers a default checklist (found: ${bad.join(', ') || 'none'})`);
 }
 {
-  // …and both pickers offer the honest empty state instead.
+  // …and the ONE surface that assigns checklists offers the honest empty state instead.
+  // Service setup and the Quality hub's Assignments tab are the SAME component now
+  // (components/checklists/CustomerChecklistPanel), so there is one place to check; the
+  // pop-up organizer it replaced (ChecklistAssignmentsModal) is deleted, and
+  // test-checklist-assignments.mjs holds that deletion.
+  const panel = read(path.join(APP, 'src/components/checklists/CustomerChecklistPanel.jsx'));
+  ok(/No checklist/.test(panel), 'COPY: the assignment panel offers "No checklist"');
+  ok(!/svc-checklist\b/.test(panel), 'the panel renders no account-default select (#svc-checklist)');
   const svc = read(path.join(APP, 'src/components/ServiceSetupCard.jsx'));
-  ok(/No checklist/.test(svc), 'COPY: Service setup offers "No checklist"');
   ok(!/svc-checklist\b/.test(svc), 'Service setup no longer renders the account-default select (#svc-checklist)');
-  const cla = read(path.join(APP, 'src/components/ChecklistAssignmentsModal.jsx'));
-  ok(/No checklist/.test(cla), 'COPY: the assignments organizer offers "No checklist"');
-  ok(!/cla-row-default|cla-who-default/.test(cla), 'the organizer no longer renders a default row');
-}
-{
-  // The orphan sweep: the default row's CSS must leave with it (playbook II.5).
-  const css = read(path.join(APP, 'src/index.css'));
-  ok(!/cla-who-default/.test(css), 'CSS: .cla-who-default is swept with the default row');
 }
 
 console.log(`\nchecklist-default-retired: ${pass}/${pass + fail} assertions passed`);

@@ -1,0 +1,603 @@
+{
+  "Header": {
+    "Time": "2026-09-28T20:19:14-07:00",
+    "ReportName": "ProfitAndLoss",
+    "ReportBasis": "Accrual",
+    "StartPeriod": "2026-08-30",
+    "EndPeriod": "2026-09-28",
+    "SummarizeColumnsBy": "Total",
+    "Currency": "USD",
+    "Option": [
+      {
+        "Name": "AccountingStandard",
+        "Value": "GAAP"
+      },
+      {
+        "Name": "NoReportData",
+        "Value": "false"
+      }
+    ]
+  },
+  "Columns": {
+    "Column": [
+      {
+        "ColTitle": "",
+        "ColType": "Account",
+        "MetaData": [
+          {
+            "Name": "ColKey",
+            "Value": "account"
+          }
+        ]
+      },
+      {
+        "ColTitle": "Total",
+        "ColType": "Money",
+        "MetaData": [
+          {
+            "Name": "ColKey",
+            "Value": "total"
+          }
+        ]
+      }
+    ]
+  },
+  "Rows": {
+    "Row": [
+      {
+        "Header": {
+          "ColData": [
+            {
+              "value": "Income"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "Rows": {
+          "Row": [
+            {
+              "ColData": [
+                {
+                  "value": "Design income",
+                  "id": "82"
+                },
+                {
+                  "value": "937.50"
+                }
+              ],
+              "type": "Data"
+            },
+            {
+              "ColData": [
+                {
+                  "value": "Discounts given",
+                  "id": "86"
+                },
+                {
+                  "value": "-59.00"
+                }
+              ],
+              "type": "Data"
+            },
+            {
+              "Header": {
+                "ColData": [
+                  {
+                    "value": "Landscaping Services",
+                    "id": "45"
+                  },
+                  {
+                    "value": "297.50"
+                  }
+                ]
+              },
+              "Rows": {
+                "Row": [
+                  {
+                    "Header": {
+                      "ColData": [
+                        {
+                          "value": "Job Materials",
+                          "id": "46"
+                        },
+                        {
+                          "value": ""
+                        }
+                      ]
+                    },
+                    "Rows": {
+                      "Row": [
+                        {
+                          "ColData": [
+                            {
+                              "value": "Fountains and Garden Lighting",
+                              "id": "48"
+                            },
+                            {
+                              "value": "951.50"
+                            }
+                          ],
+                          "type": "Data"
+                        },
+                        {
+                          "ColData": [
+                            {
+                              "value": "Plants and Soil",
+                              "id": "49"
+                            },
+                            {
+                              "value": "400.00"
+                            }
+                          ],
+                          "type": "Data"
+                        }
+                      ]
+                    },
+                    "Summary": {
+                      "ColData": [
+                        {
+                          "value": "Total Job Materials"
+                        },
+                        {
+                          "value": "1351.50"
+                        }
+                      ]
+                    },
+                    "type": "Section"
+                  },
+                  {
+                    "Header": {
+                      "ColData": [
+                        {
+                          "value": "Labor",
+                          "id": "51"
+                        },
+                        {
+                          "value": ""
+                        }
+                      ]
+                    },
+                    "Rows": {
+                      "Row": [
+                        {
+                          "ColData": [
+                            {
+                              "value": "Installation",
+                              "id": "52"
+                            },
+                            {
+                              "value": "250.00"
+                            }
+                          ],
+                          "type": "Data"
+                        }
+                      ]
+                    },
+                    "Summary": {
+                      "ColData": [
+                        {
+                          "value": "Total Labor"
+                        },
+                        {
+                          "value": "250.00"
+                        }
+                      ]
+                    },
+                    "type": "Section"
+                  }
+                ]
+              },
+              "Summary": {
+                "ColData": [
+                  {
+                    "value": "Total Landscaping Services"
+                  },
+                  {
+                    "value": "1899.00"
+                  }
+                ]
+              },
+              "type": "Section"
+            },
+            {
+              "ColData": [
+                {
+                  "value": "Pest Control Services",
+                  "id": "54"
+                },
+                {
+                  "value": "70.00"
+                }
+              ],
+              "type": "Data"
+            },
+            {
+              "ColData": [
+                {
+                  "value": "Sales of Product Income",
+                  "id": "79"
+                },
+                {
+                  "value": "868.75"
+                }
+              ],
+              "type": "Data"
+            },
+            {
+              "ColData": [
+                {
+                  "value": "Services",
+                  "id": "1"
+                },
+                {
+                  "value": "103.55"
+                }
+              ],
+              "type": "Data"
+            }
+          ]
+        },
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Total Income"
+            },
+            {
+              "value": "3819.80"
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "Income"
+      },
+      {
+        "Header": {
+          "ColData": [
+            {
+              "value": "Cost of Goods Sold"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "Rows": {
+          "Row": [
+            {
+              "ColData": [
+                {
+                  "value": "Cost of Goods Sold",
+                  "id": "80"
+                },
+                {
+                  "value": "405.00"
+                }
+              ],
+              "type": "Data"
+            }
+          ]
+        },
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Total Cost of Goods Sold"
+            },
+            {
+              "value": "405.00"
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "COGS"
+      },
+      {
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Gross Profit"
+            },
+            {
+              "value": "3414.80"
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "GrossProfit"
+      },
+      {
+        "Header": {
+          "ColData": [
+            {
+              "value": "Expenses"
+            },
+            {
+              "value": ""
+            }
+          ]
+        },
+        "Rows": {
+          "Row": [
+            {
+              "ColData": [
+                {
+                  "value": "Advertising",
+                  "id": "7"
+                },
+                {
+                  "value": "74.86"
+                }
+              ],
+              "type": "Data"
+            },
+            {
+              "Header": {
+                "ColData": [
+                  {
+                    "value": "Automobile",
+                    "id": "55"
+                  },
+                  {
+                    "value": "93.97"
+                  }
+                ]
+              },
+              "Rows": {
+                "Row": [
+                  {
+                    "ColData": [
+                      {
+                        "value": "Fuel",
+                        "id": "56"
+                      },
+                      {
+                        "value": "115.71"
+                      }
+                    ],
+                    "type": "Data"
+                  }
+                ]
+              },
+              "Summary": {
+                "ColData": [
+                  {
+                    "value": "Total Automobile"
+                  },
+                  {
+                    "value": "209.68"
+                  }
+                ]
+              },
+              "type": "Section"
+            },
+            {
+              "ColData": [
+                {
+                  "value": "Equipment Rental",
+                  "id": "29"
+                },
+                {
+                  "value": "112.00"
+                }
+              ],
+              "type": "Data"
+            },
+            {
+              "Header": {
+                "ColData": [
+                  {
+                    "value": "Job Expenses",
+                    "id": "58"
+                  },
+                  {
+                    "value": "46.98"
+                  }
+                ]
+              },
+              "Rows": {
+                "Row": [
+                  {
+                    "Header": {
+                      "ColData": [
+                        {
+                          "value": "Job Materials",
+                          "id": "63"
+                        },
+                        {
+                          "value": ""
+                        }
+                      ]
+                    },
+                    "Rows": {
+                      "Row": [
+                        {
+                          "ColData": [
+                            {
+                              "value": "Decks and Patios",
+                              "id": "64"
+                            },
+                            {
+                              "value": "145.95"
+                            }
+                          ],
+                          "type": "Data"
+                        },
+                        {
+                          "ColData": [
+                            {
+                              "value": "Plants and Soil",
+                              "id": "66"
+                            },
+                            {
+                              "value": "23.50"
+                            }
+                          ],
+                          "type": "Data"
+                        }
+                      ]
+                    },
+                    "Summary": {
+                      "ColData": [
+                        {
+                          "value": "Total Job Materials"
+                        },
+                        {
+                          "value": "169.45"
+                        }
+                      ]
+                    },
+                    "type": "Section"
+                  }
+                ]
+              },
+              "Summary": {
+                "ColData": [
+                  {
+                    "value": "Total Job Expenses"
+                  },
+                  {
+                    "value": "216.43"
+                  }
+                ]
+              },
+              "type": "Section"
+            },
+            {
+              "Header": {
+                "ColData": [
+                  {
+                    "value": "Legal & Professional Fees",
+                    "id": "12"
+                  },
+                  {
+                    "value": "75.00"
+                  }
+                ]
+              },
+              "Rows": {
+                "Row": [
+                  {
+                    "ColData": [
+                      {
+                        "value": "Accounting",
+                        "id": "69"
+                      },
+                      {
+                        "value": "315.00"
+                      }
+                    ],
+                    "type": "Data"
+                  }
+                ]
+              },
+              "Summary": {
+                "ColData": [
+                  {
+                    "value": "Total Legal & Professional Fees"
+                  },
+                  {
+                    "value": "390.00"
+                  }
+                ]
+              },
+              "type": "Section"
+            },
+            {
+              "Header": {
+                "ColData": [
+                  {
+                    "value": "Maintenance and Repair",
+                    "id": "72"
+                  },
+                  {
+                    "value": ""
+                  }
+                ]
+              },
+              "Rows": {
+                "Row": [
+                  {
+                    "ColData": [
+                      {
+                        "value": "Equipment Repairs",
+                        "id": "75"
+                      },
+                      {
+                        "value": "755.00"
+                      }
+                    ],
+                    "type": "Data"
+                  }
+                ]
+              },
+              "Summary": {
+                "ColData": [
+                  {
+                    "value": "Total Maintenance and Repair"
+                  },
+                  {
+                    "value": "755.00"
+                  }
+                ]
+              },
+              "type": "Section"
+            },
+            {
+              "ColData": [
+                {
+                  "value": "Meals and Entertainment",
+                  "id": "13"
+                },
+                {
+                  "value": "18.97"
+                }
+              ],
+              "type": "Data"
+            }
+          ]
+        },
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Total Expenses"
+            },
+            {
+              "value": "1776.94"
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "Expenses"
+      },
+      {
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Net Operating Income"
+            },
+            {
+              "value": "1637.86"
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "NetOperatingIncome"
+      },
+      {
+        "Summary": {
+          "ColData": [
+            {
+              "value": "Net Income"
+            },
+            {
+              "value": "1637.86"
+            }
+          ]
+        },
+        "type": "Section",
+        "group": "NetIncome"
+      }
+    ]
+  }
+}

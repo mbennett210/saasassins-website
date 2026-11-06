@@ -79,3 +79,49 @@ export function geofenceVerdict({
 export function isFlaggedVerdict(result) {
   return result === 'no_site_coords' || result === 'unavailable' || result === 'override';
 }
+
+// 🔴 PAY-17 (Matt, 2026-09-30): "The cleaner can clock in or out; the time is held until the
+// supervisor approves it, and the supervisor is alerted right away." THIS is the predicate
+// that decides which punches are that — the one definition the server's alert, the approval
+// queue's flag and the crew's warning all read, so they cannot drift.
+//
+//   'outside'      the device was measurably away from the building.
+//   'unavailable'  no device location at all — Matt's "location off or denied counts as
+//                  off-site": a punch we cannot place is not a punch we can vouch for.
+//
+// Deliberately NOT off-site:
+//   'inside'          the ordinary case.
+//   'override'        the ring was off by CONFIG — the site's switch, or the office's
+//                     per-cleaner exemption (lib/clockRules GEOFENCE_OFF_REASON). The office
+//                     decided that; flagging the cleaner for it would be wrong.
+//   'no_site_coords'  OUR data gap, not the cleaner's whereabouts. Production has almost no
+//                     geocoded locations (GOOGLE_MAPS_API_KEY unset, CS-036), so counting it
+//                     would flag and alert on nearly every punch in the book and teach the
+//                     office to ignore the one chip that matters.
+export const OFF_SITE_RESULTS = Object.freeze(['outside', 'unavailable']);
+export const isOffSiteVerdict = (result) => OFF_SITE_RESULTS.includes(result);
+
+// What the CLEANER's own card says about where a punch was made (CS-689) — the SERVER's verdict
+// on the punch, never the phone's opinion. It was a green "On site" on ANY open punch, all
+// shift, after a 3-second toast had told an off-site cleaner their time would be reviewed.
+//   ON_SITE      an open punch clocked in inside the ring;
+//   OFF_SITE     either end measurably away ('outside') — the time is held for the supervisor;
+//   NO_LOCATION  either end with no device location ('unavailable') — held too (PAY-17);
+//   null         nothing to say: the ring was off by config, the location has no centre, or the
+//                punch is still on the phone (its verdict arrives with the replay).
+// A held punch says so after the clock-out too: the approval is still to come. An open punch
+// reads only its clock-in end.
+export const PUNCH_SITE = Object.freeze({ ON_SITE: 'onSite', OFF_SITE: 'offSite', NO_LOCATION: 'noLocation' });
+export function punchSiteState(entry) {
+  if (!entry) return null;
+  const ends = [entry.geofence_result ?? null, entry.clock_out_at ? (entry.geofence_result_out ?? null) : null];
+  if (ends.includes('outside')) return PUNCH_SITE.OFF_SITE;
+  if (ends.includes('unavailable')) return PUNCH_SITE.NO_LOCATION;
+  if (!entry.clock_out_at && entry.geofence_result === 'inside') return PUNCH_SITE.ON_SITE;
+  return null;
+}
+
+// The sentence a cleaner reads when a punch lands held for review, by the server's verdict
+// (CS-689): no location is its own sentence — "outside the building's area" is wrong for
+// someone standing in the lobby with Location off. Literal catalog keys (UI_RULES §140).
+export const OFF_SITE_SENTENCE_KEYS = Object.freeze({ outside: 'clock.offSite', unavailable: 'clock.noLocation' });

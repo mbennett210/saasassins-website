@@ -11,9 +11,11 @@
 // AUTH (#2): requireAuth alone still let ANY authenticated user send from ANY
 // mailbox — including a manager's real Gmail — because the account ids are in the
 // blob everyone can read. A role gate is not available (`messaging.use` is
-// ALWAYS_GRANTED), so the check is per-mailbox OWNERSHIP. It is inert on today's
-// schema and inert per unclaimed row; see _lib/inboxOwnership.js.
+// ALWAYS_GRANTED), so the check is per-mailbox OWNERSHIP. Since 2026-09-29 it FAILS
+// CLOSED — an unclaimed mailbox, a missing column and a failed probe all refuse
+// (CS-017); see _lib/inboxOwnership.js.
 import { requireInboxOwner } from '../../_lib/inboxOwnership.js';
+import { sanitizeInboxSendBody } from '../../_lib/inboxSendBody.js';
 import { performSend } from '../../_lib/sender.js';
 import { allow } from '../../_lib/rateLimit.js';
 
@@ -27,7 +29,7 @@ export default async function handler(req, res) {
   // Same volume cap as /api/email/send. That route is throttled precisely so one caller
   // cannot burn the domain's sending reputation for everyone — and this route is the
   // STRICTLY MORE POWERFUL sibling: it sends through the client's real connected Gmail
-  // rather than Resend. Gating the weaker path and not this one protected nothing.
+  // rather than the system sender's. Gating the weaker path and not this one protected nothing.
   if (!allow(req, res, { bucket: 'inbox-send', id: authority.orgUserId || 'anon', limit: 30, windowMs: 10 * 60_000 })) return;
   const { to, subject, body } = req.body || {};
   if (!to || !subject || !body) {
@@ -35,11 +37,13 @@ export default async function handler(req, res) {
     return;
   }
   try {
-    // ⚠️ `orgUserId` LAST, so it overrides anything of that name in the body. It is what
-    // a `signatureRef` attachment is resolved against (api/_lib/marketing/attachments.js);
-    // taking it from the body would let a caller mail out another user's signature object
-    // — the whole point of deriving the path from the claim instead of accepting one.
-    const result = await performSend(req.query.id, { ...req.body, orgUserId: authority.orgUserId });
+    // ⚠️ THE BODY IS AN ALLOWLIST, NOT A SPREAD (CS-017). `{ ...req.body }` handed the
+    // caller every argument performSend accepts — arbitrary MIME headers, and
+    // `unsubscribe.enabled: false`, which switches off the CAN-SPAM footer. See
+    // _lib/inboxSendBody.js. `orgUserId` LAST, from the verified claim: it is what a
+    // `signatureRef` attachment is resolved against (api/_lib/marketing/attachments.js),
+    // so a body-supplied one would mail out another user's signature object.
+    const result = await performSend(req.query.id, { ...sanitizeInboxSendBody(req.body), orgUserId: authority.orgUserId });
     res.status(200).json({ ok: true, id: result.id, messageId: result.messageId, status: 'sent' });
   } catch (err) {
     res.status(502).send(err.message || 'Send failed.');

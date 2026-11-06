@@ -2,6 +2,7 @@
 // components so they can be reasoned about (and, if ever needed, tested) on their own.
 import { DECISION_BY_ID, DECISION_SECTION_BY_ID } from '../../data/buildDecisions';
 import { EMAIL_DRAFTS } from '../../data/emailDrafts';
+import { isDecisionAnswered } from '../../lib/clientReview';
 
 // draft id -> descriptor (the catalog is a stable module array).
 export const DRAFT_BY_ID = Object.fromEntries(EMAIL_DRAFTS.map((d) => [d.id, d]));
@@ -19,7 +20,21 @@ export function areaTitle(area) {
   if (area === 'drafts') return 'Drafts to sign off';
   if (area === 'new') return 'New in the latest update';
   if (area === 'open') return 'Everything open';
+  if (area === 'waiting') return 'Waiting on us';
   return DECISION_SECTION_BY_ID[area]?.title || 'Review';
+}
+
+// How many items of a walked list are still OPEN: a question with no answer, a draft that
+// `isDraftOpen` (the provider's) says still owes a look. Finish uses it, so a walk that only
+// pressed Next or Skip says what is left instead of "Done" (task #126).
+export function countOpen(ids, review, isDraftOpen) {
+  let n = 0;
+  for (const id of ids || []) {
+    const item = findReviewItem(id);
+    if (item?.type === 'decision' && !isDecisionAnswered(review?.decisions?.[id])) n += 1;
+    else if (item?.type === 'draft' && isDraftOpen(id)) n += 1;
+  }
+  return n;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -38,4 +53,5 @@ export function fmtAddedShort(dateStr) {
 
 // The draft's channel word and its build-state tag label (mirrors the old Drafts page).
 export const DRAFT_KIND_LABEL = { sms: 'Text', document: 'Document', email: 'Email' };
-export const DRAFT_STATE_LABEL = { live: 'Live', off: 'Built, off', draft: 'Draft' };
+// `quickbooks`: QuickBooks sends it, not the app (Matt's notes on the invoice drafts, 2026-09-30).
+export const DRAFT_STATE_LABEL = { live: 'Live', off: 'Built, off', draft: 'Draft', quickbooks: 'Sent by QuickBooks, not the app' };

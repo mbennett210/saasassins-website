@@ -35,7 +35,7 @@ export default function EmployeesTab() {
               const hr = u.hr || {}; const bal = ptoBalance(u, timeOff, YEAR);
               return (
                 <tr key={u.id} className="pay-row" onClick={() => setOpenId(u.id)}>
-                  <td><div className="pay-who"><Avatar initials={u.initials} variant={u.avatar} size="sm" /><span className="pay-who-name truncate" title={u.name}>{u.name}</span></div></td>
+                  <td><div className="pay-who"><Avatar user={u} size="sm" /><span className="pay-who-name truncate" title={u.name}>{u.name}</span></div></td>
                   <td className="mono">{hr.employeeId || <span className="pay-muted">—</span>}</td>
                   <td>{EMPLOYMENT_LABEL[hr.employmentType] || <span className="pay-muted">—</span>}</td>
                   <td className="mono">{dayKeyDate(hr.hireDate)}</td>

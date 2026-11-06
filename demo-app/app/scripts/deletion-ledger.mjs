@@ -100,7 +100,7 @@ export function buildLedgerMarkdown({ results, manifest, baseline, enumerated, c
   L.push('the audit exploration and classified statically; live verification binds at go-live:');
   L.push('');
   L.push('- **Server API delete routes** (~20: jobs-delta, `job_deletes` tombstone + reap cron,');
-  L.push('  push subscriptions, webhooks, quotes + storage, QC items, account-media, GMB) —');
+  L.push('  push subscriptions, webhooks, quotes + storage, QC items, account-media) —');
   L.push('  static; live drive against a sandbox rig is the ⏸ **go-live gate**.');
   L.push('- **Supabase FK/tombstone migrations** (`ON DELETE SET NULL` for time/inspection/');
   L.push('  checklist/problem records; the clean-media AFTER DELETE trigger) — static.');

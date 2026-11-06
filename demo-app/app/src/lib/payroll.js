@@ -20,6 +20,7 @@
 
 import { dayKey, dayOfWeekKey, addDaysKey, diffDaysKey, startOfDayKey, fmtDate } from './dates.js';
 import { segmentPaidMinutes } from './driveTime.js';
+import { rateCentsOf } from './payRates.js';
 
 export const OT_WEEKLY_MINUTES = 40 * 60;          // 2400 — the weekly OT threshold
 export const APPROACHING_OT_MINUTES = 36 * 60;     // 2160 — "approaching 40h" (>=90%)
@@ -47,6 +48,28 @@ export function payWeekKeyOf(date, weekStartDay = 0, tz) {
   return addDaysKey(k, -diff);
 }
 
+// 🔴 THE WORKWEEK START, READ IN ONE PLACE (PAY-19; CS-659, CS-055). `opsSettings.payWeekStartDay`
+// is 0 (Sunday) … 6 (Saturday) — production holds 1, Monday (Matt's PAY-19 b). Anything else
+// (unset, a string, out of range) reads as Sunday, the US payroll default, so a missing setting
+// never moves a week. The pay run, the approvals read, overtime approval, the Hours report and
+// the two overtime watches all ask this — a surface left on its own reading (or on a literal 0)
+// counts a different week from the run that pays it, which is how overtime approval came to
+// refuse every Monday week (CS-659).
+export function payWeekStartDayOf(opsSettings) {
+  const d = opsSettings?.payWeekStartDay;
+  return Number.isInteger(d) && d >= 0 && d <= 6 ? d : 0;
+}
+
+// Is `key` a real calendar day that STARTS a pay week under `weekStartDay`? The overtime unit's
+// key (CS-659): the approvals read mints these from the org's week start, so a key that is
+// malformed, names no real day ('2026-02-30' — day arithmetic would roll it into March) or
+// falls on another weekday is not a unit anything computed, and approving it would pay nobody.
+export function isPayWeekKey(key, weekStartDay = 0) {
+  if (typeof key !== 'string' || !DAY_KEY_RE.test(key)) return false;
+  if (addDaysKey(key, 0) !== key) return false;
+  return dayOfWeekKey(key) === weekStartDay;
+}
+
 // The instant the pay week begins, in the org zone (for the .toISOString()/.getTime()
 // the rollups need).
 export function startOfPayWeek(date, weekStartDay = 0, tz) {
@@ -70,16 +93,6 @@ export function isPayable(e, { approvedOnly = false } = {}) {
   if (e.jobCancelledAt && e.approvalStatus !== 'approved') return false;
   if (approvedOnly && e.approvalStatus !== 'approved') return false;
   return true;
-}
-
-// Is this a cancelled-clean punch currently HELD from pay (flagged, has real time, not
-// yet approved and not rejected)? Drives the payroll "held pending approval" signal so a
-// manager sees that some labor is withheld and where to release it.
-export function isHeldCancelled(e) {
-  return !!(e && e.jobCancelledAt && e.clockOutAt
-    && Number.isFinite(e.durationMinutes) && e.durationMinutes > 0
-    && e.status !== 'voided'
-    && e.approvalStatus !== 'approved' && e.approvalStatus !== 'rejected');
 }
 
 // Split a single week's minutes into { regular, ot } at the 40h line.
@@ -305,6 +318,30 @@ export function payWeeksWindow(fromKey, toKey, { weekStartDay = 0, tz } = {}) {
   };
 }
 
+// ── Reports › Hours by cleaner, on the ORG's workweek (CS-055) ───────────────────
+// The report used to place the 40 h line on a hard-coded SUNDAY week while the pay run walks the
+// org's (`payWeekStartDayOf` — Monday in production), so a week's overtime in the run read as
+// none in the report whose CSV goes to payroll. The page fetches `hoursReportWindow` and renders
+// `hoursReportRows`; both read the week start from `opsSettings` here, never their own constant.
+//   hoursReportWindow → the whole org pay weeks around [fromKey, toKey] (payWeeksWindow's shape)
+//   hoursReportRows   → hoursByUserForRange's rows over the attributeWeeklyOt walk
+export function hoursReportWindow(fromKey, toKey, { opsSettings, tz } = {}) {
+  return payWeeksWindow(fromKey, toKey, { weekStartDay: payWeekStartDayOf(opsSettings), tz });
+}
+export function hoursReportRows(entries, { opsSettings, tz, fromKey, toKey, approvedOnly = false, clientIds = null, driveSegments } = {}) {
+  const items = attributeWeeklyOt(entries, { approvedOnly, weekStartDay: payWeekStartDayOf(opsSettings), tz, driveSegments });
+  return hoursByUserForRange(items, { fromKey, toKey, clientIds });
+}
+
+// The ORG pay week holding `now` (an instant), as the window a "this week" read fetches — whole
+// org-zone days, so a week across a DST change is 167 or 169 hours, not a device-local +7 days
+// (CS-055: the overtime watches built it with setDate(+7) on a Sunday they hard-coded).
+// → payWeeksWindow's { fromKey, toKey, fromIso, toIso } (toIso = the week's last instant).
+export function currentPayWeekWindow(now = new Date(), { weekStartDay = 0, tz } = {}) {
+  const k = dayKey(now instanceof Date ? now : new Date(now), tz);
+  return payWeeksWindow(k, k, { weekStartDay, tz });
+}
+
 // Minutes worked in the week containing `now`, per user (operational lens — all
 // completed rows, approved or not). Feeds the approaching-OT badge/strip.
 export function currentWeekMinutesByUser(entries, { now = Date.now(), weekStartDay = 0, tz, driveSegments } = {}) {
@@ -346,35 +383,25 @@ export function otStatus(minutes, { otWeeklyMinutes = OT_WEEKLY_MINUTES, approac
 // Minutes -> decimal hours, 2dp (payroll-friendly).
 export const minutesToHours = (m) => Math.round(((m || 0) / 60) * 100) / 100;
 
-// Payroll CSV: one row per cleaner, regular/OT/total hours over the range.
-// "Drive hours (in total)" is a BREAKDOWN of the total, not an addition to it —
-// the header says so explicitly so nobody downstream pays the travel twice.
-export function payrollCsv(userRows, { fromIso, toIso, tz } = {}) {
-  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const period = `${fromIso ? fmtDate(fromIso, { year: 'numeric', month: 'numeric', day: 'numeric' }, tz) : '—'} – ${toIso ? fmtDate(toIso, { year: 'numeric', month: 'numeric', day: 'numeric' }, tz) : '—'}`;
-  const head = ['Cleaner', 'Regular hours', 'OT hours', 'Total hours', 'Drive hours (in total)', 'Cleans', 'Pay period'];
-  const lines = [head.map(esc).join(',')];
-  for (const u of userRows || []) {
-    lines.push([
-      u.userName,
-      minutesToHours(u.regularMinutes),
-      minutesToHours(u.otMinutes),
-      minutesToHours(u.totalMinutes),
-      minutesToHours(u.driveMinutes || 0),
-      u.cleanCount,
-      period,
-    ].map(esc).join(','));
-  }
-  // Totals footer
-  const tot = (userRows || []).reduce((a, u) => ({
-    reg: a.reg + (u.regularMinutes || 0), ot: a.ot + (u.otMinutes || 0), all: a.all + (u.totalMinutes || 0),
-    drive: a.drive + (u.driveMinutes || 0), cleans: a.cleans + (u.cleanCount || 0),
-  }), { reg: 0, ot: 0, all: 0, drive: 0, cleans: 0 });
-  lines.push([
-    'ALL CLEANERS', minutesToHours(tot.reg), minutesToHours(tot.ot), minutesToHours(tot.all), minutesToHours(tot.drive), tot.cleans, period,
-  ].map(esc).join(','));
-  return lines.join('\n');
-}
+// One CSV cell, RFC-4180 quoted. A finite NUMBER is written as a number (a negative deduction
+// or arrears MUST import as money, not text — quoting it as text broke sums in the payroll
+// company's import). Only a TEXT cell whose value starts with = + - @, a TAB, CR or LF is
+// formula-neutralized with a leading single quote so a spreadsheet treats it as text, never a
+// formula — a payroll export is opened in Excel/Sheets, so a cleaner name like "=cmd|…" is an
+// injection sink. Same split as reports/reportKit.jsx `csvCell`. One escaper for BOTH payroll
+// CSVs below; the repo's other duplicated quote-only escapers (CS-079) are out of this wave's scope.
+export const csvCell = (v) => {
+  if (typeof v === 'number' && Number.isFinite(v)) return `"${v}"`;
+  const s = String(v ?? '');
+  const neutral = /^[=+\-@\t\r\n]/.test(s) ? `'${s}` : s;
+  return `"${neutral.replace(/"/g, '""')}"`;
+};
+
+// (The hours-only `payrollCsv` was DELETED 2026-09-29, II.5: it was the retired
+// components/PayrollExportModal's builder and had no caller left in the app — only its own
+// test — so PAY-9's employee-ID column would have gone onto dead code. The two payroll files
+// the office actually hands over are `payrollPayCsv` below (the pay run) and Reports > Hours
+// by cleaner, and both carry the id.)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PAY (dollars) — turn the weekly hours/OT rollup into money: hours/cleans/salary
@@ -417,13 +444,62 @@ const semiMonthlyBounds = (index) => {
 };
 
 // The org-tz day-key (YYYY-MM-DD) that STARTS the pay period containing dateOrKey.
-export function payPeriodStartKey(cadence = 'biweekly', dateOrKey = new Date(), tz) {
+// `weekStartDay` is the org's workweek start (PAY-19; 0 = Sunday, the US payroll default and
+// the value Matt confirmed). It DEFAULTS to 0, so every caller that does not pass it computes
+// exactly what it computed before. It has to be honoured here as well as in the OT ledger: with
+// the two disagreeing, a weekly/biweekly period would run Sunday-to-Saturday while the 40 h line
+// was walked Monday-to-Sunday, and the semi-monthly rollup window would fetch a PARTIAL week at
+// each edge — which under-counts overtime, the exact failure payrollByUserClipped exists to avoid.
+export function payPeriodStartKey(cadence = 'biweekly', dateOrKey = new Date(), tz, weekStartDay = 0) {
   if (cadence === 'semimonthly') return semiMonthlyBounds(semiMonthlyIndexOf(dateOrKey, tz)).fromKey;
-  const wk = payWeekKeyOf(dateOrKey, 0, tz);            // this week's Sunday
+  const wk = payWeekKeyOf(dateOrKey, weekStartDay, tz);   // the start of this pay week
   if (cadence === 'weekly') return wk;
-  const weeks = Math.round(diffDaysKey(PAY_PERIOD_ANCHOR, wk) / 7);
+  // The biweekly blocks are anchored to a fixed epoch week so every surface agrees which two
+  // weeks form a period. The anchor follows the org's week start; it is already a SUNDAY, so
+  // weekStartDay 0 leaves it exactly where it was.
+  const anchor = payWeekKeyOf(PAY_PERIOD_ANCHOR, weekStartDay, tz);
+  const weeks = Math.round(diffDaysKey(anchor, wk) / 7);
   const blocks = Math.floor(weeks / 2);                 // even-week alignment to the anchor
-  return addDaysKey(PAY_PERIOD_ANCHOR, blocks * 14);
+  return addDaysKey(anchor, blocks * 14);
+}
+
+// ── PAY-2: the PAY DATE — when the money actually lands ───────────────────────
+// Matt, 2026-09-29: "semi monthly 1 to 15 on the 20th and 16 to 31 on the 5th of the new month."
+// A pay period and its PAYDAY are different dates, and the payroll specialist works to the
+// payday: it is what the run, its close dialog and the file handed to Paychex have to say.
+//
+// Semi-monthly pays on a set day AFTER each half (the first half in the SAME month, the second
+// half in the NEXT one). Weekly and biweekly pay a set number of days after the period ends.
+// A day past the end of a short month CLAMPS to that month's last day, so "the 31st" is a valid
+// setting that pays on 28/29/30 in February. Day keys are calendar LABELS, so this is pure
+// calendar arithmetic with no zone in it.
+export const PAY_DATE_DEFAULTS = { semiFirstHalfDay: 20, semiSecondHalfDay: 5, daysAfterPeriodEnd: 5 };
+const clampDayOfMonth = (v, fallback) => (Number.isInteger(v) && v >= 1 && v <= 31 ? v : fallback);
+// The ONE reader of the stored field names, so a surface never reads them itself.
+export function payDateConfigOf(opsSettings) {
+  const o = opsSettings || {};
+  const after = o.payDateDaysAfterPeriodEnd;
+  return {
+    semiFirstHalfDay: clampDayOfMonth(o.payDateSemiFirstHalfDay, PAY_DATE_DEFAULTS.semiFirstHalfDay),
+    semiSecondHalfDay: clampDayOfMonth(o.payDateSemiSecondHalfDay, PAY_DATE_DEFAULTS.semiSecondHalfDay),
+    daysAfterPeriodEnd: (Number.isInteger(after) && after >= 0 && after <= 60)
+      ? after : PAY_DATE_DEFAULTS.daysAfterPeriodEnd,
+  };
+}
+// The payday for one period, as a day key. `config` is payDateConfigOf's output (or null → the
+// defaults, so a caller that has not read the settings still gets Matt's schedule, never null).
+export function payDateKeyFor(period, config = null) {
+  if (!period || !period.fromKey || !period.toKey) return null;
+  const cfg = config && Number.isInteger(config.semiFirstHalfDay) ? config : payDateConfigOf(null);
+  if (period.cadence === 'semimonthly') {
+    const [y, m, d] = String(period.fromKey).split('-').map(Number);
+    if (!Number.isFinite(y) || !Number.isFinite(m)) return null;
+    if (d <= 15) return ymdKey(y, m, Math.min(cfg.semiFirstHalfDay, daysInMonth(y, m)));
+    const ny = m === 12 ? y + 1 : y;
+    const nm = m === 12 ? 1 : m + 1;
+    return ymdKey(ny, nm, Math.min(cfg.semiSecondHalfDay, daysInMonth(ny, nm)));
+  }
+  return addDaysKey(period.toKey, cfg.daysAfterPeriodEnd);
 }
 
 // The pay period `offset` steps (± whole periods) from the one containing dateOrKey.
@@ -433,7 +509,7 @@ export function payPeriodStartKey(cadence = 'biweekly', dateOrKey = new Date(), 
 // payroll run fetches so weekly (40h) OT is computed on complete workweeks and then
 // day-attributed back into the calendar period (payrollByUserClipped). For the
 // week-aligned cadences the rollup window equals the period itself.
-export function payPeriodRange(cadence = 'biweekly', offset = 0, dateOrKey = new Date(), tz) {
+export function payPeriodRange(cadence = 'biweekly', offset = 0, dateOrKey = new Date(), tz, weekStartDay = 0) {
   const opt = { year: 'numeric', month: 'short', day: 'numeric' };
   let fromKey; let toKey; let span;
   if (cadence === 'semimonthly') {
@@ -442,19 +518,20 @@ export function payPeriodRange(cadence = 'biweekly', offset = 0, dateOrKey = new
     span = diffDaysKey(fromKey, toKey) + 1; // 13–16 days — variable, unlike the fixed cadences
   } else {
     span = cadence === 'weekly' ? 7 : 14;
-    const base = payPeriodStartKey(cadence, dateOrKey, tz);
+    const base = payPeriodStartKey(cadence, dateOrKey, tz, weekStartDay);
     fromKey = addDaysKey(base, offset * span);
     toKey = addDaysKey(fromKey, span - 1);
   }
   const fromDate = startOfDayKey(fromKey, tz);
   const dayAfter = startOfDayKey(addDaysKey(toKey, 1), tz); // exclusive end (next day 00:00)
-  // Rollup window = whole Sunday-aligned pay-weeks overlapping the period; equal to the
-  // period for week-aligned cadences.
-  const rollupFromKey = cadence === 'semimonthly' ? payWeekKeyOf(fromKey, 0, tz) : fromKey;
-  const rollupToKey = cadence === 'semimonthly' ? addDaysKey(payWeekKeyOf(toKey, 0, tz), 6) : toKey;
+  // Rollup window = the whole pay-weeks overlapping the period, anchored on the ORG's workweek
+  // start (PAY-19; Sunday by default, which is what this always did). Equal to the period for
+  // the week-aligned cadences.
+  const rollupFromKey = cadence === 'semimonthly' ? payWeekKeyOf(fromKey, weekStartDay, tz) : fromKey;
+  const rollupToKey = cadence === 'semimonthly' ? addDaysKey(payWeekKeyOf(toKey, weekStartDay, tz), 6) : toKey;
   const rollupDayAfter = startOfDayKey(addDaysKey(rollupToKey, 1), tz);
   return {
-    cadence, span, fromKey, toKey,
+    cadence, span, weekStartDay, fromKey, toKey,
     fromIso: fromDate.toISOString(),
     toIso: new Date(dayAfter.getTime() - 1).toISOString(), // last instant of the period
     rollupFromIso: startOfDayKey(rollupFromKey, tz).toISOString(),
@@ -463,15 +540,128 @@ export function payPeriodRange(cadence = 'biweekly', offset = 0, dateOrKey = new
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PAY RATES BY BUILDING — the week's BLENDED overtime rate (PAY-7 / PAY-18, Matt
+// 2026-09-29: "one cleaner might have two rate during the day gets $15 at abd building and at
+// night gets $17 at yzd building"). The FIELD lives in lib/payRates.js; the MONEY lives here,
+// beside `basePayForUser`, because that is the one pricer every caller comes through.
+//
+// THE FEDERAL RULE (FLSA 29 CFR 778.115, "employees working at two or more rates"):
+//   straight time = every hour worked × the rate for ITS building
+//   regular rate  = that WEEK's straight-time pay ÷ that WEEK's hours    ("blended")
+//   each OT hour  = its straight time (already counted above) + 0.5 × the blended rate
+// so the premium is identical for every OT hour in the week whichever building it fell at —
+// which is the whole point: otherwise the order the 40 h line happened to be walked in would
+// decide the wage. With ONE rate it collapses to exactly `reg × r + ot × r × mult`, and
+// `basePayForUser` takes that untouched path so a one-rate week is byte-identical to before.
+//
+// INPUT — `rateWeeks`, built by the caller that knows which punch was at which building
+// (lib/payRun.computePayRun, from the weekly ledger's items):
+//   [{ weekKey,
+//      paid:  [{ rateCents, regularMinutes, otMinutes }],   // what THIS period pays for
+//      basis: [{ rateCents, regularMinutes, otMinutes }] }] // the WHOLE week, for the blend
+// `basis` defaults to `paid`, and matters when a period cuts through a week (semi-monthly) or
+// when an arrears delta is priced: the blended rate is a property of the WEEK, so the two halves
+// of a straddling week must blend over the same full week or their premiums disagree.
+// Minutes may be NEGATIVE (an arrears delta after a void) — the money then comes back signed.
+const normBuckets = (list) => (Array.isArray(list) ? list : [])
+  .filter((b) => b && Number.isFinite(Number(b.rateCents)))
+  .map((b) => ({
+    rateCents: Math.round(Number(b.rateCents)),
+    regularMinutes: Math.round(Number(b.regularMinutes) || 0),
+    otMinutes: Math.round(Number(b.otMinutes) || 0),
+  }));
+
+// The ONE rate every bucket in every week shares (paid AND basis), or null when there is none
+// (no buckets at all) or more than one. `null` is what sends `basePayForUser` down its original
+// path, so "nobody has building rates" costs nothing and changes nothing.
+function singleRateCents(rateWeeks) {
+  let only = null;
+  for (const wk of rateWeeks || []) {
+    for (const b of [...normBuckets(wk && wk.paid), ...normBuckets(wk && wk.basis)]) {
+      if (only === null) only = b.rateCents;
+      else if (only !== b.rateCents) return null;
+    }
+  }
+  return only;
+}
+
+// The money AND the parts a screen renders, so the drawer can never re-derive a different
+// figure from `pay.hourlyRate` (it used to, and that was the display half of this defect).
+// Cents per component, summed — the same per-item rounding the rest of this file uses.
+export function hourlyPayBreakdown(rateWeeks, { otMultiplier = 1.5, otExempt = false } = {}) {
+  const byRate = new Map();
+  let straightCents = 0; let premiumCents = 0; let otMinutes = 0;
+  let basisStraightCents = 0; let basisHours = 0;
+  for (const wk of rateWeeks || []) {
+    const paid = normBuckets(wk && wk.paid);
+    const declared = normBuckets(wk && wk.basis);
+    let wkStraight = 0; let wkOt = 0;
+    for (const b of paid) {
+      const minutes = b.regularMinutes + b.otMinutes;
+      const cents = Math.round(minutesToHours(minutes) * b.rateCents);
+      wkStraight += cents; wkOt += b.otMinutes;
+      const acc = byRate.get(b.rateCents) || { rateCents: b.rateCents, minutes: 0, payCents: 0 };
+      acc.minutes += minutes; acc.payCents += cents;
+      byRate.set(b.rateCents, acc);
+    }
+    // The blend's denominator is the WEEK. When the caller declares no basis it is this
+    // period's own hours; when the week recomputed to NOTHING (every punch voided) fall back to
+    // the MAGNITUDES of what is being reversed, so a premium already paid is clawed back at the
+    // rate it was paid at instead of silently kept.
+    let basis = declared.length ? declared : paid;
+    let bStraight = 0; let bHours = 0;
+    const measure = (list, abs) => {
+      let s = 0; let h = 0;
+      for (const b of list) {
+        const mins = abs ? Math.abs(b.regularMinutes) + Math.abs(b.otMinutes) : b.regularMinutes + b.otMinutes;
+        const hours = minutesToHours(mins);
+        s += Math.round(hours * b.rateCents); h += hours;
+      }
+      return [s, h];
+    };
+    [bStraight, bHours] = measure(basis, false);
+    if (bHours === 0) { basis = paid; [bStraight, bHours] = measure(basis, true); }
+    const blendedCents = bHours !== 0 ? bStraight / bHours : 0;
+    const prem = otExempt ? 0 : Math.round(minutesToHours(wkOt) * (otMultiplier - 1) * blendedCents);
+    straightCents += wkStraight; premiumCents += prem; otMinutes += wkOt;
+    basisStraightCents += bStraight; basisHours += bHours;
+  }
+  const rates = [...byRate.values()]
+    .sort((a, b) => b.rateCents - a.rateCents)
+    .map((r) => ({ rateCents: r.rateCents, rate: r.rateCents / 100, minutes: r.minutes, pay: round2(r.payCents / 100) }));
+  return {
+    payCents: straightCents + premiumCents,
+    straightCents, premiumCents, otMinutes,
+    multiRate: byRate.size > 1,
+    rates,
+    otPremium: round2(premiumCents / 100),
+    // A DISPLAY figure across the whole row: exact for a single week, and the hours-weighted
+    // average of each week's blend over several (each week's own premium was already computed
+    // from its own blend above — this line only labels it).
+    blendedRate: basisHours !== 0 ? (basisStraightCents / basisHours) / 100 : 0,
+  };
+}
+
 // Base pay for one payrollByUser/weekly row given the user's pay config:
-//   hourly    → regular hours × rate + OT hours × rate × otMultiplier (otExempt: no OT premium)
+//   hourly    → regular hours × rate + OT hours × rate × otMultiplier (otExempt: no OT premium),
+//               or — when `rateWeeks` carries more than one rate — straight time at each
+//               building's rate plus the week's BLENDED overtime premium (see above)
 //   per_visit → perVisitRate × cleanCount
 //   salary    → salaryPerPeriod × periodsCovered (whole periods in the range)
 //   none/unset → null (excluded from payroll)
-export function basePayForUser(row, pay, { otMultiplier = 1.5, periodsCovered = 1 } = {}) {
+export function basePayForUser(row, pay, { otMultiplier = 1.5, periodsCovered = 1, rateWeeks = null } = {}) {
   if (!pay || !pay.type || pay.type === 'none') return null;
   if (pay.type === 'hourly') {
-    const rate = Number(pay.hourlyRate) || 0;
+    const single = singleRateCents(rateWeeks);
+    // MORE THAN ONE RATE in the row → the blended path. Otherwise the original formula, with
+    // the one rate the buckets agree on (which is `pay.hourlyRate` unless every hour was worked
+    // at one override building), so nothing about a one-rate week moves by a cent.
+    if (single === null && rateWeeks && rateWeeks.length) {
+      return round2(hourlyPayBreakdown(rateWeeks, { otMultiplier, otExempt: pay.otExempt }).payCents / 100);
+    }
+    const mainRate = Number(pay.hourlyRate) || 0;
+    const rate = (single === null || single === rateCentsOf(mainRate)) ? mainRate : single / 100;
     const regPay = round2(minutesToHours(row ? row.regularMinutes : 0) * rate);
     const otHours = pay.otExempt ? 0 : minutesToHours(row ? row.otMinutes : 0);
     const otPay = round2(otHours * rate * otMultiplier);
@@ -548,25 +738,35 @@ export function payRunRoster({ users = [], hoursRows = [], lines = [], periodKey
   return { members, removed: [...removed.values()] };
 }
 
-// Richer payroll CSV: the hours columns PLUS the per-cleaner dollar breakdown. The
-// caller pre-computes each row {userName, payTypeLabel, regularMinutes, otMinutes,
-// base, gross, byCategory}. Reimbursements are labeled non-tax so nobody taxes them.
+// Richer payroll CSV: the hours columns PLUS the per-cleaner dollar breakdown, PLUS the
+// arrears owed for prior closed periods paid on this run (W2-L). The caller pre-computes each
+// row {userName, payTypeLabel, regularMinutes, otMinutes, base, gross, byCategory,
+// arrearsRegularMinutes, arrearsOtMinutes, arrearsPay} — GROSS already INCLUDES arrearsPay
+// (base + arrears + custom lines), so the arrears columns are a breakdown, never a second
+// amount to pay. Reimbursements are labeled non-tax so nobody taxes them. Every cell is
+// formula-neutralized (csvCell) — a negative deduction or a crafted name can't run in a sheet.
 export function payrollPayCsv(rows, { fromIso, toIso, tz } = {}) {
-  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const period = `${fromIso ? fmtDate(fromIso, { year: 'numeric', month: 'numeric', day: 'numeric' }, tz) : '—'} – ${toIso ? fmtDate(toIso, { year: 'numeric', month: 'numeric', day: 'numeric' }, tz) : '—'}`;
-  const head = ['Cleaner', 'Pay type', 'Regular hours', 'OT hours', 'Base pay', 'Bonus', 'Special service', 'Reimbursement (non-tax)', 'Tip', 'Deduction', 'Gross', 'Pay period'];
-  const out = [head.map(esc).join(',')];
+  // PAY-9 / CS-382 (Matt, 2026-09-29): the EMPLOYEE ID the payroll company matches on, right
+  // beside the name it identifies. Without it they matched people by NAME, so one collision
+  // or spelling difference mis-pays someone. Blank for a member who has none — a normal
+  // state, and for a CLOSED run whose stored file rows predate this column.
+  const head = ['Cleaner', 'Employee ID', 'Pay type', 'Regular hours', 'OT hours', 'Base pay', 'Bonus', 'Special service', 'Reimbursement (non-tax)', 'Tip', 'Deduction', 'Arrears regular hours', 'Arrears OT hours', 'Arrears pay', 'Gross', 'Pay period'];
+  const out = [head.map(csvCell).join(',')];
   for (const r of rows || []) {
     const c = r.byCategory || {};
     out.push([
-      r.userName, r.payTypeLabel || '',
+      r.userName, r.employeeId || '', r.payTypeLabel || '',
       r.regularMinutes != null ? minutesToHours(r.regularMinutes) : '',
       r.otMinutes != null ? minutesToHours(r.otMinutes) : '',
       r.base != null ? r.base : '',
       c.bonus || 0, c.special || 0, c.reimbursement || 0, c.tip || 0, c.deduction || 0,
+      r.arrearsRegularMinutes != null ? minutesToHours(r.arrearsRegularMinutes) : '',
+      r.arrearsOtMinutes != null ? minutesToHours(r.arrearsOtMinutes) : '',
+      r.arrearsPay != null ? r.arrearsPay : '',
       r.gross != null ? r.gross : '',
       period,
-    ].map(esc).join(','));
+    ].map(csvCell).join(','));
   }
   return out.join('\n');
 }

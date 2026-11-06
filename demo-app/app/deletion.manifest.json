@@ -13,9 +13,8 @@
     },
     "clients": {
       "idField": "id",
-      "deletedBy": [
-        "DELETE_CLIENT"
-      ]
+      "deletedBy": [],
+      "note": "never deleted: customers are ARCHIVED (CS-663, Matt's \"Never delete customers\"; ARCHIVE_CLIENT / RESTORE_CLIENT), and the server refuses a customer removal"
     },
     "contacts": {
       "idField": "id",
@@ -24,15 +23,12 @@
       ],
       "deletedBy": [
         "DELETE_CONTACT"
-      ],
-      "alsoCascadedBy": [
-        "DELETE_CLIENT"
       ]
     },
     "sites": {
       "idField": "id",
       "deletedBy": [],
-      "note": "no standalone delete; dies with its client"
+      "note": "no standalone delete, and its customer is archived, never deleted (CS-663): nothing removes a site"
     },
     "jobs": {
       "idField": "id",
@@ -98,18 +94,6 @@
       "idField": "id",
       "deletedBy": [
         "DELETE_OPPORTUNITY"
-      ]
-    },
-    "supplyItems": {
-      "idField": "id",
-      "deletedBy": [
-        "DELETE_SUPPLY_ITEM"
-      ]
-    },
-    "supplyRequests": {
-      "idField": "id",
-      "deletedBy": [
-        "DELETE_SUPPLY_REQUEST"
       ]
     },
     "oauthWorkspaces": {
@@ -205,6 +189,12 @@
       "policy": "NULLIFY",
       "why": "a dangling-but-truthy supervisorId strands the account off the \"needs a manager\" bench (DEL-01a)"
     },
+    "users[].opsManagerId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "S131: an account manager's Operations Manager; DELETE_USER clears every pointer at a removed OM (lib/deleteCascade clearOpsManagerPointers), else the AM reads as on a team nobody leads"
+    },
     "clients[].tagIds": {
       "target": "tags",
       "kind": "id-array",
@@ -225,8 +215,9 @@
     "contacts[].companyId": {
       "target": "clients",
       "kind": "scalar-id",
-      "policy": "SWEEP",
-      "why": "DELETE_CLIENT deletes the company's contacts"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a customer is ARCHIVED, never deleted (CS-663): no delete path removes one, so this reference never dangles",
+      "decision": "CS-663"
     },
     "contacts[].tagIds": {
       "target": "tags",
@@ -237,7 +228,9 @@
     "conversations[].clientId": {
       "target": "clients",
       "kind": "scalar-id",
-      "policy": "NULLIFY"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a customer is ARCHIVED, never deleted (CS-663): no delete path removes one, so this reference never dangles",
+      "decision": "CS-663"
     },
     "conversations[].contactId": {
       "target": "contacts",
@@ -274,7 +267,9 @@
     "invoices[].clientId": {
       "target": "clients",
       "kind": "scalar-id",
-      "policy": "SWEEP"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a customer is ARCHIVED, never deleted (CS-663): no delete path removes one, so this reference never dangles",
+      "decision": "CS-663"
     },
     "invoices[].jobIds": {
       "target": "jobs",
@@ -285,13 +280,16 @@
     "invoices[].siteId": {
       "target": "sites",
       "kind": "scalar-id",
-      "policy": "SWEEP",
-      "why": "invoice deleted with its client"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a site has no delete of its own and its customer is archived, never deleted (CS-663): no delete path removes one",
+      "decision": "CS-663"
     },
     "jobs[].clientId": {
       "target": "clients",
       "kind": "scalar-id",
-      "policy": "SWEEP"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a customer is ARCHIVED, never deleted (CS-663): no delete path removes one, so this reference never dangles",
+      "decision": "CS-663"
     },
     "jobs[].coverFor.{key}": {
       "target": "users",
@@ -320,8 +318,9 @@
     "jobs[].siteId": {
       "target": "sites",
       "kind": "scalar-id",
-      "policy": "SWEEP",
-      "why": "a site dies only via its client, which also deletes the job"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a site has no delete of its own and its customer is archived, never deleted (CS-663): no delete path removes one",
+      "decision": "CS-663"
     },
     "keyEvents[].byUserId": {
       "target": "users",
@@ -344,9 +343,9 @@
     "keys[].clientId": {
       "target": "clients",
       "kind": "scalar-id",
-      "policy": "NULLIFY",
-      "why": "physical keys outlive the deleted account (custody)",
-      "decision": "OQ-01"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a customer is ARCHIVED, never deleted (CS-663): no delete path removes one, so this reference never dangles",
+      "decision": "CS-663"
     },
     "keys[].heldByUserId": {
       "target": "users",
@@ -358,9 +357,9 @@
     "keys[].siteId": {
       "target": "sites",
       "kind": "scalar-id",
-      "policy": "NULLIFY",
-      "why": "keys survive; siteId nulled with clientId",
-      "decision": "OQ-01"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a site has no delete of its own and its customer is archived, never deleted (CS-663): no delete path removes one",
+      "decision": "CS-663"
     },
     "marketingEnrollments[].contactId": {
       "target": "contacts",
@@ -494,7 +493,9 @@
     "opportunities[].clientId": {
       "target": "clients",
       "kind": "scalar-id",
-      "policy": "SWEEP"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a customer is ARCHIVED, never deleted (CS-663): no delete path removes one, so this reference never dangles",
+      "decision": "CS-663"
     },
     "opportunities[].pipelineId": {
       "target": "pipelines",
@@ -507,58 +508,17 @@
       "kind": "scalar-id",
       "policy": "NULLIFY"
     },
-    "reminderEvents[].clientId": {
-      "target": "clients",
-      "kind": "scalar-id",
-      "policy": "SWEEP"
-    },
-    "reminderEvents[].jobId": {
-      "target": "jobs",
-      "kind": "scalar-id",
-      "policy": "SWEEP",
-      "why": "scrubbed on DELETE_JOB/SERIES; the UPDATE_JOB_SERIES day-drop path is the suspected miss"
-    },
     "sites[].clientId": {
       "target": "clients",
       "kind": "scalar-id",
-      "policy": "SWEEP"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a customer is ARCHIVED, never deleted (CS-663): no delete path removes one, so this reference never dangles",
+      "decision": "CS-663"
     },
     "sites[].siteContactId": {
       "target": "contacts",
       "kind": "scalar-id",
       "policy": "NULLIFY"
-    },
-    "supplyItems[].clientId": {
-      "target": "clients",
-      "kind": "scalar-id",
-      "policy": "SWEEP",
-      "why": "LW-01 fix — lib/deleteCascade.sweepClientOrphans"
-    },
-    "supplyRequests[].clientId": {
-      "target": "clients",
-      "kind": "scalar-id",
-      "policy": "SWEEP",
-      "why": "LW-01 fix"
-    },
-    "supplyRequests[].completedByUserId": {
-      "target": "users",
-      "kind": "scalar-id",
-      "policy": "NULLIFY+name",
-      "nameField": "completedByName",
-      "why": "completer link nulled on user delete; the name is kept (completedByName). REOPEN clears it with the id so a later completion is never credited to them"
-    },
-    "supplyRequests[].lines[].itemId": {
-      "target": "supplyItems",
-      "kind": "scalar-id",
-      "policy": "KEEP-BY-DESIGN",
-      "why": "request lines snapshot name+price at request time; itemId is historical (reducer DELETE_SUPPLY_ITEM)"
-    },
-    "supplyRequests[].requestedByUserId": {
-      "target": "users",
-      "kind": "scalar-id",
-      "policy": "NULLIFY+name",
-      "nameField": "requestedByName",
-      "why": "requester link nulled on user delete; the name is kept on the request (requestedByName) so Supplies shows who asked instead of \"—\""
     },
     "timeOff[].createdBy": {
       "target": "users",
@@ -664,7 +624,9 @@
     "clientActivities[].clientId": {
       "target": "clients",
       "kind": "scalar-id",
-      "policy": "SWEEP"
+      "policy": "NOT-EXERCISABLE",
+      "why": "a customer is ARCHIVED, never deleted (CS-663): no delete path removes one, so this reference never dangles",
+      "decision": "CS-663"
     },
     "contactActivities[].authorUserId": {
       "target": "users",
@@ -700,7 +662,7 @@
       "target": "multi",
       "kind": "path-embedded",
       "policy": "SWEEP",
-      "why": "deep-link bell row embeds a conversation/client/job id; DELETE_JOB scrubs /schedule/ but DELETE_CONVERSATION + DELETE_CLIENT leave /messaging/ + /clients/ dead links (adversarial finding)"
+      "why": "deep-link bell row embeds a conversation/client/job id; DELETE_JOB scrubs /schedule/ and DELETE_CONVERSATION /messaging/ (adversarial finding); a customer is archived, never deleted (CS-663), so a /clients/ link never dies"
     },
     "payrollLines[].createdBy": {
       "target": "users",
@@ -725,6 +687,12 @@
       "kind": "scalar-id",
       "policy": "NULLIFY",
       "why": "who submitted it (authorship, never displayed); cleared on DELETE_USER"
+    },
+    "opsSettings.supplyApproverUserId": {
+      "target": "users",
+      "kind": "scalar-id",
+      "policy": "NULLIFY",
+      "why": "SUP-9's optional named supply approver (null = the building's supervisor approves). A dangling id resolves to NOBODY (resolveSupplyApprover requires the row to be present, active and an eligible tier), so every new request would silently reach no approver while Settings > Operations still named one. DELETE_USER nulls it in sweepUserOrphans, and ONLY when the setting names the departing user, so an untouched org's save never moves the slice — which matters because the whole of opsSettings is time.config-gated: orgStateGuard's authority-neutral cascade carve-out covers this field (and still tolerates a legacy ALR-4 operations-manager value, removed by ALR-12)."
     }
   },
   "excluded": {
@@ -781,7 +749,10 @@
     "messageId",
     "addedIds",
     "anchorId",
-    "templateId"
+    "templateId",
+    "removeIds",
+    "capMasterIds",
+    "archivedIds"
   ],
   "actions": {
     "SCRUB_CHECKLIST_TEMPLATE": {
@@ -849,12 +820,6 @@
       ],
       "case": "reducer.js:645"
     },
-    "DELETE_CLIENT": {
-      "mode": "hard-delete",
-      "target": "clients",
-      "cascadeLib": "sweepClientOrphans",
-      "case": "reducer.js:779"
-    },
     "DELETE_CLIENT_ACTIVITY": {
       "mode": "hard-delete",
       "target": "clientActivities",
@@ -901,15 +866,15 @@
       "target": "timeOff",
       "case": "reducer.js:1245"
     },
-    "APPLY_TIME_OFF_EXCLUSIONS": {
+    "ADD_TIME_OFF": {
       "mode": "special",
-      "note": "removes a userId from future job crewIds",
-      "case": "reducer.js:1250"
+      "note": "with removeFromCleans, removes the userId from the future job crewIds in the booked days (CS-054: was APPLY_TIME_OFF_EXCLUSIONS, merged into the one booking action)",
+      "case": "reducer.js:1487"
     },
     "UPDATE_JOB_SERIES": {
       "mode": "implicit-scenario",
       "target": "jobs",
-      "note": "day-drop deletes jobs for removed days (suspected reminderEvents miss)",
+      "note": "day-drop deletes jobs for removed days",
       "case": "reducer.js:1405"
     },
     "DELETE_JOB": {
@@ -928,6 +893,12 @@
       "cell": "invoices[].payments",
       "case": "reducer.js:1880"
     },
+    "REMOVE_SPECIAL_SERVICE": {
+      "mode": "nested-removal",
+      "cell": "clients[].specialServices",
+      "note": "task 507 (UI_RULES §192): removes one of a building's special services; nothing points at a service but the ops-alert marker, which lib/opsAlertApply drops once its service is gone",
+      "case": "reducer.js:1054"
+    },
     "DELETE_INVOICE": {
       "mode": "hard-delete",
       "target": "invoices",
@@ -937,21 +908,6 @@
       "mode": "hard-delete",
       "target": "keys",
       "case": "reducer.js:1986"
-    },
-    "DELETE_SUPPLY_ITEM": {
-      "mode": "hard-delete",
-      "target": "supplyItems",
-      "case": "reducer.js:2022"
-    },
-    "COMPLETE_SUPPLY_REQUEST": {
-      "mode": "implicit-scenario",
-      "note": "pruneSupplyRequests trims the completed tail",
-      "case": "reducer.js:2058"
-    },
-    "DELETE_SUPPLY_REQUEST": {
-      "mode": "hard-delete",
-      "target": "supplyRequests",
-      "case": "reducer.js:2089"
     },
     "SET_INSPECTION_FOLLOWUP": {
       "mode": "special",

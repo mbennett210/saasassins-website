@@ -1,476 +1,424 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Modal from './Modal';
-import {
-  parseCsv, guessField,
-  CONTACT_FIELDS, LOCATION_FIELD_KEYS,
-  buildImportPlan,
-  buildSampleContactCsv,
-} from '../lib/csv';
-import { composeAddress } from '../lib/address';
-import { newId } from '../lib/ids';
-import { ATTACHMENT_MAX_BYTES, formatBytes } from '../lib/attachments';
-import { useDispatch, useStore } from '../store';
-import { ACTIONS } from '../store/reducer';
-import { useToast } from './Toast';
-import Icon from './Icon';
 import Select from './Select';
 import TagPicker from './TagPicker';
+import Badge from './Badge';
+import Icon from './Icon';
+import ListPager from './ListPager';
+import { useToast } from './Toast';
+import { usePagedRows } from '../hooks/usePagedRows';
+import { useAuth } from '../hooks/useAuth';
+import { usePermission } from '../hooks/usePermission';
+import { useDispatch, useStore } from '../store';
+import { ACTIONS, reducer } from '../store/reducer';
+import { selectClientStatus } from '../store/selectors';
+import { serializeSharedBlob } from '../store/tableSlices';
+import { decodeCsvBytes, parseCsv } from '../lib/csv';
+import {
+  IMPORT_FIELDS, CONTACT_FIELD_KEYS, TEMPLATE_HEADERS, guessImportMapping, isBillingHeader,
+  importPermissions, planCustomerImport, prepareImport, commitImport, importedLocations,
+  locatableLocations, locateResults, importProblemsCsv, customerTemplateCsv,
+} from '../lib/customerImport';
+import { geocodeAddress } from '../lib/geoApi';
+import { GEOCODE_STATUS, GEOCODE_MAX_PER_RUN, resolveGeocodeMany } from '../lib/geocodeLocation';
+import { formatStateBytes } from '../lib/stateBudget';
+import { ATTACHMENT_MAX_BYTES, formatBytes } from '../lib/attachments';
+import { newId } from '../lib/ids';
 import { IDENTITY } from '../brand/identity.generated.js';
+import { useT } from '../i18n/react';
+import { msg } from '../i18n/core';
 
-const STEP = { UPLOAD: 'upload', MAP: 'map', OPTIONS: 'options', PREVIEW: 'preview', RESULT: 'result' };
-
-const FIELD_LABEL = Object.fromEntries(CONTACT_FIELDS.map((f) => [f.key, f.label]));
-
-// Visual treatment per disposition — kept inline so the modal is self-contained.
-const ACTION_META = {
-  create:  { label: 'New',     color: 'var(--success)', icon: 'plus' },
-  update:  { label: 'Update',  color: 'var(--color-link)', icon: 'check' },
-  skip:    { label: 'Skip',    color: 'var(--text-faint)', icon: 'warning' },
-  invalid: { label: 'Invalid', color: 'var(--danger)', icon: 'x' },
+// Customers → Import customers: one row is one BUILDING (lib/customerImport.js holds every rule;
+// this screen only walks it). File → columns → a dry-run preview → the import, written as ONE
+// store action after the shared record's size is checked (commitImport), then the buildings are
+// located a hundred at a time. Cancel at any step before Import writes nothing.
+const STEP = { FILE: 'file', COLUMNS: 'columns', PREVIEW: 'preview', DONE: 'done' };
+const STATUS_BADGE = {
+  create: ['green', 'custImport.status.create'],
+  update: ['blue', 'custImport.status.update'],
+  unchanged: ['slate', 'custImport.status.unchanged'],
+  same: ['purple', 'custImport.status.same'],
+  error: ['red', 'custImport.status.error'],
 };
+// Row filters (rows, not customers). "Same customer" shows only when the file repeats a building.
+const FILTERS = [
+  { key: 'all', labelKey: 'custImport.filter.all' },
+  { key: 'create', labelKey: 'custImport.filter.create' },
+  { key: 'update', labelKey: 'custImport.filter.update' },
+  { key: 'unchanged', labelKey: 'custImport.filter.unchanged' },
+  { key: 'same', labelKey: 'custImport.filter.same', onlyWhenAny: true },
+  { key: 'problems', labelKey: 'custImport.filter.problems' },
+];
+const matchesFilter = (r, f) => (f === 'all' ? true
+  : f === 'problems' ? (r.errors.length > 0 || r.warnings.length > 0) : r.status === f);
+// The paste box's example: the template's own column names, which the import reads as written.
+const PASTE_EXAMPLE = `${TEMPLATE_HEADERS.slice(0, 8).join(',')}\n0101,Harbor View Towers,Customer,Active,1200 N Ocean Blvd,Pompano Beach,FL,33062`; // i18n-ok: column names the import matches, and a sample row
+const applyOps = (s, ops) => reducer(s, { type: ACTIONS.IMPORT_CUSTOMERS, ops });
 
-// Human-readable note for a planned row.
-function rowNote(r, hasBulk) {
-  if (r.action === 'create') {
-    const loc = r.location ? ` · location ${composeAddress(r.location)}` : '';
-    if (!r.account) return `New contact${loc}`;
-    return r.account.isNew
-      ? `New contact · creates account “${r.account.name}”${loc}`
-      : `New contact · links to ${r.account.name}${loc}`;
-  }
-  if (r.action === 'update') {
-    const fills = (r.changes || []).filter((c) => c.field !== 'companyId').map((c) => FIELD_LABEL[c.field] || c.field);
-    const linkChange = (r.changes || []).find((c) => c.field === 'companyId');
-    const parts = [`Matched by ${r.matchedBy}`];
-    if (fills.length) parts.push(`fills ${fills.join(', ')}`);
-    if (linkChange) parts.push(`links ${linkChange.to.name}${linkChange.to.isNew ? ' (new)' : ''}`);
-    if (!fills.length && !linkChange && hasBulk) parts.push('add company tag');
-    return parts.join(' · ');
-  }
-  return r.reason || '';
+function download(text, filename) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function CsvImportModal({ open, onClose }) {
+  const t = useT();
   const state = useStore();
   const dispatch = useDispatch();
   const toast = useToast();
+  const { currentUser } = useAuth();
+  const canEditClients = usePermission('clients.edit');
+  const canEditContacts = usePermission('contacts.edit');
+  const perms = useMemo(() => importPermissions({
+    role: currentUser?.role,
+    holds: (k) => (k === 'clients.edit' ? canEditClients : k === 'contacts.edit' ? canEditContacts : false),
+  }), [currentUser?.role, canEditClients, canEditContacts]);
 
-  const [step, setStep] = useState(STEP.UPLOAD);
-  const [parsed, setParsed] = useState({ headers: [], rows: [] });
+  const [step, setStep] = useState(STEP.FILE);
+  const [file, setFile] = useState(null); // { headers, rows, delimiter, renamed, encoding, name }
   const [mapping, setMapping] = useState({});
-  const [mode, setMode] = useState('upsert'); // 'upsert' (create + update) | 'update' (update only)
-  // Bulk options applied to every imported contact (new + matched).
-  const [bulkTagIds, setBulkTagIds] = useState([]);
   const [pasted, setPasted] = useState('');
-  const [parseError, setParseError] = useState(null);
-  const [results, setResults] = useState(null);
+  const [readError, setReadError] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const [tagIds, setTagIds] = useState([]);
+  const [filter, setFilter] = useState('all');
+  const [verdict, setVerdict] = useState(null); // the size check for the plan on screen
+  const [refusal, setRefusal] = useState(null);
+  const [result, setResult] = useState(null);
+  const [imported, setImported] = useState(null); // the plan as it was imported (the "done" step)
+  const [locating, setLocating] = useState(null);
+  const busy = useRef(false);
 
   useEffect(() => {
     if (!open) return;
-    setStep(STEP.UPLOAD);
-    setParsed({ headers: [], rows: [] });
-    setMapping({});
-    setMode('upsert');
-    setBulkTagIds([]);
-    setPasted('');
-    setParseError(null);
-    setResults(null);
+    setStep(STEP.FILE); setFile(null); setMapping({}); setPasted(''); setReadError(null);
+    setTagIds([]); setFilter('all'); setVerdict(null); setRefusal(null); setResult(null); setImported(null);
+    busy.current = false;
   }, [open]);
 
-  const tagById = useMemo(() => Object.fromEntries((state.tags || []).map((t) => [t.id, t.label])), [state.tags]);
+  // Fields this person may fill: the server refuses contacts without "Create / edit contacts"
+  // and a supervisor from anyone but a Super Admin or Admin, so those are not offered at all.
+  const allowed = useMemo(() => new Set(IMPORT_FIELDS.filter((f) => (f.group !== 'contact' || perms.canContacts)
+    && (f.group !== 'supervisor' || perms.canAssignSupervisor)).map((f) => f.key)), [perms]);
 
-  const hasBulk = bulkTagIds.length > 0;
-
-  const handleFile = (file) => {
-    if (!file) return;
-    if (file.size > ATTACHMENT_MAX_BYTES) {
-      setParseError(`File too large (max ${formatBytes(ATTACHMENT_MAX_BYTES)}).`);
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => loadText(String(e.target.result || ''));
-    reader.onerror = () => setParseError('Could not read file.');
-    reader.readAsText(file);
+  const read = (text, extra = {}) => {
+    setReadError(null);
+    const parsed = parseCsv(text);
+    if (!parsed.headers.length || !parsed.rows.length) { setReadError(msg('custImport.err.empty')); return; }
+    const guessed = guessImportMapping(parsed.headers);
+    const kept = Object.fromEntries(Object.entries(guessed).filter(([, key]) => allowed.has(key)));
+    setFile({ ...parsed, encoding: 'utf-8', ...extra, guessed });
+    setMapping(kept);
+    setStep(STEP.COLUMNS);
+  };
+  const readFile = async (f) => {
+    if (!f) return;
+    if (f.size > ATTACHMENT_MAX_BYTES) { setReadError(msg('custImport.err.fileTooLarge', { size: formatBytes(ATTACHMENT_MAX_BYTES) })); return; }
+    try {
+      const { text, encoding } = decodeCsvBytes(new Uint8Array(await f.arrayBuffer()));
+      read(text, { encoding, name: f.name });
+    } catch { setReadError(msg('custImport.err.unreadable')); }
   };
 
-  const loadText = (text) => {
-    setParseError(null);
-    const result = parseCsv(text);
-    if (!result.headers.length || !result.rows.length) {
-      setParseError('No data found. Make sure the file has a header row and at least one data row.');
-      return;
-    }
-    setParsed(result);
-    // Auto-guess mapping
+  const nameMapped = Object.values(mapping).includes('name');
+  const setField = (idx, key) => setMapping((prev) => {
     const next = {};
-    result.headers.forEach((h, idx) => {
-      const guess = guessField(h, CONTACT_FIELDS);
-      if (guess) next[idx] = guess;
-    });
-    setMapping(next);
-    setStep(STEP.MAP);
-  };
+    for (const [i, k] of Object.entries(prev)) if (k !== key && Number(i) !== idx) next[i] = k;
+    if (key) next[idx] = key;
+    return next;
+  });
+  const fieldOptions = useMemo(() => [
+    { value: '', label: t('custImport.skip') },
+    ...IMPORT_FIELDS.filter((f) => allowed.has(f.key)).map((f) => ({ value: f.key, label: t(f.labelKey) })),
+  ], [allowed, t]);
 
-  // A Company column is required — every contact belongs to a company (B2B) —
-  // plus at least one person identifier so rows can be matched or created.
-  const companyMapped = Object.values(mapping).includes('company');
-  const personMapped = ['email', 'phone', 'firstName', 'lastName', 'id'].some((k) => Object.values(mapping).includes(k));
-  const mappingValid = companyMapped && personMapped;
-
-  const downloadSample = () => {
-    const csv = buildSampleContactCsv();
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${IDENTITY.slug}-contacts-sample.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // The import plan: every row's disposition vs. existing data, recomputed when
-  // the file, mapping, mode, or bulk options change.
+  // The dry run: what each row WOULD do, against the book as it is right now. Writes nothing.
+  // Once imported, the "done" step keeps the plan as it was imported (re-planned against the new
+  // book, every row would read "unchanged").
   const plan = useMemo(() => {
-    if (step !== STEP.PREVIEW) return null;
-    return buildImportPlan({
-      rows: parsed.rows,
-      headers: parsed.headers,
-      mapping,
-      existingContacts: state.contacts || [],
-      existingClients: state.clients || [],
-      mode,
-      requireCompany: true,
-      bulk: hasBulk ? { tagIds: bulkTagIds } : null,
+    if (step === STEP.DONE) return imported;
+    if (!file || step !== STEP.PREVIEW) return null;
+    // statusOf: the store's own status rule, so a new person under a customer already on file
+    // takes the lifecycle that follows the status the customer page shows.
+    return planCustomerImport({ headers: file.headers, rows: file.rows, mapping, state, perms, tagIds, statusOf: (c) => selectClientStatus(state, c) });
+  }, [file, mapping, state, perms, tagIds, step, imported]);
+
+  // The size check runs a moment after the preview settles: it applies the import to a copy of
+  // the shared record and measures it, which is too heavy to repeat on every keystroke.
+  useEffect(() => {
+    if (step !== STEP.PREVIEW || !plan) return undefined;
+    setVerdict(null); setRefusal(null);
+    const id = setTimeout(() => {
+      const prepared = prepareImport({ state, plan, newId, applyOps, serialize: serializeSharedBlob });
+      setVerdict(prepared.verdict);
+      setRefusal(prepared.refusal);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [plan, step]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rowsShown = useMemo(() => (plan ? plan.rows.filter((r) => matchesFilter(r, filter)) : []), [plan, filter]);
+  const pager = usePagedRows(rowsShown, { resetKey: filter });
+
+  const downloadProblems = () => {
+    if (!plan || !file) return;
+    download(importProblemsCsv({ plan, headers: file.headers, render: (m) => t(m) }), `${IDENTITY.slug}-import-problems.csv`);
+  };
+
+  // Locate buildings a hundred at a time through the bounded geocoder; with no Maps key it stops
+  // at the first "unavailable" answer instead of asking a hundred times. The run's answers are
+  // ONE action (one pending entry, one save even when a refused save is replayed action by
+  // action, CS-008), each applied only while its building still has the address looked up.
+  // A lookup the server REFUSED (CS-083: this sign-in's hourly allowance, or the company's daily
+  // quota) stops the run too; the refused buildings get no answer, so they stay waiting for the
+  // next press, and the panel says which refusal it was and, for the hourly one, when.
+  const locate = async (items) => {
+    if (!items.length) return;
+    setLocating({ running: true, count: Math.min(items.length, GEOCODE_MAX_PER_RUN) });
+    const res = await resolveGeocodeMany(items, { geocode: geocodeAddress, stopWhenUnavailable: true });
+    if (res.patches.length) dispatch({ type: ACTIONS.LOCATE_BUILDINGS, results: locateResults(items, res.patches) });
+    const count = (s) => res.patches.filter((p) => p.patch.geocodeStatus === s).length;
+    setLocating({
+      running: false,
+      located: count(GEOCODE_STATUS.LOCATED),
+      notFound: count(GEOCODE_STATUS.NOT_LOCATED),
+      unavailable: res.stoppedUnavailable || count(GEOCODE_STATUS.UNAVAILABLE) > 0,
+      limited: res.stoppedLimited ? {
+        quota: res.limitCode === 'lookup-quota',
+        minutes: res.retryAfterMs ? Math.max(1, Math.ceil(res.retryAfterMs / 60000)) : null,
+      } : null,
     });
-  }, [parsed, mapping, mode, bulkTagIds, step, state]);
-
-  const stats = useMemo(() => {
-    const base = { create: 0, update: 0, skip: 0, invalid: 0 };
-    if (!plan) return base;
-    return plan.reduce((acc, r) => { acc[r.action]++; return acc; }, base);
-  }, [plan]);
-
-  // Columns shown in the preview table (the mapped fields, minus the internal id).
-  const previewCols = useMemo(
-    () => CONTACT_FIELDS.filter((f) => f.key !== 'id' && Object.values(mapping).includes(f.key)),
-    [mapping]
-  );
+  };
+  const waiting = useMemo(() => (open ? locatableLocations(state) : []), [open, state]);
 
   const doImport = () => {
-    if (!plan) return;
-    const createdClientIds = new Map(); // normName -> id (one new account per company, batch-wide)
-    const filledCompanyIds = new Set(); // companies whose blank location we've seeded this batch
-
-    const ensureAccountId = (account, type, location) => {
-      if (!account) return null;
-      if (!account.isNew) return account.id;
-      if (createdClientIds.has(account.normName)) return createdClientIds.get(account.normName);
-      const id = newId('cl');
-      // Type (Customer / Vendor) is the one manual company flag; Status (Lead /
-      // Active) is derived, never stored. Contact # is allocated by the reducer.
-      // Structured location columns ride on the client so ADD_CLIENT's
-      // buildClientLocation seeds the customer's one location with its address.
-      dispatch({ type: ACTIONS.ADD_CLIENT, client: { id, name: account.name, type: type === 'vendor' ? 'vendor' : 'customer', ...(location || {}) } });
-      createdClientIds.set(account.normName, id);
-      return id;
-    };
-
-    // Fill an EXISTING customer's BLANK location from the row — blanks only, never
-    // overwrite; once per company per batch. A company created above already got its
-    // address via ADD_CLIENT (its new site isn't in this render's `state` snapshot,
-    // so the lookup no-ops for it). Vendors have no location.
-    const fillLocationIfBlank = (companyId, location) => {
-      if (!companyId || !location || filledCompanyIds.has(companyId)) return;
-      filledCompanyIds.add(companyId);
-      const site = (state.sites || []).find((s) => s.clientId === companyId);
-      if (!site || (site.address && site.address.trim())) return;
-      const { street, city, state: st, zip } = location;
-      dispatch({ type: ACTIONS.UPDATE_SITE, id: site.id, patch: { street, city, state: st, zip, address: composeAddress({ street, city, state: st, zip }) } });
-    };
-
-    let created = 0, updated = 0;
-    for (const r of plan) {
-      if (r.action === 'create') {
-        const companyId = ensureAccountId(r.account, r.mapped.type, r.location);
-        fillLocationIfBlank(companyId, r.location); // existing company with a blank location
-        const payload = { ...r.mapped };
-        delete payload.company;
-        delete payload.type; // Type is a company flag, applied to the account above, not the person
-        delete payload.id; // never adopt a CSV-supplied value as our internal id on create
-        delete payload.tagIds; // tags are company-level, applied below, not on the person
-        for (const k of LOCATION_FIELD_KEYS) delete payload[k]; // address is the customer's LOCATION, never the person
-        if (companyId) payload.companyId = companyId;
-        dispatch({ type: ACTIONS.ADD_CONTACT, contact: payload });
-        // Bulk tags go to the contact's company (every create now has one).
-        if (bulkTagIds.length && companyId) {
-          bulkTagIds.forEach((t) => dispatch({ type: ACTIONS.TAG_CLIENT, id: companyId, tagId: t }));
-        }
-        created++;
-      } else if (r.action === 'update') {
-        const existing = (state.contacts || []).find((c) => c.id === r.contactId);
-        const patch = {};
-        let companyId = existing?.companyId || null;
-        for (const ch of r.changes) {
-          if (ch.field === 'companyId') {
-            const linked = ensureAccountId(ch.to, r.mapped.type, r.location);
-            if (linked) { patch.companyId = linked; companyId = linked; }
-          } else {
-            patch[ch.field] = ch.to;
-          }
-        }
-        fillLocationIfBlank(companyId, r.location); // seed the company's blank location
-        // Bulk tags → company; fall back to the contact only if it's company-less.
-        let taggedCompany = false;
-        if (bulkTagIds.length) {
-          if (companyId) {
-            bulkTagIds.forEach((t) => dispatch({ type: ACTIONS.TAG_CLIENT, id: companyId, tagId: t }));
-            taggedCompany = true;
-          } else {
-            const union = [...new Set([...((existing && existing.tagIds) || []), ...bulkTagIds])];
-            if (union.length !== ((existing && existing.tagIds) || []).length) patch.tagIds = union;
-          }
-        }
-        if (Object.keys(patch).length) {
-          dispatch({ type: ACTIONS.UPDATE_CONTACT, id: r.contactId, patch });
-          updated++;
-        } else if (taggedCompany) {
-          updated++;
-        }
-      }
-    }
-
-    const newClients = createdClientIds.size;
-    setResults({ created, updated, skipped: stats.skip + stats.invalid, newClients, total: plan.length });
-    setStep(STEP.RESULT);
-    if (created || updated) {
-      const bits = [];
-      if (created) bits.push(`${created} added`);
-      if (updated) bits.push(`${updated} updated`);
-      if (newClients) bits.push(`${newClients} new compan${newClients === 1 ? 'y' : 'ies'}`);
-      toast.success(bits.join(' · '));
-    }
+    if (!plan || busy.current) return;
+    busy.current = true;
+    const committed = commitImport({
+      state, plan, newId, applyOps, serialize: serializeSharedBlob, dispatch, actionType: ACTIONS.IMPORT_CUSTOMERS,
+    });
+    busy.current = false;
+    if (committed.refusal) { setRefusal(committed.refusal); setVerdict(committed.verdict); return; }
+    const c = plan.customers;
+    setResult({ ...c, error: plan.counts.error, contacts: plan.contacts });
+    setImported(plan);
+    setStep(STEP.DONE);
+    toast.success(t('custImport.toastDone', { created: c.create, updated: c.update }));
+    locate(importedLocations(committed.ops, committed.verdict?.stateAfter));
   };
 
+  const problems = plan ? plan.rows.filter((r) => r.errors.length || r.warnings.length).length : 0;
+  // Rows (the filters, "not imported", "with a note") and customers (the totals, the button).
+  const counts = plan?.counts || { create: 0, update: 0, unchanged: 0, same: 0, error: 0, warning: 0 };
+  const customers = plan?.customers || { create: 0, update: 0, unchanged: 0 };
+  const toWrite = customers.create + customers.update;
+  const billing = file ? file.headers.filter((h) => isBillingHeader(h)) : [];
+  const guessedOut = file ? Object.values(file.guessed || {}).filter((k) => !allowed.has(k)) : [];
+
+  const locatePanel = (
+    <div className="csv-locate">
+      {locating?.running && <p className="text-sm">{t('custImport.locating', { count: locating.count })}</p>}
+      {locating && !locating.running && (
+        <>
+          {locating.located > 0 && <p className="text-sm">{t('custImport.located', { count: locating.located })}</p>}
+          {locating.notFound > 0 && <p className="text-sm">{t('custImport.notFound', { count: locating.notFound })}</p>}
+          {locating.unavailable && <div className="callout callout-info">{t('custImport.lookupUnavailable')}</div>}
+          {locating.limited && (
+            <div className="callout callout-info csv-notes">
+              <p>{locating.limited.quota ? t('custImport.lookupQuota') : t('custImport.lookupLimited')}</p>
+              {!locating.limited.quota && locating.limited.minutes && <p>{t('custImport.lookupRetry', { count: locating.limited.minutes })}</p>}
+            </div>
+          )}
+        </>
+      )}
+      {/* After an "unavailable" answer there is nobody to ask: no button until the import is opened
+          again. A refused run keeps it: the waiting buildings are asked again on the next press. */}
+      {!locating?.running && !locating?.unavailable && waiting.length > 0 && (
+        <div className="csv-locate-row">
+          <span className="text-sm text-muted">{t('custImport.notLocatedYet', { count: waiting.length })}</span>
+          <button type="button" className="btn btn-secondary" onClick={() => locate(waiting)}>
+            {t('custImport.locateNext', { count: Math.min(waiting.length, GEOCODE_MAX_PER_RUN) })}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  if (!perms.canImport) {
+    return (
+      <Modal open={open} onClose={onClose} title={t('custImport.title')} size="lg">
+        <p className="text-sm">{t('custImport.notPermitted')}</p>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-primary" onClick={onClose}>{t('common.close')}</button>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
-    <Modal open={open} onClose={onClose} title="Import Contacts (CSV)" size="lg">
-      {step === STEP.UPLOAD && (
-        <div>
-          <p className="text-sm text-muted" style={{ marginBottom: 6 }}>
-            Upload a CSV with a header row, or paste rows below. Each row needs a{' '}
-            <strong>company</strong>, plus at least one of <strong>email, phone, or name</strong>.{' '}
-            Add <strong>Street, City, State, ZIP</strong> to set that customer’s service location.
-          </p>
-          <p className="text-xs text-muted" style={{ marginBottom: 6 }}>
-            This is an <strong>upsert</strong>: each row is matched to an existing person by{' '}
-            <strong>email → phone</strong> (or a <strong>Contact ID</strong> column) and{' '}
-            <strong>updated</strong>. Blank fields are filled in, existing values are never overwritten.
-            Unmatched rows are added. Companies link to an existing account by name or email domain, or are created.
-            On the next steps you’ll choose what to apply (tags) and confirm.
-          </p>
-          <p className="text-xs" style={{ marginBottom: 14 }}>
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); downloadSample(); }}
-            >
-              Download sample CSV ↓
-            </a>
-            <span className="text-muted"> · supported columns with example rows</span>
-          </p>
-          <label className="csv-dropzone">
-            <input
-              type="file"
-              accept=".csv,text/csv,text/plain"
-              onChange={(e) => handleFile(e.target.files?.[0])}
-              style={{ display: 'none' }}
-            />
-            <Icon name="archive" size={32} />
-            <div style={{ marginTop: 8, fontWeight: 600 }}>Click to choose a CSV file</div>
-            <div className="text-xs text-muted">or drag and drop · max 5 MB</div>
-          </label>
-          <div style={{ margin: '14px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>or paste below</div>
-          <textarea
-            className="input"
-            rows={6}
-            placeholder={'firstName,lastName,email,phone,title,company,type,notes\nJane,Doe,jane@example.com,555-0100,Office Manager,Acme Co,customer,'}
-            value={pasted}
-            onChange={(e) => setPasted(e.target.value)}
-            style={{ fontFamily: 'monospace', fontSize: 12 }}
-          />
-          {parseError && <div className="conflict-warning" style={{ marginTop: 10 }}><Icon name="warning" size={14} /><span>{parseError}</span></div>}
-          <div className="modal-actions">
-            <button type="button" className="btn btn-outline" onClick={onClose}>Cancel</button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!pasted.trim()}
-              onClick={() => loadText(pasted)}
-            >
-              Parse pasted text
+    <Modal open={open} onClose={onClose} title={t('custImport.title')} size="lg">
+      {step === STEP.FILE && (
+        <div className="csv-step">
+          <p className="text-sm text-muted">{t('custImport.lead')}</p>
+          <div className="csv-template-row">
+            <button type="button" className="btn btn-link" onClick={() => download(customerTemplateCsv(), `${IDENTITY.slug}-customers-template.csv`)}>
+              {t('custImport.template')}
             </button>
+            <span className="text-xs text-muted">{t('custImport.templateHint')}</span>
+          </div>
+          <label
+            className={`csv-dropzone ${dragging ? 'is-dragging' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); readFile(e.dataTransfer?.files?.[0]); }}
+          >
+            <input type="file" className="csv-file-input" accept=".csv,.tsv,.txt,text/csv,text/plain" onChange={(e) => readFile(e.target.files?.[0])} />
+            <Icon name="upload" size={28} />
+            <span className="csv-drop-title">{t('custImport.drop')}</span>
+            <span className="text-xs text-muted">{t('custImport.dropHint', { size: formatBytes(ATTACHMENT_MAX_BYTES) })}</span>
+          </label>
+          <label className="form-label" htmlFor="csv-paste">{t('custImport.paste')}</label>
+          <textarea id="csv-paste" className="input csv-paste" rows={5} placeholder={PASTE_EXAMPLE} value={pasted} onChange={(e) => setPasted(e.target.value)} />
+          {readError && <div className="conflict-warning"><Icon name="warning" size={14} /><span>{t(readError)}</span></div>}
+          {locatePanel}
+          <div className="modal-actions">
+            <button type="button" className="btn btn-outline" onClick={onClose}>{t('common.cancel')}</button>
+            <button type="button" className="btn btn-primary" disabled={!pasted.trim()} onClick={() => read(pasted)}>{t('custImport.readPasted')}</button>
           </div>
         </div>
       )}
 
-      {step === STEP.MAP && (
-        <div>
-          <p className="text-sm text-muted" style={{ marginBottom: 14 }}>
-            Match each CSV column to a field. Columns set to <em>Skip</em> are ignored. Map a{' '}
-            <strong>Contact ID</strong> column to update records exactly (e.g. re-importing an export).
-          </p>
+      {step === STEP.COLUMNS && file && (
+        <div className="csv-step">
+          <p className="text-sm text-muted">{t('custImport.mapLead', { count: file.rows.length })}</p>
+          {(file.encoding === 'windows-1252' || file.delimiter !== ',' || file.renamed?.length > 0 || billing.length > 0 || guessedOut.length > 0) && (
+            <div className="callout callout-info csv-notes">
+              {file.encoding === 'windows-1252' && <p>{t('custImport.readAs1252')}</p>}
+              {file.delimiter === ';' && <p>{t('custImport.readSemicolon')}</p>}
+              {file.delimiter === '\t' && <p>{t('custImport.readTab')}</p>}
+              {file.renamed?.length > 0 && <p>{t('custImport.renamedHeaders', { columns: file.renamed.map((r) => r.to) })}</p>}
+              {billing.length > 0 && <p>{t('custImport.billingSkipped', { columns: billing })}</p>}
+              {guessedOut.some((k) => CONTACT_FIELD_KEYS.includes(k)) && <p>{t('custImport.contactsNotAllowed')}</p>}
+              {guessedOut.includes('supervisor') && <p>{t('custImport.supervisorNotAllowed')}</p>}
+            </div>
+          )}
           <div className="csv-map-list">
-            {parsed.headers.map((h, idx) => (
+            {file.headers.map((h, idx) => (
               <div key={idx} className="csv-map-row">
                 <div className="csv-map-header">
-                  <div className="text-sm font-semi">{h || <em className="text-muted">(empty)</em>}</div>
-                  <div className="text-xs text-muted">{parsed.rows[0]?.[idx]?.slice(0, 40) || '—'}</div>
+                  <div className="text-sm font-semi truncate" title={h}>{h || t('custImport.emptyHeader')}</div>
+                  <div className="text-xs text-muted truncate">{file.rows.find((r) => r[idx])?.[idx] || '—'}</div>
                 </div>
                 <Select
-                  ariaLabel="CSV column mapping"
+                  ariaLabel={t('custImport.mapAria', { column: h || t('custImport.emptyHeader') })}
                   value={mapping[idx] || ''}
-                  onChange={(v) => setMapping({ ...mapping, [idx]: v || null })}
-                  options={[{ value: '', label: 'Skip' }, ...CONTACT_FIELDS.map((f) => ({ value: f.key, label: f.label }))]}
+                  onChange={(v) => setField(idx, v || '')}
+                  options={fieldOptions}
                 />
               </div>
             ))}
           </div>
-          {!mappingValid && (
-            <div className="conflict-warning" style={{ marginTop: 10 }}>
-              <Icon name="warning" size={14} />
-              <span>Map a <strong>Company</strong> column (every contact belongs to a company), plus at least one of: Contact ID, Email, Phone, First Name, or Last Name.</span>
-            </div>
-          )}
+          {!nameMapped && <div className="conflict-warning"><Icon name="warning" size={14} /><span>{t('custImport.needName')}</span></div>}
           <div className="modal-actions">
-            <button type="button" className="btn btn-outline" onClick={() => setStep(STEP.UPLOAD)}>Back</button>
-            <button type="button" className="btn btn-primary" disabled={!mappingValid} onClick={() => setStep(STEP.OPTIONS)}>
-              Next
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === STEP.OPTIONS && (
-        <div>
-          <p className="text-sm text-muted" style={{ marginBottom: 14 }}>
-            Apply these to <strong>every contact in this import</strong>. Both new ones and existing matches. All optional.
-          </p>
-
-          <div className="form-group">
-            <label className="form-label">Add tags</label>
-            <TagPicker value={bulkTagIds} onChange={setBulkTagIds} />
-            <div className="text-xs text-muted" style={{ marginTop: 4 }}>Tags apply to each contact’s company, shared by everyone there.</div>
-          </div>
-          <div className="text-xs text-muted" style={{ marginTop: 10 }}>
-            Deals live on the Pipeline board as company opportunities. Import the people here, then add a deal for a company from the board.
-          </div>
-
-          <div className="modal-actions">
-            <button type="button" className="btn btn-outline" onClick={() => setStep(STEP.MAP)}>Back</button>
-            <button type="button" className="btn btn-primary" onClick={() => setStep(STEP.PREVIEW)}>
-              Preview ({parsed.rows.length} rows)
-            </button>
+            <button type="button" className="btn btn-outline" onClick={() => setStep(STEP.FILE)}>{t('custImport.back')}</button>
+            <button type="button" className="btn btn-primary" disabled={!nameMapped} onClick={() => setStep(STEP.PREVIEW)}>{t('custImport.toPreview')}</button>
           </div>
         </div>
       )}
 
       {step === STEP.PREVIEW && plan && (
-        <div>
-          <div className="csv-mode" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-            <span className="text-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>When importing</span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button
-                type="button"
-                className={`btn btn-sm ${mode === 'upsert' ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => setMode('upsert')}
-              >
-                Create &amp; update
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${mode === 'update' ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => setMode('update')}
-              >
-                Update only
-              </button>
-            </div>
-            <span className="text-xs text-muted">
-              {mode === 'upsert' ? 'Add new people and update existing ones.' : 'Only update existing people. Never create new records.'}
-            </span>
-          </div>
-
-          {hasBulk && (
-            <div className="text-xs" style={{ marginBottom: 10, padding: '8px 10px', background: 'var(--inset-bg)', borderRadius: 8 }}>
-              <strong>Also applying to every imported contact:</strong>{' '}
-              {bulkTagIds.length > 0 && <>Tags: {bulkTagIds.map((id) => tagById[id] || '?').join(', ')}</>}
-            </div>
-          )}
-
+        <div className="csv-step">
           <div className="csv-stats">
-            <div className="csv-stat"><strong style={{ color: ACTION_META.create.color }}>{stats.create}</strong><span>New</span></div>
-            <div className="csv-stat"><strong style={{ color: ACTION_META.update.color }}>{stats.update}</strong><span>Update</span></div>
-            <div className="csv-stat"><strong style={{ color: ACTION_META.skip.color }}>{stats.skip}</strong><span>Skipped</span></div>
-            <div className="csv-stat"><strong style={{ color: ACTION_META.invalid.color }}>{stats.invalid}</strong><span>Invalid</span></div>
+            <div className="csv-stat tone-create"><strong>{customers.create}</strong><span>{t('custImport.stat.create')}</span></div>
+            <div className="csv-stat tone-update"><strong>{customers.update}</strong><span>{t('custImport.stat.update')}</span></div>
+            <div className="csv-stat"><strong>{customers.unchanged}</strong><span>{t('custImport.stat.unchanged')}</span></div>
+            <div className="csv-stat tone-error"><strong>{counts.error}</strong><span>{t('custImport.stat.error')}</span></div>
+            <div className="csv-stat tone-warning"><strong>{counts.warning}</strong><span>{t('custImport.stat.warning')}</span></div>
           </div>
-
-          <div className="csv-preview-wrap">
-            <table className="csv-preview-table">
+          {counts.same > 0 && <p className="text-xs text-muted">{t('custImport.sameRows', { count: counts.same })}</p>}
+          <p className="text-xs text-muted">{t('custImport.contactsPlanned', { added: plan.contacts.create, updated: plan.contacts.update })}</p>
+          {refusal
+            ? <div className="callout callout-danger">{t(refusal)}</div>
+            : <p className="text-xs text-muted">{verdict
+              ? t('custImport.size', { after: formatStateBytes(verdict.after), limit: formatStateBytes(verdict.limit) })
+              : t('custImport.sizeChecking')}</p>}
+          <div className="form-group">
+            <label className="form-label">{t('custImport.tags')}</label>
+            <TagPicker value={tagIds} onChange={setTagIds} />
+            <div className="form-help">{t('custImport.tagsHint')}</div>
+          </div>
+          <div className="csv-filter" role="group" aria-label={t('custImport.filterAria')}>
+            {FILTERS.map((f) => {
+              const n = plan.rows.filter((r) => matchesFilter(r, f.key)).length;
+              if (f.onlyWhenAny && n === 0) return null;
+              return (
+                <button key={f.key} type="button" className={`chip chip-sm ${filter === f.key ? 'on' : ''}`} onClick={() => setFilter(f.key)}>
+                  {t(f.labelKey)} <span className="control-count">{n}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="table-wrap mobile-stack csv-preview">
+            <table>
               <thead>
                 <tr>
-                  <th style={{ width: 70 }}>Action</th>
-                  {previewCols.map((f) => <th key={f.key}>{f.label}</th>)}
-                  <th>What happens</th>
+                  <th>{t('custImport.col.row')}</th>
+                  <th>{t('custImport.col.customer')}</th>
+                  <th>{t('custImport.col.location')}</th>
+                  <th>{t('custImport.col.result')}</th>
                 </tr>
               </thead>
               <tbody>
-                {plan.slice(0, 50).map((r) => {
-                  const meta = ACTION_META[r.action];
+                {pager.pageRows.map((r) => {
+                  const [variant, key] = STATUS_BADGE[r.status];
                   return (
-                    <tr key={r.rowIndex} className={`csv-row csv-row-${r.action}`}>
-                      <td>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: meta.color, fontWeight: 600, fontSize: 12 }}>
-                          <Icon name={meta.icon} size={13} />{meta.label}
-                        </span>
+                    <tr key={r.line}>
+                      <td data-label={t('custImport.col.row')} className="csv-line">{r.line}</td>
+                      <td className="cell-primary"><span className="truncate" title={r.label}>{r.label || '—'}</span></td>
+                      <td data-label={t('custImport.col.location')}><span className="truncate" title={r.address}>{r.address || '—'}</span></td>
+                      <td data-label={t('custImport.col.result')} className="csv-result-cell">
+                        <div className="csv-result">
+                          <Badge variant={variant}>{t(key)}</Badge>
+                          <ul className="csv-result-lines">
+                            {r.errors.map((m, i) => <li key={`e${i}`} className="text-danger">{t(m)}</li>)}
+                            {r.changes.map((m, i) => <li key={`c${i}`}>{t(m)}</li>)}
+                            {r.warnings.map((m, i) => <li key={`w${i}`} className="csv-warn">{t(m)}</li>)}
+                          </ul>
+                        </div>
                       </td>
-                      {previewCols.map((f) => (
-                        <td key={f.key}>{r.mapped[f.key] || <span className="text-muted">—</span>}</td>
-                      ))}
-                      <td className="text-xs text-muted">{rowNote(r, hasBulk)}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            {plan.length > 50 && (
-              <div className="text-xs text-muted" style={{ padding: '8px 12px', textAlign: 'center' }}>
-                Showing first 50 of {plan.length} rows. All rows will be processed.
-              </div>
-            )}
           </div>
+          <ListPager pager={pager} noun={t('custImport.rowsNoun')} />
           <div className="modal-actions">
-            <button type="button" className="btn btn-outline" onClick={() => setStep(STEP.OPTIONS)}>Back</button>
-            <button type="button" className="btn btn-primary" disabled={stats.create + stats.update === 0} onClick={doImport}>
-              Apply{stats.create ? ` · ${stats.create} new` : ''}{stats.update ? ` · ${stats.update} updated` : ''}
+            {problems > 0 && <button type="button" className="btn btn-secondary csv-problems-btn" onClick={downloadProblems}>{t('custImport.download')}</button>}
+            <button type="button" className="btn btn-outline" onClick={() => setStep(STEP.COLUMNS)}>{t('custImport.back')}</button>
+            <button type="button" className="btn btn-primary" disabled={!verdict || !!refusal || toWrite === 0} onClick={doImport}>
+              {toWrite === 0 ? t('custImport.nothingToImport') : t('custImport.importN', { count: toWrite })}
             </button>
           </div>
         </div>
       )}
 
-      {step === STEP.RESULT && results && (
-        <div>
+      {step === STEP.DONE && result && (
+        <div className="csv-step">
+          <p className="text-sm font-semi">{t('custImport.done')}</p>
           <div className="csv-stats">
-            <div className="csv-stat"><strong style={{ color: ACTION_META.create.color }}>{results.created}</strong><span>Added</span></div>
-            <div className="csv-stat"><strong style={{ color: ACTION_META.update.color }}>{results.updated}</strong><span>Updated</span></div>
-            <div className="csv-stat"><strong style={{ color: ACTION_META.skip.color }}>{results.skipped}</strong><span>Skipped</span></div>
-            {results.newClients > 0 && (
-              <div className="csv-stat"><strong style={{ color: ACTION_META.create.color }}>{results.newClients}</strong><span>New companies</span></div>
-            )}
+            <div className="csv-stat tone-create"><strong>{result.create}</strong><span>{t('custImport.stat.create')}</span></div>
+            <div className="csv-stat tone-update"><strong>{result.update}</strong><span>{t('custImport.stat.update')}</span></div>
+            <div className="csv-stat"><strong>{result.unchanged}</strong><span>{t('custImport.stat.unchanged')}</span></div>
+            <div className="csv-stat tone-error"><strong>{result.error}</strong><span>{t('custImport.stat.error')}</span></div>
           </div>
-          <p className="text-sm" style={{ marginTop: 14 }}>
-            {results.created || results.updated
-              ? `Done. ${results.created} contact${results.created === 1 ? '' : 's'} added and ${results.updated} updated${results.newClients > 0 ? `, ${results.newClients} new compan${results.newClients === 1 ? 'y' : 'ies'} created from company columns` : ''}.`
-              : 'No records were changed.'}
-          </p>
+          <p className="text-xs text-muted">{t('custImport.contactsDone', { added: result.contacts.create, updated: result.contacts.update })}</p>
+          {locatePanel}
           <div className="modal-actions">
-            <button type="button" className="btn btn-primary" onClick={onClose}>Done</button>
+            {problems > 0 && <button type="button" className="btn btn-secondary csv-problems-btn" onClick={downloadProblems}>{t('custImport.download')}</button>}
+            <button type="button" className="btn btn-primary" onClick={onClose}>{t('common.done')}</button>
           </div>
         </div>
       )}

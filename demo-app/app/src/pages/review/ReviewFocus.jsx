@@ -9,6 +9,11 @@ import { findReviewItem, areaTitle } from './reviewShared';
 // progress bar; a single-section area also shows its blurb and an "Already settled" details
 // list. Below is the decision or draft card, then Back / Skip / Next (Finish on the last).
 // Answering never advances — Next / Skip / Back are the only movement.
+//
+// Each item gets its OWN card (keyed by the item id). Moving to another item unmounts the card,
+// so a note typed but not added posts on the item it was typed for (ReviewNotes), a text answer
+// still being typed saves there (useSyncedText), and the visit's sitting and a confirmed "Change"
+// end with it. Unkeyed, React reused the card and all of that moved to the next item (task #130).
 export default function ReviewFocus({ area, ids, idx, onBack, onNext, onSkip, onExit }) {
   const total = ids.length;
   const currentId = ids[idx];
@@ -20,7 +25,8 @@ export default function ReviewFocus({ area, ids, idx, onBack, onNext, onSkip, on
 
   return (
     <div className="page">
-      <div className="review-focus">
+      {/* A design question's mockup needs the page's width (UI_RULES §179). */}
+      <div className={`review-focus${item?.decision?.mockup ? ' is-wide' : ''}`}>
         <div className="review-focus-head">
           <button type="button" className="detail-back" onClick={onExit}>← All areas</button>
           <span className="review-focus-title">{areaTitle(area)}</span>
@@ -40,8 +46,8 @@ export default function ReviewFocus({ area, ids, idx, onBack, onNext, onSkip, on
           </div>
         )}
 
-        {item?.type === 'decision' && <DecisionCard question={item.decision} />}
-        {item?.type === 'draft' && <DraftCard draft={item.draft} />}
+        {item?.type === 'decision' && <DecisionCard key={currentId} question={item.decision} />}
+        {item?.type === 'draft' && <DraftCard key={currentId} draft={item.draft} />}
         {!item && (
           <EmptyState title="Nothing here" message="Everything in this area has been handled." />
         )}

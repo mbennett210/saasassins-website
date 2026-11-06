@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as qcApi from '../lib/qcApi';
 import { allChecklists } from '../lib/checklistQueue';
 import { checklistFor, clockOutGate, GATE } from '../lib/crewChecklist';
+import { checklistOpensAt } from '../lib/checklistWindow';
 import { readGateMemo, writeGateMemo } from '../lib/checklistGateMemo';
 import { useStore } from '../store';
 import { selectClientById, selectSiteById, selectUserById } from '../store/selectors';
@@ -139,14 +140,18 @@ export function useClockOutGate({ job, entry, online = true }) {
     [client, job, userId],
   );
 
+  // CS-690: a fill from before this clean's window opened (the night before, from home) does
+  // not unlock it — the same rule the server stores and gates by (lib/checklistWindow).
+  const graceMins = state.opsSettings?.autoCloseGraceMins;
+  const opensAt = useMemo(() => checklistOpensAt(job, { graceMins }), [job, graceMins]);
   const gate = useMemo(() => {
-    const live = clockOutGate({ checklistId, rules, results, queued, userId, jobId: job?.id || null });
+    const live = clockOutGate({ checklistId, rules, results, queued, userId, jobId: job?.id || null, opensAt });
     if (live.state !== GATE.UNKNOWN) return live;
     // Nothing to judge by right now: fall back to what this phone last knew, so a cleaner
     // who finished online and then lost signal (or restarted) is not stranded.
     const memo = readGateMemo({ jobId: job?.id || null, userId, templateId: checklistId });
     return memo ? { state: memo.state, done: memo.done, total: memo.total } : live;
-  }, [checklistId, rules, results, queued, userId, job?.id]);
+  }, [checklistId, rules, results, queued, userId, job?.id, opensAt]);
 
   // Remember a verdict we reached from real data (never an UNKNOWN, never a downgrade).
   useEffect(() => {

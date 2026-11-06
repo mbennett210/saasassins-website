@@ -7,15 +7,13 @@
 // /inbox/* routes; when unset, calls fall into a stub that simulates the
 // shape of real responses so the UI can be exercised end-to-end.
 //
-// Tokens (OAuth refresh tokens, SMTP passwords) NEVER round-trip through
-// this client. The backend holds them encrypted at rest. The frontend only
+// OAuth refresh tokens NEVER round-trip through this client. The backend holds them
+// encrypted at rest (api/_lib/crypto.js). The frontend only
 // ever sees the metadata that should be safe to display in the UI:
 //   { id, userId, provider, email, displayName, status, ... }
 //
 // Usage:
 //   const popup = await connectGoogle();   // returns { ok, inbox } when popup completes
-//   const popup = await connectMicrosoft();
-//   const result = await connectSmtp({ ... }); // handshake-then-persist
 //   await disconnectInbox(inboxId);
 //   await testInboxSend(inboxId, { to, subject, body });
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,25 +48,22 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function stubInbox({ provider, email, displayName, smtpHost, smtpPort, smtpSecurity, imapHost, imapPort, imapSecurity }) {
-  const inboundCapability = provider === 'google'
-    ? 'pubsub'
-    : provider === 'microsoft'
-      ? 'graph'
-      : 'imap_poll';
+// Google is the only provider (CS-220), so the demo stub builds one shape. The smtp*/imap*
+// keys stay on the row because the store + Connected Inboxes page still read them as null.
+function stubInbox({ email, displayName }) {
   return {
     id: `ci_${Math.random().toString(36).slice(2, 14)}`,
-    provider,
-    email: email || `stub.user@${provider === 'smtp' ? 'example.com' : provider + '.com'}`,
+    provider: 'google',
+    email: email || 'stub.user@google.com',
     displayName: displayName || 'Stub User',
     status: 'active',
-    smtpHost: smtpHost || null,
-    smtpPort: smtpPort || null,
-    smtpSecurity: smtpSecurity || null,
-    imapHost: imapHost || null,
-    imapPort: imapPort || null,
-    imapSecurity: imapSecurity || null,
-    inboundCapability,
+    smtpHost: null,
+    smtpPort: null,
+    smtpSecurity: null,
+    imapHost: null,
+    imapPort: null,
+    imapSecurity: null,
+    inboundCapability: 'pubsub',
   };
 }
 
@@ -89,7 +84,7 @@ export async function connectGoogle(workspaceId) {
   if (BACKEND) {
     // Authority is proven at the AUTHENTICATED start endpoint (the popup can't carry our
     // Bearer header); it returns the Google consent URL and we open THAT directly —
-    // mirrors reviewsApi's connectGmb. Replaces opening /inbox/connect/google, which was
+    // mirrors qboApi's connectQbo. Replaces opening /inbox/connect/google, which was
     // unauthenticated, so anyone could start the flow and graft in a mailbox they
     // control (2026-08-03 audit S3).
     const qs = workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : '';
@@ -107,93 +102,20 @@ export async function connectGoogle(workspaceId) {
   await delay(STUB_DELAY_MS);
   return {
     ok: true,
-    inbox: stubInbox({ provider: 'google', email: 'stub.marcus@gmail.com', displayName: 'Stub Marcus' }),
+    inbox: stubInbox({ email: 'stub.marcus@gmail.com', displayName: 'Stub Marcus' }),
   };
 }
 
-// ---------- OAuth: Microsoft (Outlook / 365) ----------
-export async function connectMicrosoft() {
-  if (BACKEND) {
-    return openOAuthPopup(`${BACKEND}/inbox/connect/microsoft`);
-  }
-  if (!INBOX_STUB) throw new Error(NOT_CONFIGURED);
-  await delay(STUB_DELAY_MS);
-  return {
-    ok: true,
-    inbox: stubInbox({ provider: 'microsoft', email: 'stub.marcus@outlook.com', displayName: 'Stub Marcus' }),
-  };
-}
-
-// ---------- SMTP / IMAP (any provider with username + app password) ----------
+// ---------- DELETED: Microsoft and SMTP connectors (CS-220, 2026-09-29) ----------
+// connectMicrosoft() posted to /api/inbox/connect/microsoft and connectSmtp() to
+// /api/inbox/connect/smtp. NEITHER ENDPOINT EXISTS, and neither ever did in this build:
+// no handler, no importer, no UI that called them (ConnectInboxModal imports only
+// connectGoogle). connectSmtp() was the worse of the two - it took `smtpPassword` /
+// `imapPassword` in a request body and sent them, in the clear, to a 404. Deleted rather
+// than left as a plausible-looking door (THE LAW II.5, replace means delete).
 //
-// `password` is sent in the request body to the backend, which performs a
-// real SMTP handshake before persisting it (encrypted). It MUST never be
-// stored in client state.
-export async function connectSmtp({
-  email,
-  displayName,
-  smtpHost,
-  smtpPort,
-  smtpSecurity,
-  smtpUsername,
-  smtpPassword,
-  imapHost,
-  imapPort,
-  imapSecurity,
-  imapUsername,
-  imapPassword,
-}) {
-  if (!email || !smtpHost || !smtpPort || !smtpUsername || !smtpPassword) {
-    throw new Error('Missing required SMTP fields.');
-  }
-  if (BACKEND) {
-    const res = await fetch(`${BACKEND}/inbox/connect/smtp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email,
-        displayName,
-        smtpHost,
-        smtpPort,
-        smtpSecurity,
-        smtpUsername,
-        smtpPassword,
-        imapHost,
-        imapPort,
-        imapSecurity,
-        imapUsername: imapUsername || smtpUsername,
-        imapPassword: imapPassword || smtpPassword,
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(err || `SMTP handshake failed (${res.status})`);
-    }
-    const data = await res.json();
-    return { ok: true, inbox: data };
-  }
-  if (!INBOX_STUB) throw new Error(NOT_CONFIGURED);
-  // Stub: simulate the handshake. Reject obviously bad ports as a sanity
-  // check so the UI's error path gets exercised.
-  await delay(STUB_DELAY_MS);
-  if (smtpPort === 25) {
-    throw new Error('Port 25 is typically blocked. Try 587 (STARTTLS) or 465 (SSL).');
-  }
-  return {
-    ok: true,
-    inbox: stubInbox({
-      provider: 'smtp',
-      email,
-      displayName,
-      smtpHost,
-      smtpPort,
-      smtpSecurity,
-      imapHost,
-      imapPort,
-      imapSecurity,
-    }),
-  };
-}
+// Google is the only provider: Clean Space is a Google Workspace shop, and the app's own
+// email goes through Google too (api/_lib/systemSender.js).
 
 // ---------- Disconnect ----------
 export async function disconnectInbox(inboxId) {

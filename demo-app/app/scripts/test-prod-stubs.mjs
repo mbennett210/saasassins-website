@@ -110,8 +110,8 @@ await check('inbox: PROD + no URL → not configured (never fakes a connect)', a
   assert.equal(m.INBOX_STUB_ACTIVE, false, 'INBOX_STUB_ACTIVE must be false in a prod build');
   assert.equal(m.INBOX_CONFIGURED, false, 'INBOX_CONFIGURED must be false with no backend');
   await throwsNotConfigured(() => m.connectGoogle());
-  await throwsNotConfigured(() => m.connectMicrosoft());
-  await throwsNotConfigured(() => m.connectSmtp({ email: 'a@b.co', smtpHost: 'h', smtpPort: 587, smtpUsername: 'u', smtpPassword: 'p' }));
+  // connectMicrosoft / connectSmtp were deleted with their non-existent endpoints
+  // (CS-220, 2026-09-29): Google is the only provider.
   await throwsNotConfigured(() => m.disconnectInbox('ci_1'));
   await throwsNotConfigured(() => m.testInboxSend('ci_1', { to: 'a@b.co', subject: 's', body: 'b' }));
   await throwsNotConfigured(() => m.sendViaInbox('ci_1', { to: 'a@b.co', subject: 's', body: 'b' }));
@@ -147,6 +147,28 @@ await check('workspaces: demo + no URL → stub is the demo path', async () => {
   assert.equal(m.WORKSPACES_STUB_ACTIVE, true);
   const r = await m.registerWorkspace({ label: 'W', clientId: 'c', clientSecret: 's' });
   assert.ok(r.ok && r.workspace, 'a demo build must still simulate a register');
+});
+
+// ────────────────────────── qboApi.js ──────────────────────────
+// The QuickBooks adapter's stub is MODE-gated (like integrations/quotes), so its guarantee is
+// the STATIC flag folding false in a production build — the source of the bundle DCE that
+// check-bundle-stubs.mjs / test-bundle-stubs.mjs assert on the whole artifact.
+await check('qbo: PROD build → stub folds dead (QBO_STUB_ACTIVE false)', async () => {
+  const m = await loadUnder('qboApi.js', PROD_NOURL);
+  assert.equal(m.QBO_STUB_ACTIVE, false, 'QBO_STUB_ACTIVE must be false in a prod build');
+  assert.equal(m.isQboStubMode(), false, 'isQboStubMode() must be false in a prod build');
+});
+await check('qbo: demo build → stub is the demo path (QBO_STUB_ACTIVE true)', async () => {
+  const m = await loadUnder('qboApi.js', DEMO_NOURL);
+  assert.equal(m.QBO_STUB_ACTIVE, true, 'QBO_STUB_ACTIVE must be true in a demo build');
+});
+// C1 (CS-066): the ?demo=reset registry (data/demoStubs.js) ships to production; if it imports
+// the stub FIXTURES module (lib/qboStubData.js) it drags the P&L/customer fixtures into the
+// production bundle as dead code. It must import QBO_STUB_KEY from the fixtures-free key module.
+await check('qbo: data/demoStubs.js does NOT import lib/qboStubData.js (C1 — fixtures must DCE)', async () => {
+  const demoStubsSrc = readFileSync(fileURLToPath(new URL('../src/data/demoStubs.js', import.meta.url)), 'utf8');
+  assert.ok(!/from\s+['"][^'"]*qboStubData[^'"]*['"]/.test(demoStubsSrc),
+    'data/demoStubs.js must import QBO_STUB_KEY from the fixtures-free data/stubKeys.js, never from lib/qboStubData.js (C1)');
 });
 
 rmSync(tmpRoot, { recursive: true, force: true });

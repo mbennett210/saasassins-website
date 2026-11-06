@@ -23,7 +23,7 @@ const APP = `
       <Route path="schedule" element={<RequirePerm perm="schedule.view"><Schedule /></RequirePerm>} />
       <Route path="schedule/:jobId" element={<RequirePerm perm="schedule.view"><JobDetail /></RequirePerm>} />
       <Route path="reminders" element={<Navigate to="/" replace />} />
-      <Route path="reviews" element={<RequirePerm perm="reviews.view"><Reviews /></RequirePerm>} />
+      <Route path="hidden" element={<RequirePerm perm="hidden.view"><Hidden /></RequirePerm>} />
       <Route path="settings" element={<SettingsLayout />}>
         <Route index element={<SettingsHub />} />
         <Route path="team" element={<RequirePerm perm="settings.team.view"><Team /></RequirePerm>} />
@@ -32,7 +32,7 @@ const APP = `
     </Route>
   </Route>
 `;
-const permVocab = new Set(['schedule.view', 'schedule.edit', 'reviews.view', 'settings.team.view', 'settings.team.edit']);
+const permVocab = new Set(['schedule.view', 'schedule.edit', 'hidden.view', 'settings.team.view', 'settings.team.edit']);
 
 // ── parseRoutes classification ─────────────────────────────────────────────────
 {
@@ -54,7 +54,7 @@ const goodEntries = [
   { id: 'page:/settings/team', kind: 'page', to: '/settings/team', perm: 'settings.team.view' },
   { id: 'action:new-job', kind: 'action', to: '/schedule?new=1', perm: 'schedule.edit' }, // action: perm not reconciled
 ];
-const goodExcluded = [{ path: '/reviews', reason: 'hidden until Google connection' }];
+const goodExcluded = [{ path: '/hidden', reason: 'hidden on purpose' }];
 const goodDetail = ['/schedule/:jobId'];
 const base = { appSrc: APP, excluded: goodExcluded, detailRoutes: goodDetail, permVocab };
 
@@ -66,14 +66,14 @@ ok('clean registry passes', lintSearch({ ...base, entries: goodEntries }).length
   const v = lintSearch({ ...base, entries: missing });
   ok('missing entry for /schedule fails', v.some((x) => x.includes('/schedule')));
 }
-// exclusion satisfies coverage (reviews has no entry but is excluded → clean)
-ok('excluded route needs no entry', !lintSearch({ ...base, entries: goodEntries }).some((x) => x.includes('/reviews')));
+// exclusion satisfies coverage (/hidden has no entry but is excluded → clean)
+ok('excluded route needs no entry', !lintSearch({ ...base, entries: goodEntries }).some((x) => x.includes('/hidden')));
 
 // ── (b) stale exclusion fails ───────────────────────────────────────────────────
 {
   const v = lintSearch({ ...base, entries: goodEntries, excluded: [{ path: '/ghost', reason: 'x' }] });
   ok('stale exclusion /ghost fails', v.some((x) => x.includes('/ghost')));
-  ok('and the now-unexcluded /reviews also fails (a)', v.some((x) => x.includes('/reviews')));
+  ok('and the now-unexcluded /hidden also fails (a)', v.some((x) => x.includes('/hidden')));
 }
 // entry pointing at a nonexistent route fails
 {

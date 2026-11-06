@@ -1,14 +1,20 @@
-// Per-mailbox ownership for connected inboxes — AUTHORIZATION_AUDIT.md §2026-07-20 #2.
+// Per-mailbox ownership for connected inboxes — CS-017 (AUTHORIZATION_AUDIT §2026-07-20 #2).
 //
-// /api/inbox/:id/send and /test were requireAuth-only, so any authenticated user
-// could send arbitrary mail out of ANY connected mailbox — including a manager's real
-// Gmail, from the company's real domain. A role gate was not available:
-// `messaging.use` is ALWAYS_GRANTED and Messaging.jsx calls these routes, so gating
-// on owner/admin is an outage for 37 crew.
+// /api/inbox/:id/send and /test were requireAuth-only, so any authenticated user could send
+// arbitrary mail out of ANY connected mailbox — including a manager's real Gmail. A role gate
+// was not available: `messaging.use` is ALWAYS_GRANTED and Messaging.jsx calls these routes.
 //
-// The gate must be INERT on today's schema (the migration is unapplied) and inert per
-// unclaimed row. These tests pin exactly that: the decision table's default is ALLOW,
-// and it only ever denies for a row someone has explicitly claimed.
+// ── WHAT THIS FILE USED TO PIN, AND WHY IT FLIPPED ────────────────────────────────────
+// It asserted that the gate was INERT: "column absent -> allow", "unclaimed -> allow",
+// "NO input combination denies while the column is absent (32 cases)". That was the
+// deliberate design while the migration was unapplied — and CS-017 is the finding that the
+// sum of those allowances was a gate which enforced nothing, in front of a route that puts
+// real mail on the wire from a real mailbox.
+//
+// It now FAILS CLOSED, and this file pins the opposite table. Safe to flip because
+// inbox_accounts held 0 rows on 2026-09-25 (CS-116, L2 verified) — there is no live mailbox
+// to lock out — and every mailbox connected from here on is stamped with its connector's
+// u_* id at the OAuth callback, so "unclaimed" is no longer a state a real mailbox reaches.
 //
 //   node scripts/test-inbox-ownership.mjs
 import { ownershipVerdict } from '../api/_lib/inboxOwnership.js';
@@ -21,24 +27,17 @@ const ME = 'u_me';
 const THEM = 'u_them';
 const v = (o) => ownershipVerdict(o);
 
-// ── LAYER 1: inert while the migration is unapplied ───────────────────────
-// This is the loop-rule requirement: code written against un-applied DDL must not
-// change behaviour. Today's schema has no owner_user_id, so everything allows.
-ok('column absent -> allow', v({ columnPresent: false }).allow);
-ok('column absent -> allow even with a mismatched owner', v({ columnPresent: false, ownerUserId: THEM, orgUserId: ME, rowFound: true }).allow);
-ok('column absent -> reason names the cause', v({ columnPresent: false }).reason === 'column-absent');
-
-// ── LAYER 2: inert per unclaimed row ──────────────────────────────────────
-// A GLOBAL "is it initialized" flag would flip the moment one row got an owner and
-// start denying every still-unclaimed mailbox. Per-row is why that cannot happen.
-ok('claimed by nobody -> allow (pre-#2 behaviour)', v({ columnPresent: true, rowFound: true, ownerUserId: null, orgUserId: ME }).allow);
+// ── 🔴 the three allowances that WERE the hole ────────────────────────────────────
+ok('column absent -> DENY', !v({ columnPresent: false }).allow);
+ok('  ...reason names the cause', v({ columnPresent: false }).reason === 'not-provisioned');
+ok('column absent -> DENY even for a matching owner',
+  !v({ columnPresent: false, ownerUserId: ME, orgUserId: ME, rowFound: true }).allow);
+ok('claimed by nobody -> DENY', !v({ columnPresent: true, rowFound: true, ownerUserId: null, orgUserId: ME }).allow);
 ok('  ...reason is unclaimed', v({ columnPresent: true, rowFound: true, ownerUserId: null, orgUserId: ME }).reason === 'unclaimed');
-ok('empty-string owner counts as unclaimed', v({ columnPresent: true, rowFound: true, ownerUserId: '', orgUserId: ME }).allow);
-ok('one row being claimed does not affect another (function is per-row)',
-  v({ columnPresent: true, rowFound: true, ownerUserId: null, orgUserId: ME }).allow
-  && !v({ columnPresent: true, rowFound: true, ownerUserId: THEM, orgUserId: ME }).allow);
+ok('empty-string owner counts as unclaimed and DENIES',
+  !v({ columnPresent: true, rowFound: true, ownerUserId: '', orgUserId: ME }).allow);
 
-// ── THE headline denial ───────────────────────────────────────────────────
+// ── the headline denial ───────────────────────────────────────────────────────────
 const denied = v({ columnPresent: true, rowFound: true, ownerUserId: THEM, orgUserId: ME });
 ok('a claimed mailbox REFUSES a different user', !denied.allow);
 ok('  ...with a reason of not-owner', denied.reason === 'not-owner');
@@ -46,49 +45,56 @@ ok('the owner themselves is allowed', v({ columnPresent: true, rowFound: true, o
 ok('  ...with a reason of owner', v({ columnPresent: true, rowFound: true, ownerUserId: ME, orgUserId: ME }).reason === 'owner');
 
 // A claimed mailbox with an unidentifiable caller must DENY, not fall through.
-// resolveAuthority can return orgUserId: null for a login with no claim and no blob
-// row; treating that as "allowed" would be a free bypass on every claimed mailbox.
+// resolveAuthority can return orgUserId: null for a login with no claim and no blob row.
 ok('claimed + caller has no org id -> DENY', !v({ columnPresent: true, rowFound: true, ownerUserId: THEM, orgUserId: null }).allow);
 ok('  ...reason is no-identity', v({ columnPresent: true, rowFound: true, ownerUserId: THEM, orgUserId: null }).reason === 'no-identity');
 ok('claimed + caller org id undefined -> DENY', !v({ columnPresent: true, rowFound: true, ownerUserId: THEM, orgUserId: undefined }).allow);
 ok('claimed + caller org id empty string -> DENY', !v({ columnPresent: true, rowFound: true, ownerUserId: THEM, orgUserId: '' }).allow);
 
-// ── no accidental matches ─────────────────────────────────────────────────
+// ── no accidental matches ─────────────────────────────────────────────────────────
 // Ownership is an exact string identity. Anything looser is a bypass primitive.
 ok('a prefix of the owner id does not match', !v({ columnPresent: true, rowFound: true, ownerUserId: 'u_me_extra', orgUserId: ME }).allow);
 ok('a suffix of the owner id does not match', !v({ columnPresent: true, rowFound: true, ownerUserId: 'x_u_me', orgUserId: ME }).allow);
 ok('case differences do not match', !v({ columnPresent: true, rowFound: true, ownerUserId: 'U_ME', orgUserId: ME }).allow);
 ok('whitespace padding does not match', !v({ columnPresent: true, rowFound: true, ownerUserId: ' u_me', orgUserId: ME }).allow);
 
-// ── missing row ───────────────────────────────────────────────────────────
-// Not a security decision: performSend produces a far more useful error for a
-// nonexistent mailbox than a blanket 403 would, and there is nothing to protect.
+// ── missing row: the ONE remaining allowance, and it is not a hole ────────────────
+// There is no mailbox to act on, and performSend's "Connected inbox not found" is a far
+// more useful answer than a blanket 403.
 ok('missing row -> allow (performSend reports it)', v({ columnPresent: true, rowFound: false, orgUserId: ME }).allow);
 ok('  ...reason is row-missing', v({ columnPresent: true, rowFound: false, orgUserId: ME }).reason === 'row-missing');
 
-// ── the default is ALLOW ──────────────────────────────────────────────────
-// Stated as a test because it is the property the loop rules require: on today's
-// schema this module cannot deny anything.
-ok('a wholly empty verdict input allows', v({}).allow);
-ok('an undefined-ish input allows', v({ columnPresent: undefined, ownerUserId: undefined, orgUserId: undefined }).allow);
+// ── the default is DENY ──────────────────────────────────────────────────────────
+ok('a wholly empty verdict input DENIES', !v({}).allow);
+ok('an undefined-ish input DENIES', !v({ columnPresent: undefined, ownerUserId: undefined, orgUserId: undefined }).allow);
 
-// Enumerate the decision table: with the column absent, NO combination denies.
-let anyDenyWhileAbsent = false;
+// Enumerate the decision table: with the column absent, NOTHING allows.
+let anyAllowWhileAbsent = false;
 for (const ownerUserId of [null, '', ME, THEM]) {
   for (const orgUserId of [null, '', ME, THEM]) {
     for (const rowFound of [true, false]) {
-      if (!v({ columnPresent: false, ownerUserId, orgUserId, rowFound }).allow) anyDenyWhileAbsent = true;
+      if (v({ columnPresent: false, ownerUserId, orgUserId, rowFound }).allow) anyAllowWhileAbsent = true;
     }
   }
 }
-ok('NO input combination denies while the column is absent (32 cases)', !anyDenyWhileAbsent);
+ok('NO input combination allows while the column is absent (32 cases)', !anyAllowWhileAbsent);
 
-// And with it present, the only denials are for a claimed row.
-let deniedUnclaimed = false;
+// And with it present, an unclaimed row allows NOBODY.
+let allowedUnclaimed = false;
 for (const orgUserId of [null, '', ME, THEM]) {
-  if (!v({ columnPresent: true, rowFound: true, ownerUserId: null, orgUserId }).allow) deniedUnclaimed = true;
+  if (v({ columnPresent: true, rowFound: true, ownerUserId: null, orgUserId }).allow) allowedUnclaimed = true;
 }
-ok('NO input combination denies an unclaimed row', !deniedUnclaimed);
+ok('NO caller is allowed on an unclaimed row', !allowedUnclaimed);
 
-console.log(`\ninbox ownership: ${pass}/${pass + fails.length} passed`);
-if (fails.length) { for (const f of fails) console.error(`  FAIL: ${f}`); process.exit(1); }
+// The ONLY allowing combinations on an existing row: the exact owner.
+const allowedRows = [];
+for (const ownerUserId of [null, '', ME, THEM]) {
+  for (const orgUserId of [null, '', ME, THEM]) {
+    if (v({ columnPresent: true, rowFound: true, ownerUserId, orgUserId }).allow) allowedRows.push(`${ownerUserId}/${orgUserId}`);
+  }
+}
+ok('exactly two allowing pairs on a found row, both owner==caller',
+  allowedRows.length === 2 && allowedRows.every((p) => { const [a, b] = p.split('/'); return a === b && a !== ''; }));
+
+console.log(`\ninbox ownership (CS-017, fail-closed): ${pass}/${pass + fails.length} passed`);
+if (fails.length) { for (const f of fails) console.error(`  FAIL: ${f}`); process.exitCode = 1; }

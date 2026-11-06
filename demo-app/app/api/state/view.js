@@ -17,13 +17,24 @@
 //                                user may see (crewView.js). Fail-safe: a login the office set
 //                                does not name gets the RESTRICTED view, never the full blob.
 //
+// GET /api/state/view?part=jobs → { jobs: [{ data, row_version }], highWater, from, to }
+// (CS-677): the caller's OWN cleans — the ones whose crew names them — that start inside the
+// jobs window (src/lib/jobsWindow.js), for a crew phone's launch. Any authority may ask and
+// each gets only their own cleans: never more than the jobs RLS policy shows them. The server
+// reads them as the service role through the GIN index on the crew list
+// (_lib/jobsTable getCrewJobRows); the same read from the browser runs under RLS, whose
+// role-or-crew policy no index can serve, and filtered every clean in the window per launch.
+// `highWater` is the table's high-water row_version, read BEFORE the cleans: the phone's
+// cursor poll starts there, so a row written in between is still fetched.
+//
 // A plain nested file under /api/state (like org-state / jobs-delta / seed): no vercel.json
 // rewrite needed. Cache-Control: no-store — the projection is per-user and authority-bearing,
 // never cacheable by a shared/CDN layer (playbook II.7 server-request-cache trap).
 import { requireAuthority, OFFICE_ROLES } from '../_lib/authz.js';
 import { readOrgStateWithControls } from '../_lib/orgState.js';
-import { getCrewJobs } from '../_lib/jobsTable.js';
+import { getCrewJobs, getCrewJobRows, getJobsHighWater } from '../_lib/jobsTable.js';
 import { projectCrewView } from '../_lib/crewView.js';
+import { jobsWindowBounds } from '../../src/lib/jobsWindow.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -37,6 +48,17 @@ export default async function handler(req, res) {
   if (!a) return; // 401 / 403 already written
 
   res.setHeader('Cache-Control', 'no-store');
+
+  if (req.query?.part === 'jobs') {
+    try {
+      const window = jobsWindowBounds();
+      const highWater = await getJobsHighWater();
+      const jobs = a.orgUserId ? await getCrewJobRows(a.orgUserId, window) : [];
+      return res.status(200).json({ jobs, highWater, from: window.fromIso, to: window.toIso });
+    } catch (e) {
+      return res.status(500).json({ error: e.message || 'Read failed' });
+    }
+  }
 
   try {
     const { state, version, minClientBuild, freezeStrip } = await readOrgStateWithControls();

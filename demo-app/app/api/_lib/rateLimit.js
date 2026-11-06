@@ -102,13 +102,22 @@ export function clientIp(req) {
   return first(h['x-vercel-forwarded-for']) || first(h['x-real-ip']) || first(h['x-forwarded-for']) || 'unknown';
 }
 
+// The 429 itself: Retry-After in whole seconds and one plain sentence (no limit, no window,
+// no internals). `code` (optional) rides the body beside the sentence, for a caller whose
+// clients branch on a stable code rather than on words (the public scan page, CS-077's shape).
+// Exported for a route that decides with hit() itself — drive-estimate counts only the
+// requests that would reach Google, which only the estimate resolver knows (CS-083).
+export function tooMany(res, retryAfterMs, code = null) {
+  res.setHeader('Retry-After', String(Math.max(1, Math.ceil((Number(retryAfterMs) || 0) / 1000))));
+  res.status(429).json({ error: 'Too many requests. Please try again shortly.', ...(code ? { code } : {}) });
+}
+
 // hit() + a 429 with Retry-After. Returns true when the caller may proceed.
 // Caller: `if (!allow(req, res, {...})) return;`
-export function allow(req, res, { bucket, id, limit, windowMs }) {
+export function allow(req, res, { bucket, id, limit, windowMs, code = null }) {
   const r = hit(`${bucket}:${id}`, { limit, windowMs });
   if (r.ok) return true;
-  res.setHeader('Retry-After', String(Math.ceil(r.retryAfterMs / 1000)));
-  res.status(429).json({ error: 'Too many requests. Please try again shortly.' });
+  tooMany(res, r.retryAfterMs, code);
   return false;
 }
 

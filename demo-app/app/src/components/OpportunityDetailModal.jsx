@@ -19,11 +19,17 @@ import {
 import { useToast } from './Toast';
 import { newId } from '../lib/ids';
 import { money } from '../lib/dates';
+import { useT } from '../i18n/react';
+import { isWalkthroughStage, walkthroughFields, walkthroughPatch } from '../lib/walkthrough';
+import WalkthroughFields from './WalkthroughFields';
 
 // The deal editor (opens when a board card is clicked). An Opportunity belongs to
 // a COMPANY, so the header leads with the company and its primary contact; the
 // editable fields are the deal's (name / value / stage / close / which person it
-// runs through). Notes land on the company's timeline.
+// runs through / its walkthrough). Notes land on the company's timeline.
+// The walkthrough (lib/walkthrough) is a date and a time on the org's clock and where to meet;
+// saving it is what confirms it to the deal's contact. Setting the Stage to "Walkthrough
+// Scheduled" with no date asks for one beside the fields (a prompt, never a block).
 
 function emptyDraftFor(opp) {
   if (!opp) return null;
@@ -33,8 +39,10 @@ function emptyDraftFor(opp) {
     stage: opp.stage || '',
     expectedCloseDate: opp.expectedCloseDate || '',
     primaryContactId: opp.primaryContactId || '',
+    walkthrough: walkthroughFields(opp),
   };
 }
+const sameWalkthrough = (a, b) => a.date === b.date && a.time === b.time && a.where.trim() === b.where.trim();
 
 export default function OpportunityDetailModal({ open, onClose, opportunity }) {
   const state = useStore();
@@ -46,11 +54,13 @@ export default function OpportunityDetailModal({ open, onClose, opportunity }) {
   const canEdit = usePermission('pipeline.edit');
   const canStartConversation = usePermission('messaging.startConversation');
 
+  const t = useT();
   const [draft, setDraft] = useState(() => emptyDraftFor(opportunity));
   const [noteDraft, setNoteDraft] = useState('');
+  const [walkErrors, setWalkErrors] = useState({});
 
   useEffect(() => {
-    if (open) { setDraft(emptyDraftFor(opportunity)); setNoteDraft(''); }
+    if (open) { setDraft(emptyDraftFor(opportunity)); setNoteDraft(''); setWalkErrors({}); }
   }, [open, opportunity]);
 
   const stages = selectActivePipelineStages(state);
@@ -68,12 +78,14 @@ export default function OpportunityDetailModal({ open, onClose, opportunity }) {
 
   const set = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
 
+  const walkthroughDirty = !sameWalkthrough(draft.walkthrough, walkthroughFields(opportunity));
   const isDirty = (
     draft.title !== (opportunity.title || '') ||
     draft.value !== (opportunity.value == null ? '' : String(opportunity.value)) ||
     draft.stage !== (opportunity.stage || '') ||
     draft.expectedCloseDate !== (opportunity.expectedCloseDate || '') ||
-    draft.primaryContactId !== (opportunity.primaryContactId || '')
+    draft.primaryContactId !== (opportunity.primaryContactId || '') ||
+    walkthroughDirty
   );
   const hasPendingNote = !!noteDraft.trim();
 
@@ -88,6 +100,10 @@ export default function OpportunityDetailModal({ open, onClose, opportunity }) {
       const cleaned = String(draft.value).replace(/[$,\s]/g, '');
       const numericValue = cleaned === '' ? null : Number(cleaned);
       if (numericValue != null && Number.isNaN(numericValue)) { toast.error('Deal value must be a number.'); return false; }
+      // The walkthrough only when it changed: the write stamps a new date or time, and that stamp
+      // is what sends the (updated) confirmation.
+      const walk = walkthroughDirty ? walkthroughPatch(draft.walkthrough) : { patch: {} };
+      if (walk.error) { setWalkErrors({ [walk.error]: true }); return false; }
       flushNote();
       dispatch({
         type: ACTIONS.UPDATE_OPPORTUNITY,
@@ -97,6 +113,7 @@ export default function OpportunityDetailModal({ open, onClose, opportunity }) {
           value: numericValue,
           expectedCloseDate: draft.expectedCloseDate || null,
           primaryContactId: draft.primaryContactId || null,
+          ...walk.patch,
         },
       });
       if (draft.stage !== (opportunity.stage || '')) {
@@ -170,6 +187,16 @@ export default function OpportunityDetailModal({ open, onClose, opportunity }) {
           <FormField label="Primary contact" as="select" value={draft.primaryContactId}
             onChange={(e) => set('primaryContactId', e.target.value)}
             options={[{ value: '', label: 'None' }, ...companyContacts.map((c) => ({ value: c.id, label: `${c.firstName} ${c.lastName}`.trim() }))]} />
+        </div>
+
+        <div className="opp-walkthrough">
+          <div className="form-label">{t('walkthrough.heading')}</div>
+          {isWalkthroughStage(draft.stage) && !draft.walkthrough.date && (
+            <p className="form-help opp-walkthrough-ask">{t('walkthrough.ask')}</p>
+          )}
+          <WalkthroughFields value={draft.walkthrough} errors={walkErrors} disabled={!canEdit}
+            onChange={(v) => { set('walkthrough', v); setWalkErrors({}); }}
+            contactId={draft.primaryContactId || company?.primaryContactId || null} />
         </div>
 
         <div className="form-group">

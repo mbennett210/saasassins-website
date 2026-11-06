@@ -7,6 +7,7 @@ import { getSupabase } from './supabase.js';
 import { encrypt, decrypt } from './crypto.js';
 import { refreshAccessToken } from './google.js';
 import { resolveCredsForWorkspaceId } from './oauthWorkspaces.js';
+import { ownerColumnExists } from './inboxOwnership.js';
 
 export function newInboxId() {
   return `inbx_${crypto.randomBytes(9).toString('hex')}`;
@@ -39,7 +40,7 @@ export async function listAccountsDueForPoll(throttleMs = 60 * 1000) {
   );
 }
 
-export async function upsertAccount({ id, email, displayName, provider, refreshToken, accessToken, accessTokenExpiresAt, historyId, workspaceId }) {
+export async function upsertAccount({ id, email, displayName, provider, refreshToken, accessToken, accessTokenExpiresAt, historyId, workspaceId, ownerUserId }) {
   const row = {
     id,
     email: String(email).toLowerCase(),
@@ -55,9 +56,32 @@ export async function upsertAccount({ id, email, displayName, provider, refreshT
     status: 'active',
     last_error: null,
   };
+  // OWNERSHIP IS STAMPED AT CONNECT (CS-017). The `u_*` id comes from the SIGNED OAuth
+  // state, i.e. from the authority that started the flow — never from a query param. The
+  // ownership gate now REFUSES an unclaimed mailbox, so a connect that omitted this would
+  // produce a mailbox nobody can send from. Written only when the column exists so this
+  // keeps working before migration 20260929120000 lands (the send gate then refuses for
+  // 'not-provisioned' rather than silently allowing).
+  if (ownerUserId && await ownerColumnExists()) row.owner_user_id = ownerUserId;
   const { error } = await getSupabase()
     .from('inbox_accounts').upsert(row, { onConflict: 'id' });
   if (error) throw new Error(`Inbox save failed: ${error.message}`);
+}
+
+// The mailboxes `orgUserId` owns. [] when the column is absent or the read fails: the
+// inbound scope (CS-016) must never widen on uncertainty.
+export async function listAccountsOwnedBy(orgUserId) {
+  if (!orgUserId) return [];
+  try {
+    if (!(await ownerColumnExists())) return [];
+    const { data, error } = await getSupabase()
+      .from('inbox_accounts').select('id, email, owner_user_id').eq('owner_user_id', orgUserId);
+    if (error) throw new Error(error.message);
+    return data || [];
+  } catch (e) {
+    console.error('[accounts] owned-mailbox list failed:', e?.message || e);
+    return [];
+  }
 }
 
 export async function updateAccountPollState(id, { historyId, lastError } = {}) {
@@ -152,11 +176,30 @@ export async function bufferInbound(rows) {
   if (error) throw new Error(`Inbound buffer write failed: ${error.message}`);
 }
 
-export async function getInboundSince(since, limit = 100) {
-  const { data, error } = await getSupabase()
+// Buffered inbound rows past `since`. 🔴 `inboxEmails` SCOPES THE READ (CS-016): pass the
+// mailbox addresses the caller may read and only those rows come back. Omitting it (null)
+// returns every mailbox's mail and is for the SERVER-SIDE ingest alone — the browser-facing
+// poll must always pass a scope, or crew read managers' personal mail.
+export async function getInboundSince(since, limit = 100, inboxEmails = null) {
+  let q = getSupabase()
     .from('inbound_emails').select('*')
-    .gt('seq', Number(since) || 0)
-    .order('seq', { ascending: true }).limit(limit);
+    .gt('seq', Number(since) || 0);
+  if (Array.isArray(inboxEmails)) q = q.in('to_inbox_email', inboxEmails.map((e) => String(e).toLowerCase()));
+  const { data, error } = await q.order('seq', { ascending: true }).limit(limit);
   if (error) throw new Error(`Inbound read failed: ${error.message}`);
   return data || [];
+}
+
+// The highest `seq` in the same unfiltered page the scoped read walked. The CURSOR must
+// advance past rows the caller may not see, or a poller with no mailboxes of its own
+// re-scans the buffer from `since` on every tick, forever. Reads only the seq column, so
+// no body of another mailbox's mail is ever loaded to compute it.
+export async function getInboundCeiling(since, limit = 100) {
+  const { data, error } = await getSupabase()
+    .from('inbound_emails').select('seq')
+    .gt('seq', Number(since) || 0)
+    .order('seq', { ascending: true }).limit(limit);
+  if (error) throw new Error(`Inbound cursor read failed: ${error.message}`);
+  const rows = data || [];
+  return rows.length ? rows[rows.length - 1].seq : Number(since) || 0;
 }

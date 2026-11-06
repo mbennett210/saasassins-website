@@ -8,9 +8,11 @@
 //   site-security reveal at any site                      <- ops.revealCodes
 //   account-media list / upload at any site               <- the office roles (the app's site
 //                                                            visibility is a role rule, not a key)
-//   settings webhooks / outbound / deliveries             <- integrations.view to read (an
+//   settings webhooks / outbound                          <- integrations.view to read (an
 //                                                            allowlist of columns); manage to
 //                                                            change them and to get the secrets
+//                                                            (GET /deliveries had no caller and
+//                                                            was deleted - CS-220, 2026-09-29)
 //   hr-files download / upload + delete                   <- hr.view / hr.edit
 //   the zero-punch watchdog push                          <- variance.view (it links to /variance)
 // Owner decisions 2026-09-23 (HANDOFF). The server reads the committed matrix exactly as the
@@ -107,7 +109,10 @@ function buildWorld({ permissions = seedPermissions(), overrides = OVERRIDES, ta
     users: roster,
     permissions,
     userPermissionOverrides: overrides,
-    clients: [{ id: 'cl_1', name: 'Acme', standingCrewIds: [] }],
+    // u_mgr SUPERVISES this customer: closing someone else's punch is a manager time write
+    // and follows the manager's locations (W5-M F2), so the bypass claim below is only
+    // about the KEY when the caller is in scope to begin with.
+    clients: [{ id: 'cl_1', name: 'Acme', standingCrewIds: [], supervisorId: 'u_mgr' }],
     sites: [{ ...SITE, security: { doorCodeCipher: encrypt('4321', 'OPS_CODE_ENCRYPTION_KEY') } }],
     opsSettings: { offlineReplayWindowHours: 12 },
   };
@@ -116,8 +121,13 @@ function buildWorld({ permissions = seedPermissions(), overrides = OVERRIDES, ta
       org_state: [{ organization_id: ORG, state, version: 7 }],
       jobs: [jobRow('j_1', -1 * H, ['u_crew_on'])],
       time_entries: [{
-        id: 'te_other', organization_id: ORG, user_id: 'u_crew_on', job_id: 'j_1', site_id: 'st_1',
+        // client_id is denormalized at clock-in on every real punch, and the scope rule
+        // reads it (a punch with no customer is owner-only), so the fixture carries it.
+        id: 'te_other', organization_id: ORG, user_id: 'u_crew_on', job_id: 'j_1', site_id: 'st_1', client_id: 'cl_1',
         clock_in_at: iso(-0.5 * H), clock_out_at: null, status: 'in_progress', edit_history: [],
+        // NOT NULL DEFAULT 0 on the real table (20260927225850); every punch UPDATE swaps
+        // on it (W5-M F1), so a fixture without one can never be written.
+        row_version: 0,
       }],
       crew_assignments: [
         { organization_id: ORG, user_id: '__synced__', site_id: null, client_id: null, source: 'marker' },
@@ -199,7 +209,6 @@ const listMedia = (who) => call(media, { method: 'GET', path: 'list', token: tok
 const uploadAt = (siteId) => (who) => call(media, { method: 'POST', path: 'upload-url', token: tok(who), body: { siteId, mimeType: 'image/jpeg', sizeBytes: 1000 } });
 const getHooks = (who) => call(settings, { method: 'GET', path: 'webhooks', token: tok(who) });
 const getOutbound = (who) => call(settings, { method: 'GET', path: 'outbound', token: tok(who) });
-const getDeliveries = (who) => call(settings, { method: 'GET', path: 'deliveries', token: tok(who), query: { webhook: 'ep_1' } });
 const createHook = (who) => call(settings, { method: 'POST', path: 'webhooks', token: tok(who), body: { name: 'New', purpose: 'generic' } });
 const rotate = (who) => call(settings, { method: 'PATCH', path: 'webhooks/ep_2', token: tok(who), body: { rotate: true } });
 const dropOutbound = (who) => call(settings, { method: 'DELETE', path: 'outbound/ob_1', token: tok(who) });
@@ -228,7 +237,7 @@ buildWorld();
 await clockIn('mgr');
 ok('clock-in: a manager\'s bypass reads the matrix at most once', matrixReads() <= 1, `read the matrix ${matrixReads()}×`);
 
-await expectEach("clock-out of SOMEONE ELSE's punch", ['owner', 'admin', 'adminR', 'mgr', 'crewG'], 200, clockOut,
+await expectEach("clock-out of SOMEONE ELSE's punch", ['owner', 'admin', 'adminR', 'mgr'], 200, clockOut,
   (who, r) => {
     const last = (r.body?.entry?.edit_history || []).at(-1);
     ok(`  ${who} closed it`, !!r.body?.entry?.clock_out_at, show(r));
@@ -237,6 +246,17 @@ await expectEach("clock-out of SOMEONE ELSE's punch", ['owner', 'admin', 'adminR
       && last?.byUserId === PEOPLE[who].id && last?.field === 'clock_out_at' && last?.to === r.body?.entry?.clock_out_at, show(r));
   });
 await expectEach("clock-out of someone else's punch", ['crew', 'mgrR'], 403, clockOut);
+// The key is not the whole answer (W5-M F2). crewG HOLDS time.edit.all — so the bypass says
+// yes — but supervises no customer, so the scope rule refuses, exactly as time/correct
+// already refuses them on the same punch. Two keys, two questions: WHO may act, and WHERE.
+buildWorld();
+{
+  const r = await clockOut('crewG');
+  ok("clock-out of SOMEONE ELSE's punch: crewG holds the key but supervises nothing → 403 out-of-scope",
+    r.status === 403 && r.body?.code === 'out-of-scope', show(r));
+  const row = world.tables.time_entries.find((e) => e.id === 'te_other');
+  ok('  ...and the punch is still on the clock', row?.clock_out_at == null, JSON.stringify(row).slice(0, 140));
+}
 buildWorld();
 {
   const r = await clockOut('crewOn');
@@ -387,8 +407,6 @@ await expectEach('list outbound webhooks, view-only', ['mgrR'], 200, getOutbound
   });
 await expectEach('list outbound webhooks, full rows', ['mgr'], 200, getOutbound,
   (who, r) => ok(`  ${who} gets the outbound secret`, r.body?.outbound?.[0]?.secret === 'whsec_OUT', show(r)));
-await expectEach('list deliveries', ['mgr', 'mgrR', 'crewG'], 200, getDeliveries);
-await expectEach('list deliveries', ['crew', 'admin'], 403, getDeliveries);
 await expectEach('create an inbound webhook', ['owner', 'mgr'], 200, createHook);
 await expectEach('create an inbound webhook (view only)', ['mgrR', 'crewG', 'admin'], 403, createHook);
 await expectEach('rotate a lead token', ['mgr'], 200, rotate, (who, r) => ok(`  ${who} gets the new token`, typeof r.body?.bearer_token === 'string', show(r)));

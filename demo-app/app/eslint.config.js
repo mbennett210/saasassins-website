@@ -5,7 +5,10 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // Build output is never linted: the app's `dist` and the design system's generated
+  // artifact (`npm run design-system` writes design-system/dist, git-ignored), whose minified
+  // bundle strips comments and so turns a commented `catch { /* … */ }` into an empty block.
+  globalIgnores(['dist', 'design-system/dist']),
   {
     files: ['**/*.{js,jsx}'],
     // exhaustive-deps is off (below); without this, the codebase's ~25 existing

@@ -11,6 +11,8 @@
 // Validation helpers are ported from the CRM's proven supportTickets.js so the
 // two halves agree on what a valid attachment is.
 import { authHeaders } from './authHeader';
+import { msg } from '../i18n/core.js';
+import { shrinkPhoto } from './imageCanvas';
 
 const BACKEND =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FORMS_BACKEND_URL) || '/api';
@@ -37,13 +39,16 @@ export function formatBytes(bytes) {
 
 // Returns an error string, or null when the file is acceptable — checked next
 // to the drop zone so the reporter sees the problem before a failed submit.
+// The problem with a file, as a MESSAGE the picker renders in the reader's language
+// (CS-193: src/i18n/core msg), or null when the file is fine.
 export function validateAttachment(file) {
-  if (!file) return 'No file';
+  if (!file) return msg('report.files.none');
+  const name = file.name || msg('report.files.thatFile');
   if (!TICKET_ATTACHMENT_ALLOWED_MIME.includes(file.type)) {
-    return `${file.name || 'That file'} isn't a supported type. Use PNG, JPG, WebP, GIF or PDF.`;
+    return msg('report.files.badType', { name });
   }
   if (file.size > TICKET_ATTACHMENT_MAX_BYTES) {
-    return `${file.name || 'That file'} is ${formatBytes(file.size)}. The limit is ${formatBytes(TICKET_ATTACHMENT_MAX_BYTES)}.`;
+    return msg('report.files.tooBig', { name, size: formatBytes(file.size), limit: formatBytes(TICKET_ATTACHMENT_MAX_BYTES) });
   }
   return null;
 }
@@ -122,7 +127,10 @@ export async function submitReport({ subject, description, priority, files = [],
     throw new Error(`Up to ${TICKET_ATTACHMENT_MAX_COUNT} files per report.`);
   }
   const attachments = [];
-  for (const file of files) {
+  for (const picked of files) {
+    // A camera photo is shrunk on the device first (lib/imageCanvas shrinkPhoto, CS-678); a
+    // screenshot (PNG) or a PDF goes up exactly as picked.
+    const file = await shrinkPhoto(picked);
     const problem = validateAttachment(file);
     if (problem) throw new Error(problem);
     const minted = await api('/support/upload', {
