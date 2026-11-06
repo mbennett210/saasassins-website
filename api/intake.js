@@ -169,7 +169,7 @@ module.exports = async function handler(req, res) {
   if (md.moduleIds) textLines.push(`Order (module ids): ${md.moduleIds}`);
   if (customerEmail) textLines.push(`Stripe email: ${customerEmail}`);
 
-  const to = (process.env.ORDER_NOTIFY_TO || 'hello@saasassins.com')
+  const to = (process.env.ORDER_NOTIFY_TO || 'hello@saasassinsdev.com')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);

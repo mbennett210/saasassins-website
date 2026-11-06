@@ -51,6 +51,6 @@ Or connect the repo in the Vercel dashboard — pushes to `main` auto-deploy.
 ## Swapping Later
 
 - **Calendly URL** — set in `js/main.js` inside `openCalendly()`
-- **Email** — `hello@saasassins.com` across all pages + the contact form's mailto handler
+- **Email** — `hello@saasassinsdev.com` across all pages + the contact form's mailto handler
 - **PolishPoint live URL** — `showcase.html` has a placeholder pointing to `https://polishpoint.app`
 - **Product screenshots** — replace `images/polishpoint-*.png` as the product evolves; add new products as `images/[product]-*.png` and duplicate the showcase-card block

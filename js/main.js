@@ -258,7 +258,7 @@ function initContactForm() {
     const body = encodeURIComponent(
       `Name: ${name}\nEmail: ${email}\nCompany: ${company}\n\n${message}`
     );
-    window.location.href = `mailto:hello@saasassins.com?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:hello@saasassinsdev.com?subject=${subject}&body=${body}`;
   });
 }
 
