@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "site",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "npm run build && node scripts/serve-dist.mjs 4317"],
+      "port": 4317
+    },
+    {
+      "name": "polishpoint-demo-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "demo-app/app", "run", "dev", "--", "--mode", "demo", "--port", "5213"],
+      "port": 5213
+    }
+  ]
+}

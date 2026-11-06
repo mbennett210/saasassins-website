@@ -6,5 +6,8 @@ dist/
 .env.local
 *.log
 .vercel
-.claude/
+# Claude Code local state; Forge's styling-measure setup is shared
+.claude/*
+!.claude/launch.json
+!.claude/styling.json
 mockups/

@@ -1,0 +1,31 @@
+{
+  "demo": "site",
+  "init": "try { sessionStorage.setItem('cs.pushGate.dismissed', '1'); } catch (e) { /* private mode */ }",
+  "dismiss": ["Not now", "Continue in the browser"],
+  "sizes": [
+    "phone",
+    "desktop",
+    { "name": "small phone", "width": 320, "height": 568, "mobile": true }
+  ],
+  "pages": [
+    { "path": "/", "name": "Home" },
+    { "path": "/features", "name": "Features" },
+    { "path": "/showcase", "name": "Showcase" },
+    { "path": "/about", "name": "About" },
+    { "path": "/contact", "name": "Contact" },
+    { "path": "/polishpoint", "name": "PolishPoint landing" },
+    { "path": "/polishpoint/demo", "name": "Demo dashboard" },
+    { "path": "/polishpoint/demo/payroll", "name": "Demo payroll" },
+    { "path": "/polishpoint/demo/supplies", "name": "Demo supplies" },
+    { "path": "/polishpoint/demo/quotes", "name": "Demo quotes" },
+    { "path": "/polishpoint/demo/marketing", "name": "Demo marketing" },
+    { "path": "/polishpoint/demo/settings/integrations", "name": "Demo integrations" },
+    { "path": "/polishpoint/demo/hub/b/cl_seed_olympic", "name": "Demo customer hub" }
+  ],
+  "panels": [
+    { "name": "Demo user menu (switch view)", "page": "/polishpoint/demo", "open": [".user-chip"], "root": ".user-menu", "sizes": ["desktop"] },
+    { "name": "Demo phone menu", "page": "/polishpoint/demo", "open": [".cs-fnav-logo"], "root": ".cs-fnav-menu", "sizes": ["phone", "small phone"] }
+  ],
+  "allow": ["fonts.googleapis.com", "fonts.gstatic.com", "assets.calendly.com"],
+  "parts": { "popup": ["Modal", "MobileSheet", "SidePanel"] }
+}
