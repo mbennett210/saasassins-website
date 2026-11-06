@@ -1,4 +1,4 @@
-# PolishPoint demo (saasassins.com/polishpoint)
+# PolishPoint demo (saasassinsdev.com/polishpoint)
 
 The live demo the SaaSassins site serves at `/polishpoint`: Clean Space's app, re-skinned to PolishPoint, running
 login-free on sample data. `app/` and `brands/` are an export of Clean Space's committed code
