@@ -1,3 +1,4 @@
+import AnchoredPortal from '../demo/AnchoredPortal'; // polishpoint-demo
 import { useRef, useState } from 'react';
 import PopMenu from './PopMenu';
 import Icon from './Icon';
@@ -37,6 +38,7 @@ const CHANNEL_CHIPS = [
 
 function FiltersPopover({ open, anchorRef, filters, onFiltersChange, onClose }) {
   const t = useT();
+  const boxRef = useRef(null); // polishpoint-demo: the panel's stand-in at the page's top level
   const toggleChannel = (ch) => {
     const set = new Set(filters.channels);
     if (set.has(ch)) set.delete(ch); else set.add(ch);
@@ -50,7 +52,7 @@ function FiltersPopover({ open, anchorRef, filters, onFiltersChange, onClose }) 
     filters.starredOnly;
 
   return (
-    <PopMenu open={open} onClose={onClose} anchorRef={anchorRef} className="filters-popover" role="dialog" aria-label={t('messages.filters')} sheetTitle={t('messages.filters')}>
+    <AnchoredPortal anchorRef={anchorRef} open={open} ref={boxRef}><PopMenu open={open} onClose={onClose} anchorRef={anchorRef} spareRef={boxRef} className="filters-popover" role="dialog" aria-label={t('messages.filters')} sheetTitle={t('messages.filters')}>
       <div className="filters-popover-head">
         <span>{t('messages.filters')}</span>
         {anyFilter && (
@@ -124,7 +126,7 @@ function FiltersPopover({ open, anchorRef, filters, onFiltersChange, onClose }) 
           </div>
         </div>
       </div>
-    </PopMenu>
+    </PopMenu></AnchoredPortal>
   );
 }
 

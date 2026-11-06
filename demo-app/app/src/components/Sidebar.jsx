@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'; // polishpoint-demo
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from '../store';
@@ -274,7 +275,7 @@ function Launcher({ sections, rows, pills, onCloseMobile, asideRef, isMobile }) 
     const down = () => { pressing = true; };
     const up = () => { pressing = false; };
     const onFocus = (e) => {
-      if (pressing || asideRef.current?.contains(e.target) || e.target?.closest?.('.modal-overlay')) return;
+      if (pressing || asideRef.current?.contains(e.target) || panelRef.current?.contains(e.target) || e.target?.closest?.('.modal-overlay')) return; // polishpoint-demo: the panel is outside the menu now
       close();
     };
     document.addEventListener('pointerdown', down, true);
@@ -300,7 +301,7 @@ function Launcher({ sections, rows, pills, onCloseMobile, asideRef, isMobile }) 
   });
 
   if (!sections.length) return null;
-  const panel = shown && (
+  const panel = shown && createPortal( // polishpoint-demo: the panel at the page's top level
     <div ref={panelRef} id={PANEL_ID} className="launcher-panel" role="dialog" aria-label={t(shown.labelKey)}>
       <div className="launcher-panel-head">
         <span className="launcher-panel-title">{t(shown.labelKey)}</span>
@@ -331,7 +332,8 @@ function Launcher({ sections, rows, pills, onCloseMobile, asideRef, isMobile }) 
           </div>
         ))}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
   return (
     <div className="nav-group launcher">

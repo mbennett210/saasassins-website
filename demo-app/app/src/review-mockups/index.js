@@ -11,10 +11,5 @@
 //
 // test-review-mockups.mjs holds this list, the templates and the questions to each other.
 export const REVIEW_MOCKUPS = {
-  'sidebar-directions': {
-    file: 'sidebar-directions.html',
-    views: ['a', 'b', 'c', 'd', 'e'],
-    today: 'e',
-    load: () => import('./sidebar-directions.html?raw').then((m) => m.default),
-  },
+  // polishpoint-demo: no Review page, so no mockups (sidebar-directions.html is left out)
 };

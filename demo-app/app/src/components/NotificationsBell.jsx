@@ -1,3 +1,4 @@
+import AnchoredPortal from '../demo/AnchoredPortal'; // polishpoint-demo
 // NotificationsBell — persistent bell icon with unread badge + dropdown panel
 // listing the current user's most recent in-app notifications.
 //
@@ -71,6 +72,7 @@ export default function NotificationsBell({ className = '' }) {
   const nav = useFromHere();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+  const panelRef = useRef(null); // polishpoint-demo: the desktop panel, at the page's top level
   const isMobile = useIsMobile();
 
   // Increment 0.4. This is mounted twice in AppLayout for the whole session, so on the
@@ -120,7 +122,7 @@ export default function NotificationsBell({ className = '' }) {
   // (UI_RULES §105 / THEME_CLEANSPACE R9) with its own full-screen backdrop + Esc, which
   // both closes on an outside tap AND blocks tap-through to the inbox behind it, so the
   // anchored-popover dismiss is gated OFF on mobile.
-  useDismissTap({ open: open && !isMobile, ref: wrapRef, onDismiss: () => setOpen(false) });
+  useDismissTap({ open: open && !isMobile, ref: wrapRef, ref2: panelRef, onDismiss: () => setOpen(false) });
 
   // Close panel automatically when the route changes (clicking an item navigates).
   useEffect(() => { setOpen(false); }, [location.pathname]);
@@ -239,13 +241,13 @@ export default function NotificationsBell({ className = '' }) {
           />
         </MobileSheet>
       ) : (open && (
-        <div className="bell-panel" role="dialog" aria-label={t('notif.title')}>
+        <AnchoredPortal anchorRef={wrapRef} ref={panelRef}><div className="bell-panel" role="dialog" aria-label={t('notif.title')}>
           <div className="bell-panel-head">
             <strong>{t('notif.title')}</strong>
             {panelActions}
           </div>
           {panelList}
-        </div>
+        </div></AnchoredPortal>
       ))}
     </div>
   );

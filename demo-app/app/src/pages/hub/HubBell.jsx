@@ -1,3 +1,4 @@
+import AnchoredPortal from '../../demo/AnchoredPortal'; // polishpoint-demo
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Icon from '../../components/Icon';
@@ -25,11 +26,12 @@ export default function HubBell({ readOnly = false }) {
   const { data, error } = useHubUpdates();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+  const panelRef = useRef(null); // polishpoint-demo: the desktop panel, at the page's top level
   const isMobile = useIsMobile();
   const nav = useFromHere();
   const { pathname } = useLocation();
 
-  useDismissTap({ open: open && !isMobile, ref: wrapRef, onDismiss: () => setOpen(false) });
+  useDismissTap({ open: open && !isMobile, ref: wrapRef, ref2: panelRef, onDismiss: () => setOpen(false) });
   // A row navigates; the bell closes on any page change.
   useEffect(() => { setOpen(false); }, [pathname]);
 
@@ -87,10 +89,10 @@ export default function HubBell({ readOnly = false }) {
           {body}
         </MobileSheet>
       ) : (open && (
-        <div className="bell-panel" role="dialog" aria-label="Updates">
+        <AnchoredPortal anchorRef={wrapRef} ref={panelRef}><div className="bell-panel" role="dialog" aria-label="Updates">
           <div className="bell-panel-head"><strong>Updates</strong></div>
           {body}
-        </div>
+        </div></AnchoredPortal>
       ))}
     </div>
   );

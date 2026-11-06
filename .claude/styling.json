@@ -27,5 +27,5 @@
     { "name": "Demo phone menu", "page": "/polishpoint/demo", "open": [".cs-fnav-logo"], "root": ".cs-fnav-menu", "sizes": ["phone", "small phone"] }
   ],
   "allow": ["fonts.googleapis.com", "fonts.gstatic.com", "assets.calendly.com"],
-  "parts": { "popup": ["Modal", "MobileSheet", "SidePanel"] }
+  "parts": { "popup": ["Modal", "MobileSheet", "SidePanel", "AnchoredPortal"] }
 }

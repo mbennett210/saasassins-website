@@ -1255,7 +1255,7 @@ input[type="time"].input::-webkit-date-and-time-value {
 /* The panel: fixed beside the menu (placed and sized by Sidebar's placePanel), scrolling inside when
    taller than the window. It is the menu's own (the sidebar's stacking layer), over the page. */
 .launcher-panel {
-  position: fixed; z-index: 10; overflow-y: auto; overscroll-behavior: contain;
+  position: fixed; z-index: 51; /* polishpoint-demo: at the page's top level, over the menu (.sidebar, 50) */ overflow-y: auto; overscroll-behavior: contain;
   padding: var(--space-4);
   border: var(--border-width-sm) solid var(--card-border); border-radius: var(--radius-xl);
   background: var(--color-surface-raised); color: var(--text-primary); box-shadow: var(--shadow-overlay);

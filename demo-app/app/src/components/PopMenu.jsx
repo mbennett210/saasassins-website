@@ -36,7 +36,7 @@ import { floatPlacement } from '../lib/floatPlacement';
 // class `is-float`; the click-outside spares it as the second ref; a scroll outside it or a resize
 // moves the trigger from under it, so it closes (the key-status menu's rule, pages/Keys). On a phone
 // it is the sheet, as always.
-export default function PopMenu({ open, onClose, anchorRef, className = '', role, sheetTitle, float = false, children, ...rest }) {
+export default function PopMenu({ open, onClose, anchorRef, className = '', role, sheetTitle, float = false, spareRef = null, children, ...rest }) { // polishpoint-demo: spareRef
   const isMobile = useIsMobile();
   const floating = float && !isMobile;
   const menuRef = useRef(null);
@@ -44,7 +44,7 @@ export default function PopMenu({ open, onClose, anchorRef, className = '', role
   useEffect(() => { closeRef.current = onClose; });
   // Desktop-only: on mobile the MobileSheet owns its own dismissal (backdrop + Esc). A floating
   // panel lives outside `anchorRef` (in a portal), so it is spared as the second ref.
-  useDismissTap({ open: open && !isMobile, ref: anchorRef, ref2: floating ? menuRef : null, onDismiss: onClose });
+  useDismissTap({ open: open && !isMobile, ref: anchorRef, ref2: floating ? menuRef : spareRef, onDismiss: onClose }); // polishpoint-demo: a panel portaled by its caller
 
   // A floating panel is placed before it paints, then closes on a scroll outside it or a resize.
   useLayoutEffect(() => {

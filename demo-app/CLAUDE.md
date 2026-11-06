@@ -31,6 +31,7 @@ script's `PATCHES` or in one of the files the demo owns.
 | `app/src/demo/DemoLanding.jsx`, `demoLanding.css` | The public landing at `/polishpoint`: hero, Core platform, Modules, Book a call |
 | `app/src/demo/modules.catalog.js` | The Core list and the module cards. Every card is a module that is in the live demo, with a link to its page; keep it in step with the app after a sync |
 | `app/src/demo/demoConfig.js` | `ROUTER_BASE` / `APP_ROOT` (the app lives at `/polishpoint/demo`), `demoEntry()` (landing vs app vs an old deep link), the Book a call link |
+| `app/src/demo/AnchoredPortal.jsx`, `anchoredPortal.css` | Draws a dropdown at the page's top level while its CSS still places it under its trigger (the bells, the messaging filters); `.claude/styling.json` names it a pop-up part |
 | `app/src/lib/assetUrl.js` | Prefixes runtime `/file.png` paths with the `/polishpoint` base |
 | `brands/polishpoint/` | The brand pack (name, contacts, colours, logos, quote pages) |
 
@@ -46,6 +47,9 @@ script's `PATCHES` or in one of the files the demo owns.
 - **No Clean Space build review.** The Review page, the NEW pills (desktop and phone), the Dashboard and Payroll
   layout-review banners and Report an issue are hidden; the webhook help reads `X-PolishPoint-Signature`.
 - **Quotes and Marketing on** (Daniel's pick, 2026-11-05). Clean Space keeps them off. Reviews stays off.
+- **Every panel and pop-up at the page's top level** (the styling rules, and Forge's file check on each sync's
+  lines): the notification bells, the messaging filters, the messages dock and the menu's section panel are portaled
+  to `<body>`, each dismiss spares its portaled panel, and Clean Space's unused review mockup is left out.
 
 ## Running and checking it
 

@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'; // polishpoint-demo
 import { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Avatar from './Avatar';
@@ -188,7 +189,7 @@ export default function MessagesDock() {
   const handleMiniSend = (text, opts) => sendMessage(activeConv, activeContact, activeMessages, text, opts);
   const handleMiniRetry = (message) => retryMessage(activeConv, activeContact, message);
 
-  return (
+  return createPortal( // polishpoint-demo: the dock at the page's top level
     <div ref={rootRef} className={`cs-msg-dock ${open ? 'is-open' : ''}`}>
       {open && activeConv && (
         <div className="cs-msg-panel" role="dialog" aria-label={t('messages.dock.conversationWith', { name: activeRow.displayName })}>
@@ -327,6 +328,7 @@ export default function MessagesDock() {
         </span>
         <span className="cs-msg-launcher-label">{t('messages.dock.messages')}</span>
       </button>
-    </div>
+    </div>,
+    document.body,
   );
 }
