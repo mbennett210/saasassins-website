@@ -1,0 +1,48 @@
+/* Clean Space's shared parts with their words in their middle, in Poppins (Daniel's pick, 2026-11-05: "Fix every part
+   in the demo"). Forge's styling measures hold a button's words, and a count's or a short label's ink, to its middle
+   (0.5px up and down for words, 0.25px for ink). Poppins rounds its ascent, descent and line gap to whole pixels at
+   these sizes, so in each part below the words sat 0.5 to 0.7px high (and a lone "1", its flag on the left, a quarter
+   pixel left). Each rule keeps the part's size and moves only its words: a fractional split of its padding, or for a
+   fixed-height part, a fractional top padding (box-sizing is border-box, so the box stays the same). Numbers measured
+   with Forge's own measures at phone (390, 3x), desktop (1440) and the small phone (320).
+   main.jsx imports this after index.css (scripts/sync-polishpoint-demo.mjs), so it wins at equal specificity. */
+
+/* Badges: 23px, 16px of words in a 17px line. Down 0.625px (a short label such as "Off" or "1" is read by its ink). */
+.badge { padding: 3.625px 9.875px 2.375px 10.125px; }
+
+/* Counts: the menu's (18px), a segment's (18px), the bell's (18px), the notification sheet's title (20px) and the
+   phone menu's (19px). Down 0.5 to 0.66px; right 0.125px for the "1" (the phone menu's "2" leans right already). */
+.nav-review-count { padding: 1.3125px 3.875px 0 4.125px; }
+.control-count { padding: 1.15625px 5.875px 0 6.125px; }
+.bell-badge { padding: 1.09375px 4.875px 0 5.125px; }
+.mnotif-count { padding: 1px 7.875px 0 8.125px; }
+.cs-fnav-badge { padding: 1.15625px 6.0625px 0 5.9375px; }
+
+/* Words in a pill or a small button: down 0.5px. */
+.tab-btn { padding-top: 6.5px; padding-bottom: 5.5px; }
+.btn-sm { padding-top: 1px; }
+.pay-chip { padding-top: calc(var(--space-1) + 0.5px); padding-bottom: calc(var(--space-1) - 0.5px); }
+.set-back { padding-top: 4.5px; padding-bottom: 3.5px; }
+.avatar-sm { padding-top: 1px; }
+.sheet-head .modal-close { padding-top: 0.75px; }
+
+/* Supplies' status tabs on a phone: at 320 "Pending approval" wraps, and its count used to sit at the far right of a
+   box as wide as the tab, so the two read 9px right of the middle. The count now drops under the words when they
+   don't fit beside it, and the line is the words' own 19px (each tab's words, one row or two, in its middle). */
+@media (max-width: 640px) {
+  .supply-status-tabs .tab-btn {
+    flex-wrap: wrap; align-content: center; row-gap: 2px;
+    padding-top: 6px; padding-bottom: 6px; line-height: 19px;
+  }
+}
+
+/* A section tab's underline (Supplies, a customer's and a team member's page, the payroll line) was its own bottom
+   border, 12px under its words, so the words read 6.5px above the tab's middle. The underline is drawn under the tab instead, in
+   the same place, and an empty layer keeps the same 35px to press: the same pixels, the words in the box's middle. */
+.section-tab { position: relative; padding: 0; margin-bottom: calc(var(--space-3) + 3px); border-bottom: 0; line-height: 20px; }
+.section-tab::before { content: ''; position: absolute; inset: 0 0 calc(-1 * (var(--space-3) + 3px)); }
+.section-tab::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: calc(-1 * (var(--space-3) + 3px)); height: 2px;
+  background: transparent; transition: background-color 0.12s;
+}
+.section-tab.active::after { background: var(--color-brand-secondary-500); }

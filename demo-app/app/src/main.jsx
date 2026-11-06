@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 // the first paint): the Home Screen welcome's browser side (UI_RULES §178).
 import './lib/installApp.js'
 import './index.css'
+import './demo/centering.css' // polishpoint-demo: words in their parts' middle, in Poppins
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { installErrorBuffer } from './lib/errorBuffer.js'

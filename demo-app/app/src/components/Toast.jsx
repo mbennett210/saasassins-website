@@ -1,3 +1,4 @@
+import ToastLayer from '../demo/ToastLayer'; // polishpoint-demo
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import Icon from './Icon';
 import { useT } from '../i18n/react';
@@ -40,14 +41,14 @@ export function ToastProvider({ children }) {
   return (
     <ToastCtx.Provider value={api}>
       {children}
-      <div className="toast-stack" role="status" aria-live="polite">
+      <ToastLayer><div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast toast-${toast.variant}`}>
             <span className="toast-msg">{toast.message}</span>
             <button type="button" className="btn-icon btn-icon-ghost" onClick={() => dismiss(toast.id)} aria-label={t('common.dismiss')}><Icon name="x" size={14} /></button>
           </div>
         ))}
-      </div>
+      </div></ToastLayer>
     </ToastCtx.Provider>
   );
 }

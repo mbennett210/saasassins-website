@@ -20,8 +20,11 @@
 //     on-screen mention of Clean Space (the webhook signature header's name) shown as PolishPoint's;
 //   - Quotes and Marketing switched on (Daniel's pick, 2026-11-05); Reviews stays off;
 //   - every panel and pop-up drawn at the page's top level (a portal to <body>), as the styling rules want: the
-//     notification bells, the messaging filters, the messages dock and the menu's section panel, which Clean Space
-//     draws inside the page (src/demo/AnchoredPortal.jsx keeps the dropdowns where their CSS puts them).
+//     notification bells, the messaging filters, the messages dock, the menu's section panel and the toasts, which
+//     Clean Space draws inside the page (src/demo/AnchoredPortal.jsx keeps the dropdowns where their CSS puts them;
+//     src/demo/ToastLayer.jsx keeps the toasts off the bars pinned to the bottom and off a page's last buttons);
+//   - Clean Space's shared parts with their words in their middle in Poppins (src/demo/centering.css): counts,
+//     badges, tabs, chips, small buttons, avatars, the section tabs' underline, the Pipeline icon's dollar sign.
 // Each edit names the exact text it replaces and how many times it must be there. If Clean Space's code moved and
 // one doesn't match, the script stops before anything in demo-app/ changes and names the file.
 //
@@ -127,7 +130,17 @@ const PATCHES = [
   ['src/components/Sidebar.jsx', '  const panel = shown && (\n    <div ref={panelRef} id={PANEL_ID} className="launcher-panel"', '  const panel = shown && createPortal( // polishpoint-demo: the panel at the page\'s top level\n    <div ref={panelRef} id={PANEL_ID} className="launcher-panel"', 1],
   ['src/components/Sidebar.jsx', '      </div>\n    </div>\n  );\n  return (\n    <div className="nav-group launcher">', '      </div>\n    </div>,\n    document.body,\n  );\n  return (\n    <div className="nav-group launcher">', 1],
   ['src/components/Sidebar.jsx', "if (pressing || asideRef.current?.contains(e.target) || e.target?.closest?.('.modal-overlay')) return;", "if (pressing || asideRef.current?.contains(e.target) || panelRef.current?.contains(e.target) || e.target?.closest?.('.modal-overlay')) return; // polishpoint-demo: the panel is outside the menu now", 1],
+  // The toast stack goes through src/demo/ToastLayer.jsx: at the top level, over the bars pinned to the bottom (the
+  // dock's button, the phone's floating menu, the hub's New request), with room at a page's end while a toast shows.
+  ['src/components/Toast.jsx', '      <div className="toast-stack" role="status" aria-live="polite">', '      <ToastLayer><div className="toast-stack" role="status" aria-live="polite">', 1],
+  ['src/components/Toast.jsx', '      </div>\n    </ToastCtx.Provider>', '      </div></ToastLayer>\n    </ToastCtx.Provider>', 1],
   ['src/index.css', '.launcher-panel {\n  position: fixed; z-index: 10;', '.launcher-panel {\n  position: fixed; z-index: 51; /* polishpoint-demo: at the page\'s top level, over the menu (.sidebar, 50) */', 1],
+  // Clean Space's shared parts with their words in their middle in Poppins (Daniel's pick, 2026-11-05):
+  // src/demo/centering.css, after index.css so it wins at equal specificity.
+  ['src/main.jsx', "import './index.css'\n", "import './index.css'\nimport './demo/centering.css' // polishpoint-demo: words in their parts' middle, in Poppins\n", 1],
+  // The Pipeline icon's "$" was an SVG <text>; Forge's icon measure reads a text's baseline with an HTML probe, which
+  // SVG doesn't draw, so it read 414px off. The same dollar sign as a path (Heroicons' currency-dollar), in its circle.
+  ['src/components/Icon.jsx', "      <text\n        x=\"12\"\n        y=\"12\"\n        textAnchor=\"middle\"\n        dominantBaseline=\"central\"\n        fontSize=\"14\"\n        fontWeight=\"700\"\n        fontFamily=\"ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif\"\n        fill=\"currentColor\"\n        stroke=\"none\"\n      >\n        $\n      </text>\n", "      {/* polishpoint-demo: the dollar sign as a path, not an SVG <text> */}\n      <path d=\"M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33\" />\n", 1],
   // The Review page's mockups go with it (it's routed away above); its one template draws a flyout of its own.
   ['src/review-mockups/index.js', "  'sidebar-directions': {\n    file: 'sidebar-directions.html',\n    views: ['a', 'b', 'c', 'd', 'e'],\n    today: 'e',\n    load: () => import('./sidebar-directions.html?raw').then((m) => m.default),\n  },\n", '  // polishpoint-demo: no Review page, so no mockups (sidebar-directions.html is left out)\n', 1],
 ];
@@ -149,6 +162,7 @@ const PREPEND = [
   ['src/components/MessagingHeader.jsx', "import AnchoredPortal from '../demo/AnchoredPortal'; // polishpoint-demo\n"],
   ['src/components/MessagesDock.jsx', "import { createPortal } from 'react-dom'; // polishpoint-demo\n"],
   ['src/components/Sidebar.jsx', "import { createPortal } from 'react-dom'; // polishpoint-demo\n"],
+  ['src/components/Toast.jsx', "import ToastLayer from '../demo/ToastLayer'; // polishpoint-demo\n"],
 ];
 
 const ENV_DEMO = `
