@@ -20,7 +20,7 @@
 //
 // Uses the global fetch on Vercel's Node runtime — no SDK dependency to install.
 
-const { MODULES } = require('./_modules');
+const { MODULES, CORE_ID } = require('./_modules');
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 
@@ -51,9 +51,9 @@ const FEATURE_ROUTES = {
 const dollars = (cents) => `$${(cents / 100).toLocaleString('en-US')}`;
 
 function buildSystemPrompt() {
-  const core = MODULES.core;
+  const core = MODULES[CORE_ID];
   const addonLines = Object.entries(MODULES)
-    .filter(([id]) => id !== 'core')
+    .filter(([id, m]) => id !== CORE_ID && m.amount)
     .map(([id, m]) => `- ${m.name} (id: ${id}) — ${dollars(m.amount)} one-time. ${ADDON_BLURBS[id] || ''}`)
     .join('\n');
 
@@ -97,7 +97,7 @@ const TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          module_id: { type: 'string', enum: Object.keys(MODULES).filter((id) => id !== 'core') },
+          module_id: { type: 'string', enum: Object.keys(MODULES).filter((id) => id !== CORE_ID) },
         },
         required: ['module_id'],
       },
@@ -118,7 +118,7 @@ function toolCallToAction(call) {
       return route ? { type: 'navigate', route } : null;
     }
     case 'add_module_to_cart':
-      return MODULES[args.module_id] && args.module_id !== 'core'
+      return MODULES[args.module_id] && args.module_id !== CORE_ID
         ? { type: 'addToCart', moduleId: args.module_id }
         : null;
     case 'open_cart':

@@ -5,7 +5,7 @@
 // _modules.js) and returns the hosted-checkout URL for the browser to redirect to.
 // GET retrieves a completed session so the success page can render a real receipt
 // AND pre-fill the onboarding intake form (company/name/phone/address).
-// Same-origin call (saasassinsdev.com/polishpoint -> /api/checkout), so no CORS.
+// Called from the browser on polishpointdev.com (features.html, thanks.html); see _cors.js.
 //
 // Env: STRIPE_SECRET_KEY. Use a TEST-mode key (sk_test_...) to verify end-to-end
 // with Stripe's test cards (e.g. 4242 4242 4242 4242), THEN switch to a live key
@@ -14,6 +14,7 @@
 
 const Stripe = require('stripe');
 const { buildLineItems } = require('./_modules');
+const { SITE_ORIGIN, cors } = require('./_cors');
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -66,6 +67,8 @@ async function handleRetrieve(stripe, req, res) {
 }
 
 module.exports = async function handler(req, res) {
+  if (cors(req, res, 'GET, POST')) return;
+
   const stripe = getStripe();
   if (!stripe) {
     return res.status(503).json({ error: 'Payments are not configured yet.' });
@@ -86,18 +89,12 @@ module.exports = async function handler(req, res) {
   }
   body = body || {};
 
-  // Only add-on ids come from the client; the server always adds the Core base
-  // line item and resolves every price itself (a tampered client can't set one).
+  // Only module ids come from the client; the server always adds the modules in
+  // every build and resolves every price itself (a tampered client can't set one).
   const { lineItems, ids } = buildLineItems(body.moduleIds);
   if (lineItems.length === 0) {
     return res.status(400).json({ error: 'No valid modules selected.' });
   }
-
-  // Derive absolute return URLs from the incoming request so this works on any
-  // host (saasassinsdev.com, Vercel previews, localhost) without hardcoding.
-  const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0];
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const origin = `${proto}://${host}`;
 
   const brandTheme = typeof body.brandTheme === 'string' ? body.brandTheme.slice(0, 80) : '';
   // The stable theme id (e.g. 'blue') — durable for fulfillment even if the
@@ -114,9 +111,8 @@ module.exports = async function handler(req, res) {
   // BOTH the Checkout Session AND the PaymentIntent, so the chosen modules +
   // brand theme show up directly on the payment in the Dashboard — the Payments
   // view reads PaymentIntent metadata, which the session's does NOT propagate to.
-  // `origin` rides along so the webhook can build the receipt's intake link for
-  // the right environment (prod / preview / localhost) without a hardcoded host.
-  const orderMetadata = { moduleIds: ids.join(','), brandTheme, brandThemeKey, origin, tosAccepted: tosAccepted ? 'true' : 'false', tosVersion, tosAt };
+  // `origin` rides along so the webhook can build the receipt's intake link.
+  const orderMetadata = { moduleIds: ids.join(','), brandTheme, brandThemeKey, origin: SITE_ORIGIN, tosAccepted: tosAccepted ? 'true' : 'false', tosVersion, tosAt };
 
   try {
     const session = await stripe.checkout.sessions.create({
@@ -129,8 +125,8 @@ module.exports = async function handler(req, res) {
       custom_fields: [
         { key: 'company', label: { type: 'custom', custom: 'Company name' }, type: 'text' },
       ],
-      success_url: `${origin}/polishpoint/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/polishpoint/checkout`,
+      success_url: `${SITE_ORIGIN}/thanks.html?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${SITE_ORIGIN}/features.html`,
       metadata: orderMetadata,
       payment_intent_data: { metadata: orderMetadata },
     });

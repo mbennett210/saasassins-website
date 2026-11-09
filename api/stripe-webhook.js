@@ -35,7 +35,7 @@ const { MODULES } = require('./_modules');
 // Fallback site origin for the receipt's intake link when the session metadata
 // didn't carry one (older sessions). Per-environment origin is stamped into the
 // session metadata at checkout time; this is only the safety net.
-const FALLBACK_ORIGIN = 'https://saasassinsdev.com';
+const FALLBACK_ORIGIN = 'https://www.polishpointdev.com';
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -279,7 +279,7 @@ module.exports = async function handler(req, res) {
   // Receipt's intake link → the success page (which renders the intake form).
   // Origin was stamped into metadata at checkout for the right environment.
   const origin = /^https?:\/\//.test(md.origin || '') ? md.origin : FALLBACK_ORIGIN;
-  const intakeUrl = `${origin}/polishpoint/checkout/success?session_id=${encodeURIComponent(session.id)}`;
+  const intakeUrl = `${origin}/thanks.html?session_id=${encodeURIComponent(session.id)}`;
 
   const teamTo = (process.env.ORDER_NOTIFY_TO || 'hello@saasassinsdev.com')
     .split(',')

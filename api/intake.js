@@ -15,6 +15,7 @@
 // same ORDER_NOTIFY_TO / ORDER_NOTIFY_FROM used by the order webhook.
 
 const Stripe = require('stripe');
+const { cors } = require('./_cors');
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -74,6 +75,8 @@ function row(label, valueHtml) {
 }
 
 module.exports = async function handler(req, res) {
+  if (cors(req, res, 'POST')) return;
+
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed' });
