@@ -15,6 +15,7 @@
 const Stripe = require('stripe');
 const { buildLineItems } = require('./_modules');
 const { SITE_ORIGIN, cors } = require('./_cors');
+const { orderLines } = require('./_lines');
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -40,7 +41,10 @@ async function handleRetrieve(stripe, req, res) {
   const sessionId = req.query && req.query.session_id;
   if (!sessionId) return res.status(400).json({ error: 'Missing session_id.' });
   try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['line_items'] });
+    const [session, items] = await Promise.all([
+      stripe.checkout.sessions.retrieve(sessionId),
+      orderLines(stripe, sessionId),
+    ]);
     const details = session.customer_details || {};
     const companyField = (session.custom_fields || []).find((f) => f.key === 'company');
     return res.status(200).json({
@@ -50,11 +54,7 @@ async function handleRetrieve(stripe, req, res) {
       email: details.email || null,
       brandTheme: (session.metadata && session.metadata.brandTheme) || null,
       brandThemeKey: (session.metadata && session.metadata.brandThemeKey) || null,
-      items: ((session.line_items && session.line_items.data) || []).map((li) => ({
-        name: li.description,
-        amount: li.amount_total,
-        quantity: li.quantity,
-      })),
+      items,
       // Intake-form pre-fill (what the buyer already gave Stripe).
       company: (companyField && companyField.text && companyField.text.value) || null,
       name: details.name || null,

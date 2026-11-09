@@ -31,6 +31,7 @@
 
 const Stripe = require('stripe');
 const { MODULES } = require('./_modules');
+const { orderLines } = require('./_lines');
 
 // Fallback site origin for the receipt's intake link when the session metadata
 // didn't carry one (older sessions). Per-environment origin is stamped into the
@@ -235,11 +236,10 @@ module.exports = async function handler(req, res) {
   if (!sessionId) return res.status(200).json({ received: true, note: 'no session id' });
 
   // Re-fetch authoritative order data from Stripe — never trust the payload.
-  // Expand line_items so the customer receipt can itemise the order.
   let session;
   try {
     session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['payment_intent', 'line_items'],
+      expand: ['payment_intent'],
     });
   } catch {
     return res.status(200).json({ received: true, note: 'session not found' });
@@ -270,11 +270,8 @@ module.exports = async function handler(req, res) {
   const brand = md.brandTheme
     ? `${md.brandTheme}${md.brandThemeKey ? ` (${md.brandThemeKey})` : ''}`
     : '—';
-  const lineItems = ((session.line_items && session.line_items.data) || []).map((li) => ({
-    name: li.description,
-    amount: li.amount_total,
-    quantity: li.quantity,
-  }));
+  // A receipt without its lines still beats no receipt.
+  const lineItems = await orderLines(stripe, session.id).catch(() => []);
 
   // Receipt's intake link → the success page (which renders the intake form).
   // Origin was stamped into metadata at checkout for the right environment.
