@@ -3,8 +3,11 @@
   "outputDirectory": "dist",
   "cleanUrls": true,
   "trailingSlash": false,
-  "rewrites": [
-    { "source": "/polishpoint/:path*", "destination": "/polishpoint" }
+  "redirects": [
+    { "source": "/polishpoint/demo", "destination": "https://www.polishpointdev.com/demo", "permanent": false },
+    { "source": "/polishpoint/demo/:path*", "destination": "https://www.polishpointdev.com/demo/:path*", "permanent": false },
+    { "source": "/polishpoint", "destination": "https://www.polishpointdev.com/", "permanent": false },
+    { "source": "/polishpoint/:path*", "destination": "https://www.polishpointdev.com/demo/:path*", "permanent": false }
   ],
   "headers": [
     {
@@ -21,12 +24,6 @@
     },
     {
       "source": "/images/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
-      ]
-    },
-    {
-      "source": "/polishpoint/assets/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]

@@ -1,4 +1,0 @@
-/* AnchoredPortal's stand-in for a trigger's box (AnchoredPortal.jsx): pinned over the trigger at the page's top level,
-   on the dropdown layer, taking no clicks itself; the panel inside it takes its own. */
-.pp-anchored { position: fixed; z-index: var(--z-dropdown); pointer-events: none; }
-.pp-anchored > * { pointer-events: auto; }
